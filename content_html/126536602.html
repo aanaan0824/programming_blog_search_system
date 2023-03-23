@@ -1,0 +1,441 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#0__5">0 前言</a></li><li><a href="#1__27">1 简介</a></li><li><a href="#2__31">2 主要器件</a></li><li><a href="#3__42">3 实现效果</a></li><li><a href="#4__56">4 设计原理</a></li><li><a href="#5__143">5 部分核心代码</a></li><li><a href="#6__536">6 最后</a></li></ul>
+</div>
+<p></p>
+<hr color="#000000" size='1"'/>
+<h1><a id="0__5"></a>0 前言</h1>
+<p>🔥 这两年开始毕业设计和毕业答辩的要求和难度不断提升，传统的毕设题目缺少创新和亮点，往往达不到毕业答辩的要求，这两年不断有学弟学妹告诉学长自己做的项目系统达不到老师的要求。</p>
+<p>为了大家能够顺利以及最少的精力通过毕设，学长分享优质毕业设计项目，今天要分享的是</p>
+<p>🚩 <strong>基于Stm32单片机的音乐播放器设计与实现</strong></p>
+<p>🥇学长这里给一个题目综合评分(每项满分5分)</p>
+<ul><li>难度系数：3分</li><li>工作量：3分</li><li>创新点：3分</li></ul>
+<p>🧿 <strong>选题指导, 项目分享：</strong></p>
+<p><a href="https://gitee.com/dancheng-senior/project-sharing-1/blob/master/%E6%AF%95%E8%AE%BE%E6%8C%87%E5%AF%BC/README.md">https://gitee.com/dancheng-senior/project-sharing-1/blob/master/%E6%AF%95%E8%AE%BE%E6%8C%87%E5%AF%BC/README.md</a></p>
+<br/>
+<h1><a id="1__27"></a>1 简介</h1>
+<p>采用STM32实现的多功能音乐播放器。</p>
+<h1><a id="2__31"></a>2 主要器件</h1>
+<ul><li>STM32F103RBT6主控芯片</li><li>VS1003解码芯片（解码MP3）</li><li>TEA5767立体收音机芯片</li><li>DS18B20数字温度温度传感器</li><li>RGB彩灯</li><li>EEPROM芯片</li><li>TPA152功率放大芯片</li><li>LM2576-3.3V电源芯片</li></ul>
+<h1><a id="3__42"></a>3 实现效果</h1>
+<p><strong>整体实物</strong><br/> <img alt="在这里插入图片描述" src="image\cd7d377fa19749b78d7ad324a0e6b1ea.png"/><br/> <strong>系统主界面</strong><br/> <img alt="在这里插入图片描述" src="image\9330bc099a59411180b386e66aa81ee8.png"/></p>
+<p><strong>音乐播放器功能部分展示</strong><br/> <img alt="在这里插入图片描述" src="image\bad8301599be458baa1ddc4f46bc6ec2.png"/><br/> <img alt="在这里插入图片描述" src="image\57580a8b7e81455fb4a7ad46a63bcc8b.png"/></p>
+<h1><a id="4__56"></a>4 设计原理</h1>
+<p><strong>硬件系统框图</strong><br/> <img alt="在这里插入图片描述" src="image\8d4422ee6d6f42bb87fc724215566d69.png"/></p>
+<p>MCU为整个系统的核心，控制着整个系统的运行，让MCU稳定的运行是非常必须的，下图（图2.2）为MCU的原理图，包括一个后备电源UPS1，一个主电源VCC3.3和一个模拟电源，模拟电源通过从VCC3.3加滤波电路得到。MCU外围的必须电路由滤波电容，下载电路（串口1）以及复位开关组成。同时，考虑到系统需要时钟功能，给时钟部分增加了后背电源电路，通过二极管连接到VBAT脚，给实时时钟供电。这里采用了双电源结构，即在电源有外部供电的时候，后备电池不给时钟供电，时钟的电源来自外部，只有当外部电源断开的时候，后备电源才给时钟供电，以保持时钟的计时，这样可以延长后备电池的使用时间。<br/> 同时，为了调试方便，下面电路还加了一个多余的按键和LED灯，方便在调试的时候使用。并且，考虑到某些模块对速度的要求，特意对MCU的IO口做了安排，这样虽然增加了布线难度，但是提高了执行速度，还是值得的。对多余IO口的安排，则是全部引出，方便以后扩展其他功能，比如：家电控制等。同时，对于STM32F103RBT6自带的USB接口，也已经引出，日后通过升级，可以实现USB控制的功能。<br/> 这里要注意一点：因为PT2314，TEA5767，FM24C16这三个器件都是使用IIC总线控制的，所以，把这三个器件挂在一个IIC总线上，节省了IO口。<strong>MCU和DS18B20模块电路图如下：</strong><br/> <img alt="在这里插入图片描述" src="image\02f4295ad21d42d8b09ca274de02dc36.png"/><br/> <strong>软件模块化设计</strong></p>
+<ul><li>对于底层驱动软件子系统包括如下模块程序：LCD驱动模块、触摸屏驱动模块、SD卡驱动模块、VS1003驱动模块、PT2314驱动模块、FM24C16驱动模块、TEA5767驱动模块、温度传感器驱动模块、彩灯驱动模块、实时时钟驱动模块。</li><li>对于应用软件子系统包括如下模块程序：JPEG/BMP解码模块、FAT文件系统管理模块、音乐播放模块、图片浏览模块、游戏模块、闹钟模块、时间模块、设置管理模块、电子书模块、收音机模块、彩灯控制模块。</li></ul>
+<p><strong>LCD模块驱动程序设计</strong></p>
+<p>本系统用到的LCD是八位数据模式，驱动IC型号是FMT0371，该芯片为松下合资厂生产的一个LCD驱动IC。最高支持26万色的TFT LCD，有6位、8位、16位和18位数据模式，可以方便选择。本系统配套的LCD使用的是八位数据模式，65K色。</p>
+<p>根据该LCD的DATASHEET，每个像素点的GRAM实际上是一个18bit的数据寄存器。在16bit模式下与写入数据的对应关系如图3.1 所示：<br/> <img alt="在这里插入图片描述" src="image\d1f03fbe779c4801ac46ffc1c84a0582.png"/><br/> 从图中可以看出，RGB的有效位数分别为565，比如写入0XF800则显示纯红色，写入0X07E0则显示纯绿色，写入0X001F 则显示纯蓝色。在处理数据的时候要把像素值先变换为这样的结构，然后再写入LCD。LCD的显示状态都是由LCD的控制命令控制的，通过写入不同的控制命令和数据，就可以实现不同的现实功能和效果。分析DATASHEET得到几个重要的控制命令：</p>
+<p>00H：这个命令用来控制内存操作模式，这里我们主要用它来改变LCD的扫描方向。<br/> 02H，03H：这两个命令用来分别设置X，Y方向的开始显示的点坐标。<br/> 04H，05H：这两个命令用来分别设置X，Y方向的结束显示的点坐标。<br/> 0EH，0FH：这两个命令用来写入和读取显存。<br/> LCD驱动部分包括几个关键函数：LCD读写寄存器函数、LCD读写数据函数、LCD初始化函数和LCD画点函数。有了这几个基本函数，其他的画线、画面、甚至画图都比较容易了。LCD与MCU的连线包括D0~D7、CS、RS、RST、WR、RD、BL共14根线。<br/> D0~D7：数据线<br/> CS：LCD的片选线，低电平有效。<br/> RS：LCD的地址/数据控制，高电平表示数据，低电平表示地址。<br/> RST：复位线，低电平有效。<br/> WR：写数据访问控制。<br/> RD：读数据访问控制。<br/> BL：LCD背光，高电平有效。</p>
+<ol><li>LCD读写寄存器：对LCD寄存器的操作线设置RS为低，表示写入寄存器，然后拉低片选信号，给BL<br/> 送入数据，然后通过一个WR的脉冲，就可以把数据写入到LCD了。最后释放RS，CS，完成此次操作。对LCD寄存器的读操作和写操作差不多，不同之处就是把WR脉冲改为RD脉冲。</li><li>LCD读写数据：对于LCD数据的读写，和寄存器的读写差不多，只要把RS设置为高，就表示此次操作是对数据的读写，其他同寄存器的读写操作一样。</li><li>LCD初始化：这部分是在前面两步成功的基础上才能进行的，LCD的初始化涉及到其内部很多寄存器的初始化。比较复杂，由void TFT_Init(void)函数实现，具体初始化过程请参考附件里面的代码。</li><li>LCD画点：画点的实现，要先设置LCD开始显示和结束显示的范围，通过0X02H~0X04H这四个命令实现。之后写入0X0E命令，开始写入数据，就可以写入像素值（16bit）了，对于画点，我们只要写入一个像素点就可以了，这样就完成了在LCD上画一点。具体见附件里面的void TFT_DrawPoint(u8 x，u16 y)函数。</li></ol>
+<p>以上四个函数是LCD的主要函数，是最底层的。其他任何功能的函数都可以在这几个底层函数基础上实现。其他功能的LCD驱动函数均在tftlcd.c里面有定义和说明，具体见附件。</p>
+<p><strong>VS1003模块驱动程序设计</strong><br/> VS1003也是采用SPI模式，不过是挂在SPI1上面，这里主要介绍VS1003的初始化操作。在对MCU相关IO口正确配置之后就可以对VS1003模块进行初始化了。VS1003通过7根线与MCU通信： XRST、XDCS、XCS、DREQ、SCK、SO、SI。</p>
+<ul><li>XRST：VS1003复位线，低电平有效。</li><li>XDCS：数据片选信号，低电平有效。</li><li>XCS：命令片选信号，低电平有效。</li><li>DREQ：数据请求，输入总线。</li><li>SCK、SI、SO：SPI接口线。</li></ul>
+<p>VS1003与MCU的通讯都是通过SPI总线来完成的，在默认情况下，数据将在SCLK的上升沿有效（被读入VS1003），一次需要在SCLK的下降沿更新数据，并且字节发送以MSB在先。注意VS1003的最大写入和读出时钟分别是CLKI/4和CLKI/6（CLKI为VS1003内部时钟）。</p>
+<p>VS1003模块初始化步骤：</p>
+<ul><li>硬复位，XRST =0；</li><li>延时，XDCS、XCS、XRST置1；</li><li>等待DREQ为高；</li><li>软件复位：SPI_MODE=0X0804；</li><li>等待DREQ为高（软件复位结束）；</li><li>设置VS1003的时钟：SCI_CLOCKF=0X9800，3倍频；</li><li>设置VS1003的采样率：SPI_AUDATA=0XBB81，采样率48K，立体声；</li><li>设置重音：SPI_BASS=0X0055;</li><li>设置音量：SCI_VOL=0X2020；</li><li>向VS1003发送四个字节无效数据，启动SPI发送；</li></ul>
+<p>VS1003的初始化在VS1003x.c里面，通过void Vs1003_Init(void)函数实现。</p>
+<p><strong>TEA5767模块驱动程序设计</strong></p>
+<p>TEA5767收音机模块支持IIC和三线模式，这里我们使用IIC来控制。TEA5767的器件地址是0XC0，在对TEA5767的读操作通过写入0XC1来执行。</p>
+<p>TEA5767写操作：</p>
+<ul><li>发送IIC起始信号</li><li>发送器件地址0XC0</li><li>等待应答</li><li>发送一个字节，等待应答，再发送一个字节，等待应答，循环5次</li><li>发送IIC停止信号</li></ul>
+<p>TEA5767的读操作与写操作基本相同，只是IIC开始之后写入0XC1，将发送一个字节改为接收一个字节就可以了。关于TEA5767的其他操作函数均在TEA5767.c里面</p>
+<h1><a id="5__143"></a>5 部分核心代码</h1>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"vs1003.h"</span>	 </span>
+
+<span class="token comment">//VS1003的全功能函数</span>
+<span class="token comment">//支持SIN测试和RAM测试</span>
+<span class="token comment">//并加入了VS1003的频谱显示代码，不过说实话不咋地，还不如自己写的频谱分析，怀疑是不是真实的频谱变换？  </span>
+<span class="token comment">//正点原子@SCUT</span>
+<span class="token comment">//V1.1</span>
+
+<span class="token comment">//VS1003设置参数</span>
+<span class="token comment">//0,henh.1,hfreq.2,lenh.3,lfreq 5,主音量</span>
+u8 vs1003ram<span class="token punctuation">[</span><span class="token number">5</span><span class="token punctuation">]</span><span class="token operator">=</span><span class="token punctuation">{<!-- --></span><span class="token number">0</span><span class="token punctuation">,</span><span class="token number">0</span><span class="token punctuation">,</span><span class="token number">0</span><span class="token punctuation">,</span><span class="token number">0</span><span class="token punctuation">,</span><span class="token number">250</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token comment">//保存VS1003的设置</span>
+<span class="token comment">//EEPROM地址：486~490 共五个</span>
+<span class="token keyword">void</span> <span class="token function">Save_VS_Set</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	u8 t<span class="token punctuation">;</span>
+	<span class="token keyword">for</span><span class="token punctuation">(</span>t<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>t<span class="token operator">&lt;</span><span class="token number">5</span><span class="token punctuation">;</span>t<span class="token operator">++</span><span class="token punctuation">)</span><span class="token function">FM24C16_WriteOneByte</span><span class="token punctuation">(</span><span class="token number">488</span><span class="token operator">+</span>t<span class="token punctuation">,</span>vs1003ram<span class="token punctuation">[</span>t<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//vs1003ram保存 	 </span>
+<span class="token punctuation">}</span>
+<span class="token comment">//读取VS1003的设置</span>
+<span class="token comment">//EEPROM地址：486~490 共五个</span>
+<span class="token keyword">void</span> <span class="token function">Read_VS_Set</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	u8 t<span class="token punctuation">;</span>
+	<span class="token keyword">for</span><span class="token punctuation">(</span>t<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>t<span class="token operator">&lt;</span><span class="token number">5</span><span class="token punctuation">;</span>t<span class="token operator">++</span><span class="token punctuation">)</span>vs1003ram<span class="token punctuation">[</span>t<span class="token punctuation">]</span><span class="token operator">=</span><span class="token function">FM24C16_ReadOneByte</span><span class="token punctuation">(</span><span class="token number">488</span><span class="token operator">+</span>t<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//vs1003ram调用</span>
+<span class="token punctuation">}</span>	 					 
+<span class="token comment">//SPI1口读写一个字节</span>
+<span class="token comment">//TxData:要发送的字节</span>
+<span class="token comment">//返回值:读取到的字节</span>
+u8 <span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span>u8 TxData<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>SPI1<span class="token operator">-&gt;</span>SR<span class="token operator">&amp;</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token operator">==</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//等待发送区空				  </span>
+	SPI1<span class="token operator">-&gt;</span>DR<span class="token operator">=</span>TxData<span class="token punctuation">;</span>	 	  <span class="token comment">//发送一个byte   </span>
+	<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>SPI1<span class="token operator">-&gt;</span>SR<span class="token operator">&amp;</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token operator">==</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//等待接收完一个byte  </span>
+	<span class="token keyword">return</span> SPI1<span class="token operator">-&gt;</span>DR<span class="token punctuation">;</span>          <span class="token comment">//返回收到的数据				    </span>
+<span class="token punctuation">}</span> 
+<span class="token comment">//设置SPI1的速度</span>
+<span class="token comment">//SpeedSet:1,高速;0,低速;</span>
+<span class="token keyword">void</span> <span class="token function">SPI1_SetSpeed</span><span class="token punctuation">(</span>u8 SpeedSet<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">&amp;=</span><span class="token number">0XFFC7</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span><span class="token punctuation">(</span>SpeedSet<span class="token operator">==</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token comment">//高速</span>
+	<span class="token punctuation">{<!-- --></span>
+		SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">6</span><span class="token operator">&lt;&lt;</span><span class="token number">3</span><span class="token punctuation">;</span><span class="token comment">//Fsck=Fpclk/64=1.125Mhz	</span>
+	<span class="token punctuation">}</span><span class="token keyword">else</span><span class="token comment">//低速</span>
+	<span class="token punctuation">{<!-- --></span>
+		SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">6</span><span class="token operator">&lt;&lt;</span><span class="token number">3</span><span class="token punctuation">;</span> <span class="token comment">//Fsck=Fpclk/128=562.5Khz</span>
+	<span class="token punctuation">}</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">6</span><span class="token punctuation">;</span> <span class="token comment">//SPI设备使能	  </span>
+<span class="token punctuation">}</span> 
+<span class="token comment">//软复位VS1003</span>
+<span class="token keyword">void</span> <span class="token function">Vs1003SoftReset</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>	 
+	u8 retry<span class="token punctuation">;</span> 				   
+	<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>GPIOC<span class="token operator">-&gt;</span>IDR<span class="token operator">&amp;</span>MP3_DREQ<span class="token punctuation">)</span><span class="token operator">==</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//等待软件复位结束</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0X00</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//启动传输</span>
+	retry<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token function">Vs1003_REG_Read</span><span class="token punctuation">(</span>SPI_MODE<span class="token punctuation">)</span><span class="token operator">!=</span><span class="token number">0x0804</span><span class="token punctuation">)</span><span class="token comment">// 软件复位,新模式  </span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>SPI_MODE<span class="token punctuation">,</span><span class="token number">0x0804</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// 软件复位,新模式</span>
+		<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//等待至少1.35ms </span>
+		<span class="token keyword">if</span><span class="token punctuation">(</span>retry<span class="token operator">++</span><span class="token operator">&gt;</span><span class="token number">100</span><span class="token punctuation">)</span><span class="token keyword">break</span><span class="token punctuation">;</span> 
+	<span class="token punctuation">}</span>	 				  
+	<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>GPIOC<span class="token operator">-&gt;</span>IDR <span class="token operator">&amp;</span> MP3_DREQ<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//等待软件复位结束	   </span>
+
+	retry<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token function">Vs1003_REG_Read</span><span class="token punctuation">(</span>SPI_CLOCKF<span class="token punctuation">)</span><span class="token operator">!=</span><span class="token number">0X9800</span><span class="token punctuation">)</span><span class="token comment">//设置vs1003的时钟,3倍频 ,1.5xADD </span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>SPI_CLOCKF<span class="token punctuation">,</span><span class="token number">0X9800</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置vs1003的时钟,3倍频 ,1.5xADD</span>
+		<span class="token keyword">if</span><span class="token punctuation">(</span>retry<span class="token operator">++</span><span class="token operator">&gt;</span><span class="token number">100</span><span class="token punctuation">)</span><span class="token keyword">break</span><span class="token punctuation">;</span> 
+	<span class="token punctuation">}</span>		   
+	retry<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token function">Vs1003_REG_Read</span><span class="token punctuation">(</span>SPI_AUDATA<span class="token punctuation">)</span><span class="token operator">!=</span><span class="token number">0XBB81</span><span class="token punctuation">)</span><span class="token comment">//设置vs1003的时钟,3倍频 ,1.5xADD </span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>SPI_AUDATA<span class="token punctuation">,</span><span class="token number">0XBB81</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">if</span><span class="token punctuation">(</span>retry<span class="token operator">++</span><span class="token operator">&gt;</span><span class="token number">100</span><span class="token punctuation">)</span><span class="token keyword">break</span><span class="token punctuation">;</span> 
+	<span class="token punctuation">}</span>
+
+	<span class="token comment">//Vs1003_CMD_Write(SPI_CLOCKF,0X9800); 	    </span>
+	<span class="token comment">//Vs1003_CMD_Write(SPI_AUDATA,0XBB81); //采样率48k，立体声	 </span>
+	<span class="token function">set1003</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置VS1003的音效				 </span>
+	<span class="token function">ResetDecodeTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//复位解码时间	    </span>
+    <span class="token comment">//向vs1003发送4个字节无效数据，用以启动SPI发送</span>
+    <span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//选中数据传输</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0XFF</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0XFF</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0XFF</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0XFF</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//取消数据传输</span>
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">20</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span> 
+<span class="token comment">//硬复位MP3</span>
+<span class="token keyword">void</span> <span class="token function">Mp3Reset</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token function">MP3_RST_SET</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">20</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//取消数据传输</span>
+	<span class="token function">MP3_CCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//取消数据传输</span>
+	<span class="token function">MP3_RST_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>    
+	<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>GPIOC<span class="token operator">-&gt;</span>IDR <span class="token operator">&amp;</span> MP3_DREQ<span class="token punctuation">)</span><span class="token operator">==</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>	<span class="token comment">//等待DREQ为高</span>
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">20</span><span class="token punctuation">)</span><span class="token punctuation">;</span>				 
+<span class="token punctuation">}</span>
+<span class="token comment">//正弦测试 </span>
+<span class="token keyword">void</span> <span class="token function">VsSineTest</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>											    
+	<span class="token function">Mp3Reset</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>	 
+	<span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span><span class="token number">0x0b</span><span class="token punctuation">,</span><span class="token number">0X2020</span><span class="token punctuation">)</span><span class="token punctuation">;</span>	  <span class="token comment">//设置音量	 </span>
+ 	<span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>SPI_MODE<span class="token punctuation">,</span><span class="token number">0x0820</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//进入vs1003的测试模式	    </span>
+	<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>GPIOC<span class="token operator">-&gt;</span>IDR <span class="token operator">&amp;</span> MP3_DREQ<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>     <span class="token comment">//等待DREQ为高</span>
+ 	<span class="token comment">//向vs1003发送正弦测试命令：0x53 0xef 0x6e n 0x00 0x00 0x00 0x00</span>
+ 	<span class="token comment">//其中n = 0x24, 设定vs1003所产生的正弦波的频率值，具体计算方法见vs1003的datasheet</span>
+    <span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//选中数据传输</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x53</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0xef</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x6e</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x24</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">100</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 
+    <span class="token comment">//退出正弦测试</span>
+    <span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//选中数据传输</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x45</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x78</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x69</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x74</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">100</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>		 
+
+    <span class="token comment">//再次进入正弦测试并设置n值为0x44，即将正弦波的频率设置为另外的值</span>
+    <span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//选中数据传输      </span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x53</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0xef</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x6e</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x44</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">100</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//退出正弦测试</span>
+    <span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//选中数据传输</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x45</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x78</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x69</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x74</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">100</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>	 
+<span class="token punctuation">}</span>	 
+<span class="token comment">//ram 测试 																				 </span>
+<span class="token keyword">void</span> <span class="token function">VsRamTest</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	u16 regvalue <span class="token punctuation">;</span>	   
+	<span class="token function">Mp3Reset</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>     
+ 	<span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>SPI_MODE<span class="token punctuation">,</span><span class="token number">0x0820</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// 进入vs1003的测试模式</span>
+	<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>GPIOC<span class="token operator">-&gt;</span>IDR<span class="token operator">&amp;</span>MP3_DREQ<span class="token punctuation">)</span><span class="token operator">==</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 等待DREQ为高</span>
+ 	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>	       			  <span class="token comment">// xDCS = 1，选择vs1003的数据接口</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x4d</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0xea</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x6d</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x54</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0x00</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">50</span><span class="token punctuation">)</span><span class="token punctuation">;</span>  
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	regvalue<span class="token operator">=</span><span class="token function">Vs1003_REG_Read</span><span class="token punctuation">(</span>SPI_HDAT0<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 如果得到的值为0x807F，则表明完好。</span>
+	<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"regvalueH:%x\n"</span><span class="token punctuation">,</span>regvalue<span class="token operator">&gt;&gt;</span><span class="token number">8</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//输出结果 </span>
+	<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"regvalueL:%x\n"</span><span class="token punctuation">,</span>regvalue<span class="token operator">&amp;</span><span class="token number">0xff</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//输出结果 </span>
+<span class="token punctuation">}</span>     
+<span class="token comment">//向VS1003写命令</span>
+<span class="token comment">//address:命令地址</span>
+<span class="token comment">//data:命令数据</span>
+<span class="token keyword">void</span> <span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>u8 address<span class="token punctuation">,</span>u16 data<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>  
+    <span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>GPIOC<span class="token operator">-&gt;</span>IDR<span class="token operator">&amp;</span>MP3_DREQ<span class="token punctuation">)</span><span class="token operator">==</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//等待空闲</span>
+	<span class="token function">SPI1_SetSpeed</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//低速 </span>
+	 
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//MP3_DATA_CS=1;</span>
+	<span class="token function">MP3_CCS_SET</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//MP3_CMD_CS=0; </span>
+	
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span>VS_WRITE_COMMAND<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//发送VS1003的写命令</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span>address<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//地址</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span>data<span class="token operator">&gt;&gt;</span><span class="token number">8</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//发送高八位</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span>data<span class="token punctuation">)</span><span class="token punctuation">;</span>	 <span class="token comment">//第八位</span>
+	<span class="token function">MP3_CCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>          <span class="token comment">//MP3_CMD_CS=1; </span>
+	<span class="token function">SPI1_SetSpeed</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//高速</span>
+<span class="token punctuation">}</span> 
+<span class="token comment">//向VS1003写数据</span>
+<span class="token keyword">void</span> <span class="token function">Vs1003_DATA_Write</span><span class="token punctuation">(</span>u8 data<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>   <span class="token comment">//MP3_DATA_CS=0;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span>data<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>   <span class="token comment">//MP3_DATA_CS=1;</span>
+	<span class="token function">MP3_CCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>   <span class="token comment">//MP3_CMD_CS=1; </span>
+<span class="token punctuation">}</span>         
+<span class="token comment">//读VS1003的寄存器           </span>
+<span class="token comment">//读VS1003</span>
+<span class="token comment">//注意不要用倍速读取,会出错</span>
+u16 <span class="token function">Vs1003_REG_Read</span><span class="token punctuation">(</span>u8 address<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span> 
+	u16 temp<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span> 
+    <span class="token keyword">while</span><span class="token punctuation">(</span><span class="token punctuation">(</span>GPIOC<span class="token operator">-&gt;</span>IDR<span class="token operator">&amp;</span>MP3_DREQ<span class="token punctuation">)</span><span class="token operator">==</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//非等待空闲状态 </span>
+	<span class="token function">SPI1_SetSpeed</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//低速 </span>
+	<span class="token function">MP3_DCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>       <span class="token comment">//MP3_DATA_CS=1;</span>
+	<span class="token function">MP3_CCS_SET</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>       <span class="token comment">//MP3_CMD_CS=0;</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span>VS_READ_COMMAND<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//发送VS1003的读命令</span>
+	<span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span>address<span class="token punctuation">)</span><span class="token punctuation">;</span>        <span class="token comment">//地址</span>
+	temp<span class="token operator">=</span><span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0xff</span><span class="token punctuation">)</span><span class="token punctuation">;</span>		<span class="token comment">//读取高字节</span>
+	temp<span class="token operator">=</span>temp<span class="token operator">&lt;&lt;</span><span class="token number">8</span><span class="token punctuation">;</span>
+	temp<span class="token operator">+=</span><span class="token function">SPI1_ReadWriteByte</span><span class="token punctuation">(</span><span class="token number">0xff</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 	<span class="token comment">//读取低字节</span>
+	<span class="token function">MP3_CCS_SET</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>      <span class="token comment">//MP3_CMD_CS=1; </span>
+	<span class="token function">SPI1_SetSpeed</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//高速</span>
+    <span class="token keyword">return</span> temp<span class="token punctuation">;</span> 
+<span class="token punctuation">}</span>  
+<span class="token comment">//FOR WAV HEAD0 :0X7761 HEAD1:0X7665    </span>
+<span class="token comment">//FOR MIDI HEAD0 :other info HEAD1:0X4D54</span>
+<span class="token comment">//FOR WMA HEAD0 :data speed HEAD1:0X574D</span>
+<span class="token comment">//FOR MP3 HEAD0 :data speed HEAD1:ID</span>
+<span class="token comment">//比特率预定值</span>
+<span class="token keyword">const</span> u16 bitrate<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">[</span><span class="token number">16</span><span class="token punctuation">]</span><span class="token operator">=</span>
+<span class="token punctuation">{<!-- --></span> 
+<span class="token punctuation">{<!-- --></span><span class="token number">0</span><span class="token punctuation">,</span><span class="token number">8</span><span class="token punctuation">,</span><span class="token number">16</span><span class="token punctuation">,</span><span class="token number">24</span><span class="token punctuation">,</span><span class="token number">32</span><span class="token punctuation">,</span><span class="token number">40</span><span class="token punctuation">,</span><span class="token number">48</span><span class="token punctuation">,</span><span class="token number">56</span><span class="token punctuation">,</span><span class="token number">64</span><span class="token punctuation">,</span><span class="token number">80</span><span class="token punctuation">,</span><span class="token number">96</span><span class="token punctuation">,</span><span class="token number">112</span><span class="token punctuation">,</span><span class="token number">128</span><span class="token punctuation">,</span><span class="token number">144</span><span class="token punctuation">,</span><span class="token number">160</span><span class="token punctuation">,</span><span class="token number">0</span><span class="token punctuation">}</span><span class="token punctuation">,</span> 
+<span class="token punctuation">{<!-- --></span><span class="token number">0</span><span class="token punctuation">,</span><span class="token number">32</span><span class="token punctuation">,</span><span class="token number">40</span><span class="token punctuation">,</span><span class="token number">48</span><span class="token punctuation">,</span><span class="token number">56</span><span class="token punctuation">,</span><span class="token number">64</span><span class="token punctuation">,</span><span class="token number">80</span><span class="token punctuation">,</span><span class="token number">96</span><span class="token punctuation">,</span><span class="token number">112</span><span class="token punctuation">,</span><span class="token number">128</span><span class="token punctuation">,</span><span class="token number">160</span><span class="token punctuation">,</span><span class="token number">192</span><span class="token punctuation">,</span><span class="token number">224</span><span class="token punctuation">,</span><span class="token number">256</span><span class="token punctuation">,</span><span class="token number">320</span><span class="token punctuation">,</span><span class="token number">0</span><span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token comment">//返回Kbps的大小</span>
+<span class="token comment">//得到mp3&amp;wma的波特率</span>
+u16 <span class="token function">GetHeadInfo</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">unsigned</span> <span class="token keyword">int</span> HEAD0<span class="token punctuation">;</span>
+	<span class="token keyword">unsigned</span> <span class="token keyword">int</span> HEAD1<span class="token punctuation">;</span>            
+    HEAD0<span class="token operator">=</span><span class="token function">Vs1003_REG_Read</span><span class="token punctuation">(</span>SPI_HDAT0<span class="token punctuation">)</span><span class="token punctuation">;</span> 
+    HEAD1<span class="token operator">=</span><span class="token function">Vs1003_REG_Read</span><span class="token punctuation">(</span>SPI_HDAT1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">switch</span><span class="token punctuation">(</span>HEAD1<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>        
+        <span class="token keyword">case</span> <span class="token number">0x7665</span><span class="token operator">:</span><span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span><span class="token comment">//WAV格式</span>
+        <span class="token keyword">case</span> <span class="token number">0X4D54</span><span class="token operator">:</span><span class="token keyword">return</span> <span class="token number">1</span><span class="token punctuation">;</span><span class="token comment">//MIDI格式 </span>
+        <span class="token keyword">case</span> <span class="token number">0X574D</span><span class="token operator">:</span><span class="token comment">//WMA格式</span>
+        <span class="token punctuation">{<!-- --></span>
+            HEAD1<span class="token operator">=</span>HEAD0<span class="token operator">*</span><span class="token number">2</span><span class="token operator">/</span><span class="token number">25</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token punctuation">(</span>HEAD1<span class="token operator">%</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token operator">&gt;</span><span class="token number">5</span><span class="token punctuation">)</span><span class="token keyword">return</span> HEAD1<span class="token operator">/</span><span class="token number">10</span><span class="token operator">+</span><span class="token number">1</span><span class="token punctuation">;</span>
+            <span class="token keyword">else</span> <span class="token keyword">return</span> HEAD1<span class="token operator">/</span><span class="token number">10</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">default</span><span class="token operator">:</span><span class="token comment">//MP3格式</span>
+        <span class="token punctuation">{<!-- --></span>
+            HEAD1<span class="token operator">&gt;&gt;=</span><span class="token number">3</span><span class="token punctuation">;</span>
+            HEAD1<span class="token operator">=</span>HEAD1<span class="token operator">&amp;</span><span class="token number">0x03</span><span class="token punctuation">;</span> 
+            <span class="token keyword">if</span><span class="token punctuation">(</span>HEAD1<span class="token operator">==</span><span class="token number">3</span><span class="token punctuation">)</span>HEAD1<span class="token operator">=</span><span class="token number">1</span><span class="token punctuation">;</span>
+            <span class="token keyword">else</span> HEAD1<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> bitrate<span class="token punctuation">[</span>HEAD1<span class="token punctuation">]</span><span class="token punctuation">[</span>HEAD0<span class="token operator">&gt;&gt;</span><span class="token number">12</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span> 
+<span class="token punctuation">}</span>  
+<span class="token comment">//重设解码时间                          </span>
+<span class="token keyword">void</span> <span class="token function">ResetDecodeTime</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>SPI_DECODE_TIME<span class="token punctuation">,</span><span class="token number">0x0000</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>SPI_DECODE_TIME<span class="token punctuation">,</span><span class="token number">0x0000</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//操作两次</span>
+<span class="token punctuation">}</span>
+<span class="token comment">//得到mp3的播放时间n sec</span>
+u16 <span class="token function">GetDecodeTime</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span> 
+    <span class="token keyword">return</span> <span class="token function">Vs1003_REG_Read</span><span class="token punctuation">(</span>SPI_DECODE_TIME<span class="token punctuation">)</span><span class="token punctuation">;</span>   
+<span class="token punctuation">}</span> 
+<span class="token comment">//加载频谱分析的代码到VS1003</span>
+<span class="token keyword">void</span> <span class="token function">LoadPatch</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	u16 i<span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span>i<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>i<span class="token operator">&lt;</span><span class="token number">943</span><span class="token punctuation">;</span>i<span class="token operator">++</span><span class="token punctuation">)</span><span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>atab<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span>dtab<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token comment">//得到频谱数据</span>
+<span class="token keyword">void</span> <span class="token function">GetSpec</span><span class="token punctuation">(</span>u8 <span class="token operator">*</span>p<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	u8 byteIndex<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>
+	u8 temp<span class="token punctuation">;</span>
+	<span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>SPI_WRAMADDR<span class="token punctuation">,</span><span class="token number">0x1804</span><span class="token punctuation">)</span><span class="token punctuation">;</span>                                                                                             
+	<span class="token keyword">for</span> <span class="token punctuation">(</span>byteIndex<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>byteIndex<span class="token operator">&lt;</span><span class="token number">14</span><span class="token punctuation">;</span>byteIndex<span class="token operator">++</span><span class="token punctuation">)</span> 
+	<span class="token punctuation">{<!-- --></span>                                                                               
+		temp<span class="token operator">=</span><span class="token function">Vs1003_REG_Read</span><span class="token punctuation">(</span>SPI_WRAM<span class="token punctuation">)</span><span class="token operator">&amp;</span><span class="token number">0x63</span><span class="token punctuation">;</span><span class="token comment">//取小于100的数    </span>
+		<span class="token operator">*</span>p<span class="token operator">++</span><span class="token operator">=</span>temp<span class="token punctuation">;</span>
+	<span class="token punctuation">}</span> 
+<span class="token punctuation">}</span>
+<span class="token keyword">void</span> <span class="token function">SPI1_RST</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	RCC<span class="token operator">-&gt;</span>APB2RSTR<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">12</span><span class="token punctuation">;</span><span class="token comment">//复位SPI1</span>
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 	
+	RCC<span class="token operator">-&gt;</span>APB2RSTR<span class="token operator">&amp;=</span><span class="token operator">~</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">12</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//结束复位SPI1</span>
+	<span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">0</span><span class="token operator">&lt;&lt;</span><span class="token number">10</span><span class="token punctuation">;</span><span class="token comment">//全双工模式	</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">9</span><span class="token punctuation">;</span> <span class="token comment">//软件nss管理</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">8</span><span class="token punctuation">;</span>  
+
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">2</span><span class="token punctuation">;</span> <span class="token comment">//SPI主机</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">0</span><span class="token operator">&lt;&lt;</span><span class="token number">11</span><span class="token punctuation">;</span><span class="token comment">//8bit数据格式	</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">1</span><span class="token punctuation">;</span> <span class="token comment">//空闲模式下SCK为1 CPOL=1</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">0</span><span class="token punctuation">;</span> <span class="token comment">//数据采样从第二个时间边沿开始,CPHA=1  </span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">6</span><span class="token operator">&lt;&lt;</span><span class="token number">3</span><span class="token punctuation">;</span> <span class="token comment">//Fsck=Fpclk/128 =562.5khz</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">0</span><span class="token operator">&lt;&lt;</span><span class="token number">7</span><span class="token punctuation">;</span> <span class="token comment">//MSBfirst </span>
+	
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">6</span><span class="token punctuation">;</span> <span class="token comment">//SPI设备使能</span>
+<span class="token punctuation">}</span>	  
+<span class="token comment">//设定vs1003播放的音量和高低音 </span>
+<span class="token keyword">void</span> <span class="token function">set1003</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    u8 t<span class="token punctuation">;</span>
+    u16 bass<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span> <span class="token comment">//暂存音调寄存器值</span>
+    u16 volt<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span> <span class="token comment">//暂存音量值</span>
+    u8 vset<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>  <span class="token comment">//暂存音量值 	 </span>
+    vset<span class="token operator">=</span><span class="token number">255</span><span class="token operator">-</span>vs1003ram<span class="token punctuation">[</span><span class="token number">4</span><span class="token punctuation">]</span><span class="token punctuation">;</span><span class="token comment">//取反一下,得到最大值,表示最大的表示 </span>
+    volt<span class="token operator">=</span>vset<span class="token punctuation">;</span>
+    volt<span class="token operator">&lt;&lt;=</span><span class="token number">8</span><span class="token punctuation">;</span>
+    volt<span class="token operator">+=</span>vset<span class="token punctuation">;</span><span class="token comment">//得到音量设置后大小</span>
+     <span class="token comment">//0,henh.1,hfreq.2,lenh.3,lfreq        </span>
+    <span class="token keyword">for</span><span class="token punctuation">(</span>t<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>t<span class="token operator">&lt;</span><span class="token number">4</span><span class="token punctuation">;</span>t<span class="token operator">++</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        bass<span class="token operator">&lt;&lt;=</span><span class="token number">4</span><span class="token punctuation">;</span>
+        bass<span class="token operator">+=</span>vs1003ram<span class="token punctuation">[</span>t<span class="token punctuation">]</span><span class="token punctuation">;</span> 
+    <span class="token punctuation">}</span>     
+	<span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>SPI_BASS<span class="token punctuation">,</span>bass<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//BASS   </span>
+    <span class="token function">Vs1003_CMD_Write</span><span class="token punctuation">(</span>SPI_VOL<span class="token punctuation">,</span>volt<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//设音量 </span>
+<span class="token punctuation">}</span>    
+
+<span class="token comment">//初始化VS1003的IO口	 </span>
+<span class="token keyword">void</span> <span class="token function">Vs1003_Init</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	RCC<span class="token operator">-&gt;</span>APB2ENR<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">2</span><span class="token punctuation">;</span>       <span class="token comment">//PORTA时钟使能  </span>
+	RCC<span class="token operator">-&gt;</span>APB2ENR<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">12</span><span class="token punctuation">;</span>      <span class="token comment">//SPI1时钟使能	 </span>
+	
+	<span class="token comment">//存储器映射,不用理    </span>
+	<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifdef</span>  <span class="token expression">VECT_TAB_RAM  									   </span></span>
+	  <span class="token function">NVIC_SetVectorTable</span><span class="token punctuation">(</span>NVIC_VectTab_RAM<span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 
+	<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">else</span>   							 </span>
+	  <span class="token function">NVIC_SetVectorTable</span><span class="token punctuation">(</span>NVIC_VectTab_FLASH<span class="token punctuation">,</span> <span class="token number">0x0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>   
+	<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span>  </span>
+			    
+	GPIOA<span class="token operator">-&gt;</span>CRL<span class="token operator">&amp;=</span><span class="token number">0X000FFFFF</span><span class="token punctuation">;</span><span class="token comment">//PA5.6.7复用输出</span>
+	GPIOA<span class="token operator">-&gt;</span>CRL<span class="token operator">|=</span><span class="token number">0XBBB00000</span><span class="token punctuation">;</span> 	 
+	GPIOA<span class="token operator">-&gt;</span>ODR<span class="token operator">|=</span><span class="token number">0X00E0</span><span class="token punctuation">;</span><span class="token comment">//PA5.6.7上拉  </span>
+	
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">0</span><span class="token operator">&lt;&lt;</span><span class="token number">10</span><span class="token punctuation">;</span><span class="token comment">//全双工模式	</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">9</span><span class="token punctuation">;</span> <span class="token comment">//软件nss管理</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">8</span><span class="token punctuation">;</span>  
+
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">2</span><span class="token punctuation">;</span> <span class="token comment">//SPI主机</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">0</span><span class="token operator">&lt;&lt;</span><span class="token number">11</span><span class="token punctuation">;</span><span class="token comment">//8bit数据格式	</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">1</span><span class="token punctuation">;</span> <span class="token comment">//空闲模式下SCK为1 CPOL=1</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">0</span><span class="token punctuation">;</span> <span class="token comment">//数据采样从第二个时间边沿开始,CPHA=1  </span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">6</span><span class="token operator">&lt;&lt;</span><span class="token number">3</span><span class="token punctuation">;</span> <span class="token comment">//Fsck=Fpclk/128 =562.5khz</span>
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">0</span><span class="token operator">&lt;&lt;</span><span class="token number">7</span><span class="token punctuation">;</span> <span class="token comment">//MSBfirst </span>
+	
+	SPI1<span class="token operator">-&gt;</span>CR1<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">6</span><span class="token punctuation">;</span> <span class="token comment">//SPI设备使能</span>
+	<span class="token comment">//以上初始化VS1003的SPI连接口,SPI1口	</span>
+	<span class="token comment">//所以上拉之前,必须使能时钟.才能实现真正的上拉输出</span>
+	RCC<span class="token operator">-&gt;</span>APB2ENR<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">2</span><span class="token punctuation">;</span>    <span class="token comment">//PA时钟使能</span>
+	RCC<span class="token operator">-&gt;</span>APB2ENR<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">4</span><span class="token punctuation">;</span>    <span class="token comment">//PC时钟使能</span>
+	RCC<span class="token operator">-&gt;</span>APB2ENR<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">0</span><span class="token punctuation">;</span>    <span class="token comment">//开启辅助时钟</span>
+	AFIO<span class="token operator">-&gt;</span>MAPR<span class="token operator">=</span><span class="token number">0X04000000</span><span class="token punctuation">;</span><span class="token comment">//关闭JTAG,只有关闭JTAG,才能使用PA14 </span>
+
+	GPIOA<span class="token operator">-&gt;</span>CRH<span class="token operator">&amp;=</span><span class="token number">0XF0FFFFF0</span><span class="token punctuation">;</span><span class="token comment">//PA.8/14推挽输出</span>
+	GPIOA<span class="token operator">-&gt;</span>CRH<span class="token operator">|=</span><span class="token number">0X03000003</span><span class="token punctuation">;</span> 
+	GPIOA<span class="token operator">-&gt;</span>ODR<span class="token operator">|=</span><span class="token number">0X4100</span><span class="token punctuation">;</span>    <span class="token comment">//上拉</span>
+
+	GPIOC<span class="token operator">-&gt;</span>CRH<span class="token operator">&amp;=</span><span class="token number">0XFFFFFF00</span><span class="token punctuation">;</span>
+  	GPIOC<span class="token operator">-&gt;</span>CRH<span class="token operator">|=</span><span class="token number">0X00000083</span><span class="token punctuation">;</span><span class="token comment">//PC.8输出 ,PC9输入</span>
+	GPIOC<span class="token operator">-&gt;</span>ODR<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">8</span><span class="token punctuation">;</span>      <span class="token comment">//PC.8上拉   </span>
+	GPIOC<span class="token operator">-&gt;</span>ODR<span class="token operator">|=</span><span class="token number">1</span><span class="token operator">&lt;&lt;</span><span class="token number">9</span><span class="token punctuation">;</span> 	   <span class="token comment">//PC.9上拉	  </span>
+
+<span class="token punctuation">}</span>
+
+
+
+</code></pre>
+<br/>
+<h1><a id="6__536"></a>6 最后</h1>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

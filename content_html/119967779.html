@@ -1,0 +1,814 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-github-gist" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="CExpression_0"></a>C#高级–Expression详解</h1>
+<h2><a id="httpsblogcsdnnetliyou123456789articledetails119715435_2"></a><a href="https://blog.csdn.net/liyou123456789/article/details/119715435">零、文章目录</a></h2>
+<h2><a id="Expression_4"></a>一、Expression是什么</h2>
+<h3><a id="1_6"></a>1、如何定义</h3>
+<ul><li>Expression&lt;Func&lt;TSource, bool&gt;&gt;就是表达式目录树</li><li>Expression不能带有大括号，只能有一行代码</li></ul>
+<h3><a id="2_11"></a>2、和委托的区别</h3>
+<ul><li> <p>在委托外面包裹一层Expression&lt;&gt;就是表达式目录树</p> </li><li> <p>表达式目录树可以通过Compile()转换成一个委托</p> </li></ul>
+<h3><a id="3Expression_17"></a>3、Expression本质</h3>
+<ul><li>表达式目录树是一个类的封装，描述了一个结构，有身体部分和参数部分</li><li>身体部分分为左边和右边，内部描述了左边和右边之间的关系，可以不断的往下拆分，类似于二叉树</li><li>表达式目录树展开后的每一个节点也是一个表达式目录树</li></ul>
+<pre><code class="prism language-C#">Expression&lt;Func&lt;People, bool&gt;&gt; expression = p =&gt; p.Id == 10;
+Func&lt;People, bool&gt; func = expression.Compile();
+bool bResult = func.Invoke(new People()
+{
+    Id = 10,
+    Name = "张三"
+});
+</code></pre>
+<h2><a id="Expression_33"></a>二、Expression动态拼装</h2>
+<h3><a id="1_35"></a>1、最基础版本</h3>
+<pre><code class="prism language-C#">Expression&lt;Func&lt;int&gt;&gt; expression = () =&gt; 123 + 234;
+//常量表达式
+ConstantExpression expression1 = Expression.Constant(123);
+ConstantExpression expression2 = Expression.Constant(234);
+//二元表达式
+BinaryExpression binaryExpression = Expression.Add(expression1, expression2);
+Expression&lt;Func&lt;int&gt;&gt; expressionReslut = Expression.Lambda&lt;Func&lt;int&gt;&gt;(binaryExpression);
+Func&lt;int&gt; func = expressionReslut.Compile();
+int iResult = func.Invoke();
+</code></pre>
+<h3><a id="2_49"></a>2、带参数版本</h3>
+<pre><code class="prism language-C#">Expression&lt;Func&lt;int, int&gt;&gt; expression1 = m =&gt; m + 1;
+Func&lt;int, int&gt; func = expression1.Compile();
+int iResult = func.Invoke(5);
+//参数表达式
+ParameterExpression parameterExpression = Expression.Parameter(typeof(int), "m");
+//常量表达式
+ConstantExpression constant = Expression.Constant(1, typeof(int));
+//二元表达式
+BinaryExpression addExpression = Expression.Add(parameterExpression, constant);
+Expression&lt;Func&lt;int, int&gt;&gt; expression = Expression.Lambda&lt;Func&lt;int, int&gt;&gt;(addExpression, new ParameterExpression[1]
+{
+      parameterExpression
+});
+Func&lt;int, int&gt; func1 = expression.Compile();
+int iResult1 = func1.Invoke(5);
+</code></pre>
+<h3><a id="3_69"></a>3、带有多个参数</h3>
+<pre><code class="prism language-C#">Expression&lt;Func&lt;int, int, int&gt;&gt; expression = (m, n) =&gt; m * n + 2;
+Func&lt;int, int, int&gt; func = expression.Compile();
+int iResult = func.Invoke(10, 20);
+//参数表达式
+ParameterExpression parameterExpressionM = Expression.Parameter(typeof(int), "m");
+ParameterExpression parameterExpressionN = Expression.Parameter(typeof(int), "n");
+//二元表达式
+BinaryExpression multiply = Expression.Multiply(parameterExpressionM, parameterExpressionN);
+//常量表达式
+ConstantExpression constantExpression = Expression.Constant(2);
+//二元表达式
+BinaryExpression plus = Expression.Add(multiply, constantExpression);
+Expression&lt;Func&lt;int, int, int&gt;&gt; expression1 = Expression.Lambda&lt;Func&lt;int, int, int&gt;&gt;(plus, new ParameterExpression[2]
+{
+      parameterExpressionM,
+      parameterExpressionN
+});
+Func&lt;int, int, int&gt; func1 = expression1.Compile();
+int iResult1 = func1.Invoke(10, 20);
+</code></pre>
+<h3><a id="4_93"></a>4、对象字段值比较</h3>
+<p>类似于这种比较复杂的，建议大家可以反编译看看</p>
+<pre><code class="prism language-C#">Expression&lt;Func&lt;People, bool&gt;&gt; predicate = c =&gt; c.Id == 10;
+Func&lt;People, bool&gt; func = predicate.Compile();
+bool bResult = func.Invoke(new People()
+{
+    Id = 10
+});
+
+//参数表达式
+ParameterExpression parameterExpression = Expression.Parameter(typeof(People), "c");
+//反射获取属性
+FieldInfo fieldId = typeof(People).GetField("Id");
+//通过parameterExpression来获取调用Id
+MemberExpression idExp = Expression.Field(parameterExpression, fieldId);
+//常量表达式
+ConstantExpression constant10 = Expression.Constant(10, typeof(int));
+//二元表达式
+BinaryExpression expressionExp = Expression.Equal(idExp, constant10);
+Expression&lt;Func&lt;People, bool&gt;&gt; predicate1 = Expression.Lambda&lt;Func&lt;People, bool&gt;&gt;(expressionExp, new ParameterExpression[1]
+{
+            parameterExpression
+});
+
+Func&lt;People, bool&gt; func1 = predicate1.Compile();
+bool bResult1 = func1.Invoke(new People()
+{
+    Id = 10
+});
+</code></pre>
+<h3><a id="5_127"></a>5、多条件</h3>
+<p>如果遇到很长的表达式目录树，拼装建议从右往左拼装</p>
+<pre><code class="prism language-C#">Expression&lt;Func&lt;People, bool&gt;&gt; predicate = c =&gt;
+    c.Id.ToString() == "10"
+    &amp;&amp; c.Name.Equals("张三")
+    &amp;&amp; c.Age &gt; 35;
+Func&lt;People, bool&gt; func = predicate.Compile();
+bool bResult = func.Invoke(new People()
+{
+    Id = 10,
+    Name = "张三",
+    Age = 36
+});
+
+ParameterExpression parameterExpression = Expression.Parameter(typeof(People), "c");
+//c.Age &gt; 35
+ConstantExpression constant35 = Expression.Constant(35);
+PropertyInfo propAge = typeof(People).GetProperty("Age");
+MemberExpression ageExp = Expression.Property(parameterExpression, propAge);
+BinaryExpression cagExp = Expression.GreaterThan(ageExp, constant35);
+//c.Name.Equals("张三")
+ConstantExpression constantrichard = Expression.Constant("张三");
+PropertyInfo propName = typeof(People).GetProperty("Name");
+MemberExpression nameExp = Expression.Property(parameterExpression, propName);
+MethodInfo equals = typeof(string).GetMethod("Equals", new Type[] { typeof(string) });
+MethodCallExpression NameExp = Expression.Call(nameExp, equals, constantrichard);
+//c.Id.ToString() == "10"
+ConstantExpression constantExpression10 = Expression.Constant("10", typeof(string));
+FieldInfo fieldId = typeof(People).GetField("Id");
+var idExp = Expression.Field(parameterExpression, fieldId);
+MethodInfo toString = typeof(int).GetMethod("ToString", new Type[0]);
+var toStringExp = Expression.Call(idExp, toString, Array.Empty&lt;Expression&gt;());
+var EqualExp = Expression.Equal(toStringExp, constantExpression10);
+//c.Id.ToString() == "10"&amp;&amp; c.Name.Equals("张三")&amp;&amp; c.Age &gt; 35
+var plus = Expression.AndAlso(EqualExp, NameExp);
+var exp = Expression.AndAlso(plus, cagExp);
+Expression&lt;Func&lt;People, bool&gt;&gt; predicate1 = Expression.Lambda&lt;Func&lt;People, bool&gt;&gt;(exp, new ParameterExpression[1]
+{
+     parameterExpression
+});
+Func&lt;People, bool&gt; func1 = predicate1.Compile();
+bool bResult1 = func1.Invoke(new People()
+{
+    Id = 10,
+    Name = "张三",
+    Age = 36
+});
+</code></pre>
+<h2><a id="ExpressionMapper_179"></a>三、Expression应用之Mapper映射</h2>
+<p>需求：需要把People字段值映射到PeopleCopy字段</p>
+<h3><a id="1_183"></a>1、硬编码</h3>
+<p>性能好，不灵活；不能共用</p>
+<pre><code class="prism language-C#">PeopleCopy peopleCopy0 = new PeopleCopy()
+{
+    Id = people.Id,
+    Name = people.Name,
+    Age = people.Age
+};
+</code></pre>
+<h3><a id="2_196"></a>2、反射</h3>
+<p>灵活，但是性能不好</p>
+<pre><code class="prism language-C#">using System;
+
+namespace MyExpression.MappingExtend
+{
+    public class ReflectionMapper
+    {
+        /// &lt;summary&gt;
+        /// 反射
+        /// &lt;/summary&gt;
+        /// &lt;typeparam name="TIn"&gt;&lt;/typeparam&gt;
+        /// &lt;typeparam name="TOut"&gt;&lt;/typeparam&gt;
+        /// &lt;param name="tIn"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public static TOut Trans&lt;TIn, TOut&gt;(TIn tIn)
+        {
+            TOut tOut = Activator.CreateInstance&lt;TOut&gt;();
+            foreach (var itemOut in tOut.GetType().GetProperties())
+            {
+                var propIn = tIn.GetType().GetProperty(itemOut.Name);
+                itemOut.SetValue(tOut, propIn.GetValue(tIn)); 
+            }
+
+            foreach (var itemOut in tOut.GetType().GetFields())
+            {
+                var fieldIn = tIn.GetType().GetField(itemOut.Name);
+                itemOut.SetValue(tOut, fieldIn.GetValue(tIn)); 
+            }
+            return tOut;
+        }
+    }
+}
+</code></pre>
+<p>调用</p>
+<pre><code class="prism language-C3">PeopleCopy peopleCopy1 = ReflectionMapper.Trans&lt;People, PeopleCopy&gt;(people);
+</code></pre>
+<h3><a id="3_240"></a>3、序列化</h3>
+<p>灵活，但是性能不好</p>
+<pre><code class="prism language-C#">using Newtonsoft.Json;
+
+namespace MyExpression.MappingExtend
+{
+    public class SerializeMapper
+    {
+        /// &lt;summary&gt;
+        /// 序列化
+        /// &lt;/summary&gt;
+        /// &lt;typeparam name="TIn"&gt;&lt;/typeparam&gt;
+        /// &lt;typeparam name="TOut"&gt;&lt;/typeparam&gt;
+        public static TOut Trans&lt;TIn, TOut&gt;(TIn tIn)
+        {
+            string strJson = JsonConvert.SerializeObject(tIn); 
+            return JsonConvert.DeserializeObject&lt;TOut&gt;(strJson);
+        }
+    }
+}
+</code></pre>
+<p>调用</p>
+<pre><code class="prism language-C#">PeopleCopy peopleCopy2 = SerializeMapper.Trans&lt;People, PeopleCopy&gt;(people);
+</code></pre>
+<h3><a id="4Expression_271"></a>4、Expression动态拼接+普通缓存</h3>
+<ul><li>把People变成PeopleCopy的过程封装在一个委托中，这个委托通过表达式目录树Compile出来，过程动态拼装适应不同的类型</li><li>第一次生成的时候，保存一个委托在缓存中，如果第二次来，委托就可以直接从缓存中获取到，直接运行委托，效率高</li></ul>
+<pre><code class="prism language-C#">using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
+
+namespace MyExpression.MappingExtend
+{    
+    public class ExpressionMapper
+    {
+        /// &lt;summary&gt;
+        /// 字典缓存，保存的是委托，委托内部是转换的动作
+        /// &lt;/summary&gt;
+        private static Dictionary&lt;string, object&gt; _Dic = new Dictionary&lt;string, object&gt;();
+
+        /// &lt;summary&gt;
+        /// Expression动态拼接+普通缓存
+        /// &lt;/summary&gt;
+        /// &lt;typeparam name="TIn"&gt;&lt;/typeparam&gt;
+        /// &lt;typeparam name="TOut"&gt;&lt;/typeparam&gt;
+        /// &lt;param name="tIn"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public static TOut Trans&lt;TIn, TOut&gt;(TIn tIn)
+        {
+            string key = $"funckey_{typeof(TIn).FullName}_{typeof(TOut).FullName}";
+            if (!_Dic.ContainsKey(key))
+            {
+                ParameterExpression parameterExpression = Expression.Parameter(typeof(TIn), "p");
+                List&lt;MemberBinding&gt; memberBindingList = new List&lt;MemberBinding&gt;();
+                foreach (var item in typeof(TOut).GetProperties())
+                {
+                    MemberExpression property = Expression.Property(parameterExpression, typeof(TIn).GetProperty(item.Name));
+                    MemberBinding memberBinding = Expression.Bind(item, property);
+                    memberBindingList.Add(memberBinding);
+                }
+                foreach (var item in typeof(TOut).GetFields())
+                {
+                    MemberExpression property = Expression.Field(parameterExpression, typeof(TIn).GetField(item.Name));
+                    MemberBinding memberBinding = Expression.Bind(item, property);
+                    memberBindingList.Add(memberBinding);
+                }
+                MemberInitExpression memberInitExpression = Expression.MemberInit(Expression.New(typeof(TOut)), memberBindingList.ToArray());
+                Expression&lt;Func&lt;TIn, TOut&gt;&gt; lambda = Expression.Lambda&lt;Func&lt;TIn, TOut&gt;&gt;(memberInitExpression, new ParameterExpression[]
+                {
+                    parameterExpression
+                });
+                Func&lt;TIn, TOut&gt; func = lambda.Compile();//拼装是一次性的
+                _Dic[key] = func;
+            }
+            return ((Func&lt;TIn, TOut&gt;)_Dic[key]).Invoke(tIn);
+        }
+    }
+}
+</code></pre>
+<p>调用</p>
+<pre><code class="prism language-C#">PeopleCopy peopleCopy3 = ExpressionMapper.Trans&lt;People, PeopleCopy&gt;(people);
+</code></pre>
+<h3><a id="5Expression_336"></a>5、Expression动态拼接+泛型缓存</h3>
+<p>泛型缓存，就是为为每一组类型的组合，生成一个副本，性能最高</p>
+<pre><code class="prism language-C#">using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
+
+namespace MyExpression.MappingExtend
+{
+    /// &lt;summary&gt;
+    /// Expression动态拼接+泛型缓存
+    /// &lt;/summary&gt;
+    /// &lt;typeparam name="TIn"&gt;&lt;/typeparam&gt;
+    /// &lt;typeparam name="TOut"&gt;&lt;/typeparam&gt;
+    public class ExpressionGenericMapper&lt;TIn, TOut&gt;//Mapper`2
+    {
+        private static Func&lt;TIn, TOut&gt; _FUNC = null;
+        static ExpressionGenericMapper()
+        {
+            ParameterExpression parameterExpression = Expression.Parameter(typeof(TIn), "p");
+            List&lt;MemberBinding&gt; memberBindingList = new List&lt;MemberBinding&gt;();
+            foreach (var item in typeof(TOut).GetProperties())
+            {
+                MemberExpression property = Expression.Property(parameterExpression, typeof(TIn).GetProperty(item.Name));
+                MemberBinding memberBinding = Expression.Bind(item, property);
+                memberBindingList.Add(memberBinding);
+            }
+            foreach (var item in typeof(TOut).GetFields())
+            {
+                MemberExpression property = Expression.Field(parameterExpression, typeof(TIn).GetField(item.Name));
+                MemberBinding memberBinding = Expression.Bind(item, property);
+                memberBindingList.Add(memberBinding);
+            }
+            MemberInitExpression memberInitExpression = Expression.MemberInit(Expression.New(typeof(TOut)), memberBindingList.ToArray());
+            Expression&lt;Func&lt;TIn, TOut&gt;&gt; lambda = Expression.Lambda&lt;Func&lt;TIn, TOut&gt;&gt;(memberInitExpression, new ParameterExpression[]
+            {
+                    parameterExpression
+            });
+            _FUNC = lambda.Compile();//拼装是一次性的
+        }
+        public static TOut Trans(TIn t)
+        {
+            return _FUNC(t);
+        }
+    }
+}
+</code></pre>
+<p>调用</p>
+<pre><code class="prism language-C#">PeopleCopy peopleCopy4 = ExpressionGenericMapper&lt;People, PeopleCopy&gt;.Trans(people);
+</code></pre>
+<h3><a id="6_392"></a>6、性能比较</h3>
+<p>Expression动态拼接+泛型缓存性能高，而且灵活</p>
+<pre><code class="prism language-C#">long common = 0;
+long generic = 0;
+long cache = 0;
+long reflection = 0;
+long serialize = 0;
+{
+    Stopwatch watch = new Stopwatch();
+    watch.Start();
+    for (int i = 0; i &lt; 1_000_000; i++)
+    {
+        PeopleCopy peopleCopy = new PeopleCopy()
+        {
+            Id = people.Id,
+            Name = people.Name,
+            Age = people.Age
+        };
+    }
+    watch.Stop();
+    common = watch.ElapsedMilliseconds;
+}
+{
+    Stopwatch watch = new Stopwatch();
+    watch.Start();
+    for (int i = 0; i &lt; 1_000_000; i++)
+    {
+        PeopleCopy peopleCopy = ReflectionMapper.Trans&lt;People, PeopleCopy&gt;(people);
+    }
+    watch.Stop();
+    reflection = watch.ElapsedMilliseconds;
+}
+{
+    Stopwatch watch = new Stopwatch();
+    watch.Start();
+    for (int i = 0; i &lt; 1_000_000; i++)
+    {
+        PeopleCopy peopleCopy = SerializeMapper.Trans&lt;People, PeopleCopy&gt;(people);
+    }
+    watch.Stop();
+    serialize = watch.ElapsedMilliseconds;
+}
+{
+
+    Stopwatch watch = new Stopwatch();
+    watch.Start();
+    for (int i = 0; i &lt; 1_000_000; i++)
+    {
+        PeopleCopy peopleCopy = ExpressionMapper.Trans&lt;People, PeopleCopy&gt;(people);
+    }
+    watch.Stop();
+    cache = watch.ElapsedMilliseconds;
+}
+{
+    Stopwatch watch = new Stopwatch();
+    watch.Start();
+    for (int i = 0; i &lt; 1_000_000; i++)
+    {
+        PeopleCopy peopleCopy = ExpressionGenericMapper&lt;People, PeopleCopy&gt;.Trans(people);
+    }
+    watch.Stop();
+    generic = watch.ElapsedMilliseconds;
+}
+
+Console.WriteLine($"common = { common} ms");
+Console.WriteLine($"reflection = { reflection} ms");
+Console.WriteLine($"serialize = { serialize} ms");
+Console.WriteLine($"cache = { cache} ms");
+Console.WriteLine($"generic = { generic} ms");
+</code></pre>
+<blockquote>
+<p>运行结果</p>
+</blockquote>
+<pre><code class="prism language-bash">common <span class="token operator">=</span> <span class="token number">32</span> ms
+reflection <span class="token operator">=</span> <span class="token number">1026</span> ms
+serialize <span class="token operator">=</span> <span class="token number">2510</span> ms
+cache <span class="token operator">=</span> <span class="token number">236</span> ms
+generic <span class="token operator">=</span> <span class="token number">31</span> ms
+</code></pre>
+<h2><a id="ExpressionVisitorExpression_476"></a>四、ExpressionVisitor解析Expression</h2>
+<h3><a id="1Expression_478"></a>1、Expression解析</h3>
+<ul><li>Expression是通过访问者模式进行解析的，官方提供了ExpressionVisitor抽象类</li><li>ExpressionVisitor的Visit方法是解析表达式目录树的一个入口，Visit方法判断Expression是一个什么表达式目录树，走不同的细分方法进行进一步解析</li><li>ExpressionVisitor的VisitBinary方法是对二员表达式的解析，所有复杂的表达式都会拆解成二员表达式进行解析</li></ul>
+<h3><a id="2Expression_484"></a>2、Expression修改</h3>
+<p>自定义一个OperationsVisitor，继承自ExpressionVisitor，复写父类的VisitBinary方法，修改Expression的解析</p>
+<blockquote>
+<p>OperationsVisitor定义</p>
+</blockquote>
+<pre><code class="prism language-C#">using System.Linq.Expressions;
+
+namespace MyExpression
+{
+    /// &lt;summary&gt;
+    /// 自定义Visitor
+    /// &lt;/summary&gt;
+    public class OperationsVisitor : ExpressionVisitor
+    {
+        /// &lt;summary&gt;
+        /// 覆写父类方法；//二元表达式的访问
+        /// 把表达式目录树中相加改成相减，相乘改成相除
+        /// &lt;/summary&gt;
+        /// &lt;param name="b"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        protected override Expression VisitBinary(BinaryExpression b)
+        { 
+            if (b.NodeType == ExpressionType.Add)//相加
+            {
+                Expression left = this.Visit(b.Left);
+                Expression right = this.Visit(b.Right);
+                return Expression.Subtract(left, right);//相减
+            }
+            else if (b.NodeType==ExpressionType.Multiply) //相乘
+            {
+                Expression left = this.Visit(b.Left);
+                Expression right = this.Visit(b.Right);
+                return Expression.Divide(left, right); //相除
+            } 
+            return base.VisitBinary(b);
+        }
+    }
+}
+</code></pre>
+<blockquote>
+<p>Expression解析转换</p>
+</blockquote>
+<pre><code>Expression&lt;Func&lt;int, int, int&gt;&gt; exp = (m, n) =&gt; m * n + 2;
+Console.WriteLine(exp.ToString());
+OperationsVisitor visitor = new OperationsVisitor();
+Expression expNew = visitor.Visit(exp);
+Console.WriteLine(expNew.ToString());
+</code></pre>
+<blockquote>
+<p>运行结果</p>
+</blockquote>
+<pre><code class="prism language-bash"><span class="token punctuation">(</span>m, n<span class="token punctuation">)</span> <span class="token operator">=</span><span class="token operator">&gt;</span> <span class="token punctuation">((</span>m * n<span class="token punctuation">)</span> + <span class="token number">2</span><span class="token punctuation">)</span>
+<span class="token punctuation">(</span>m, n<span class="token punctuation">)</span> <span class="token operator">=</span><span class="token operator">&gt;</span> <span class="token punctuation">((</span>m / n<span class="token punctuation">)</span> - <span class="token number">2</span><span class="token punctuation">)</span>
+</code></pre>
+<h3><a id="3_543"></a>3、封装多条件连接扩展方法</h3>
+<blockquote>
+<p>扩展方法实现</p>
+</blockquote>
+<pre><code class="prism language-C#">/// &lt;summary&gt;
+/// 合并表达式 And Or Not扩展方法
+/// &lt;/summary&gt;
+public static class ExpressionExtend
+{
+    /// &lt;summary&gt;
+    /// 合并表达式 expr1 AND expr2
+    /// &lt;/summary&gt;
+    /// &lt;typeparam name="T"&gt;&lt;/typeparam&gt;
+    /// &lt;param name="expr1"&gt;&lt;/param&gt;
+    /// &lt;param name="expr2"&gt;&lt;/param&gt;
+    /// &lt;returns&gt;&lt;/returns&gt;
+    public static Expression&lt;Func&lt;T, bool&gt;&gt; And&lt;T&gt;(this Expression&lt;Func&lt;T, bool&gt;&gt; expr1, Expression&lt;Func&lt;T, bool&gt;&gt; expr2)
+    {
+        if (expr1 == null || expr2 == null)
+        {
+            throw new Exception("null不能处理");
+        }
+        ParameterExpression newParameter = Expression.Parameter(typeof(T), "x");
+        NewExpressionVisitor visitor = new NewExpressionVisitor(newParameter);
+        Expression left = visitor.Visit(expr1.Body);
+        Expression right = visitor.Visit(expr2.Body);
+        BinaryExpression body = Expression.And(left, right);
+        return Expression.Lambda&lt;Func&lt;T, bool&gt;&gt;(body, newParameter);
+    }
+
+    /// &lt;summary&gt;
+    /// 合并表达式 expr1 or expr2
+    /// &lt;/summary&gt;
+    /// &lt;typeparam name="T"&gt;&lt;/typeparam&gt;
+    /// &lt;param name="expr1"&gt;&lt;/param&gt;
+    /// &lt;param name="expr2"&gt;&lt;/param&gt;
+    /// &lt;returns&gt;&lt;/returns&gt;
+    public static Expression&lt;Func&lt;T, bool&gt;&gt; Or&lt;T&gt;(this Expression&lt;Func&lt;T, bool&gt;&gt; expr1, Expression&lt;Func&lt;T, bool&gt;&gt; expr2)
+    {
+        if (expr1 == null || expr2 == null)
+        {
+            throw new Exception("null不能处理");
+        }
+        ParameterExpression newParameter = Expression.Parameter(typeof(T), "x");
+        NewExpressionVisitor visitor = new NewExpressionVisitor(newParameter);
+        Expression left = visitor.Visit(expr1.Body);
+        Expression right = visitor.Visit(expr2.Body);
+        BinaryExpression body = Expression.Or(left, right);
+        return Expression.Lambda&lt;Func&lt;T, bool&gt;&gt;(body, newParameter);
+    }
+
+    /// &lt;summary&gt;
+    /// 表达式取非
+    /// &lt;/summary&gt;
+    /// &lt;typeparam name="T"&gt;&lt;/typeparam&gt;
+    /// &lt;param name="expr"&gt;&lt;/param&gt;
+    /// &lt;returns&gt;&lt;/returns&gt;
+    public static Expression&lt;Func&lt;T, bool&gt;&gt; Not&lt;T&gt;(this Expression&lt;Func&lt;T, bool&gt;&gt; expr)
+    {
+        if (expr == null)
+        {
+            throw new Exception("null不能处理");
+        }
+        ParameterExpression newParameter = expr.Parameters[0];
+        UnaryExpression body = Expression.Not(expr.Body);
+        return Expression.Lambda&lt;Func&lt;T, bool&gt;&gt;(body, newParameter);
+    }
+}
+</code></pre>
+<blockquote>
+<p>自定义Visitor</p>
+</blockquote>
+<pre><code class="prism language-C#">internal class NewExpressionVisitor : ExpressionVisitor
+{
+    public ParameterExpression _NewParameter { get; private set; }
+    public NewExpressionVisitor(ParameterExpression param)
+    {
+        this._NewParameter = param;
+    }
+    
+    protected override Expression VisitParameter(ParameterExpression node)
+    {
+        return this._NewParameter;
+    }
+}
+</code></pre>
+<blockquote>
+<p>数据过滤方法定义</p>
+</blockquote>
+<pre><code class="prism language-C#">/// &lt;summary&gt;
+/// 筛选数据执行
+/// &lt;/summary&gt;
+/// &lt;param name="func"&gt;&lt;/param&gt;
+private static void Do(Expression&lt;Func&lt;People, bool&gt;&gt; func)
+{
+    List&lt;People&gt; people = new List&lt;People&gt;()
+    {
+        new People(){Id=4,Name="123",Age=4},
+        new People(){Id=5,Name="234",Age=5},
+        new People(){Id=6,Name="345",Age=6},
+    };
+
+    List&lt;People&gt; peopleList = people.Where(func.Compile()).ToList();
+}
+</code></pre>
+<blockquote>
+<p>Expression拼接</p>
+</blockquote>
+<pre><code class="prism language-c#">Expression&lt;Func&lt;People, bool&gt;&gt; lambda1 = x =&gt; x.Age &gt; 5;
+Expression&lt;Func&lt;People, bool&gt;&gt; lambda2 = x =&gt; x.Id &gt; 5;
+Expression&lt;Func&lt;People, bool&gt;&gt; lambda3 = lambda1.And(lambda2);//且
+Expression&lt;Func&lt;People, bool&gt;&gt; lambda4 = lambda1.Or(lambda2);//或
+Expression&lt;Func&lt;People, bool&gt;&gt; lambda5 = lambda1.Not();//非
+Do(lambda3);
+Do(lambda4);
+Do(lambda5);
+</code></pre>
+<h2><a id="ExpressionVisitorToSql_665"></a>五、ExpressionVisitor应用之ToSql</h2>
+<p>需求：实现ORM框架Expression映射成sql</p>
+<blockquote>
+<p>自定义一个ConditionBuilderVisitor</p>
+</blockquote>
+<p>继承自ExpressionVisitor，复写父类的方法，Expression解析过程中实现sql的拼接</p>
+<pre><code class="prism language-C#">using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
+using System.Reflection;
+
+namespace MyExpression
+{
+    public class ConditionBuilderVisitor : ExpressionVisitor
+    {
+        private Stack&lt;string&gt; _StringStack = new Stack&lt;string&gt;();
+
+        /// &lt;summary&gt;
+        /// 返回拼装好的sql条件表达式
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public string Condition()
+        {
+            string condition = string.Concat(this._StringStack.ToArray());
+            this._StringStack.Clear();
+            return condition;
+        }
+
+        /// &lt;summary&gt;
+        /// 如果是二元表达式
+        /// &lt;/summary&gt;
+        /// &lt;param name="node"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        protected override Expression VisitBinary(BinaryExpression node)
+        {
+            if (node == null) throw new ArgumentNullException("BinaryExpression");
+
+            this._StringStack.Push(")");
+            base.Visit(node.Right);//解析右边
+            this._StringStack.Push(" " + ToSqlOperator(node.NodeType) + " ");
+            base.Visit(node.Left);//解析左边
+            this._StringStack.Push("(");
+
+            return node;
+        }
+
+        /// &lt;summary&gt;
+        /// 解析属性
+        /// &lt;/summary&gt;
+        /// &lt;param name="node"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        protected override Expression VisitMember(MemberExpression node)
+        {
+            if (node == null) throw new ArgumentNullException("MemberExpression");
+            if (node.Expression is ConstantExpression)
+            {
+                var value1 = this.InvokeValue(node);
+                var value2 = this.ReflectionValue(node);
+                this._StringStack.Push("'" + value2 + "'");
+            }
+            else
+            {
+                this._StringStack.Push(" [" + node.Member.Name + "] ");
+            }
+            return node;
+        }
+
+        private string ToSqlOperator(ExpressionType type)
+        {
+            switch (type)
+            {
+                case (ExpressionType.AndAlso):
+                case (ExpressionType.And):
+                    return "AND";
+                case (ExpressionType.OrElse):
+                case (ExpressionType.Or):
+                    return "OR";
+                case (ExpressionType.Not):
+                    return "NOT";
+                case (ExpressionType.NotEqual):
+                    return "&lt;&gt;";
+                case ExpressionType.GreaterThan:
+                    return "&gt;";
+                case ExpressionType.GreaterThanOrEqual:
+                    return "&gt;=";
+                case ExpressionType.LessThan:
+                    return "&lt;";
+                case ExpressionType.LessThanOrEqual:
+                    return "&lt;=";
+                case (ExpressionType.Equal):
+                    return "=";
+                default:
+                    throw new Exception("不支持该方法");
+            }
+        }
+
+        private object InvokeValue(MemberExpression member)
+        {
+            var objExp = Expression.Convert(member, typeof(object));//struct需要
+            return Expression.Lambda&lt;Func&lt;object&gt;&gt;(objExp).Compile().Invoke();
+        }
+
+        private object ReflectionValue(MemberExpression member)
+        {
+            var obj = (member.Expression as ConstantExpression).Value;
+            return (member.Member as FieldInfo).GetValue(obj);
+        }
+
+        /// &lt;summary&gt;
+        /// 常量表达式
+        /// &lt;/summary&gt;
+        /// &lt;param name="node"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        protected override Expression VisitConstant(ConstantExpression node)
+        {
+            if (node == null) throw new ArgumentNullException("ConstantExpression");
+            this._StringStack.Push("" + node.Value + "");
+            return node;
+        }
+        /// &lt;summary&gt;
+        /// 方法表达式
+        /// &lt;/summary&gt;
+        /// &lt;param name="m"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        protected override Expression VisitMethodCall(MethodCallExpression m)
+        {
+            if (m == null) throw new ArgumentNullException("MethodCallExpression");
+
+            string format;
+            switch (m.Method.Name)
+            {
+                case "StartsWith":
+                    format = "({0} LIKE '{1}%')";
+                    break;
+                case "Contains":
+                    format = "({0} LIKE '%{1}%')";
+                    break;
+                case "EndsWith":
+                    format = "({0} LIKE '%{1}')";
+                    break;
+                default:
+                    throw new NotSupportedException(m.NodeType + " is not supported!");
+            }
+            this.Visit(m.Object);
+            this.Visit(m.Arguments[0]);
+            string right = this._StringStack.Pop();
+            string left = this._StringStack.Pop();
+            this._StringStack.Push(String.Format(format, left, right));
+            return m;
+        }
+    }
+}
+</code></pre>
+<blockquote>
+<p>ConstantSqlString泛型缓存缓存生成的sql</p>
+</blockquote>
+<pre><code class="prism language-C#">using System;
+using System.Linq;
+
+namespace MyExpression
+{
+    public class ConstantSqlString&lt;T&gt;
+    {
+        /// &lt;summary&gt;
+        /// 泛型缓存，一个类型一个缓存
+        /// &lt;/summary&gt;
+        private static string FindSql = null;
+
+        /// &lt;summary&gt;
+        /// 获取查询sql
+        /// &lt;/summary&gt;
+        static ConstantSqlString()
+        {
+            Type type = typeof(T);
+            FindSql = $"Select {string.Join(',', type.GetProperties().Select(c =&gt; $"[{c.Name}]").ToList())} from {type.Name}";
+        }
+
+        /// &lt;summary&gt;
+        /// 获取查询sql+条件筛选
+        /// &lt;/summary&gt;
+        /// &lt;param name="exp"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public static string GetQuerySql(string exp)
+        {
+            return $"{FindSql} where {exp}";
+        }
+    }
+}
+</code></pre>
+<blockquote>
+<p>普通多条件</p>
+</blockquote>
+<pre><code class="prism language-C#">Expression&lt;Func&lt;People, bool&gt;&gt; lambda = x =&gt; x.Age &gt; 5
+                                             &amp;&amp; x.Id &gt; 5
+                                             &amp;&amp; x.Name.StartsWith("1") //  like '1%'
+                                             &amp;&amp; x.Name.EndsWith("1") //  like '%1'
+                                             &amp;&amp; x.Name.Contains("1");//  like '%1%' 
+ConditionBuilderVisitor vistor = new ConditionBuilderVisitor();
+vistor.Visit(lambda);
+string sql = ConstantSqlString&lt;People&gt;.GetQuerySql(vistor.Condition());
+Console.WriteLine(sql);
+</code></pre>
+<blockquote>
+<p>外部参数变量</p>
+</blockquote>
+<pre><code class="prism language-C#">string name = "AAA";
+Expression&lt;Func&lt;People, bool&gt;&gt; lambda = x =&gt; x.Age &gt; 5 &amp;&amp; x.Name == name || x.Id &gt; 5;
+ConditionBuilderVisitor vistor = new ConditionBuilderVisitor();
+vistor.Visit(lambda);
+string sql = ConstantSqlString&lt;People&gt;.GetQuerySql(vistor.Condition());
+Console.WriteLine(sql);
+</code></pre>
+<blockquote>
+<p>内部常量多条件</p>
+</blockquote>
+<pre><code class="prism language-C#">Expression&lt;Func&lt;People, bool&gt;&gt; lambda = x =&gt; x.Age &gt; 5 || (x.Name == "A" &amp;&amp; x.Id &gt; 5);
+ConditionBuilderVisitor vistor = new ConditionBuilderVisitor();
+vistor.Visit(lambda);
+string sql = ConstantSqlString&lt;People&gt;.GetQuerySql(vistor.Condition());
+Console.WriteLine(sql);
+</code></pre>
+<blockquote>
+<p>运行结果</p>
+</blockquote>
+<pre><code class="prism language-bash">Select <span class="token punctuation">[</span>Age<span class="token punctuation">]</span>,<span class="token punctuation">[</span>Name<span class="token punctuation">]</span> from People where <span class="token variable"><span class="token punctuation">((</span><span class="token punctuation">((</span><span class="token punctuation">(</span> [Age]  <span class="token operator">&gt;</span> <span class="token number">5</span><span class="token punctuation">)</span> AND <span class="token punctuation">(</span> [Id]  <span class="token operator">&gt;</span> <span class="token number">5</span><span class="token punctuation">))</span></span> AND <span class="token punctuation">(</span> <span class="token punctuation">[</span>Name<span class="token punctuation">]</span>  LIKE <span class="token string">'1%'</span><span class="token punctuation">))</span> AND <span class="token punctuation">(</span> <span class="token punctuation">[</span>Name<span class="token punctuation">]</span>  LIKE <span class="token string">'%1'</span><span class="token punctuation">))</span> AND <span class="token punctuation">(</span> <span class="token punctuation">[</span>Name<span class="token punctuation">]</span>  LIKE <span class="token string">'%1%'</span><span class="token punctuation">))</span>
+Select <span class="token punctuation">[</span>Age<span class="token punctuation">]</span>,<span class="token punctuation">[</span>Name<span class="token punctuation">]</span> from People where <span class="token variable"><span class="token punctuation">((</span><span class="token punctuation">(</span> [Age]  <span class="token operator">&gt;</span> <span class="token number">5</span><span class="token punctuation">)</span> AND <span class="token punctuation">(</span> [Name]  <span class="token operator">=</span> 'AAA'<span class="token punctuation">))</span></span> OR <span class="token punctuation">(</span> <span class="token punctuation">[</span>Id<span class="token punctuation">]</span>  <span class="token operator">&gt;</span> <span class="token number">5</span><span class="token punctuation">))</span>
+Select <span class="token punctuation">[</span>Age<span class="token punctuation">]</span>,<span class="token punctuation">[</span>Name<span class="token punctuation">]</span> from People where <span class="token variable"><span class="token punctuation">((</span> [Age]  <span class="token operator">&gt;</span> <span class="token number">5</span><span class="token punctuation">)</span> OR <span class="token punctuation">((</span> [Name]  <span class="token operator">=</span> A<span class="token punctuation">)</span> AND <span class="token punctuation">(</span> [Id]  <span class="token operator">&gt;</span> <span class="token number">5</span><span class="token punctuation">))</span></span><span class="token punctuation">)</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

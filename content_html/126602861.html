@@ -1,0 +1,874 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p><img alt="在这里插入图片描述" src="image\ed8fa495324341a48d82376de1d1f150.png"/></p>
+<h3><a id="Docker_2"></a>Docker部署微服务</h3>
+<h4><a id="_4"></a>场景介绍</h4>
+<blockquote>
+<p>我们使用Docker完成一个微服务的搭建过程</p>
+</blockquote>
+<h5><a id="_8"></a>整体架构如下</h5>
+<p><img alt="file" src="image\35fa2308dbaa43c3bb95cecaca03aa91.png"/></p>
+<blockquote>
+<p>使用多个微服务进行项目部署测试</p>
+</blockquote>
+<h5><a id="_14"></a>整体服务说明</h5>
+<blockquote>
+<p>我们总共涉及到三个微服务以及两个中间件</p>
+</blockquote>
+<table><thead><tr><th>服务名称</th><th>描述</th></tr></thead><tbody><tr><td>mysql</td><td>数据库服务</td></tr><tr><td>nacos</td><td>注册中心</td></tr><tr><td>learn-docker-gateway</td><td>网关服务</td></tr><tr><td>learn-docker-web</td><td>API接口服务</td></tr><tr><td>learn-docker-storage</td><td>存储服务</td></tr></tbody></table>
+<h5><a id="_26"></a>配置文件提取</h5>
+<blockquote>
+<p>因为我们在开发中需要频繁修改<code>application.yml</code>文件我们将配置项配置到<code>pom</code>文件中打包时自动打到配置文件，这样可以用一个<code>pom</code>文件控制多个不同的服务的配置文件项的修改</p>
+</blockquote>
+<h6><a id="pom_30"></a>pom文件定义属性</h6>
+<blockquote>
+<p>我们需要在总<code>pom</code>文件定义全局配置，例如<code>nacos</code>、<code>mysql</code>等配置</p>
+</blockquote>
+<pre><code class="prism language-xml"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>properties</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>mysql.addr</span><span class="token punctuation">&gt;</span></span>192.168.64.153:3306<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>mysql.addr</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>nacos.addr</span><span class="token punctuation">&gt;</span></span>192.168.64.153:8848<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>nacos.addr</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>properties</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<h6><a id="_41"></a>配置编译选项</h6>
+<blockquote>
+<p>在子项目的pom文件的<code>build</code>构建配置中使用<code> &lt;filtering&gt;true&lt;/filtering&gt;</code>配置，这样就可以将我们的总pom中的配置编译进配置文件了</p>
+</blockquote>
+<pre><code class="prism language-xml"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>build</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>resources</span><span class="token punctuation">&gt;</span></span>
+        <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>resource</span><span class="token punctuation">&gt;</span></span>
+            <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>directory</span><span class="token punctuation">&gt;</span></span>src/main/java<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>directory</span><span class="token punctuation">&gt;</span></span>
+            <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>includes</span><span class="token punctuation">&gt;</span></span>
+                <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>include</span><span class="token punctuation">&gt;</span></span>**/*.xml<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>include</span><span class="token punctuation">&gt;</span></span>
+            <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>includes</span><span class="token punctuation">&gt;</span></span>
+        <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>resource</span><span class="token punctuation">&gt;</span></span>
+        <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>resource</span><span class="token punctuation">&gt;</span></span>
+            <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>directory</span><span class="token punctuation">&gt;</span></span>src/main/resources<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>directory</span><span class="token punctuation">&gt;</span></span>
+            <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>filtering</span><span class="token punctuation">&gt;</span></span>true<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>filtering</span><span class="token punctuation">&gt;</span></span>
+        <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>resource</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>resources</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>build</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<h6><a id="_62"></a>配置文件配置</h6>
+<blockquote>
+<p>在子项目的<code>application.yml</code>配置文件中注意使用<code>@xxx@</code>占位符来配置编译占位配置，下面的配置就是用了<code>@@</code>占位符编译后会将pom中的配置编译到配置文件中</p>
+</blockquote>
+<pre><code class="prism language-yaml"><span class="token key atrule">server</span><span class="token punctuation">:</span>
+  <span class="token key atrule">port</span><span class="token punctuation">:</span> @project.server.prot@
+<span class="token key atrule">spring</span><span class="token punctuation">:</span>
+  <span class="token key atrule">application</span><span class="token punctuation">:</span>
+    <span class="token key atrule">name</span><span class="token punctuation">:</span> learn<span class="token punctuation">-</span>docker<span class="token punctuation">-</span>storage
+    <span class="token comment">######################### 数据源连接池的配置信息  #################</span>
+  <span class="token key atrule">datasource</span><span class="token punctuation">:</span>
+    <span class="token key atrule">type</span><span class="token punctuation">:</span> com.alibaba.druid.pool.DruidDataSource
+    <span class="token key atrule">driverClassName</span><span class="token punctuation">:</span> com.mysql.jdbc.Driver
+    <span class="token key atrule">url</span><span class="token punctuation">:</span> jdbc<span class="token punctuation">:</span>mysql<span class="token punctuation">:</span>//@db.addr@/employees<span class="token punctuation">?</span>useUnicode=true<span class="token important">&amp;characterEncoding=UTF-8&amp;serverTimezone=UTC</span>
+    <span class="token key atrule">username</span><span class="token punctuation">:</span> root
+    <span class="token key atrule">password</span><span class="token punctuation">:</span> root
+    <span class="token key atrule">initialSize</span><span class="token punctuation">:</span> <span class="token number">10</span>
+    <span class="token key atrule">minIdle</span><span class="token punctuation">:</span> <span class="token number">20</span>
+    <span class="token key atrule">maxActive</span><span class="token punctuation">:</span> <span class="token number">100</span>
+    <span class="token key atrule">maxWait</span><span class="token punctuation">:</span> <span class="token number">60000</span>
+  <span class="token comment">#### nacos 配置#######</span>
+  <span class="token key atrule">cloud</span><span class="token punctuation">:</span>
+    <span class="token key atrule">nacos</span><span class="token punctuation">:</span>
+      <span class="token key atrule">server-addr</span><span class="token punctuation">:</span> @nacos.addr@
+<span class="token key atrule">mybatis</span><span class="token punctuation">:</span>
+  <span class="token key atrule">mapper-locations</span><span class="token punctuation">:</span> classpath<span class="token punctuation">:</span>mapper/<span class="token important">*.xml</span>
+  <span class="token key atrule">type-aliases-package</span><span class="token punctuation">:</span> com.heima.module.p
+</code></pre>
+<h6><a id="_92"></a>编译测试</h6>
+<blockquote>
+<p>配置完后编译项目后，可以进入target目录下查看编译后的配置文件</p>
+</blockquote>
+<p><img alt="file" src="image\178f44b34cca4a8b8490d95fa673b248.png"/></p>
+<blockquote>
+<p>我们看到maven已经帮我们将配置编译进了配置文件中了</p>
+</blockquote>
+<h4><a id="MySQL_100"></a>安装MySQL</h4>
+<h5><a id="MySQL_102"></a>MySQL简介</h5>
+<p>​ MySQL 是世界上最受欢迎的开源数据库。凭借其可靠性、易用性和性能，MySQL 已成为 Web 应用程序的数据库优先选择。</p>
+<h5><a id="MySQL_106"></a>查找MySQL镜像</h5>
+<blockquote>
+<p>我们可以使用 <strong>docker search 镜像名称</strong>，命令来搜索镜像</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> search mysql
+</code></pre>
+<p><img alt="file" src="image\a7ef0a8161fb40deb220c8f0ccbc8eb6.png"/></p>
+<h6><a id="_116"></a>参数解释</h6>
+<blockquote>
+<p>搜索出来的有这么多镜像，怎么选择呢</p>
+</blockquote>
+<ul><li> <p><strong>NAME:</strong> 镜像仓库源的名称</p> </li><li> <p><strong>DESCRIPTION:</strong> 镜像的描述</p> </li><li> <p><strong>OFFICIAL:</strong> 是否 docker 官方发布</p> </li><li> <p><strong>stars:</strong> 类似 Github 里面的 star，表示点赞、喜欢的意思。</p> </li><li> <p><strong>AUTOMATED:</strong> 自动构建。</p> </li></ul>
+<blockquote>
+<p>根据参数，我们一般选择 官方发布的，并且stars多的。</p>
+</blockquote>
+<h5><a id="_132"></a>下载镜像</h5>
+<blockquote>
+<p>可以使用<code>docker pull 镜像名称</code>来拉取镜像，我们选择了第一个Mysql的镜像，我们把它给拉取下来</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> pull mysql
+</code></pre>
+<p><img alt="file" src="image\728e505c6fdd4392b0e6cde109eea8e1.png"/></p>
+<h6><a id="_142"></a>注意事项</h6>
+<ul><li>如果不写版本号默认拉取最新的版本好<code>latest</code>。</li><li>拉取的时候是多个层一起拉取的，这样可用让其他镜像复用分层</li><li>如果拉取的镜像不写仓库地址默认就是<code>docker.io/library/</code></li></ul>
+<h5><a id="_148"></a>下载指定版本的镜像</h5>
+<blockquote>
+<p>我们上面下载的镜像不符合我们的预期，我们需要Mysql5.7的镜像</p>
+</blockquote>
+<h6><a id="_152"></a>查找指定镜像</h6>
+<blockquote>
+<p>可以登录 <a href="https://hub.docker.com/">https://hub.docker.com</a> 地址搜索镜像</p>
+</blockquote>
+<p><img alt="file" src="image\effe74463bca4783b75e515a03a236b2.png"/></p>
+<blockquote>
+<p>输入需要搜索的镜像名称，并选择对应镜像名称</p>
+</blockquote>
+<p><img alt="file" src="image\e7fd732d6ba445f9bb30bf1ce11d34f5.png"/></p>
+<blockquote>
+<p>选择<code>tag</code>标签，这个就是版本的信息</p>
+</blockquote>
+<p><img alt="file" src="image\e01eac25afba4458b0292d7989a6b233.png"/></p>
+<blockquote>
+<p>找到符合的版本 的mysql镜像，这里我们选择<code>5.7.33</code></p>
+</blockquote>
+<p><img alt="file" src="image\1f3044b64ba0493f960dc83385e1960d.png"/></p>
+<h6><a id="_170"></a>下载指定版本镜像</h6>
+<blockquote>
+<p>刚才我们已经找到了<code>5.7.33</code>版本的Mysql的镜像，我们使用<code>docker pull</code>命令下载，镜像后面跟的是tag也就是版本名称</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> pull mysql:5.7.34
+</code></pre>
+<p><img alt="file" src="image\806f861c87834c7c9a5f970940ba9dbe.png"/></p>
+<blockquote>
+<p>我们发现，我们的新拉取的mysql镜像共用了 部分分层</p>
+</blockquote>
+<h5><a id="_182"></a>查看镜像</h5>
+<blockquote>
+<p>安装完镜像后，我们需要看一下我们的本地镜像，使用<code>docker images</code> 可用查看本地镜像</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> images
+</code></pre>
+<p><img alt="file" src="image\76f812da6429453d882ef63b317f3d8e.png"/></p>
+<blockquote>
+<p>这里有两个镜像，一个是最新版本的一个是我们刚才下载的<code>5.7.33</code>版本的</p>
+</blockquote>
+<h5><a id="MySQL_194"></a>MySQL配置</h5>
+<h6><a id="MySQL_196"></a>配置MySQL忽略大小写</h6>
+<blockquote>
+<p>创建MySQL挂载目录，等会会解释什么是挂载路径</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 创建MySQL配置的文件夹</span>
+<span class="token function">mkdir</span> -p /tmp/etc/mysql
+<span class="token comment"># 编辑my.cnf配置文件</span>
+<span class="token function">vi</span> /tmp/etc/mysql/my.cnf
+</code></pre>
+<blockquote>
+<p>配置MySQL忽略大小写，在我们创建的MySQL配置文件挂载点的目录的my.cnf文件加入如下内容</p>
+</blockquote>
+<pre><code class="prism language-toml">[mysqld]
+lower_case_table_names=1
+</code></pre>
+<h6><a id="MySQL_214"></a>创建MySQL数据目录</h6>
+<blockquote>
+<p>因为默认MySQL启动后他的文件是在容器中的，如果我们删除容器，数据也将会消失，我们需要将数据挂载出来。</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment">#创建mysql存储的目录</span>
+<span class="token function">mkdir</span> -p /tmp/data/mysql
+</code></pre>
+<h5><a id="MySql_223"></a>启动MySql</h5>
+<blockquote>
+<p>使用<code>docker run</code>启动容器</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> run -d -p <span class="token number">3306</span>:3306 -v /tmp/etc/mysql:/etc/mysql/mysql.conf.d/ -v /tmp/data/mysql:/var/lib/mysql -e <span class="token assign-left variable">MYSQL_ROOT_PASSWORD</span><span class="token operator">=</span>root --name mysql mysql:5.7.34
+</code></pre>
+<p><img alt="file" src="image\7dc7095425e347fd931bb59d82542e87.png"/></p>
+<blockquote>
+<p>到这里MySQL已经后台运行了</p>
+</blockquote>
+<h6><a id="_235"></a>参数解释</h6>
+<ul><li>-d：是指容器后台运行，如果不加<code>-d</code>,当用户断开客户端时容器会结束运行</li><li>-p：将容器的3306端口映射到主机的3306端口，用来暴漏端口的</li><li>-v：这个命令是用来挂载目录的，将本地目录挂载到容器中，这样容器操作的就是本地目录</li><li>-e：这个命令是配置环境参数的，这里<code>MYSQL_ROOT_PASSWORD=root</code>指的是用root用户运行mysql，可以登录Docker容器通过<code>ENV</code>命令查看</li><li>–name：这个命令是配置Mysql的容器名称的，如果不配置，默认是随机生成的名字</li></ul>
+<h5><a id="MySQL_243"></a>检查MySQL运行状态</h5>
+<blockquote>
+<p>现在并不能确认MySQL的运行状态，我们需要去看下</p>
+</blockquote>
+<h6><a id="_247"></a>查看容器运行状态</h6>
+<blockquote>
+<p>使用<code>docker ps</code>可以看到运行中的容器</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> <span class="token function">ps</span>
+</code></pre>
+<blockquote>
+<p>执行命令后，我们看到mysql的服务已经起来了</p>
+</blockquote>
+<p><img alt="file" src="image\7d4e28f994e64ed4aea175320ebb0fff.png"/></p>
+<h6><a id="MySQL_259"></a>查看MySQL运行日志</h6>
+<blockquote>
+<p>现在MySQL容器起来了，并不代表MySQL已经成功启动，我们需要使用<code>docker logs</code>命令查看MySQL的日志</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> logs -f mysql
+</code></pre>
+<blockquote>
+<p>该命令可以查看容器日志<code>-f</code>是追踪打印日志，可以看到MySQL已经启动了</p>
+</blockquote>
+<p><img alt="file" src="image\45d3512e024d4863a1a33b7060f904c3.png"/></p>
+<h6><a id="MySQL_271"></a>客户端连接MySQL</h6>
+<blockquote>
+<p>因为我们已经暴漏端口了，可以使用客户端工具连接MySQL</p>
+</blockquote>
+<p><img alt="file" src="image\9603ecd3835345afa9e933371e118e4a.png"/></p>
+<blockquote>
+<p>检查配置的大小写参数是否生效</p>
+</blockquote>
+<pre><code class="prism language-sql"><span class="token keyword">SHOW</span> VARIABLES <span class="token operator">LIKE</span> <span class="token string">'%case_table%'</span><span class="token punctuation">;</span>
+</code></pre>
+<p><img alt="file" src="image\8c7118392a5d41909f31baf57d715cdd.png"/></p>
+<h6><a id="_285"></a>查看容器挂载的配置文件</h6>
+<blockquote>
+<p>可以通过<code>docker exec -ti mysql /bin/bash</code>命令登录容器，检查挂载的配置文件情况</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 登录容器</span>
+<span class="token function">docker</span> <span class="token builtin class-name">exec</span> -ti mysql /bin/bash
+</code></pre>
+<blockquote>
+<p>该命令含义是在mysql容器中以</p>
+</blockquote>
+<p><img alt="file" src="image\e8e8a86044a84cc5aa30e06e6da01a59.png"/></p>
+<blockquote>
+<p>我们可以看到我们修改的配置文件已经被挂载到了docker内部，这里面用到了exec命令，主要是在deocker容器中运行命令，下面我们介绍下</p>
+</blockquote>
+<p><strong>命令格式</strong></p>
+<blockquote>
+<p>主要是在deocker容器中运行命令</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> <span class="token builtin class-name">exec</span> <span class="token punctuation">[</span>options<span class="token punctuation">]</span> container <span class="token builtin class-name">command</span> <span class="token punctuation">[</span>arg<span class="token punctuation">..</span>.<span class="token punctuation">]</span>
+</code></pre>
+<p><strong>命令参数</strong></p>
+<table><thead><tr><th>名称</th><th>简写</th><th>描述</th></tr></thead><tbody><tr><td>–detach</td><td>-d</td><td>后台运行模式，在后台执行命令相关命令</td></tr><tr><td>–detach-keys</td><td></td><td>覆盖容器后台运行的一些参数信息</td></tr><tr><td>–env</td><td>-e</td><td>设置环境变量</td></tr><tr><td>–interactive</td><td>-i</td><td>展示容器输入信息STDIN</td></tr><tr><td>–privileged</td><td></td><td>为命令提供一些扩展权限</td></tr><tr><td>–tty</td><td>-t</td><td>命令行交互模式</td></tr><tr><td>–user</td><td>-u</td><td>设置用户名(format: &lt;name|uid&gt;[:&lt;group|gid&gt;])</td></tr><tr><td>–workdir</td><td>-w</td><td>指定容器内的目录</td></tr></tbody></table>
+<h6><a id="_321"></a>查看挂载的数据文件</h6>
+<blockquote>
+<p>可以看下挂载的数据文件是否存在</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token builtin class-name">cd</span> /tmp/data/mysql/ <span class="token operator">&amp;&amp;</span> ll
+</code></pre>
+<p><img alt="file" src="image\706ec048da6340e190969d3bafc46d95.png"/></p>
+<blockquote>
+<p>我们看到数据文件已经写入了</p>
+</blockquote>
+<h4><a id="MySQL_333"></a>MySQL准备数据</h4>
+<blockquote>
+<p>MySql需要导入一些数据用来操作，我们用MySQL官方提供的数据库来操作</p>
+</blockquote>
+<h5><a id="_337"></a>下载并导入数据</h5>
+<h6><a id="MySQL_339"></a>下载MySQL测试数据库</h6>
+<blockquote>
+<p>到<a href="https://launchpad.net/test-db/+download">测试数据官网</a> 下载数据库文件</p>
+</blockquote>
+<p><img alt="file" src="image\6ca7109f4ae2438db485eb6f9585e1a5.png"/></p>
+<blockquote>
+<p>直接导入无法导入，需要编辑<code>employees.sql</code>文件的一些地方</p>
+</blockquote>
+<ol><li> <p><code>set storage_engine = InnoDB;</code>修改为: <code>set default_storage_engine = InnoDB;</code></p> </li><li> <p><code>select CONCAT('storage engine: ', @@storage_engine) as INFO;</code>修改为：<code>select CONCAT('storage engine: ', @@default_storage_engine) as INFO;</code></p> </li></ol>
+<pre><code class="prism language-sql">  <span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+  <span class="token keyword">set</span> default_storage_engine  <span class="token operator">=</span> <span class="token keyword">InnoDB</span><span class="token punctuation">;</span>
+<span class="token comment">-- set storage_engine = MyISAM;</span>
+<span class="token comment">-- set storage_engine = Falcon;</span>
+<span class="token comment">-- set storage_engine = PBXT;</span>
+<span class="token comment">-- set storage_engine = Maria;</span>
+
+<span class="token keyword">select</span> CONCAT<span class="token punctuation">(</span><span class="token string">'storage engine: '</span><span class="token punctuation">,</span>@<span class="token variable">@default_storage_engine</span><span class="token punctuation">)</span> <span class="token keyword">as</span> INFO<span class="token punctuation">;</span>
+<span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+</code></pre>
+<h6><a id="_363"></a>导入测试数据</h6>
+<blockquote>
+<p>下载解压后，在本地执行命令导入到mysql服务器</p>
+</blockquote>
+<pre><code class="prism language-shell">mysql -uroot -h192.168.64.152 -p <span class="token operator">&lt;</span> employees.sql
+</code></pre>
+<p><img alt="file" src="image\e6632a65348c445a8cb376d81bf46a7a.png"/></p>
+<h6><a id="_373"></a>客户端检查数据</h6>
+<blockquote>
+<p>在登陆客户端就能看到数据库以及表了</p>
+</blockquote>
+<p><img alt="file" src="image\82968c7c42bc4be1bd756da9d348396f.png"/></p>
+<h4><a id="nacos_379"></a>安装部署nacos</h4>
+<p>​ Nacos是阿里巴巴开源的一款支持服务注册与发现，配置管理以及微服务管理的组件。用来取代以前常用的注册中心（zookeeper , eureka等等），以及配置中心（spring cloud config等等）。Nacos是集成了注册中心和配置中心的功能，做到了二合一。</p>
+<h5><a id="_383"></a>直接运行服务</h5>
+<blockquote>
+<p>可以直接用docker 启动服务，镜像不存在会自动拉取</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> run -d -p <span class="token number">8848</span>:8848 --name nacos --env <span class="token assign-left variable">MODE</span><span class="token operator">=</span>standalone nacos/nacos-server
+</code></pre>
+<p><img alt="file" src="image\7d883e2a46d74d718cfbcf8fb5dc59c2.png"/></p>
+<blockquote>
+<p>运行容器后可以稍等下，等待nacos启动成功，受环境限制启动可能有些慢</p>
+</blockquote>
+<h5><a id="_395"></a>登录页面测试</h5>
+<blockquote>
+<p>可以登录服务器测试以下</p>
+<p>用户名：nacos 密码：nacos</p>
+</blockquote>
+<p><img alt="file" src="image\298179cf9cd747d58b868fa8fd6fc105.png"/></p>
+<h4><a id="_403"></a>微服务打包镜像</h4>
+<blockquote>
+<p>我们准备将一个微服务打包成Docker镜像，在各种服务器中进行运行，改为服务支持进行查询用户信息</p>
+</blockquote>
+<h5><a id="_407"></a>提前说明</h5>
+<blockquote>
+<p>因为我们刚开始进行学习Docker，先从单个微服务开始学习，我们就先部署<code>learn-docker-storage</code>服务，后面随着课程的深入在慢慢增加其他的微服务</p>
+</blockquote>
+<p><img alt="file" src="image\fb5d151918f448529e87bf6bda549548.png"/></p>
+<h6><a id="_413"></a>访问测试</h6>
+<blockquote>
+<p>在idea中运行<code>learn-docker-storage</code>，</p>
+</blockquote>
+<p><img alt="file" src="image\a1031bd478864c1881b775c284223cde.png"/></p>
+<blockquote>
+<p>我们配置的端口是8003，我们可以直接访问<code>http://localhost:8003/storage/employe/findByID/10001</code></p>
+</blockquote>
+<p><img alt="file" src="image\07bd9852a8c647659c88c237a52afd5f.png"/></p>
+<h5><a id="_423"></a>打包上传微服务</h5>
+<blockquote>
+<p>将<code>learn-docker-storage</code>服务打包后上传到服务器</p>
+</blockquote>
+<h6><a id="_427"></a>注意配置项</h6>
+<blockquote>
+<p>这里需要检查下maven配置的编译属性是否正确</p>
+</blockquote>
+<pre><code class="prism language-xml"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>mysql.addr</span><span class="token punctuation">&gt;</span></span>192.168.64.153:3306<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>mysql.addr</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>nacos.addr</span><span class="token punctuation">&gt;</span></span>192.168.64.153:8848<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>nacos.addr</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<blockquote>
+<p>我们发现是我们容器中启动的地址</p>
+</blockquote>
+<h6><a id="_438"></a>上传打包后的微服务</h6>
+<blockquote>
+<p>将target目录中打包完成的微服务上传到服务器</p>
+</blockquote>
+<p><img alt="file" src="image\0a16391896be47c39ba2a4cfccf93f62.png"/></p>
+<h5><a id="DockerFile_444"></a>创建DockerFile</h5>
+<blockquote>
+<p>Dockerfile 是一个用来构建镜像的文本文件，文本内容包含了一条条构建镜像所需的指令和说明。</p>
+<p>创建一个Dockerfile文件</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">vi</span> Dockerfile
+</code></pre>
+<blockquote>
+<p>具体内容如下</p>
+</blockquote>
+<pre><code class="prism language-dockerfile">FROM openjdk:8-jdk-alpine
+VOLUME /tmp
+ADD learn-docker-storage-1.0-SNAPSHOT.jar app.jar
+EXPOSE  8003
+ENTRYPOINT ["java","-Djava.security.egd=file:/dev/./urandom","-jar","/app.jar"]
+</code></pre>
+<h6><a id="_464"></a>命令解释</h6>
+<ul><li> <p>FORM：定制的镜像都是基于 FROM 的镜像，这里的 openjdk 就是定制需要的基础镜像，后续操作都是基于openjdk</p> </li><li> <p>VOLUME：挂载一个数据卷，这里因为没有名称，所以是一个默认的数据卷（后面详细解释）</p> </li><li> <p>ADD：添加一层镜像到当前镜像，这里就是添加SpringBootTest镜像到当前层，并改名app.jar</p> </li><li> <p>EXPOSE：暴漏端口，因为我们的自己的端口是8080，所以我们暴漏8080</p> </li><li> <p>ENTRYPOINT：设定容器启动时第一个运行的命令及其参数，这里就是容器以启动就执行 java -jar /app.jar</p> </li></ul>
+<h5><a id="_473"></a>打包镜像</h5>
+<blockquote>
+<p>写好DockerFile后就需要用<code>docker build</code>命令来构建我们的镜像了，这样就可以将我们的微服务打包成一个镜像了</p>
+</blockquote>
+<h6><a id="_477"></a>构建命令格式</h6>
+<blockquote>
+<p>构建一个镜像需要使用以下命令</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> bulid -t 仓库名/镜像名:tag <span class="token builtin class-name">.</span>
+</code></pre>
+<blockquote>
+<p>参数解释</p>
+</blockquote>
+<ul><li><strong>-t</strong>： 镜像的名字及标签，一般命名规则是 仓库名/镜像名:tag， 
+  <ul><li>仓库名：一般是私服或者dockerhub等地址，如果忽略默认就是dockerhub的地址<code>docker.io.library/</code></li><li>镜像名称：就是我们的自己的服务名称，可以随意命名</li><li>tag：就是我们的版本号</li></ul> </li><li><strong>.</strong>：这个 <code>.</code> 表示当前目录，这实际上是在指定上下文的目录是当前目录，<code>docker build</code> 命令会将该目录下的内容打包交给 Docker 引擎以帮助构建镜像。</li></ul>
+<h6><a id="_493"></a>实战操作</h6>
+<p>​ 一般来说，应该会将 <code>Dockerfile</code> 置于一个空目录下，或者项目根目录下，如果该目录下没有所需文件，那么应该把所需文件复制一份过来。</p>
+<p>​ 一般大家习惯性的会使用默认的文件名 <code>Dockerfile</code>，以及会将其置于镜像构建上下文目录中。</p>
+<blockquote>
+<p>当前目录的结构如下</p>
+</blockquote>
+<p><img alt="file" src="image\2f80a6e710f54ee3b850a3512f44c213.png"/></p>
+<h6><a id="_503"></a>构建镜像</h6>
+<blockquote>
+<p>进入Dockerfile的目录，通过如下命令构建镜像</p>
+</blockquote>
+<pre><code class="prism language-shell"> <span class="token function">docker</span> build -t learn-docker-storage:0.0.1 <span class="token builtin class-name">.</span>
+</code></pre>
+<blockquote>
+<p>构建完成如果出现<code>Successfully</code>说明已经构建成功了，</p>
+</blockquote>
+<p><img alt="file" src="image\a7a7db7fb4b24692b9d7225e8e818cc3.png"/></p>
+<h6><a id="_515"></a>查看我们构建的镜像</h6>
+<blockquote>
+<p>使用<code>docker images</code>命令查看我们构建完成的镜像</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> images
+</code></pre>
+<blockquote>
+<p>我们可以看到我们的镜像就在第一个位置</p>
+</blockquote>
+<p><img alt="file" src="image\0b957e80cb154820b1bdf427bdb80b75.png"/></p>
+<h5><a id="_527"></a>运行镜像</h5>
+<blockquote>
+<p>刚才已经打包完成了镜像，现在我们运行我们自己的镜像</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 运行容器</span>
+<span class="token function">docker</span> run -d -p <span class="token number">8003</span>:8003 learn-docker-storage:0.0.1
+<span class="token comment"># 查看运行中的容器</span>
+<span class="token function">docker</span> <span class="token function">ps</span>
+</code></pre>
+<p><img alt="file" src="image\3d4e53ddf4624a4bb38df90d4f2cc962.png"/></p>
+<blockquote>
+<p>参数最后的<code>learn-docker-storage:0.0.1</code>是镜像的名称，如果启动容器可以使用镜像名称或者镜像ID</p>
+</blockquote>
+<h6><a id="_542"></a>参数解释</h6>
+<ul><li> <p>-d：后台运行</p> </li><li> <p>-p：映射端口，将宿主机的8080端口映射到docker内部的8080端口上</p> </li></ul>
+<h6><a id="_548"></a>查看启动日志</h6>
+<blockquote>
+<p>使用<code>docker logs 容器ID</code>来查看启动日志</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> logs -f 74c239792266
+</code></pre>
+<p><img alt="file" src="image\86c9b5e516cb454796e6ae21e5b724f1.png"/></p>
+<h6><a id="_558"></a>尝试访问服务</h6>
+<blockquote>
+<p>通过<code>curl</code> 命令来访问服务</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">curl</span> http://192.168.64.153:8003/storage/employe/findByID/10001 <span class="token operator">|</span> python -m json.tool
+</code></pre>
+<p><img alt="file" src="image\852048a12dac4f6584ee1c156a155381.png"/></p>
+<blockquote>
+<p>我们发现服务调用成功了，我们基本实现了微服务改造为docker方式并运行</p>
+</blockquote>
+<h5><a id="_570"></a>删除容器</h5>
+<blockquote>
+<p>要删除一个容器首先需要将一个容器停止掉</p>
+</blockquote>
+<h6><a id="_574"></a>停止容器</h6>
+<blockquote>
+<p>我们要把刚才运行的容器停止掉，使用<code>docker stop 容器ID</code> 停止一个容器</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> stop 3752f7088a04
+</code></pre>
+<p><img alt="file" src="image\f526075aa1a844f3ba685f4cd31eab16.png"/></p>
+<blockquote>
+<p>停止容器后，我们在通过进程查看是看不到容器的，但是容器还是存在我们的服务中的</p>
+</blockquote>
+<h6><a id="_586"></a>查看全部容器</h6>
+<blockquote>
+<p>通过<code>docker ps</code> 只能看到运行中的容器，但是我们停止的容器是看不到的，可以加上<code>-a</code> 查看所有的容器</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> <span class="token function">ps</span> -a
+</code></pre>
+<p><img alt="file" src="image\bb3da3f3ae434d6ca5d1dc34994af4bb.png"/></p>
+<blockquote>
+<p>我们可以看到 加上<code>-a</code>参数可以看到刚才已经停止掉的容器</p>
+</blockquote>
+<h6><a id="_598"></a>启动停止的容器</h6>
+<blockquote>
+<p>想要启动一个停止的容器可以使用<code>docker start 容器ID</code></p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> start 3752f7088a04
+</code></pre>
+<p><img alt="file" src="image\7f50e81a61514b2e94d19c0b5f5d42b0.png"/></p>
+<blockquote>
+<p>这样就把刚才已经停止的容器启动了</p>
+</blockquote>
+<h6><a id="_610"></a>删除容器</h6>
+<blockquote>
+<p>已经停止的容器可以使用<code>docker rm 容器ID</code>删除容器，但是对于运行中的容器可以加上<code>-f</code>参数强制删除</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> <span class="token function">rm</span> -f 3752f7088a04
+</code></pre>
+<p><img alt="file" src="image\06f51160356b442f9504889790c8daf0.png"/></p>
+<blockquote>
+<p>这样可以将一个运行的容器强制删除，如果停止的容器可以通过通过<code>docker rm </code>删除</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> <span class="token function">rm</span> 3752f7088a04
+</code></pre>
+<blockquote>
+<p>这个时候就把容器给删除掉了</p>
+</blockquote>
+<h4><a id="_628"></a>日志挂载优化</h4>
+<h5><a id="_630"></a>存储卷优化</h5>
+<h6><a id="_632"></a>什么是存储卷</h6>
+<blockquote>
+<p>“卷”是容器上的一个或多个“目录”，此类目录<strong>可绕过联合文件系统</strong>，<strong>与宿主机上的某个目录“绑定（关联）”；</strong></p>
+</blockquote>
+<p><img alt="file" src="image\092377ec9e8c4313b570727e57da1f1a.png"/></p>
+<p>​ 在Docker中，要想实现数据的持久化（所谓Docker的数据持久化即<strong>数据不随着Container的结束而结束</strong>），需要将数据从宿主机挂载到容器中。</p>
+<p>​ Docker管理宿主机文件系统的一部分，默认位于 /var/lib/docker/volumes 目录中；（<strong>最常用的方式</strong>）</p>
+<h6><a id="_642"></a>存储卷优化写入速度</h6>
+<blockquote>
+<p>Docker镜像由<strong>多个只读层叠加而成</strong>，启动容器时，docker会<strong>加载只读镜像层并在镜像栈顶部加一个读写层；</strong></p>
+</blockquote>
+<p><img alt="file" src="image\12a8406b40d044938bbe3b0ab441173d.png"/></p>
+<p>​ 如果运行中的容器修改了现有的一个已经存在的文件，那该文件将会从读写层下面的只读层复制到读写层，该文件版本仍然存在，只是已经被读写层中该文件的副本所隐藏，此即“<strong>写时复制(COW)”机制</strong>。</p>
+<p><img alt="file" src="image\a74cd48c88a44aedac63812d776f8f06.png"/></p>
+<p>为了避免这种情况，构建Dockerfile的时候应该加入一个存储卷</p>
+<h5><a id="Dockerfile_654"></a>Dockerfile增加存储卷</h5>
+<h6><a id="_656"></a>增加存储卷</h6>
+<blockquote>
+<p>编写Dockerfile增加存储卷，增加日志存储卷<code>/logs</code>，这会是一个匿名存储卷</p>
+</blockquote>
+<pre><code class="prism language-dockerfile">FROM openjdk:8-jdk-alpine
+VOLUME /tmp /logs
+ADD learn-docker-storage-1.0-SNAPSHOT.jar app.jar
+EXPOSE  8003
+ENTRYPOINT ["java","-Djava.security.egd=file:/dev/./urandom","-jar","/app.jar"]
+</code></pre>
+<h6><a id="_668"></a>构建镜像</h6>
+<blockquote>
+<p>因为我们原来已经构建了镜像，这次使用版本号是 <code>0.0.2</code></p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment">#构建镜像</span>
+<span class="token function">docker</span> build -t learn-docker-storage:0.0.2 <span class="token builtin class-name">.</span>
+<span class="token comment"># 查看镜像列表</span>
+<span class="token function">docker</span> images
+</code></pre>
+<p><img alt="file" src="image\d72c1ff9a732443bbe8d675bbfdee58c.png"/></p>
+<h6><a id="_681"></a>运行容器</h6>
+<blockquote>
+<p>通过run命令运行容器</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 运行容器</span>
+<span class="token function">docker</span> run -d -p <span class="token number">8003</span>:8003 learn-docker-storage:0.0.2
+<span class="token comment"># 查看运行中的容器</span>
+<span class="token function">docker</span> <span class="token function">ps</span>
+</code></pre>
+<p><img alt="file" src="image\85bfad756fe144e79d1627e46ffcb3d6.png"/></p>
+<h6><a id="_694"></a>查看存储卷</h6>
+<blockquote>
+<p>通过<code>docker volume ls</code>可以看到存储卷</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> volume <span class="token function">ls</span>
+</code></pre>
+<p><img alt="file" src="image\2357d898815d4971aa1ce288e04fd02a.png"/></p>
+<h6><a id="_704"></a>查看容器信息</h6>
+<blockquote>
+<p>我们发现都是匿名的存储卷，如何来确定都是那个呢，可以通过<code>docker inspect 容器ID</code>来查看存储新鲜</p>
+</blockquote>
+<pre><code class="prism language-shell"> <span class="token function">docker</span> inspect 2041965c3e87<span class="token operator">|</span><span class="token function">grep</span> Mounts -A20
+</code></pre>
+<p><img alt="file" src="image\201c0181df244946a7ab39182700977c.png"/></p>
+<blockquote>
+<p>通过这个命令可以看到数据卷的名称以及宿主机的存储路径，我们可以直接到宿主机打印日志</p>
+</blockquote>
+<pre><code class="prism language-shell"> <span class="token comment"># 进入文件挂载目录</span>
+<span class="token builtin class-name">cd</span> /var/lib/docker/volumes/d35de1b7e4631908b05635db4c1f114ab3aafbdf25a9843c068696e66a779c75/_data
+<span class="token comment"># 输出日志</span>
+<span class="token function">tail</span> -f learn-docker-storage.log
+</code></pre>
+<p><img alt="file" src="image\644a62fd17d24ef2b37c31bff0387eb0.png"/></p>
+<blockquote>
+<p>这样就看到了我们的日志文件</p>
+</blockquote>
+<h6><a id="_727"></a>验证存储卷</h6>
+<blockquote>
+<p>删除容器检查存储卷释放消失</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 查看运行的容器列表</span>
+<span class="token function">docker</span> <span class="token function">ps</span>
+<span class="token comment">#删除容器</span>
+<span class="token function">docker</span> <span class="token function">rm</span> -f 2041965c3e87
+<span class="token comment">#查看所有的容器列表(运行+停止)</span>
+<span class="token function">docker</span> <span class="token function">ps</span> -a
+</code></pre>
+<p><img alt="file" src="image\b783d01920d340e5a98acd4808299dc9.png"/></p>
+<blockquote>
+<p>我们看到容器已经被删除了，检查我们的存储卷</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> volume <span class="token function">ls</span>
+</code></pre>
+<p><img alt="file" src="image\ac399652ac794bd29d954385a556b746.png"/></p>
+<blockquote>
+<p>发现存储卷还存在，数据还是存在的，并且数据也存在</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 查看存储卷列表</span>
+<span class="token function">docker</span> volume <span class="token function">ls</span>
+<span class="token comment"># 查看存储卷详情</span>
+<span class="token function">docker</span> inspect 296ccc64d919e86bb8329bf6b08447c2ea6a118458d3fcb86d5c7c9a3177dfe0
+</code></pre>
+<p><img alt="file" src="image\ba76ccce21204a078b4c8b259941cb5e.png"/></p>
+<blockquote>
+<p>重新运行镜像启动一个新的容器</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 运行容器</span>
+<span class="token function">docker</span> run -d -p <span class="token number">8080</span>:8080 e1222496c69f
+<span class="token comment"># 查看运行中的容器</span>
+<span class="token function">docker</span> <span class="token function">ps</span>
+</code></pre>
+<p><img alt="file" src="image\debd0296e28848088c98ee279c195a6d.png"/></p>
+<blockquote>
+<p>启动容器后查看存储卷列表</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 查看存储卷列表</span>
+<span class="token function">docker</span> volume <span class="token function">ls</span>
+</code></pre>
+<p><img alt="file" src="image\a4039ca9c4a340b8a36a927fc911646d.png"/></p>
+<blockquote>
+<p>我们发现有创建了两个存储卷，查看容器详情</p>
+</blockquote>
+<pre><code class="prism language-shell"> <span class="token function">docker</span> inspect 2041965c3e87<span class="token operator">|</span><span class="token function">grep</span> Mounts -A20
+</code></pre>
+<p><img alt="file" src="image\d9c25c1cbe2e417ba7785d0681de3dd0.png"/></p>
+<blockquote>
+<p>我们发现新启动的容器新开了一个匿名存储卷</p>
+</blockquote>
+<h5><a id="bind_791"></a>bind挂载共享存储</h5>
+<h6><a id="bind_793"></a>什么是bind</h6>
+<p>​ Bind mounts模式和Volumes非常相似，不同点在于Bind mounts模式是将宿主机上的任意文件或文件夹挂载到容器，而Volumes本质上是将Docker服务管理的一块区域（默认是/var/lib/docker/volumes下的文件夹）挂载到容器。</p>
+<h6><a id="_797"></a>共享存储</h6>
+<blockquote>
+<p>经过上面的测试，我们发现每一个容器都是单独用一个存储卷，用于临时文件没有问题的，但是如果要让容器都用同一个存储路径怎么办呢，这个时候就用到了 bind挂载了，可以使用<code>-v</code>进行挂载挂载刚才的存储卷。</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 级联创建文件夹</span>
+<span class="token function">mkdir</span> -p /tmp/data/logs
+<span class="token comment"># 运行容器，指定挂载路径 </span>
+<span class="token function">docker</span> run -d -v /tmp/data/logs:/logs <span class="token punctuation">\</span>
+-p <span class="token number">8003</span>:8003 --name learn-docker-storage <span class="token punctuation">\</span>
+learn-docker-storage:0.0.2
+</code></pre>
+<blockquote>
+<p>这里面<code>--name</code>是指定docker容器的名称，我们操作容器就可以使用名称进行操作了</p>
+</blockquote>
+<p><img alt="file" src="image\07f1fc72f23e4ecd9b6a61ccec999774.png"/></p>
+<blockquote>
+<p>然后使用<code>docker inspect</code>命令来检查容器详情</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> inspect learn-docker-storage<span class="token operator">|</span><span class="token function">grep</span> Mounts -A20
+</code></pre>
+<p><img alt="file" src="image\8fa59b2ce7ce44568de20fbc17e968ce.png"/></p>
+<blockquote>
+<p>我们发现挂载日志的挂载方式已经变了，由原来的volume变为了bind,并且挂载路径变为了我们自己定义的路径，进入目录查看</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 进入目录并浏览目录文件</span>
+<span class="token builtin class-name">cd</span> /tmp/data/logs/<span class="token operator">&amp;&amp;</span>ll
+<span class="token comment"># 打印日志详情</span>
+<span class="token function">tail</span> -f learn-docker-storage.log
+</code></pre>
+<p><img alt="file" src="image\6a1b9c5254554c67a963c49265a094a9.png"/></p>
+<h6><a id="_833"></a>验证共享存储</h6>
+<blockquote>
+<p>我们也按照上面步骤验证下bind方式挂载的存储，先删除容器,检查日志文件是否存在</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 停止并删除容器</span>
+<span class="token function">docker</span> <span class="token function">rm</span> -f learn-docker-storage
+<span class="token comment"># 查看容器已经被删除了</span>
+<span class="token function">docker</span> <span class="token function">ps</span> -a
+<span class="token comment"># 进入日志挂载路径查看日志是否村咋</span>
+<span class="token builtin class-name">cd</span> /tmp/data/logs/<span class="token operator">&amp;&amp;</span>ll
+</code></pre>
+<blockquote>
+<p>我们发现容器被删除但是日志文件还存在本地</p>
+</blockquote>
+<p><img alt="file" src="image\481ee251d58e4386954c334c8cb53747.png"/></p>
+<blockquote>
+<p>启动一个新的容器</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 运行容器，指定挂载路径 </span>
+<span class="token function">docker</span> run -d -v /tmp/data/logs:/logs <span class="token punctuation">\</span>
+-p <span class="token number">8003</span>:8003 --name learn-docker-storage <span class="token punctuation">\</span>
+learn-docker-storage:0.0.2
+<span class="token comment"># 查看日志文件</span>
+<span class="token function">cat</span> learn-docker-storage.log
+</code></pre>
+<blockquote>
+<p>我们发现新的容器的日志文件追加进来了</p>
+</blockquote>
+<p><img alt="file" src="image\161cb53fad9c4d9f8fa8e4893b14a6c7.png"/></p>
+<blockquote>
+<p>我们发现日志已经追加，我们让不同的容器挂载同一个目录了</p>
+</blockquote>
+<h5><a id="volumebind_867"></a>volume和bind的区别</h5>
+<blockquote>
+<p>对于多个容器需要共享访问同一数据目录，或者需要持久化容器内数据（如数据库）时，我们都是采用挂载目录形式（bind mounts），将宿主机的某一目录挂载到容器内的指定目录，这种方式能解决问题，但这种方式也一直有一些缺点</p>
+</blockquote>
+<ul><li>容器在不同的服务器部署需要根据实际磁盘挂载目录修改路径</li><li>不同操作系统的文件和目录权限会搞得你昏头转向，火冒三丈 ?</li></ul>
+<p>​ bind mount和volume其实都是利用宿主机的文件系统，不同之处在于volume是docker自身管理的目录中的子目录，所以不存在权限引发的挂载的问题，并且目录路径是docker自身管理的，所以也不需要在不同的服务器上指定不同的路径，你不需要关心路径。</p>
+<p><img alt="file" src="image\88aca1e5d2e54883bf818e6023ed9216.png"/></p>
+<h5><a id="volume_880"></a>清理volume挂载</h5>
+<blockquote>
+<p>volume挂载方式，会生成很多匿名的目录，我们可以找到对应的没有使用的volume进行删除</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> volume <span class="token function">ls</span>
+</code></pre>
+<p><img alt="file" src="image\207044fe433c4fb0b61cefc4f0926d09.png"/></p>
+<blockquote>
+<p>通过查看我们发现里面，有很多的volume，我们可以找到没有用的删除</p>
+</blockquote>
+<pre><code class="prism language-shell"> <span class="token function">docker</span> volume <span class="token function">rm</span> volume_name
+</code></pre>
+<p><img alt="file" src="image\f7a1b092df8d43dbba01a9f794ae935b.png"/></p>
+<blockquote>
+<p>还可以通过命令将没有引用的全部volume清除掉，但是这个命令很危险</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> volume prune
+</code></pre>
+<p><img alt="file" src="image\8244962a6e034a72ad6ba8c9a82504a3.png"/></p>
+<blockquote>
+<p>这样就将我们服务器上无效的volume清除掉了</p>
+</blockquote>
+<h4><a id="_908"></a>网络优化</h4>
+<h5><a id="Docker_910"></a>Docker网络原理</h5>
+<p>​ Docker使用Linux桥接，在宿主机虚拟一个Docker容器网桥(docker0)，Docker启动一个容器时会根据Docker网桥的网段分配给容器一个IP地址，称为Container-IP，同时Docker网桥是每个容器的默认网关。因为在同一宿主机内的容器都接入同一个网桥，这样容器之间就能够通过容器的Container-IP直接通信。</p>
+<p>​ Docker网桥是宿主机虚拟出来的，并不是真实存在的网络设备，外部网络是无法寻址到的，这也意味着外部网络无法通过直接Container-IP访问到容器。如果容器希望外部访问能够访问到，可以通过映射容器端口到宿主主机（端口映射），即docker run创建容器时候通过 -p 或 -P 参数来启用，访问容器的时候就通过[宿主机IP]:[容器端口]访问容器。</p>
+<h5><a id="Docker_916"></a>Docker网络模式</h5>
+<table><thead><tr><th>Docker网络模式</th><th>配置</th><th>说明</th></tr></thead><tbody><tr><td>host模式</td><td>–net=host</td><td>容器和宿主机共享Network namespace。</td></tr><tr><td>container模式</td><td>–net=container:NAME_or_ID</td><td>容器和另外一个容器共享Network namespace。 kubernetes中的pod就是多个容器共享一个Network namespace。</td></tr><tr><td>none模式</td><td>–net=none</td><td>容器有独立的Network namespace，但并没有对其进行任何网络设置，如分配veth pair 和网桥连接，配置IP等。</td></tr><tr><td>overlay模式</td><td>– driver overlay</td><td>Docker跨主机通信模式，使用分布式计算机架构后需要使用overlay网络模式</td></tr><tr><td>bridge模式</td><td>–net=bridge</td><td>（默认为该模式）</td></tr></tbody></table>
+<h6><a id="host_926"></a>host模式</h6>
+<p>​ 如果启动容器的时候使用host模式，那么这个容器将不会获得一个独立的Network Namespace，而是和宿主机共用一个Network Namespace。容器将不会虚拟出自己的网卡，配置自己的IP等，而是使用宿主机的IP和端口。但是，容器的其他方面，如文件系统、进程列表等还是和宿主机隔离的。</p>
+<p>​ 使用host模式的容器可以直接使用宿主机的IP地址与外界通信，容器内部的服务端口也可以使用宿主机的端口，不需要进行NAT，host最大的优势就是网络性能比较好，但是docker host上已经使用的端口就不能再用了，网络的隔离性不好。</p>
+<blockquote>
+<p>Host模式如下图所示</p>
+</blockquote>
+<p><img alt="file" src="image\5b79f6bbea3c4832be65ccf0904960ac.png"/></p>
+<h6><a id="container_936"></a>container模式</h6>
+<p>​ 这个模式指定新创建的容器和已经存在的一个容器共享一个 Network Namespace，而不是和宿主机共享。新创建的容器不会创建自己的网卡，配置自己的 IP，而是和一个指定的容器共享 IP、端口范围等。同样，两个容器除了网络方面，其他的如文件系统、进程列表等还是隔离的。两个容器的进程可以通过 lo 网卡设备通信。</p>
+<blockquote>
+<p>Container模式示意图</p>
+</blockquote>
+<p><img alt="file" src="image\37a2025c3d6e43cfa4a663f17715d9fb.png"/></p>
+<h6><a id="none_944"></a>none模式</h6>
+<p>​ 使用none模式，Docker容器拥有自己的Network Namespace，但是，并不为Docker容器进行任何网络配置。也就是说，这个Docker容器没有网卡、IP、路由等信息。需要我们自己为Docker容器添加网卡、配置IP等。</p>
+<p>​ 这种网络模式下容器只有lo回环网络，没有其他网卡。none模式可以在容器创建时通过–network=none来指定。这种类型的网络没有办法联网，封闭的网络能很好的保证容器的安全性。</p>
+<blockquote>
+<p>None模式示意图</p>
+</blockquote>
+<p><img alt="file" src="image\3b333eb4749c476ba6d06a1c97ba20fd.png"/></p>
+<h6><a id="overlay_954"></a>overlay模式</h6>
+<p><img alt="file" src="image\4f7170580ebb4360b61a84411bf30334.png"/></p>
+<p>​ 容器在两个跨主机进行通信的时候，是使用overlay network这个网络模式进行通信，如果使用host也可以实现跨主机进行通信，直接使用这个物理的ip地址就可以进行通信。overlay它会虚拟出一个网络比如10.0.9.3这个ip地址，在这个overlay网络模式里面，有一个类似于服务网关的地址，然后把这个包转发到物理服务器这个地址，最终通过路由和交换，到达另一个服务器的ip地址。</p>
+<h6><a id="bridge_960"></a>bridge模式</h6>
+<p>​ 当Docker进程启动时，会在主机上创建一个名为docker0的虚拟网桥，此主机上启动的Docker容器会连接到这个虚拟网桥上。虚拟网桥的工作方式和物理交换机类似，这样主机上的所有容器就通过交换机连在了一个二层网络中。</p>
+<p>​ 从docker0子网中分配一个IP给容器使用，并设置docker0的IP地址为容器的默认网关。在主机上创建一对虚拟网卡veth pair设备，Docker将veth pair设备的一端放在新创建的容器中，并命名为eth0（容器的网卡），另一端放在主机中，以vethxxx这样类似的名字命名，并将这个网络设备加入到docker0网桥中。可以通过brctl show命令查看。</p>
+<p>​ bridge模式是docker的默认网络模式，不写–net参数，就是bridge模式。使用docker run -p时，docker实际是在iptables做了DNAT规则，实现端口转发功能。可以使用iptables -t nat -vnL查看。</p>
+<blockquote>
+<p>bridge模式如下图所示</p>
+</blockquote>
+<p><img alt="file" src="image\6fcb840e46704eb585caaeaa69294714.png"/></p>
+<h5><a id="_972"></a>我们的网络结构</h5>
+<blockquote>
+<p>下图是我们自己的网络结构，我们是通过宿主机访问Mysql容器的，刚才我们学过，默认Docker已经接入了一个名字叫<code>bridge</code>的桥接网络</p>
+</blockquote>
+<p><img alt="file" src="image\3f418089acd4489ea43c5ac59a1833de.png"/></p>
+<blockquote>
+<p>我们可以让我们的网络直接接入桥接网络，例如下图</p>
+</blockquote>
+<p><img alt="file" src="image\d4717ce620fd47ae9aa01bc33b8b60b1.png"/></p>
+<h5><a id="_982"></a>创建网络</h5>
+<h6><a id="_984"></a>查看网络列表</h6>
+<blockquote>
+<p>可以通过<code> docker network ls</code>命令查看网络列表</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 查看网络列表</span>
+<span class="token function">docker</span> network <span class="token function">ls</span>
+</code></pre>
+<p><img alt="file" src="image\297fb1cc90934d53adcc363d3877d7ad.png"/></p>
+<blockquote>
+<p>上面就是容器默认几种网络</p>
+</blockquote>
+<h6><a id="_996"></a>创建一个桥接网络</h6>
+<blockquote>
+<p>默认容器启动会自动默认接入<code>bridge</code>的桥接网络，为了区分我们的服务也防止各种网络问题，我们创建一个专用网络，可以通过<code>docker network create 网络名称</code>来创建一个默认的桥接网络</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 创建一个桥接网络</span>
+<span class="token function">docker</span> network create learn-docker-network
+<span class="token comment"># 查看网络列表</span>
+<span class="token function">docker</span> network <span class="token function">ls</span>
+</code></pre>
+<p><img alt="file" src="image\890c58f321cb4f339b252f52575093a9.png"/></p>
+<h5><a id="_1008"></a>服务接入网络</h5>
+<h6><a id="_1010"></a>停止并删除原有容器</h6>
+<blockquote>
+<p>停止和删除我们的微服务以及mysql服务</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token comment"># 删除当前运行中的容器</span>
+<span class="token function">docker</span> <span class="token function">rm</span> -f learn-docker-storage nacos mysql
+</code></pre>
+<p><img alt="file" src="image\99be401e705a444ab5bcd6dead52ebc0.png"/></p>
+<h6><a id="MySQL_1021"></a>创建MySQL</h6>
+<blockquote>
+<p>因为我们的微服务依赖MySQL先启动MySQL并接入网络,因为MySQL不需要通过宿主机访问，所有也不需要映射端口了，–network 是配置接入哪一个网络</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> run -d <span class="token punctuation">\</span>
+-v /tmp/etc/mysql:/etc/mysql/mysql.conf.d/ <span class="token punctuation">\</span>
+-v /tmp/data/mysql:/var/lib/mysql <span class="token punctuation">\</span>
+-e <span class="token assign-left variable">MYSQL_ROOT_PASSWORD</span><span class="token operator">=</span>root <span class="token punctuation">\</span>
+--name mysql --network<span class="token operator">=</span>learn-docker-network <span class="token punctuation">\</span>
+mysql:5.7.34
+</code></pre>
+<p><img alt="file" src="image\e1e6279c16024a4c8aa72286bdbbcf1b.png"/></p>
+<blockquote>
+<p>这样我们就把我们的MySQL服务启动起来了并且加入了learn-docker-network的网络</p>
+</blockquote>
+<h6><a id="Nacos_1038"></a>创建Nacos</h6>
+<blockquote>
+<p>我们的nacos是需要暴漏端口的，因为我们需要外部能够看到nacos页面，但是我们也需要我们的nacos连接到当前网络</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> run -d -p <span class="token number">8848</span>:8848 <span class="token punctuation">\</span>
+--network<span class="token operator">=</span>learn-docker-network <span class="token punctuation">\</span>
+--name nacos --env <span class="token assign-left variable">MODE</span><span class="token operator">=</span>standalone <span class="token punctuation">\</span>
+nacos/nacos-server
+</code></pre>
+<p><img alt="file" src="image\0134a41f9538491db55674a7e85dc3c1.png"/></p>
+<h6><a id="_1051"></a>查看网络详情</h6>
+<blockquote>
+<p>可以通过<code>docker network inspect 网络名称</code>可以查看当前的网络的详细信息</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> network inspect learn-docker-network<span class="token operator">|</span><span class="token function">grep</span> Containers -A <span class="token number">20</span>
+</code></pre>
+<p><img alt="file" src="image\b298cc02a69d4e3bb2eda84298d06f01.png"/></p>
+<h6><a id="_1061"></a>修改微服务配置</h6>
+<blockquote>
+<p>因为需要使用自定义网络访问mysql容器以及nacos容器，需要修改微服务数据库连接地址，</p>
+</blockquote>
+<p>​ docker 网络访问 可以通过IP或者通过服务名称都是可以的，这里我们通过<strong>服务名称访问</strong>，因为我们使用了maven打包的方式，我们只需要将pom文件修改就可以</p>
+<pre><code class="prism language-xml"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>properties</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>mysql.addr</span><span class="token punctuation">&gt;</span></span>mysql:3306<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>mysql.addr</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>nacos.addr</span><span class="token punctuation">&gt;</span></span>nacos:8848<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>nacos.addr</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>properties</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<blockquote>
+<p>修改完成后进行编译项目</p>
+</blockquote>
+<p><img alt="file" src="image\c4cfaaae78dd456aade3fc2280a3b3de.png"/></p>
+<blockquote>
+<p>这里将数据库连接地址改为mysql容器的服务名称<code>mysql</code>，nacos的连接地址变为了<code>nacos</code></p>
+</blockquote>
+<h6><a id="_1080"></a>重新打包服务</h6>
+<blockquote>
+<p>将打包的文件上传服务器后按照上面步骤同上面打包，打包版本为 0.0.3</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> build -t learn-docker-storage:0.0.3 <span class="token builtin class-name">.</span>
+</code></pre>
+<p><img alt="file" src="image\7ed1a7a1f0d24a83a76eb6d40463530d.png"/></p>
+<h6><a id="_1090"></a>创建微服务</h6>
+<blockquote>
+<p>下面就按部就班的创建微服务就可以,只是注意需要加入网络，这里这个端口需要映射外网访问</p>
+</blockquote>
+<pre><code class="prism language-shell"><span class="token function">docker</span> run -d <span class="token punctuation">\</span>
+-v /tmp/data/logs:/logs <span class="token punctuation">\</span>
+-p <span class="token number">8003</span>:8003 <span class="token punctuation">\</span>
+--name learn-docker-storage <span class="token punctuation">\</span>
+--network<span class="token operator">=</span>learn-docker-network <span class="token punctuation">\</span>
+learn-docker-storage:0.0.3
+</code></pre>
+<p><img alt="file" src="image\2b6d32eb8b68416597b3f9783024244a.png"/></p>
+<h6><a id="_1105"></a>测试微服务</h6>
+<blockquote>
+<p>到现在微服务已经启动，我们尝试访问以下</p>
+</blockquote>
+<pre><code class="prism language-shell"> <span class="token function">curl</span> http://192.168.64.153:8003/storage/employe/findByID/10001 <span class="token operator">|</span> python -m json.tool
+</code></pre>
+<p><img alt="file" src="image\c2813aec62fa473dba640ccadf75cd85.png"/></p>
+<blockquote>
+<p>访问测试数据没有问题，到现在我们服务已经搭建完成，并且使用网络进行了优化</p>
+</blockquote>
+<blockquote>
+<p>专注Java技术干货分享，欢迎志同道合的小伙伴，一起交流学习</p>
+</blockquote>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

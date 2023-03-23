@@ -1,0 +1,106 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="Protobuf_0"></a>什么是Protobuf</h1>
+<blockquote>
+<p>Google官方描述的大致意思为：</p>
+<ol><li>protocol buffers 是一种语言无关、平台无关、可扩展的序列化结构数据的方法，它可用于（数据）通信协议、数据存储等。</li><li>灵活 高效的序列化数据结构的方法，比json和xml高效，并拥有强大的可拓展性以及良好的兼容性</li></ol>
+</blockquote>
+<p>因其更小的体积和更快的解析速度，所以Protobuf多用于网络数据交换。在说使用之前首先我们应该先把需要用到的资源下载下来并进行必要的配置</p>
+<h1><a id="ProtobufProtoc_7"></a>Protobuf和Protoc的下载</h1>
+<p><code>Protobuf和Protoc下载链接</code>：https://github.com/protocolbuffers/protobuf/releases</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5ab2480850214b798dd3e7fdead2ea2a.png?"/></p>
+<h2><a id="ProtobufDll_11"></a>Protobuf编译成Dll文件</h2>
+<p>用VS打开：<code>protobuf-3.19.3/csharp/src/Google.Protobuf.sln</code></p>
+<p>如果有输出如下错误，那就是因为vs使用的dotnet core sdk版本过高和proto工程里使用的sdk版本不一致导致的。可以打开<code>视图/终端</code>在命令行里通过dotnet --version 查看当前系统使用的dotnet core sdk版本，然后修改 proto 工程根目录的 global.json 文件中 sdk 版本号来解决。<br/> <code>Detailed Information: Unable to locate the .NET Core SDK. Check that it is installed and that the version specified in global.json (if any) matches the installed version.</code></p>
+<p>右键选中 Google.Protobuf 执行生成，即可生成 Google.Protobuf.dll 文件。生成的 dll 文件位于 bin/Debug 目录下。默认是生成 .Net 4.5的 dll，放在 net45 目录下。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/753369624be14a138a84abf3d6ed5c8c.png?"/><br/> 将net45目录下的所有文件拷贝到Unity工程中的Plugins文件夹下。</p>
+<h2><a id="Protoc_21"></a>Protoc的使用</h2>
+<blockquote>
+<p>Protoc主要是用来将proto脚本转化为c# 脚本的。</p>
+</blockquote>
+<p>下载Protobuf-Unity插件放入Unity工程<br/> <code>Protobuf-Unity下载链接</code>：https://github.com/5argon/protobuf-unity<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d9cd00fd4b6b47d5bca4f6b6fee6a592.png?"/><br/> Unity工程打开<code>Editor/Preferences/Protobuf</code>并将下载的Protoc路径填入Path to protoc中<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/39843f7381804ed78a05cafebf88268d.png?"/>这个插件可以遍历Unity工程目录下的所有proto文件，并生成对应的c#文件。</p>
+<h1><a id="_29"></a>使用</h1>
+<p><strong><code>Proto语言指南</code>：https://developers.google.com/protocol-buffers/docs/proto3</strong><br/> 首先手写一个proto格式的脚本，假设脚本名字叫ProtoTest.proto,并将这个proto脚本放入Unity工程中，proto脚本如下：</p>
+<pre><code>syntax = "proto3";
+
+message SJL {
+  string name = 1;
+  int32 age = 2;
+  int32 height = 3;
+}
+</code></pre>
+<p>Unity工程打开<code>Editor/Preferences/Protobuf</code>点击Force Compilation会在ProtoTest.proto文件所属的文件夹下自动生成一个ProtoTest.cs脚本，这个脚本就是由proto文件转化来的。</p>
+<p>写一个测试脚本来测试序列化和反序列化，如下：</p>
+<pre><code>using Google.Protobuf;
+using System.IO;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class Demo : MonoBehaviour
+{
+    public string fileName = "sjl.txt";
+    private string dirPath = Application.streamingAssetsPath + "/";
+    private string filePath;
+    public Button WriteBtn;
+    public Button ReadBtn;
+
+    void Start()
+    {
+        if (!Directory.Exists(dirPath))
+        {
+            Directory.CreateDirectory(dirPath);
+#if UNITY_EDITOR
+            UnityEditor.AssetDatabase.Refresh();
+#endif
+        }
+
+        filePath = dirPath + fileName;
+        WriteBtn.onClick.AddListener(WriteTo);
+        ReadBtn.onClick.AddListener(ReadFrom);
+    }
+
+    /// &lt;summary&gt;
+    /// 序列化对象并保存到本地
+    /// &lt;/summary&gt;
+    public void WriteTo()
+    {
+        SJL sr = new SJL()
+        {
+            Name = "sjl",
+            Age = 26,
+            Height = 176
+        };
+
+        using (FileStream fs = File.OpenWrite(filePath))
+        {
+            byte[] bytes = sr.ToByteArray();
+            fs.Write(bytes, 0, bytes.Length);
+        }
+#if UNITY_EDITOR
+        UnityEditor.AssetDatabase.Refresh();
+#endif
+    }
+
+    /// &lt;summary&gt;
+    /// 反序列化文件
+    /// &lt;/summary&gt;
+    public void ReadFrom()
+    {
+        using (Stream stream = File.OpenRead(filePath))
+        {
+            SJL sjl = SJL.Parser.ParseFrom(stream);
+            Debug.LogFormat("Name:{0} Age:{1} Height:{2}", sjl.Name, sjl.Age, sjl.Height);
+        }
+    }
+}
+
+</code></pre>
+<p>测试结果如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/544098c739eb4e6ba9c1e02691c8f2bf.png"/></p>
+<p><a href="https://download.csdn.net/download/weixin_42498461/78145237">Demo 下载</a></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

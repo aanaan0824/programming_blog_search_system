@@ -1,0 +1,110 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="_0"></a>一、概述</h2>
+<p>1.了解JVM调优之前我们需要知道两个概念：吞吐量(TPS)和响应时间(RT)。</p>
+<p><strong>吞吐量</strong>：指系统在单位时间内处理请求的数量。对于并发系统，通常需要用吞吐量作为性能指标。<br/> <strong>响应时间</strong>：指系统对请求作出响应的时间。对于单用户的系统，响应时间可以很好地度量系统的性能。</p>
+<p><strong>2.什么是JVM调优？</strong></p>
+<p>简单理解，JVM调优主要就是为了解决系统运行时慢、卡顿、OOM、死锁等问题。</p>
+<p>其实上面所说的问题存在很多方面的原因，比如网络波动导致响应时间慢、数据库查询慢、死锁等，今天我们主要分析JVM层面的，而JVM调优，主要是为了减少Full GC问题，也就是针对堆内存进行优化。</p>
+<p>我们先来看一个例子，某商城购物系统的下单情况</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6ad36cdbd4c1444594a673e4af59b178.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASVTlhpzlkI3lt6XkuLY=,size_19,color_FFFFFF,t_70,g_se,x_16"/><br/> 现在我们先设置的JVM堆参数是：-Xms2048M -Xmx2048M，堆内存分配2G，这种情况，一般使用ParNew+CMS垃圾回收器(G1主要针对大内存，8G+)，看看会发生什么。</p>
+<p>堆中年轻代和老年代默认比例是1：2，那么年轻代占600多近700M，年轻代又分为Eden和两个survivor区，默认比例8:1:1，按照年轻代700M算，Eden就是560M，survivor区就是70M。</p>
+<p>上面我们初步的说了一下堆内存的情况，来看看我们上图中在商城大促活动下单的案例，活动开始时，我们每秒大概会产生60M的对象。</p>
+<p>我们都知道，对象一般分配在年轻代的Eden区，每秒产生60M的对象，年轻代容量是700M，那Eden区大约560M，那么差不多10s不到我们Eden就满了，JVM就会触发年轻代Minor GC，那么，这一秒钟产生的60M堆中就会被放入S区，但是S区只有70M，通过动态年龄判断机制，这60M堆中最终会被移入老年代中。</p>
+<p>老年代默认使用比例百分之92会触发Full GC(可以通过-XX:CMSInitiatingOccupancyFraction参数修改这个比例)，那么，大家伙算算多久会触发一次Full GC？？老年代大约1300多M，乘以百分之92再除以60，是不是大概20次Minor GC之后就会触发一次Full GC，也就是200s左右，我的天，这时用户心里面不知道又会冒出多少经典国粹！！！</p>
+<p><strong>Jstat</strong>命令<br/> 可以通过 <strong>jstat -gc pid 间隔时间 执行次数</strong> 查看JVM GC情况<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/28d05a9955744dd18b0826b43d4ac5b6.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASVTlhpzlkI3lt6XkuLY=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p><strong>正常情况一般是几天或者更长时间才触发一次Full GC，上述过程中明显太频繁了，用户体验效果极差，那大家伙想想，应该怎么去优化呢？</strong></p>
+<p>上面分析中，可以看到，Minor GC那一秒的对象是没有进入S区的，由于对象动态年龄判断机制直接进入了老年代，而这种对象一般都是朝生夕死的，Minor GC回收时，会回收Eden和其中一个S区，把存活的对象放入另一个S区；<strong>为了避免这种朝生夕死的对象进入老年代，我们可以加大一下年轻代的容量和减少对象进入老年代的年龄阈值。</strong></p>
+<p>加大年轻代的容量是为了让S区能放入Minor GC回收Eden区时存活的对象，减少对象进入老年代的年龄阈值是为了让真正老不死的对象提前进入老年代，腾让出S区的空间。</p>
+<p>那我们接下来重新设置一下JVM的参数：</p>
+<pre><code class="prism language-java"><span class="token operator">-</span><span class="token class-name">Xms3072M</span> <span class="token operator">-</span><span class="token class-name">Xmx3072M</span> <span class="token operator">-</span><span class="token class-name">Xmn2048M</span>
+</code></pre>
+<p>现在，我们年轻代有2G，那对应的Eden和Survivor区就是1600M、200M和200M，再对应上面的场景，<br/> 1600/60，大约27s Eden区才会被放满触发Minor GC，这一秒中产生的60M对象也可以被放入S区，等下一个27s时，Eden和放有垃圾对象的S区会被回收，新的对象放入另一个S区。</p>
+<p>这样是不是就解决了我们频繁Full GC？？？…哈哈…通过上面这个小Demo我们对JVM调优有了一个初步认识。</p>
+<h2><a id="_46"></a>二、调优</h2>
+<p>上面我们看了JVM响应慢、卡顿的现象，那我们接下来分析分析OOM和死锁的情况，对JVM调优之前我们应该要知道JVM具体的一些配置如何。</p>
+<p><strong>Jinfo命令</strong><br/> 查看JVM参数<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b89a79e0749b4a1d9b5bf572a70b440c.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASVTlhpzlkI3lt6XkuLY=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 还可以查看java系统参数<br/> <img alt="**在这里插入图片描述**" src="https://img-blog.csdnimg.cn/4fd2db47c8ce41738c1476304cedacb9.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASVTlhpzlkI3lt6XkuLY=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p><strong>1.什么是OOM</strong></p>
+<p>OOM想必大家都不陌生吧，初学java是，由于写代码不严谨，经常会出现<code>Exception in thread "main" java.lang.OutOfMemoryError: Java heap space</code>这个异常吧，没错，它就是大名鼎鼎的OOM(堆内存溢出)，那我们应该怎么去排查呢？怎么知道OOM发生在我们项目中的什么地方呢？</p>
+<p><strong>2.如何排查OOM</strong></p>
+<p><strong>Jmap</strong>命令</p>
+<p>首先我们可以通过<strong>top</strong>命令查看我们服务器java相关的进程对内存和CPU的使用情况,找到内存使用最高的java进程，通过Jmap -dump 命令可以导出dump文件，结合java自带的jvisualvm工具分析dump文件，查看各个类的使用情况，当然还有其他的分析工具，比如阿里的arthas等；</p>
+<p>也可以通过配置JVM，在我们程序OOM时，自动导出dump文件到指定位置<br/> -XX:+HeapDumpOnOutOfMemoryError<br/> -XX:HeapDumpPath=./ （路径）</p>
+<p><strong>jmap命令的其他功能：</strong></p>
+<p>jmap -heap pid 查看堆的详情以及使用信息<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/8ee8ebf8e4bd434b849c2149af2f566a.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASVTlhpzlkI3lt6XkuLY=,size_16,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>jmap -histo 14660 #查看历史生成的实例<br/> jmap -histo:live 14660 #查看当前存活的实例，执行过程中可能会触发一次full gc<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c4714361837f4119b415088540468e6f.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASVTlhpzlkI3lt6XkuLY=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p><strong>3.如何排查死锁</strong></p>
+<p><strong>什么是死锁？</strong></p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">DeadLockTest</span> <span class="token punctuation">{<!-- --></span>
+
+   <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">Object</span> lock1 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Object</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+   <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">Object</span> lock2 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Object</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+   <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+      <span class="token keyword">new</span> <span class="token class-name">Thread</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-&gt;</span> <span class="token punctuation">{<!-- --></span>
+         <span class="token keyword">synchronized</span> <span class="token punctuation">(</span>lock1<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+               <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"thread1 begin"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+               <span class="token class-name">Thread</span><span class="token punctuation">.</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token number">5000</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">InterruptedException</span> e<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">synchronized</span> <span class="token punctuation">(</span>lock2<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+               <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"thread1 end"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+         <span class="token punctuation">}</span>
+      <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">start</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+      <span class="token keyword">new</span> <span class="token class-name">Thread</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-&gt;</span> <span class="token punctuation">{<!-- --></span>
+         <span class="token keyword">synchronized</span> <span class="token punctuation">(</span>lock2<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+               <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"thread2 begin"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+               <span class="token class-name">Thread</span><span class="token punctuation">.</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token number">5000</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">InterruptedException</span> e<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">synchronized</span> <span class="token punctuation">(</span>lock1<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+               <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"thread2 end"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+         <span class="token punctuation">}</span>
+      <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">start</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+      <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"main thread end"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+   <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>可以看到，假如线程1持有了lock1，然后再尝试持有lock2，此时线程2先持有lock2，再尝试持有lock1，导致两个线程相互等待锁，这样就形成了死锁，那怎么去排查这种死锁代码呢？</p>
+<p><strong>jstack命令</strong></p>
+<p>jstack pid可以查看JVM线程的情况，以及死锁等</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7cf3a922f2bc4962b688677678ac019d.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASVTlhpzlkI3lt6XkuLY=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <strong>可以看到通过jstack pid 命令JVM已经帮我找到一处死锁，并定位到了具体的代码</strong>，同样，还可以用jvisualvm自动检测死锁。找到了死锁的具体位置，相信去解决死锁就不是什么难事了吧？？死锁的四个必要条件，打破一个就无法形成死锁：</p>
+<p>1.互斥条件<br/> 2.不可剥夺条件：进程所获得的资源在未使用完毕之前，不能被其他进程强行夺走，即只能由获得该资源的进程自己来释放（只<br/> 能是主动释放)<br/> 3.请求与保持条件：进程已经保持了至少一个资源，但又提出了新的资源请求，而该资源已被其他进程占有，此时请求进程被阻<br/> 塞，但对自己已获得的资源保持不放。<br/> 4.循环等待条件</p>
+<p><strong>jstack查看CPU飙升的问题</strong></p>
+<p>有些时候线上服务器CPU飙升，也可以通过jstack命令配合排查，下面来看一下CPU飙升的代码：</p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Math</span> <span class="token punctuation">{<!-- --></span>
+
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">final</span> <span class="token keyword">int</span> initData <span class="token operator">=</span> <span class="token number">666</span><span class="token punctuation">;</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token class-name">User</span> user <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">User</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">int</span> <span class="token function">compute</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>  <span class="token comment">//一个方法对应一块栈帧内存区域</span>
+        <span class="token keyword">int</span> a <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+        <span class="token keyword">int</span> b <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+        <span class="token keyword">int</span> c <span class="token operator">=</span> <span class="token punctuation">(</span>a <span class="token operator">+</span> b<span class="token punctuation">)</span> <span class="token operator">*</span> <span class="token number">10</span><span class="token punctuation">;</span>
+        <span class="token keyword">return</span> c<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">Math</span> math <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Math</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            math<span class="token punctuation">.</span><span class="token function">compute</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>1，使用命令top -p ，显示你的java进程的内存情况，pid是你的java进程号，比如19663<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d425f2b83b294a68b1a9f59b20214c61.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASVTlhpzlkI3lt6XkuLY=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 2，按H，获取每个线程的内存情况<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3faef4adffab4e89b1192e7e4ff6f576.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASVTlhpzlkI3lt6XkuLY=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 3，找到内存和cpu占用最高的线程tid，比如19664<br/> 4，转为十六进制得到 0x4cd0，此为线程id的十六进制表示<br/> 5，执行 jstack 19663|grep -A 10 4cd0，得到线程堆栈信息中 4cd0 这个线程所在行的后面10行，从堆栈中可以发现导致cpu飙高的调用方法,从而定位到具体的代码。</p>
+<p>通过四篇JVM相关的文章，我们对<a href="https://blog.csdn.net/qq_42809478/article/details/124296506?spm=1001.2014.3001.5502">Java类加载机制</a>、<a href="https://blog.csdn.net/qq_42809478/article/details/124320793?spm=1001.2014.3001.5502">java运行时数据区</a>、<a href="https://blog.csdn.net/qq_42809478/article/details/124345874?spm=1001.2014.3001.5502">JVM垃圾回收机制</a>以及JVM调优讲完了…接下来开始准备整理java并发篇相关的东西啦。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

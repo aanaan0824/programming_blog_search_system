@@ -1,0 +1,99 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2>第一种简单方案 通过composer安装</h2>
+<p>插件库：<a href="https://packagist.org/packages/maatwebsite/excel" title="maatwebsite/excel - Packagist">maatwebsite/excel - Packagist</a></p>
+<p>官网：<a href="https://docs.laravel-excel.com/3.1/getting-started/" title="Introduction | Laravel Excel">Introduction | Laravel Excel</a></p>
+<p>导出步骤：<a href="https://docs.laravel-excel.com/3.1/exports/" title="🚀 5 minute quick start | Laravel Excel">🚀 5 minute quick start | Laravel Excel</a></p>
+<p>安装对应的phpexcel插件</p>
+<pre><code class="language-php">composer require maatwebsite/excel
+</code></pre>
+<p><br/> 注：composer需要切源操作，否则下载将可能不会成功</p>
+<p>安装成功后，就提供生成导出数据的命令，使用此命令生成导出数据文件</p>
+<pre><code class="language-php">php artisan make:export FangOwnerExport --model=Models/FangOwner
+</code></pre>
+<p>  生成对应的文件</p>
+<p><img alt="" height="417" src="image\12bac9df78604b138a7d482db7b9de6e.png" width="1095"/></p>
+<p>在相对的控制器导出excel</p>
+<pre><code class="language-php">    #引入
+    use Maatwebsite\Excel\Facades\Excel;
+    #导出
+    public function phpexcel(){
+        # 对应文件，导出标题
+        return Excel::download(new FirmExport(),'news.xlsx');
+    }</code></pre>
+<h2>第二种使用将原有导出xlsx格式 转变为csv格式 可以在大数据导出时优化导出速度</h2>
+<p>详细书写一下思路，仅提供借鉴</p>
+<p>1、创建路由</p>
+<pre><code class="language-php">#excel导出
+Route::get('bookexcel',[\App\Http\Controllers\admin\AuthController::class,'fileexcel'])-&gt;name('book.excel');</code></pre>
+<p>2、前端使用</p>
+<p><img alt="" height="151" src="image\ad46dd8931dd4c43abb7149887249e6e.png" width="1200"/></p>
+<p><img alt="" height="735" src="image\cc1e611beaa0455c85b46be0cb1d93cc.png" width="1200"/></p>
+<p> </p>
+<p>3、创建公共导出方法</p>
+<p> 在app文件下创建common文件并且创建common.php</p>
+<p><img alt="" height="301" src="image\e8f604f0f367478bb7c298ed379f1df6.png" width="267"/></p>
+<p> </p>
+<p> 在composer.json文件中autoload中进行书写</p>
+<p><img alt="" height="269" src="image\23f511ca2206476a99b29127c655d0f9.png" width="730"/></p>
+<pre><code class="language-php">  "files": [
+           #公共方法路径
+            "app/common/common.php"
+        ]</code></pre>
+<p>刷新框架 在命令行</p>
+<pre><code class="language-php">composer dump-autoload</code></pre>
+<p>以上操作就是对框架生成共类，完成后在公共类中封装一个导出方法</p>
+<pre><code class="language-php">//判断是否有该方法
+if(!function_exists('phpexcel')){
+   //表头，标题，数据
+    function phpexcel($cell,$title,$data){
+        set_time_limit(0);
+        ini_set('memory_limit', '128M');
+        header('Content-Type: application/vnd.ms-execl');
+        header('Content-Disposition: attachment;filename="'.$title . '.csv"');
+
+        //以写入追加的方式打开
+        $fp = fopen('php://output', 'a');
+ 
+        foreach($cell as $key =&gt; $item) {
+            $celldata[$key] = iconv('UTF-8', 'GBK//IGNORE', $item);
+        }
+        //将标题写到标准输出中
+        fputcsv($fp, $celldata);
+        foreach($data as $row){
+            foreach($row as $key =&gt; $item) {
+                //这里必须转码，不然会乱码
+                $row[$key] = iconv('UTF-8', 'GBK//IGNORE', $item);
+            }
+            fputcsv($fp, $row);
+        }
+        $res = ['file'=&gt;$title];
+        return response()-&gt;json($res);
+    }
+}</code></pre>
+<p>4、控制其调用</p>
+<pre><code class="language-php">   #导出
+    public function fileexcel(Request $request){
+        //防止数据量大内存不够
+        ini_set('memory_limit', '256M');
+        //自定义字段
+        $cell=['id','文章标题','邮箱','加入时间'];
+        //自定义导出文件名
+        $title = $request-&gt;input('title','文章列表');
+        $title = $title.date('YmdHis');
+        //此方法为导出数据来源，在库文件里，你可根据自己需要的数据查数据库
+        $res=Auths::get()-&gt;toarray();
+        $data=[];
+        foreach ($res as $k=&gt;$v){
+            $data[$k][]=$v['id'];
+            $data[$k][]=$v['auth_name'];
+            $data[$k][]=$v['auth_email'];
+            $data[$k][]=$v['created_at'];
+        }
+        //导出表格
+         return phpexcel($cell,$title,$data);
+    }</code></pre>
+<p></p>
+</div>
+</div>

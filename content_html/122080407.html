@@ -1,0 +1,509 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#_4">前言</a></li><li><a href="#QCombobox_16">一、QCombobox的组成</a></li><li><a href="#MultiSelectComboBox_25">二、MultiSelectComboBox实现</a></li><li><ul><li><a href="#1__26">1. 总体实现</a></li><li><a href="#2_QLineEdit_38">2. QLineEdit部分</a></li><li><a href="#3_QListWidget_63">3. QListWidget部分</a></li><li><ul><li><a href="#1__66">1. 搜索框部分</a></li><li><a href="#2__99">2. 选项部分</a></li></ul>
+</li><li><a href="#4__134">4. 对外接口定义</a></li><li><a href="#5__182">5. 代码实现</a></li></ul>
+</li><li><a href="#_525">总结</a></li></ul>
+</div>
+<p></p>
+<hr color="#000000" size='1"'/>
+<h1><a id="_4"></a>前言</h1>
+<p><font color="#999AAA">  刚开始学习qt时，在遇到下拉复选框问题的时候总是使用表格来实现这个功能，因为表格单元格可以添加代理，而QComboBox类对象在设置代理后总是不生效。使用表格来实现，如果需求本来就是在表格中还好，但有时候只是需要一个下拉复选框，这个时候就需要隐藏边框，设置单元双击输入框禁用等等，会非常麻烦，而且最后的效果也是不敬人意，所以在仔细研究了QComboBox类对象之后，参考github大佬的示例实现了一个比较好用的下拉复选框。</font></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/71ed63e975e04cda98dea523e3a0c113.png#pic_center"/></p>
+<hr color="#000000" size='1"'/>
+<p><strong>参考博客地址：</strong><a href="https://blog.csdn.net/u013135921/article/details/79437392">https://blog.csdn.net/u013135921/article/details/79437392</a><br/> <font color="#999AAA">以下是本篇文章正文内容，主要实现功能，下面案例可供参考</font></p>
+<h1><a id="QCombobox_16"></a>一、QCombobox的组成</h1>
+<p>  QComboBox类对象由三部分组成：QLineEdit、QToolButton、QListWidget。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d4a4fabc44b54d6385c4780cf0cc2f82.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5qKm6YaS5qKm6LW3,size_19,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<ul><li>QLineEdit负责选中选项的显示，由此要设置为不可编辑状态。</li><li>QToolButton是一个弹出与隐藏下拉框的按钮。</li><li>QListWidget是最重要的一部分，所有选项内容显示的格式，自定义功能的添加主要都集中在这部分。</li></ul>
+<h1><a id="MultiSelectComboBox_25"></a>二、MultiSelectComboBox实现</h1>
+<h2><a id="1__26"></a>1. 总体实现</h2>
+<p>  整个控件继承于QCombobox类。主要修改QLineEdit、QListWidget这两部分，QComboBox提供如下接口，可以将这两部分设置为新建的QLineEdit、QListWidget对象 <mark>（ line_edit_，list_widget_）</mark>。</p>
+<p><font color="#999AAA">代码如下（示例）：</font></p>
+<pre><code class="prism language-javascript"><span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setView</span><span class="token punctuation">(</span>list_widget_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setLineEdit</span><span class="token punctuation">(</span>line_edit_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<ul><li>line_edit_部分用来显示选择的结果和弹出下拉框，显示内容使用 <mark>“;”</mark> 进行分割</li><li>list_widget_下拉框部分，显示搜索框与选项。QListWidget类对象可以通过设置Item，在item中添加QWidget对象来实现一些特殊功能。这里的list_widget_，搜索框为QlineEdit类对象，用户输入搜索条件后显示符合条件的选项，用来解决选项过多的问题，选项为QCheckBox类对象，有“选中”和“未选中”两种状态。</li></ul>
+<h2><a id="2_QLineEdit_38"></a>2. QLineEdit部分</h2>
+<p>  这部分用来显示选择的结果和弹出下拉框，显示内容使用 <mark>“;”</mark> 进行分割。这里设置了点击QLineEdit也可以弹出下拉框，需要先将当前line_edit_对象安装(或注册)为事件过滤器，再重写eventFilter()函数。</p>
+<p><font color="#999AAA">代码如下（示例）：</font></p>
+<pre><code class="prism language-javascript">    <span class="token comment">/*设置文本框*/</span>
+	<span class="token comment">//设为只读，因为该输入框只用来显示选中的选项，称为文本框更合适些</span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setReadOnly</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//把当前对象安装(或注册)为事件过滤器，当前也称为过滤器对象。事件过滤器通常在构造函数中进行注册。</span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">installEventFilter</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//设置禁用样式，因为不受样式表控制，临时这样解决</span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setStyleSheet</span><span class="token punctuation">(</span><span class="token string">"QLineEdit:disabled{background:rgb(233,233,233);}"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+bool MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">eventFilter</span><span class="token punctuation">(</span><span class="token parameter">QObject <span class="token operator">*</span>watched<span class="token punctuation">,</span> QEvent <span class="token operator">*</span>event</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token comment">//设置点击输入框也可以弹出下拉框</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>watched <span class="token operator">==</span> line_edit_ <span class="token operator">&amp;&amp;</span> event<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">type</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">==</span> QEvent<span class="token operator">:</span><span class="token operator">:</span>MouseButtonRelease <span class="token operator">&amp;&amp;</span> <span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">isEnabled</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">showPopup</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="3_QListWidget_63"></a>3. QListWidget部分</h2>
+<p>  下拉框部分，显示搜索框与选项。</p>
+<h3><a id="1__66"></a>1. 搜索框部分</h3>
+<p>  设置list_widget_第一项的itemWidget为QLineEdit，用来输入检索条件，绑定textChanged(const QString&amp;)信号，当输入内容发生变化时，下面显示选项发生相应变化。</p>
+<p><font color="#999AAA">初始化代码如下（示例）：</font></p>
+<pre><code class="prism language-javascript"><span class="token comment">/*设置搜索框*/</span>
+	QListWidgetItem<span class="token operator">*</span> currentItem <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">QListWidgetItem</span><span class="token punctuation">(</span>list_widget_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//设置搜索框提示信息</span>
+	search_bar_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setPlaceholderText</span><span class="token punctuation">(</span><span class="token string">"Search........."</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//显示清除按钮</span>
+	search_bar_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setClearButtonEnabled</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">addItem</span><span class="token punctuation">(</span>currentItem<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setItemWidget</span><span class="token punctuation">(</span>currentItem<span class="token punctuation">,</span> search_bar_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><font color="#999AAA">输入文本变化槽函数代码如下（示例）：</font></p>
+<pre><code class="prism language-javascript"><span class="token function">connect</span><span class="token punctuation">(</span>search_bar_<span class="token punctuation">,</span> <span class="token constant">SIGNAL</span><span class="token punctuation">(</span><span class="token function">textChanged</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">,</span> <span class="token constant">SLOT</span><span class="token punctuation">(</span><span class="token function">onSearch</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<pre><code class="prism language-javascript"><span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">onSearch</span><span class="token punctuation">(</span><span class="token parameter"><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span>int i <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		QCheckBox <span class="token operator">*</span>check_box <span class="token operator">=</span> static_cast<span class="token operator">&lt;</span>QCheckBox<span class="token operator">*</span><span class="token operator">&gt;</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">itemWidget</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//文本匹配则显示，反之隐藏</span>
+		<span class="token comment">//Qt::CaseInsensitive模糊查询</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">text</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">contains</span><span class="token punctuation">(</span>_text<span class="token punctuation">,</span> Qt<span class="token operator">:</span><span class="token operator">:</span>CaseInsensitive<span class="token punctuation">)</span><span class="token punctuation">)</span>
+			list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setHidden</span><span class="token punctuation">(</span><span class="token boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">else</span>
+			list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setHidden</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="2__99"></a>2. 选项部分</h3>
+<p>  单击选项选中，选中后更新line_edit_内容，绑定stateChanged信号，鼠标单击选项时时，就会将所有选项遍历一遍，然后把选中的选项组织为字符串，更新到line_edit_上。发送信号void selectionChange(const QString _data);，此信号为选中选项发送变化时发出。</p>
+<p><font color="#999AAA">选项变化槽函数代码如下（示例）：</font></p>
+<pre><code class="prism language-javascript"><span class="token function">connect</span><span class="token punctuation">(</span>checkbox<span class="token punctuation">,</span> <span class="token operator">&amp;</span>QCheckBox<span class="token operator">:</span><span class="token operator">:</span>stateChanged<span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span>stateChange<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<pre><code class="prism language-javascript"><span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">stateChange</span><span class="token punctuation">(</span><span class="token parameter">int _row</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token constant">Q_UNUSED</span><span class="token punctuation">(</span>_row<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	QString <span class="token function">selected_data</span><span class="token punctuation">(</span><span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	int count <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span>int i <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> count<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		QWidget <span class="token operator">*</span>widget <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">itemWidget</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		QCheckBox <span class="token operator">*</span>check_box <span class="token operator">=</span> static_cast<span class="token operator">&lt;</span>QCheckBox<span class="token operator">*</span><span class="token operator">&gt;</span><span class="token punctuation">(</span>widget<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">isChecked</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			selected_data<span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span>check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">text</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span><span class="token string">";"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+	selected_data<span class="token punctuation">.</span><span class="token function">chop</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>selected_data<span class="token punctuation">.</span><span class="token function">isEmpty</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setText</span><span class="token punctuation">(</span>selected_data<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">else</span>
+	<span class="token punctuation">{<!-- --></span>
+		line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setToolTip</span><span class="token punctuation">(</span>selected_data<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	emit <span class="token function">selectionChange</span><span class="token punctuation">(</span>selected_data<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="4__134"></a>4. 对外接口定义</h2>
+<p>  考虑到使用方便，这里定义了一些接口方便用户使用，接口含义见下方注释 <mark>（文本框代表line_edit_）</mark>。</p>
+<p><font color="#999AAA">接口定义如下（示例）：</font></p>
+<pre><code class="prism language-javascript">    <span class="token comment">//隐藏下拉框</span>
+	virtual <span class="token keyword">void</span> <span class="token function">hidePopup</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//添加一条选项</span>
+	<span class="token keyword">void</span> <span class="token function">addItem</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text<span class="token punctuation">,</span> <span class="token keyword">const</span> QVariant<span class="token operator">&amp;</span> _variant <span class="token operator">=</span> <span class="token function">QVariant</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//添加多条选项</span>
+	<span class="token keyword">void</span> <span class="token function">addItems</span><span class="token punctuation">(</span><span class="token keyword">const</span> QStringList<span class="token operator">&amp;</span> _text_list<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//返回当前选中选项</span>
+	QStringList <span class="token function">currentText</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//返回当前选项条数</span>
+	int <span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token keyword">const</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//设置搜索框默认文字</span>
+	<span class="token keyword">void</span> <span class="token function">SetSearchBarPlaceHolderText</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString _text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//设置文本框默认文字</span>
+	<span class="token keyword">void</span> <span class="token function">SetPlaceHolderText</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	
+	<span class="token comment">//下拉框状态恢复默认（所有选项都恢复为未选中状态）</span>
+	<span class="token keyword">void</span> <span class="token function">ResetSelection</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//清空所有内容（选项内容全部清空）</span>
+	<span class="token keyword">void</span> <span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//文本框内容清空（选项内容不清空，所有选项都恢复为未选中状态，文本框清空）</span>
+	<span class="token keyword">void</span> <span class="token function">TextClear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//设置选中文本--单</span>
+	<span class="token keyword">void</span> <span class="token function">setCurrentText</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//设置选中文本--多</span>
+	<span class="token keyword">void</span> <span class="token function">setCurrentText</span><span class="token punctuation">(</span><span class="token keyword">const</span> QStringList<span class="token operator">&amp;</span> _text_list<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//设置搜索框是否禁用</span>
+	<span class="token keyword">void</span> <span class="token function">SetSearchBarHidden</span><span class="token punctuation">(</span>bool _flag<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<hr color="#000000" size='1"'/>
+<h2><a id="5__182"></a>5. 代码实现</h2>
+<p><font color="#999AAA">头文件：</font></p>
+<pre><code class="prism language-javascript">#pragma once
+
+#include <span class="token operator">&lt;</span>QComboBox<span class="token operator">&gt;</span>
+#include <span class="token operator">&lt;</span>QListWidget<span class="token operator">&gt;</span>
+#include <span class="token operator">&lt;</span>QLineEdit<span class="token operator">&gt;</span>
+#include <span class="token operator">&lt;</span>QCheckBox<span class="token operator">&gt;</span>
+#include <span class="token operator">&lt;</span>QEvent<span class="token operator">&gt;</span>
+
+<span class="token keyword">class</span> <span class="token class-name">MultiSelectComboBox</span> <span class="token operator">:</span> <span class="token keyword">public</span> QComboBox
+<span class="token punctuation">{<!-- --></span>
+	<span class="token constant">Q_OBJECT</span>
+
+<span class="token keyword">public</span><span class="token operator">:</span>
+	<span class="token function">MultiSelectComboBox</span><span class="token punctuation">(</span>QWidget <span class="token operator">*</span>parent <span class="token operator">=</span> <span class="token constant">Q_NULLPTR</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token operator">~</span><span class="token function">MultiSelectComboBox</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//隐藏下拉框</span>
+	virtual <span class="token keyword">void</span> <span class="token function">hidePopup</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//添加一条选项</span>
+	<span class="token keyword">void</span> <span class="token function">addItem</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text<span class="token punctuation">,</span> <span class="token keyword">const</span> QVariant<span class="token operator">&amp;</span> _variant <span class="token operator">=</span> <span class="token function">QVariant</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//添加多条选项</span>
+	<span class="token keyword">void</span> <span class="token function">addItems</span><span class="token punctuation">(</span><span class="token keyword">const</span> QStringList<span class="token operator">&amp;</span> _text_list<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//返回当前选中选项</span>
+	QStringList <span class="token function">currentText</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//返回当前选项条数</span>
+	int <span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token keyword">const</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//设置搜索框默认文字</span>
+	<span class="token keyword">void</span> <span class="token function">SetSearchBarPlaceHolderText</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString _text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//设置文本框默认文字</span>
+	<span class="token keyword">void</span> <span class="token function">SetPlaceHolderText</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	
+	<span class="token comment">//下拉框状态恢复默认</span>
+	<span class="token keyword">void</span> <span class="token function">ResetSelection</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//清空所有内容</span>
+	<span class="token keyword">void</span> <span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//文本框内容清空</span>
+	<span class="token keyword">void</span> <span class="token function">TextClear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//设置选中文本--单</span>
+	<span class="token keyword">void</span> <span class="token function">setCurrentText</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//设置选中文本--多</span>
+	<span class="token keyword">void</span> <span class="token function">setCurrentText</span><span class="token punctuation">(</span><span class="token keyword">const</span> QStringList<span class="token operator">&amp;</span> _text_list<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//设置搜索框是否禁用</span>
+	<span class="token keyword">void</span> <span class="token function">SetSearchBarHidden</span><span class="token punctuation">(</span>bool _flag<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">protected</span><span class="token operator">:</span>
+
+	<span class="token comment">//事件过滤器</span>
+	virtual bool <span class="token function">eventFilter</span><span class="token punctuation">(</span>QObject <span class="token operator">*</span>watched<span class="token punctuation">,</span>QEvent <span class="token operator">*</span>event<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//滚轮事件</span>
+	virtual <span class="token keyword">void</span> <span class="token function">wheelEvent</span><span class="token punctuation">(</span>QWheelEvent <span class="token operator">*</span>event<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//按键事件</span>
+	virtual <span class="token keyword">void</span> <span class="token function">keyPressEvent</span><span class="token punctuation">(</span>QKeyEvent <span class="token operator">*</span>event<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">private</span> slots<span class="token operator">:</span>
+
+	<span class="token comment">//槽函数：文本框文本变化</span>
+	<span class="token keyword">void</span> <span class="token function">stateChange</span><span class="token punctuation">(</span>int _row<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//槽函数：搜索框文本变化</span>
+	<span class="token keyword">void</span> <span class="token function">onSearch</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//槽函数：点击下拉框选项</span>
+	<span class="token keyword">void</span> <span class="token function">itemClicked</span><span class="token punctuation">(</span>int _index<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+signals<span class="token operator">:</span>
+
+	<span class="token comment">//信号：发送当前选中选项</span>
+	<span class="token keyword">void</span> <span class="token function">selectionChange</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString _data<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">private</span><span class="token operator">:</span>
+	<span class="token comment">//下拉框</span>
+	QListWidget<span class="token operator">*</span> list_widget_<span class="token punctuation">;</span>
+	<span class="token comment">//文本框，搜索框</span>
+	QLineEdit<span class="token operator">*</span> line_edit_<span class="token punctuation">,</span> <span class="token operator">*</span>search_bar_<span class="token punctuation">;</span>
+	<span class="token comment">//搜索框显示标志</span>
+	bool hidden_flag_<span class="token punctuation">;</span>
+	<span class="token comment">//下拉框显示标志</span>
+	bool show_flag_<span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+</code></pre>
+<p><font color="#999AAA">实现：</font></p>
+<pre><code class="prism language-javascript">#include <span class="token string">"multi_select_combobox.h"</span>
+
+MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">MultiSelectComboBox</span><span class="token punctuation">(</span>QWidget <span class="token operator">*</span>parent<span class="token punctuation">)</span>
+	<span class="token operator">:</span> <span class="token function">QComboBox</span><span class="token punctuation">(</span>parent<span class="token punctuation">)</span>
+	<span class="token punctuation">,</span> <span class="token function">hidden_flag_</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span>
+	<span class="token punctuation">,</span> <span class="token function">show_flag_</span><span class="token punctuation">(</span><span class="token parameter"><span class="token boolean">false</span></span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	list_widget_ <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">QListWidget</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	line_edit_ <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">QLineEdit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	search_bar_ <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">QLineEdit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">/*设置搜索框*/</span>
+	QListWidgetItem<span class="token operator">*</span> currentItem <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">QListWidgetItem</span><span class="token punctuation">(</span>list_widget_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//设置搜索框提示信息</span>
+	search_bar_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setPlaceholderText</span><span class="token punctuation">(</span><span class="token string">"Search........."</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//显示清除按钮</span>
+	search_bar_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setClearButtonEnabled</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">addItem</span><span class="token punctuation">(</span>currentItem<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setItemWidget</span><span class="token punctuation">(</span>currentItem<span class="token punctuation">,</span> search_bar_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">/*设置文本框*/</span>
+	<span class="token comment">//设为只读，因为该输入框只用来显示选中的选项，称为文本框更合适些</span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setReadOnly</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//把当前对象安装(或注册)为事件过滤器，当前也称为过滤器对象。事件过滤器通常在构造函数中进行注册。</span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">installEventFilter</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//设置禁用样式，因为不受样式表控制，临时这样解决</span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setStyleSheet</span><span class="token punctuation">(</span><span class="token string">"QLineEdit:disabled{background:rgb(233,233,233);}"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setModel</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">model</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setView</span><span class="token punctuation">(</span>list_widget_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setLineEdit</span><span class="token punctuation">(</span>line_edit_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">connect</span><span class="token punctuation">(</span>search_bar_<span class="token punctuation">,</span> <span class="token constant">SIGNAL</span><span class="token punctuation">(</span><span class="token function">textChanged</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">,</span> <span class="token constant">SLOT</span><span class="token punctuation">(</span><span class="token function">onSearch</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">connect</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">,</span> static_cast<span class="token operator">&lt;</span><span class="token keyword">void</span> <span class="token punctuation">(</span>QComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">(</span>int<span class="token punctuation">)</span><span class="token operator">&gt;</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>QComboBox<span class="token operator">:</span><span class="token operator">:</span>activated<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span>itemClicked<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token operator">~</span><span class="token function">MultiSelectComboBox</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">hidePopup</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	show_flag_ <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+	int width <span class="token operator">=</span> <span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">width</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	int height <span class="token operator">=</span> <span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">height</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	int x <span class="token operator">=</span> QCursor<span class="token operator">:</span><span class="token operator">:</span><span class="token function">pos</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">x</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-</span> <span class="token function">mapToGlobal</span><span class="token punctuation">(</span><span class="token function">geometry</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">topLeft</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">x</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token function">geometry</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">x</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	int y <span class="token operator">=</span> QCursor<span class="token operator">:</span><span class="token operator">:</span><span class="token function">pos</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">y</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-</span> <span class="token function">mapToGlobal</span><span class="token punctuation">(</span><span class="token function">geometry</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">topLeft</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">y</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token function">geometry</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">y</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>x <span class="token operator">&gt;=</span> <span class="token number">0</span> <span class="token operator">&amp;&amp;</span> x <span class="token operator">&lt;=</span> width <span class="token operator">&amp;&amp;</span> y <span class="token operator">&gt;=</span> <span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">height</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span> y <span class="token operator">&lt;=</span> height <span class="token operator">+</span> <span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">height</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">else</span>
+	<span class="token punctuation">{<!-- --></span>
+		QComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">hidePopup</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">addItem</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text<span class="token punctuation">,</span> <span class="token keyword">const</span> QVariant<span class="token operator">&amp;</span> _variant <span class="token comment">/*= QVariant()*/</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token constant">Q_UNUSED</span><span class="token punctuation">(</span>_variant<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	QListWidgetItem<span class="token operator">*</span> item <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">QListWidgetItem</span><span class="token punctuation">(</span>list_widget_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	QCheckBox<span class="token operator">*</span> checkbox <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">QCheckBox</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	checkbox<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setText</span><span class="token punctuation">(</span>_text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">addItem</span><span class="token punctuation">(</span>item<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setItemWidget</span><span class="token punctuation">(</span>item<span class="token punctuation">,</span> checkbox<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">connect</span><span class="token punctuation">(</span>checkbox<span class="token punctuation">,</span> <span class="token operator">&amp;</span>QCheckBox<span class="token operator">:</span><span class="token operator">:</span>stateChanged<span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span>stateChange<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">addItems</span><span class="token punctuation">(</span><span class="token parameter"><span class="token keyword">const</span> QStringList<span class="token operator">&amp;</span> _text_list</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">const</span> auto<span class="token operator">&amp;</span> text_one <span class="token operator">:</span> _text_list<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">addItem</span><span class="token punctuation">(</span>text_one<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+QStringList MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">currentText</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	QStringList text_list<span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">text</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">isEmpty</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token comment">//以;为分隔符分割字符串</span>
+		text_list <span class="token operator">=</span> line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">text</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">':'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">return</span> text_list<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+int MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword">const</span>
+<span class="token punctuation">{<!-- --></span>
+	int count <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>count <span class="token operator">&lt;</span> <span class="token number">0</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		count <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">return</span> count<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">SetSearchBarPlaceHolderText</span><span class="token punctuation">(</span><span class="token parameter"><span class="token keyword">const</span> QString _text</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	search_bar_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setPlaceholderText</span><span class="token punctuation">(</span>_text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">SetPlaceHolderText</span><span class="token punctuation">(</span><span class="token parameter"><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setPlaceholderText</span><span class="token punctuation">(</span>_text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">ResetSelection</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	int count <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span>int i <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> count<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token comment">//获取对应位置的QWidget对象</span>
+		QWidget <span class="token operator">*</span>widget <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">itemWidget</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token comment">//将QWidget对象转换成对应的类型</span>
+		QCheckBox <span class="token operator">*</span>check_box <span class="token operator">=</span> static_cast<span class="token operator">&lt;</span>QCheckBox<span class="token operator">*</span><span class="token operator">&gt;</span><span class="token punctuation">(</span>widget<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setChecked</span><span class="token punctuation">(</span><span class="token boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	QListWidgetItem<span class="token operator">*</span> currentItem <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">QListWidgetItem</span><span class="token punctuation">(</span>list_widget_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	search_bar_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setPlaceholderText</span><span class="token punctuation">(</span><span class="token string">"Search........."</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	search_bar_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setClearButtonEnabled</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">addItem</span><span class="token punctuation">(</span>currentItem<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setItemWidget</span><span class="token punctuation">(</span>currentItem<span class="token punctuation">,</span> search_bar_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">SetSearchBarHidden</span><span class="token punctuation">(</span>hidden_flag_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">connect</span><span class="token punctuation">(</span>search_bar_<span class="token punctuation">,</span> <span class="token constant">SIGNAL</span><span class="token punctuation">(</span><span class="token function">textChanged</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">,</span> <span class="token constant">SLOT</span><span class="token punctuation">(</span><span class="token function">onSearch</span><span class="token punctuation">(</span><span class="token keyword">const</span> QString<span class="token operator">&amp;</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">TextClear</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">ResetSelection</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">setCurrentText</span><span class="token punctuation">(</span><span class="token parameter"><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	int count <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span>int i <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> count<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token comment">//获取对应位置的QWidget对象</span>
+		QWidget <span class="token operator">*</span>widget <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">itemWidget</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token comment">//将QWidget对象转换成对应的类型</span>
+		QCheckBox <span class="token operator">*</span>check_box <span class="token operator">=</span> static_cast<span class="token operator">&lt;</span>QCheckBox<span class="token operator">*</span><span class="token operator">&gt;</span><span class="token punctuation">(</span>widget<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>_text<span class="token punctuation">.</span><span class="token function">compare</span><span class="token punctuation">(</span>check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">text</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+			check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setChecked</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">setCurrentText</span><span class="token punctuation">(</span><span class="token parameter"><span class="token keyword">const</span> QStringList<span class="token operator">&amp;</span> _text_list</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	int count <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span>int i <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> count<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token comment">//获取对应位置的QWidget对象</span>
+		QWidget <span class="token operator">*</span>widget <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">itemWidget</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token comment">//将QWidget对象转换成对应的类型</span>
+		QCheckBox <span class="token operator">*</span>check_box <span class="token operator">=</span> static_cast<span class="token operator">&lt;</span>QCheckBox<span class="token operator">*</span><span class="token operator">&gt;</span><span class="token punctuation">(</span>widget<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>_text_list<span class="token punctuation">.</span><span class="token function">contains</span><span class="token punctuation">(</span>check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">text</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+			check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setChecked</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>	
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">SetSearchBarHidden</span><span class="token punctuation">(</span><span class="token parameter">bool _flag</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	hidden_flag_ <span class="token operator">=</span> _flag<span class="token punctuation">;</span>
+	list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setHidden</span><span class="token punctuation">(</span>hidden_flag_<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+bool MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">eventFilter</span><span class="token punctuation">(</span><span class="token parameter">QObject <span class="token operator">*</span>watched<span class="token punctuation">,</span> QEvent <span class="token operator">*</span>event</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token comment">//设置点击输入框也可以弹出下拉框</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>watched <span class="token operator">==</span> line_edit_ <span class="token operator">&amp;&amp;</span> event<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">type</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">==</span> QEvent<span class="token operator">:</span><span class="token operator">:</span>MouseButtonRelease <span class="token operator">&amp;&amp;</span> <span class="token keyword">this</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">isEnabled</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">showPopup</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">wheelEvent</span><span class="token punctuation">(</span><span class="token parameter">QWheelEvent <span class="token operator">*</span>event</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token comment">//禁用QComboBox默认的滚轮事件</span>
+	<span class="token constant">Q_UNUSED</span><span class="token punctuation">(</span>event<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">keyPressEvent</span><span class="token punctuation">(</span><span class="token parameter">QKeyEvent <span class="token operator">*</span>event</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	QComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">keyPressEvent</span><span class="token punctuation">(</span>event<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">stateChange</span><span class="token punctuation">(</span><span class="token parameter">int _row</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token constant">Q_UNUSED</span><span class="token punctuation">(</span>_row<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	QString <span class="token function">selected_data</span><span class="token punctuation">(</span><span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	int count <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span>int i <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> count<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		QWidget <span class="token operator">*</span>widget <span class="token operator">=</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">itemWidget</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		QCheckBox <span class="token operator">*</span>check_box <span class="token operator">=</span> static_cast<span class="token operator">&lt;</span>QCheckBox<span class="token operator">*</span><span class="token operator">&gt;</span><span class="token punctuation">(</span>widget<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">isChecked</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			selected_data<span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span>check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">text</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">append</span><span class="token punctuation">(</span><span class="token string">";"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+	selected_data<span class="token punctuation">.</span><span class="token function">chop</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>selected_data<span class="token punctuation">.</span><span class="token function">isEmpty</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setText</span><span class="token punctuation">(</span>selected_data<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">else</span>
+	<span class="token punctuation">{<!-- --></span>
+		line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	line_edit_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setToolTip</span><span class="token punctuation">(</span>selected_data<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	emit <span class="token function">selectionChange</span><span class="token punctuation">(</span>selected_data<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">onSearch</span><span class="token punctuation">(</span><span class="token parameter"><span class="token keyword">const</span> QString<span class="token operator">&amp;</span> _text</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span>int i <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">count</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		QCheckBox <span class="token operator">*</span>check_box <span class="token operator">=</span> static_cast<span class="token operator">&lt;</span>QCheckBox<span class="token operator">*</span><span class="token operator">&gt;</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">itemWidget</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token comment">//文本匹配则显示，反之隐藏</span>
+		<span class="token comment">//Qt::CaseInsensitive模糊查询</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">text</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">contains</span><span class="token punctuation">(</span>_text<span class="token punctuation">,</span> Qt<span class="token operator">:</span><span class="token operator">:</span>CaseInsensitive<span class="token punctuation">)</span><span class="token punctuation">)</span>
+			list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setHidden</span><span class="token punctuation">(</span><span class="token boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">else</span>
+			list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setHidden</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> MultiSelectComboBox<span class="token operator">:</span><span class="token operator">:</span><span class="token function">itemClicked</span><span class="token punctuation">(</span><span class="token parameter">int _index</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>_index <span class="token operator">!=</span> <span class="token number">0</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		QCheckBox <span class="token operator">*</span>check_box <span class="token operator">=</span> static_cast<span class="token operator">&lt;</span>QCheckBox<span class="token operator">*</span><span class="token operator">&gt;</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">itemWidget</span><span class="token punctuation">(</span>list_widget_<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">item</span><span class="token punctuation">(</span>_index<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">setChecked</span><span class="token punctuation">(</span><span class="token operator">!</span>check_box<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token function">isChecked</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<h1><a id="_525"></a>总结</h1>
+<p><font color="#999AAA">通过这次制作下拉复选框，深入的了解了QComboBox的组成。<br/> 存在问题：1、输入框不能输入中文。<br/> 2、输入框点击后，再次点击不能隐藏下拉框<br/> 3、点击item空白部分会直接隐藏下拉框<br/> 优化：样式优化，后续有时间优化后会继续更新。</font></p>
+<p><font color="#999AAA">如果此文帮助到你( •̀ ω •́ )✧，动动小手点个赞可好O(∩_∩)O。</font></p>
+<font color="#FF0000"> 原创文章，转载请标明本文出处。 </font>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

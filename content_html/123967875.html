@@ -1,0 +1,336 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>【摸鱼神器】基于python的BOSS识别系统</h3>
+<ul><li><a href="#_2">前言</a></li><li><a href="#_12">一、整体设计</a></li><li><a href="#_18">二、调用摄像头</a></li><li><a href="#_43">三、人脸识别</a></li><li><ul><li><a href="#1__56">1. 构建白名单库</a></li><li><a href="#2__176">2. 人脸匹配</a></li></ul>
+</li><li><a href="#_214">四、切换屏幕</a></li><li><a href="#_228">五、完整代码</a></li><li><a href="#_351">写在最后</a></li></ul>
+</div>
+<p></p>
+<h1><a id="_2"></a>前言</h1>
+<blockquote>
+<p>Tip:本文仅供技术学习和参考，切勿滥用。珍爱工作，从我做起，滴滴~</p>
+</blockquote>
+<p>试想这样一个场景：一天，风和日丽，波澜不惊。你正在愉快地摸着鱼，是如此的惬意，如此的巴适。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3a17b83bbade4a8d9650779249dcc3d8.webp?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5LiN5q2j57uP55qEa2ltb2zlkJs=,size_14,color_FFFFFF,t_70,g_se,x_16#pic_center"/><br/> 就在这时，你的BOSS突然出现，打断了这美好的瞬间，迎接你的将是无尽的…<br/> 经过这件事之后，你可能会想：<strong>”有没有一个工具，可以帮我迅速发现BOSS的到来，并迅速切换屏幕呢？“</strong></p>
+<p>于是，它来了。<strong>B</strong>oss <strong>R</strong>ecognition <strong>S</strong>ystem 迈着轻快的步伐来了。各位小伙伴，请系好安全带，咋们发车了🚗…（滴，学生卡）</p>
+<h1><a id="_12"></a>一、整体设计</h1>
+<p>思路还是比较清晰，简单的。调用摄像头实时采集画面，通过人脸识别算法对人像进行检测，如果是BOSS则将屏幕切换到指定界面。示意图如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d1f0befea63d4e38b65e0f60cf8a8094.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5LiN5q2j57uP55qEa2ltb2zlkJs=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>下面将对涉及到的每一部分进行介绍。</p>
+<h1><a id="_18"></a>二、调用摄像头</h1>
+<p>这里可以直接用python的<strong>cv2</strong>库即可，利用pip安装：</p>
+<pre><code>pip install opencv-python
+</code></pre>
+<p>具体调用方法如下：</p>
+<pre><code>import cv2
+
+if __name__ == '__main__':
+    # 开启摄像头
+    video_capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    # 实时捕获图像
+    while True:
+        _, frame = video_capture.read()      # 读取每一帧图像
+        cv2.imshow('capture', frame)         # 展示画面
+        if cv2.waitKey(1) &amp; 0xFF == ord('q'):# 按Q退出
+            break
+    # 关闭摄像头
+    video_capture.release()
+</code></pre>
+<p>这样便能获取到视频的每一祯画面<strong>frame</strong>，接下来我们只需要对frame进行处理和识别就可以了。</p>
+<h1><a id="_43"></a>三、人脸识别</h1>
+<p>目前人脸识别的开源算法和在线API接口有很多，都能帮助我们快速地实现人脸识别效果。但是考虑到BOSS识别是分秒必争的事儿🙈，网络延迟可能会让我们错过最佳“战机”。于是，我决定用本地的人脸识别算法。</p>
+<p>本次采用的是python中的开源人脸识别项目：<a href="https://zhuanlan.zhihu.com/p/45827914">face_recognition</a>，只需要简单的几行代码便可实现人脸识别的效果。其安装方法如下：</p>
+<pre><code>pip install face_recognition
+</code></pre>
+<p><code>注意：使用face_recognition前需要安好dlib库。</code></p>
+<p>BOSS识别有两个思路：一个基于白名单，另一个则基于黑名单。白名单指的是除了白名单里的人像之外，都会触发切屏，其好处是不需要BOSS的照片用于学习，缺点是容易造成误判；而黑名单的好处是可以“精确打击”，但是需要搜集黑名单中对象的照片。<br/> 毕竟偷拍BOSS👴的照片成本太高了，老实巴交的我还是决定采用<strong>白名单</strong>的方式。</p>
+<h2><a id="1__56"></a>1. 构建白名单库</h2>
+<p>读取本地图像库，计算每个人的人脸特征编码，构建出人脸白名单库：</p>
+<pre><code># 读取本地肖像库，建立识别白名单
+def load_portrait(path=path):
+    '''
+    path：肖像库路径
+    '''
+    # 消息提示
+    print('&gt;&gt;&gt;本地图像库读取中，请稍后',end='')
+    for i in range(5):
+        print('.', end='')
+        time.sleep(0.3)
+    # 建立白名单
+    white_map = {}
+    for name in os.listdir(path):
+        filepath = '%s/%s'%(path, name)
+        avg_coding = np.zeros(128)
+        n = 0
+        for file in os.listdir(filepath):
+            if '.jpg' in file:
+                image = face_recognition.load_image_file('%s/%s'%(filepath, file))
+                encoding = face_recognition.face_encodings(image)[0]
+                avg_coding += encoding
+                n += 1
+        avg_coding /= n
+        white_map[name] = avg_coding
+        print('&gt;&gt;"%s"人脸数据加载完成！'%name)
+    return white_map
+</code></pre>
+<p>这里的目录结构如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/78bfc72f1cb345d3acc551c8e2bb5221.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5LiN5q2j57uP55qEa2ltb2zlkJs=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/><br/> data为人像数据存储的根目录，每个人的照片单独存于一个文件夹，并以001、002的顺序进行编号。我们可以手工搜集照片并添加进去，当然也能通过代码自动采集，方法如下：</p>
+<pre><code>import os
+import cv2
+import time
+import threading
+
+# 全局变量
+path = './data' # 采集的图片存储位置
+choice = '-1'   # 选择，用于判断操作，-1表示暂无选择
+
+# 定义捕捉函数
+def capture(name):
+    '''
+    捕捉人像函数
+    '''
+    # 定于图片路径及文件名
+    global path, choice
+    jpgpath = '%s/%s'%(path, name)
+    if not os.path.exists(jpgpath):
+        os.mkdir(jpgpath)
+        i = 1 # 图片标号
+    else:
+        try:
+            i = int(os.listdir(jpgpath)[0][-7:-4])+1
+        except:
+            i = 1
+    # 开启摄像头
+    video_capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    # 循环捕捉头像
+    while True:
+        ret, frame = video_capture.read()
+        cv2.imshow('monitor', frame)
+        if cv2.waitKey(1) &amp; 0xFF == ord('q'):
+            break
+        if choice == '0':
+            choice = '-1'
+            filename = '%s-%s.jpg'%(name, str(i).zfill(3))
+            cv2.imwrite('%s/%s'%(jpgpath, filename), frame)
+            i += 1
+            print('"%s"保存成功！'%filename)
+        elif choice == '1':
+            choice = '-2'  # 用于标记退回上一层
+            break
+        elif choice == '-1':
+            continue
+        else:
+            choice = '-1'
+            print('输入错误...')
+    # 关闭摄像头
+    video_capture.release()      
+
+if __name__ == '__main__':    
+    # 创建目录
+    if not os.path.exists(path):
+        os.mkdir(path)
+    # 显示欢迎界面和说明
+    os.system('cls')
+    welcome = '''
+     _____           _             _ _      _____      _ _           _   
+    |  __ \         | |           (_) |    / ____|    | | |         | |  
+    | |__) |__  _ __| |_ _ __ __ _ _| |_  | |     ___ | | | ___  ___| |_ 
+    |  ___/ _ \| '__| __| '__/ _` | | __| | |    / _ \| | |/ _ \/ __| __|
+    | |  | (_) | |  | |_| | | (_| | | |_  | |___| (_) | | |  __/ (__| |_ 
+    |_|   \___/|_|   \__|_|  \__,_|_|\__|  \_____\___/|_|_|\___|\___|\__| v0.1
+                                                                                                                                        
+    '''
+    print(welcome)
+    # 循环捕捉头像
+    while True:
+        choice_1 = input('&gt;&gt;选择（0-&gt;输入姓名，1-&gt;退出）：')
+        if choice_1 == '0':
+            name = input('&gt;&gt;姓名：')
+            print('摄像头启动中...')
+            time.sleep(1)
+            threading.Thread(target=capture, args=(name,)).start()
+            while True:
+                choice = input('&gt;&gt;选择（0-&gt;保存，1-&gt;退出）：')
+                time.sleep(0.1) # 等待子线程执行，防止逻辑混乱
+                if choice == '-2':
+                    choice = '-1'
+                    break
+        elif choice_1 == '1':
+            break
+        else:
+            print('输入错误')
+</code></pre>
+<h2><a id="2__176"></a>2. 人脸匹配</h2>
+<p>在得到人像白名单之后，需要做的便是将视频中出现的人脸与白名单进行匹配，进而判断其身份。运用到的关键函数是<strong>compare_faces</strong>，其用法如下：</p>
+<pre><code>matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+</code></pre>
+<p>其中<strong>known_face_encodings</strong>为白名单中的人脸特征编码，<strong>face_encoding</strong>为视频中出现的人脸特征编码，与之一一进行比较，如果相吻合返回值则为<strong>True</strong>。<br/> 据此，可以定义一个人脸匹配的函数：</p>
+<pre><code>def recognize(frame, white_map):
+    '''
+    frame: 捕获的摄像头帧
+    white_map: 人像库白名单
+    '''
+    # 根据白名单，提取肖像编码
+    known_face_encodings = list(white_map.values())
+    known_face_names = list(white_map.keys())
+    # 图像预处理（包括大小调整、格式转换）
+    frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25) # 调整图像大小，以减小计算需求
+    frame = frame[:, :, ::-1] # BGR-&gt;RGB
+    # 计算人脸的编码值
+    face_locations = face_recognition.face_locations(frame)
+    face_encodings = face_recognition.face_encodings(frame, face_locations)
+    # 计算的编码与白名单比较，获得其匹配的名字
+    face_names = []
+    for face_encoding in face_encodings:
+        # 默认为"未知"
+        name = '未知'
+        # 匹配
+        matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+        if True in matches:
+            index = matches.index(True)
+            name = known_face_names[index]
+        face_names.append(name)
+    return face_names, face_locations
+</code></pre>
+<p><font color="red" size="2">注：</font><font size="2">①这里对图像进行了压缩，目的是提高计算效率，对其准确率的影响很小。②这里用了for循环，是因为一张图像中出现的人脸可能不止一个。</font></p>
+<h1><a id="_214"></a>四、切换屏幕</h1>
+<p>利用<strong>PyQt5</strong>库打开一个全屏的窗口，把背景图替换为<font color="blue">正在努力工作的画面</font>，便能轻松地实现瞒天过海，开心摸鱼了~</p>
+<pre><code>def lock_screen(image_path='lock.jpg'):
+    app = QApplication(sys.argv)
+    pixmap = QPixmap(image_path)
+    screen = QLabel()
+    screen.setPixmap(pixmap)
+    screen.showFullScreen()
+    sys.exit(app.exec_())
+</code></pre>
+<p>切换屏幕仅仅是一个参考，其实这一步你可以尝试更多的玩法，比如文字提示或者语音提示，又或者直接调用快捷键切换到指定窗口。</p>
+<h1><a id="_228"></a>五、完整代码</h1>
+<p>结合上面几部分，完整代码如下：</p>
+<pre><code>import os
+import cv2
+import sys
+import time
+import numpy as np
+import face_recognition
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtWidgets import QApplication,QLabel
+
+# 全局变量
+path = './data'  # 人像存储路径
+showflag = True  # 是否实时显示图像
+
+# 利用PyQt5打开全屏窗口，实现窗口替换效果
+def lock_screen(image_path='lock.jpg'):
+    app = QApplication(sys.argv)
+    pixmap = QPixmap(image_path)
+    screen = QLabel()
+    screen.setPixmap(pixmap)
+    screen.showFullScreen()
+    sys.exit(app.exec_())
+
+# 读取本地肖像库，建立识别白名单
+def load_portrait(path=path):
+    '''
+    path：肖像库路径
+    '''
+    # 消息提示
+    print('&gt;&gt;&gt;本地图像库读取中，请稍后',end='')
+    for i in range(5):
+        print('.', end='')
+        time.sleep(0.3)
+    # 建立白名单
+    white_map = {}
+    for name in os.listdir(path):
+        filepath = '%s/%s'%(path, name)
+        avg_coding = np.zeros(128)
+        n = 0
+        for file in os.listdir(filepath):
+            if '.jpg' in file:
+                image = face_recognition.load_image_file('%s/%s'%(filepath, file))
+                encoding = face_recognition.face_encodings(image)[0]
+                avg_coding += encoding
+                n += 1
+        avg_coding /= n
+        white_map[name] = avg_coding
+        print('&gt;&gt;"%s"人脸数据加载完成！'%name)
+    return white_map
+
+# 人脸识别，判断当前画面的人像是否与白名单中的匹配
+def recognize(frame, white_map):
+    '''
+    frame: 捕获的摄像头帧
+    white_map: 人像库白名单
+    '''
+    # 根据白名单，提取肖像编码
+    known_face_encodings = list(white_map.values())
+    known_face_names = list(white_map.keys())
+    # 图像预处理（包括大小调整、格式转换）
+    frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25) # 调整图像大小，以减小计算需求
+    frame = frame[:, :, ::-1] # BGR-&gt;RGB
+    # 计算人脸的编码值
+    face_locations = face_recognition.face_locations(frame)
+    face_encodings = face_recognition.face_encodings(frame, face_locations)
+    # 计算的编码与白名单比较，获得其匹配的名字
+    face_names = []
+    for face_encoding in face_encodings:
+        # 默认为"未知"
+        name = '未知'
+        # 匹配
+        matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+        if True in matches:
+            index = matches.index(True)
+            name = known_face_names[index]
+        face_names.append(name)
+    return face_names, face_locations
+    
+if __name__ == '__main__':
+    # 加载白名单
+    white_map = load_portrait(path)
+    #开启摄像头
+    video_capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    # 采集图像
+    flag = 0
+    while True:
+        flag %= 3
+        _, frame = video_capture.read()
+        if flag == 0: # 每3帧处理因此（提高处理速度，防止视频卡顿）
+            face_names, face_locations = recognize(frame, white_map)
+            if '未知' in face_names: # 如果有白名单之外的人
+                lock_screen()
+                break
+        flag += 1
+        if showflag:
+            # 将人脸框出
+            for (top, right, bottom, left), name in zip(face_locations, face_names):
+                # 改变坐标位置（因为处理时原图被缩小了4*4）
+                top *= 4
+                right *= 4
+                bottom *= 4
+                left *= 4
+                # 矩形框
+                cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+                #加上姓名
+                cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
+                font = cv2.FONT_HERSHEY_DUPLEX
+                cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
+            # 显示图像
+            cv2.imshow('monitor', frame)
+        # 按Q退出
+        if cv2.waitKey(1) &amp; 0xFF == ord('q'):
+            break
+    video_capture.release()
+    cv2.destroyAllWindows()
+</code></pre>
+<p>运行代码之后，先前的场景变得有所不同：还是那日，微风荡漾，你开心的摸着鱼。BOSS加快脚步想要抓个现行，当他刚一过来，电脑屏幕就已经切到了工作画面。BOSS微笑地频频点头：“小伙子，不错，工作很刻苦。”</p>
+<p>试想一下，就这操作，咱距离升职加薪，走上人生巅峰还远吗？（手动滑稽脸🙈）</p>
+<h1><a id="_351"></a>写在最后</h1>
+<p>总体来说，本次的BOSS识别系统只是从想法的萌生到一次简单的尝试，还有许多可以优化的地方，比如识别的准确率和效率问题，感兴趣的小伙伴可以尝试着进一步优化。</p>
+<p>最后，想说的是：<strong>摸鱼不是重点，学习技术才是关键</strong>，希望大家可以在摸索和尝试中不断提升自己。</p>
+<p>我是kimol君，咋们下次再会~</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/20201208000006826.jpg#pic_center"/><br/> <code>创作不易，大侠请留步… 动起可爱的双手，来个赞再走呗 (๑◕ܫ￩๑)</code></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,105 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2><span style="color:#ff9900;">前言</span></h2>
+<p>公司的一个内部网站维护，需要根据地名填写经纬度，最终同echarts生成地图。</p>
+<p>之前数据比较少，直接经纬度查询查的，https://jingweidu.bmcx.com/</p>
+<p>现在数据越来越多，手动查询太麻烦，于是想到通过地图api批量查询，最后选择了百度地图API。</p>
+<p></p>
+<h2><span style="color:#ff9900;">步骤</span></h2>
+<h3><span style="color:#ff9900;"><strong>一、到百度地图开放平台注册认证，并创建应用，获取ak</strong></span></h3>
+<p>        百度地图开放平台：<a class="link-info" href="https://lbsyun.baidu.com/apiconsole/key#/home" title="https://lbsyun.baidu.com/apiconsole/key#/home">https://lbsyun.baidu.com/apiconsole/key#/home</a></p>
+<p><img alt="" height="570" src="image\5e753f9e0c55436b8c19c807b5785645.png" width="1200"/></p>
+<h3><span style="color:#ff9900;"><strong>二、查看api文档</strong></span></h3>
+<p>根据地名获取经纬度的接口，可以使用逆地理编码 </p>
+<pre><code class="language-html">https://api.map.baidu.com/geocoding/v3/?address=北京市海淀区上地十街10号&amp;output=json&amp;ak=您的ak&amp;callback=showLocation //GET请求</code></pre>
+<p>接口功能介绍如下<a class="link-info" href="https://lbsyun.baidu.com/index.php?title=webapi/guide/webservice-geocoding" title="https://lbsyun.baidu.com/index.php?title=webapi/guide/webservice-geocoding">https://lbsyun.baidu.com/index.php?title=webapi/guide/webservice-geocoding</a></p>
+<p></p>
+<p><strong>查看请求参数</strong></p>
+<p>可以看到几个主要的参数address，ak，output</p>
+<p><img alt="" height="561" src="image\9721b9a08f2042fb8b1d952d4b577f5d.png" width="989"/></p>
+<p> </p>
+<p><strong>查看返回结果参数</strong></p>
+<p>status为返回结果状态值，成功返回0，其它值都是失败</p>
+<p><img alt="" height="302" src="image\47315631ef394be9ae2b214602c09225.png" width="970"/></p>
+<p> <img alt="" height="532" src="image\5294c6b3c4304f55acbb5e89b69cb752.png" width="967"/></p>
+<p> </p>
+<h3><span style="color:#ff9900;"><strong>三、创建GeocodingMap类，根据地名获取经纬度</strong></span></h3>
+<p>        根据api返回结果参数，创建结果模型</p>
+<div>
+<pre><code class="hljs language-cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">GeocodingResult</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-built_in">int</span> status { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; } = <span class="hljs-number">-1</span>;
+    <span class="hljs-keyword">public</span> <span class="hljs-built_in">string</span> msg { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> Result result { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Result</span>
+{
+    <span class="hljs-keyword">public</span> Location location { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-built_in">int</span> precise { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-built_in">int</span> confidence { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-built_in">int</span> comprehension { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-built_in">string</span> level { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Location</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-built_in">float</span> lng { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+    <span class="hljs-keyword">public</span> <span class="hljs-built_in">float</span> lat { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; }
+}
+</code></pre>
+</div>
+<p>        创建几个类，存储ak，请求url，获取经纬度，为了演示方便，这里将几个类写在一起</p>
+<div>
+<pre><code class="hljs language-cs"><span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">Config</span>
+{
+    <span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-built_in">string</span> Ak { <span class="hljs-keyword">get</span>; <span class="hljs-keyword">set</span>; } = <span class="hljs-string">"xxxxxxxxxxxxxx"</span>;<span class="hljs-comment">//这里根据实际填写，填写刚才申请的应用ak</span>
+}
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">HttpRequestHelper</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;<span class="hljs-built_in">string</span>&gt; <span class="hljs-title">RequestUrl</span>(<span class="hljs-params"><span class="hljs-built_in">string</span> url</span>)</span>
+    {
+        <span class="hljs-built_in">string</span> content = <span class="hljs-built_in">string</span>.Empty;
+        HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+        <span class="hljs-keyword">using</span> (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+        {
+            <span class="hljs-keyword">using</span> (StreamReader sr = <span class="hljs-keyword">new</span> StreamReader(response.GetResponseStream()))
+            {
+                content = <span class="hljs-keyword">await</span> sr.ReadToEndAsync();
+            }
+        }
+        <span class="hljs-keyword">return</span> content;
+    }
+}
+
+<span class="hljs-keyword">public</span> <span class="hljs-keyword">class</span> <span class="hljs-title">GeocodingMap</span>
+{
+    <span class="hljs-function"><span class="hljs-keyword">public</span> <span class="hljs-keyword">static</span> <span class="hljs-keyword">async</span> Task&lt;GeocodingResult&gt; <span class="hljs-title">GetGeocoding</span>(<span class="hljs-params"><span class="hljs-built_in">string</span> address</span>)</span>
+    {
+        <span class="hljs-comment">//API 文档：https://lbsyun.baidu.com/index.php?title=webapi/guide/webservice-geocoding</span>
+
+        <span class="hljs-built_in">string</span> url = @<span class="hljs-string">$"https://api.map.baidu.com/geocoding/v3/?address=<span class="hljs-subst">{address}</span>&amp;output=json&amp;ak=<span class="hljs-subst">{Config.Ak}</span>"</span>;
+        <span class="hljs-built_in">string</span> strJson = <span class="hljs-keyword">await</span> HttpRequestHelper.RequestUrl(url);
+        <span class="hljs-keyword">var</span> requestResult = JsonSerializer.Deserialize&lt;GeocodingResult&gt;(strJson);
+        <span class="hljs-keyword">return</span> requestResult;
+    }
+}
+
+</code></pre>
+</div>
+<p><span style="color:#ff9900;"><strong>调用</strong></span></p>
+<pre><code class="language-cs">var geocoding = await GeocodingMap.GetGeocoding(address);
+if (geocoding.status == 0)
+{
+    //经纬度
+    var axisX = geocoding.result.location.lng;
+    var axisY = geocoding.result.location.lat
+}
+</code></pre>
+<p></p>
+<p><strong>参考</strong></p>
+<p><a href="https://www.cnblogs.com/dengyg0710/p/9553184.html" title="百度地图API根据地名获取经纬度 - 慕尼黑哲哉 - 博客园">百度地图API根据地名获取经纬度 - 慕尼黑哲哉 - 博客园</a></p>
+</div>
+</div>

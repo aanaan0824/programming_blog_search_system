@@ -1,0 +1,37 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atelier-sulphurpool-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="1_2"></a>1、简介</h2>
+<p>Unicode是ASCII（美国信息交换标准码）字符编码的一个扩展。ASCII中每个字符用7位表示，计算机上每个字符8位。Unicode使用全16为字符编码，因此Unicode能表示世界上所有能用于计算机通讯的符号。Unicode最初是作为ASCII的补充。ASCII最终有26个小写/大写字母、10个数字、32个符号、33个控制代码和一个空格，共128个代码。</p>
+<h3><a id="1_4"></a>1、优点</h3>
+<p>大小写字符的代码是连续的<br/> 大小写字母可以通过改变一位数据相互转换</p>
+<p>为了兼容不同国家的语言，需要考虑如何确认和ASCII的兼容。因此引入了双字节字符集（DBCS），使用2个字节定义一个字符，通常是复杂的象形文字。还存在一个问题，不同的国家有一个象形文字是相同的，但语言是不同，因此Windwos支持4个不同的双字节字符集：代码页932（日文）、936（简体中文）、949（朝鲜文）和950（繁体中文），为这些国家生产的Windows版本才支持双字节字符集。</p>
+<p>双字符集不是说字符是由2个字节代表，字符串中的字符数不能由字符串的字节数决定，必须剖析字符串来决定其长度，而且必须检查每个字节以确定它是否属实双字节字符的首字节。<br/> Unicode的缺点：<strong>Unicode字符串占用的内存是ASCII字符串的两倍</strong>。<br/> <strong>Intel微处理器是先从最低位字节开始存储多字节数值的</strong>，如果一个双字节值0x0042，实际上是以0x42、0x00的顺序保存在内存中。在检查Unicode文本的计算机存储时应注意这一点。如</p>
+<pre><code class="prism language-cpp"><span class="token keyword">wchar_t</span><span class="token operator">*</span> pData <span class="token operator">=</span> L<span class="token string">"我是中国人 test"</span><span class="token punctuation">;</span>
+<span class="token keyword">wchar_t</span> szStr <span class="token operator">=</span> L<span class="token string">'A'</span><span class="token punctuation">;</span>
+</code></pre>
+<p>这里的L表示long，告诉编译器这个字符串按宽字符保存（每个字符占用2个字节），L是非常重要的，在2个符号之间必须没有空格，如果不小心忘记了L，编译器会告警。</p>
+<h2><a id="2_20"></a>2、宽字符库函数</h2>
+<pre><code class="prism language-cpp">	<span class="token keyword">const</span> <span class="token keyword">char</span><span class="token operator">*</span> pData <span class="token operator">=</span> <span class="token string">"Hello我"</span><span class="token punctuation">;</span>
+	<span class="token keyword">int</span> nSize <span class="token operator">=</span> <span class="token function">strlen</span><span class="token punctuation">(</span>pData<span class="token punctuation">)</span><span class="token punctuation">;</span>	<span class="token comment">//7</span>
+	<span class="token keyword">wchar_t</span><span class="token operator">*</span> pData1 <span class="token operator">=</span> L<span class="token string">"Hello我"</span><span class="token punctuation">;</span>
+	nSize <span class="token operator">=</span> <span class="token function">wcslen</span><span class="token punctuation">(</span>pData1<span class="token punctuation">)</span><span class="token punctuation">;</span>		<span class="token comment">//6 </span>
+</code></pre>
+<p>const char* pData这样的指针,我们可以通过strlen函数获取到字符串中的字符数，不包含\0。<br/> 当strlen的参数是wchar_t类型的时候，VS2008会提示错误：</p>
+<pre><code class="prism language-cpp">error C2440<span class="token operator">:</span> <span class="token string">'initializing'</span> <span class="token operator">:</span> cannot convert from <span class="token string">'const char [6]'</span> to <span class="token string">'wchar_t *'</span>
+error C2664<span class="token operator">:</span> <span class="token string">'strlen'</span> <span class="token operator">:</span> cannot convert parameter <span class="token number">1</span> from <span class="token string">'wchar_t *'</span> to <span class="token string">'const char *'</span>
+</code></pre>
+<p>如果没有错误提示，能正常运行程序的情况下，字符串长度可能与实际不符，因为Intel处理器是从低位开始的，0x48 0x65 0x6C 0x6C 0x6F在内存是： 48 00 65 00 6C 00 6C 00 6F 00。strlen把第1个字符作为字符开始计数，下一个字节是0，就标识字符串结束。<br/> <strong>运行时库函数是在链接时添加的，因此可能会不同于我们所希望的那样运行</strong>。<strong>改成宽字节后，字符串的字符长度不改变，只是字节长度改变了</strong>。<br/> 在实际开发中，我们也许希望项目既能按ACII编译又能按Unicode编译，这个时候怎么办呢？运行库函数不同的编译方式的函数名称不同，是否也要定义不同的字符？这个问题已经被解决了，我们<strong>在代码中包含TCHAR.H头文件</strong>即可。因其不是标准ANSI C的一部分，因此定义的每个函数和宏定义的前面都有下划线，为字符串参数的标准运行库函数提供一系列的替代名称，这样就可以实现指向函数的Unicode版本也可以指向非Unicode版本。</p>
+<p>这里注意一下L的定义，如下</p>
+<pre><code class="prism language-cpp"><span class="token macro property">#<span class="token directive keyword">define</span> __T(x)      L ## x</span>
+</code></pre>
+<p>这里的# #是粘贴符号，意思是将字母L添加到宏参数上。</p>
+<h2><a id="_46"></a>其他</h2>
+<p>1、ASCII最初使用7位的原因<br/> ASCII代码有128个，2的7次方刚好128，可以满足需要<br/> 在当时的环境下，6位不能满足需求，8位的价格太贵<br/> 2、unicode和dbcs的区别<br/> ASCII是一个字节,但是Unicode可不一定就是两个字节<br/> ASCII只能表示英文数字和常用标点符号,编码在1-127之间，Unicode可以表示所有字符,编码范围很大</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

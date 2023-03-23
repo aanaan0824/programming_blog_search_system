@@ -1,0 +1,310 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="_0"></a>前言</h2>
+<p>首先，如果是网口相机，发现丢帧问题肯定要先看防火墙是不是关了，以及网络设置是否设置正确，这两个解决方法可以通过查看相机厂商提供的网络问题排查手册解决，这里就先不赘述了。</p>
+<p>这里主要是解决海康相机在上面的排查手段都做了之后还存在丢帧现象，提供一个我个人的解决方法，仅供参考。</p>
+<p>然后这个解决方法是c#语言的，当然了，对于其他语言也是存在一定意义的</p>
+<h2><a id="_7"></a>问题描述</h2>
+<p>首先，一定要明确下什么是丢帧，相机采集的图像到PC软件端时，这张照片出现了少量或者大量的图像错误，甚至这一帧全没了。如图就是海康网口相机拍摄的照片其中出现了很多黑色横条，这些横条所在位置的数据丢了，导致缓存中是上次的照片，本来应该都是白的，从上到下都是泛白的才对。<br/> <img alt="丢帧照片" src="https://img-blog.csdnimg.cn/f1536bd9115d49a3a27828046225deb8.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA6L-35oOY5bCP5Lmm56ul,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h2><a id="_10"></a>解决方法</h2>
+<p>我这个解决方法应该不能叫解决问题的本质，也就是不是说不拍出 丢帧的照片，而是拍出了丢帧的照片之后，进行重拍。也就是我们需要知道这次相机拍的是丢帧的，海康相机SDK就提供了这么两个结构体</p>
+<ul><li><strong>MV_MATCH_INFO_NET_DETECT</strong> 网络流量和丢包信息反馈结构体，对应类型为 MV_MATCH_TYPE_NET_DETECT（网口相机）</li><li><strong>MV_MATCH_INFO_USB_DETECT</strong> Host收到从u3v设备端的总字节数，对应类型为 MV_MATCH_TYPE_USB_DETECT （USB相机）</li></ul>
+<pre><code>        public struct MV_MATCH_INFO_USB_DETECT
+        {
+            public long nReviceDataSize;
+            public uint nRevicedFrameCount;
+            public uint nErrorFrameCount;
+            public uint[] nReserved;
+        }
+        public struct MV_MATCH_INFO_NET_DETECT
+        {
+            public long nReviceDataSize;
+            public long nLostPacketCount;
+            public uint nLostFrameCount;
+            public uint nNetRecvFrameCount;
+            public long nRequestResendPacketCount;
+            public long nResendPacketCount;
+        }
+</code></pre>
+<p>观察发现他都有个反应丢帧数量的参数。<br/> 于是定义一个能进行判断是否丢帧的类</p>
+<pre><code>        class LostFrameInfo
+        {
+            public bool isGige = true;//默认是网口相机
+            /// &lt;summary&gt;
+            /// 已接收数据大小 [统计StartGrabbing和StopGrabbing之间的数据量] 
+            /// &lt;/summary&gt;
+            public long nReviceDataSize;
+
+            //Gige
+
+            /// &lt;summary&gt;
+            /// 丢失的包数量
+            /// &lt;/summary&gt;
+            public long nLostPacketCount;
+            /// &lt;summary&gt;
+            /// 丢帧数量
+            /// &lt;/summary&gt;
+            public uint nLostFrameCount;
+            public uint nNetRecvFrameCount;
+            /// &lt;summary&gt;
+            /// 请求重发包数 
+            /// &lt;/summary&gt;
+            public long nRequestResendPacketCount;
+            /// &lt;summary&gt;
+            /// 重发包数
+            /// &lt;/summary&gt;
+            public long nResendPacketCount;
+
+            //USB
+
+            /// &lt;summary&gt;
+            /// 已收到的帧数
+            /// &lt;/summary&gt;
+            public uint nRevicedFrameCount;
+            /// &lt;summary&gt;
+            /// 错误帧数 
+            /// &lt;/summary&gt;
+            public uint nErrorFrameCount;
+            /// &lt;summary&gt;
+            /// 保留字节
+            /// &lt;/summary&gt;
+            public uint[] nReserved;
+
+            public override string ToString()
+            {
+                if (isGige)
+                    return $"nReviceDataSize:{nReviceDataSize};nLostPacketCount:{nLostPacketCount};nLostFrameCount:{nLostFrameCount};nNetRecvFrameCount:{nNetRecvFrameCount}" +
+                        $"nRequestResendPacketCount:{nRequestResendPacketCount};nResendPacketCount:{nResendPacketCount}";
+                else
+                    return $"nReviceDataSize:{nReviceDataSize};nRevicedFrameCount:{nRevicedFrameCount};nErrorFrameCount:{nErrorFrameCount}";
+            }
+            /// &lt;summary&gt;
+            /// 跟前一个LostFrameInfo做对比
+            /// &lt;/summary&gt;
+            /// &lt;param name="preLostFrameInfo"&gt;&lt;/param&gt;
+            /// &lt;returns&gt;&lt;/returns&gt;
+            public bool IsLostFrame(LostFrameInfo preLostFrameInfo)
+            {
+                if (this.isGige)
+                    return this.nLostFrameCount &gt; preLostFrameInfo.nLostFrameCount;
+                else
+                    return this.nErrorFrameCount &gt; preLostFrameInfo.nErrorFrameCount;
+            }
+
+            public bool IsLostFrame()
+            {
+                if (this.isGige)
+                    return this.nLostFrameCount &gt; 0 || nLostPacketCount &gt; 0;
+                else
+                    return this.nErrorFrameCount &gt; 0;
+            }
+
+            /// &lt;summary&gt;
+            /// 跟前一个LostFrameInfo做对比，重影问题就是这个值突然变大
+            /// &lt;/summary&gt;
+            /// &lt;param name="preLostFrameInfo"&gt;&lt;/param&gt;
+            /// &lt;returns&gt;&lt;/returns&gt;
+            public bool IsLostPacket(LostFrameInfo preLostFrameInfo)
+            {
+                if (this.isGige)
+                    return this.nLostPacketCount &gt; preLostFrameInfo.nLostPacketCount;
+                else
+                    return false;
+            }
+
+            public bool IsLostPacket()
+            {
+                if (this.isGige)
+                    return this.nLostPacketCount &gt; 0 || nLostPacketCount &gt; 0;
+                else
+                    return false;
+            }
+            public void SetPara(MyCamera.MV_MATCH_INFO_NET_DETECT MV_NetInfo)
+            {
+                this.isGige = true;
+                this.nReviceDataSize = MV_NetInfo.nReviceDataSize;
+                this.nLostPacketCount = MV_NetInfo.nLostPacketCount;
+                this.nLostFrameCount = MV_NetInfo.nLostFrameCount;
+                this.nNetRecvFrameCount = MV_NetInfo.nNetRecvFrameCount;
+                this.nRequestResendPacketCount = MV_NetInfo.nRequestResendPacketCount;
+                this.nResendPacketCount = MV_NetInfo.nResendPacketCount;
+            }
+
+            public void SetPara(MyCamera.MV_MATCH_INFO_USB_DETECT MV_NetInfo)
+            {
+                this.isGige = false;
+                this.nReviceDataSize = MV_NetInfo.nReviceDataSize;
+                this.nRevicedFrameCount = MV_NetInfo.nRevicedFrameCount;
+                this.nErrorFrameCount = MV_NetInfo.nErrorFrameCount;
+                this.nReserved = MV_NetInfo.nReserved;
+            }
+        }
+</code></pre>
+<p>获取是否丢帧信息</p>
+<pre><code>// ch:获取丢帧数 | en:Get Throw Frame Number
+        private LostFrameInfo GetLostFrame()
+        {
+            MyCamera.MV_ALL_MATCH_INFO pstInfo = new MyCamera.MV_ALL_MATCH_INFO();
+            LostFrameInfo lostFrameInfo = new LostFrameInfo();
+            if (_pDeviceInfo.nTLayerType == MyCamera.MV_GIGE_DEVICE)
+            {
+                MyCamera.MV_MATCH_INFO_NET_DETECT MV_NetInfo = new MyCamera.MV_MATCH_INFO_NET_DETECT();
+                pstInfo.nInfoSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(MyCamera.MV_MATCH_INFO_NET_DETECT));
+                pstInfo.nType = MyCamera.MV_MATCH_TYPE_NET_DETECT;
+                int size = Marshal.SizeOf(MV_NetInfo);
+                try
+                {
+                    pstInfo.pInfo = Marshal.AllocHGlobal(size);
+                    Marshal.StructureToPtr(MV_NetInfo, pstInfo.pInfo, false);
+
+                    _myCamera.MV_CC_GetAllMatchInfo_NET(ref pstInfo);
+                    MV_NetInfo = (MyCamera.MV_MATCH_INFO_NET_DETECT)Marshal.PtrToStructure(pstInfo.pInfo, typeof(MyCamera.MV_MATCH_INFO_NET_DETECT));
+                    lostFrameInfo.SetPara(MV_NetInfo);
+                }
+                catch (Exception ex)
+                {
+                    NlogHelper.Error(ex);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(pstInfo.pInfo);
+                }
+                return lostFrameInfo;
+            }
+            else if (_pDeviceInfo.nTLayerType == MyCamera.MV_USB_DEVICE)
+            {
+                MyCamera.MV_MATCH_INFO_USB_DETECT MV_NetInfo = new MyCamera.MV_MATCH_INFO_USB_DETECT();
+                pstInfo.nInfoSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(MyCamera.MV_MATCH_INFO_USB_DETECT));
+                pstInfo.nType = MyCamera.MV_MATCH_TYPE_USB_DETECT;
+                int size = Marshal.SizeOf(MV_NetInfo);
+                try
+                {
+                    pstInfo.pInfo = Marshal.AllocHGlobal(size);
+                    Marshal.StructureToPtr(MV_NetInfo, pstInfo.pInfo, false);
+
+                    _myCamera.MV_CC_GetAllMatchInfo_NET(ref pstInfo);
+                    MV_NetInfo = (MyCamera.MV_MATCH_INFO_USB_DETECT)Marshal.PtrToStructure(pstInfo.pInfo, typeof(MyCamera.MV_MATCH_INFO_USB_DETECT));
+                    lostFrameInfo.SetPara(MV_NetInfo);
+                }
+                catch (Exception ex)
+                {
+                    NlogHelper.Error(ex);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(pstInfo.pInfo);
+                }
+                return lostFrameInfo;
+            }
+            else
+            {
+                return null;
+            }
+        }
+</code></pre>
+<p>调用</p>
+<pre><code>        private bool GetOneFrame(ImageType type,ref MyCamera.MV_FRAME_OUT frameOutInfo, string fileName = "")
+        {
+            frameOutInfo = new MyCamera.MV_FRAME_OUT();
+            int nRet = MyCamera.MV_OK;
+            int tryTimes = 0;
+            const int RETRY_TIMES = 2;
+
+            lock (_getOneFrameObj)
+            {
+                bool result = false;
+                do
+                {
+                    try
+                    {
+                        preLostFrameInfo = GetLostFrame();
+                        NlogHelper.Trace("Before 获取图像帧:" + preLostFrameInfo.ToString());
+
+                        _myCamera.MV_CC_ClearImageBuffer_NET();
+                        nRet = _myCamera.MV_CC_GetImageBuffer_NET(ref frameOutInfo, 10000);
+                        if (nRet == MyCamera.MV_OK)
+                        {
+                            bool isLostFrame = false;
+                            bool isLostPacket = false;
+
+                            LostFrameInfo lostFrameInfo = GetLostFrame();
+                            NlogHelper.Trace("After 获取图像帧:" + lostFrameInfo.ToString());
+                            //if(tryTimes == 0)
+                            //{
+                            //    lostFrameInfo.nLostPacketCount += 200;
+                            //    NlogHelper.Trace("更改nLostPacketCount:" + lostFrameInfo.ToString());
+                            //}
+
+                            if (lostFrameInfo.IsLostFrame(preLostFrameInfo))
+                            {
+                                isLostFrame = true;
+                                NlogHelper.Error($"疑似丢帧");
+                                NlogHelper.Trace($"发生丢帧，相机重拍");
+                            }
+
+                            if (lostFrameInfo.IsLostPacket(preLostFrameInfo))
+                            {
+                                isLostPacket = true;
+                                NlogHelper.Error($"疑似丢包");
+                                NlogHelper.Trace($"发生丢包，相机重拍");
+                            }
+
+                            if (RemoveCustomPixelFormats(frameOutInfo.stFrameInfo.enPixelType))
+                            {
+                                _myCamera.MV_CC_FreeImageBuffer_NET(ref frameOutInfo);
+                                NlogHelper.Trace($"获取图像帧:RemoveCustomPixelFormats");
+                                continue;
+                            }
+
+                            if (!isLostFrame &amp;&amp; !isLostPacket) //如果没丢帧或者没丢包就结束循环
+                            {
+                                if (type == ImageType.NotSave)
+                                {
+                                    //注意这里没有调用,需要调用者使用完后调用 MV_CC_FreeImageBuffer_NET
+                                    _myCamera.MV_CC_FreeImageBuffer_NET(ref frameOutInfo);
+                                }
+                                else
+                                {
+                                    if (!string.IsNullOrEmpty(fileName))
+                                    {
+                                        SaveImage(frameOutInfo, type, fileName);
+                                    }
+                                    _myCamera.MV_CC_FreeImageBuffer_NET(ref frameOutInfo);
+                                }
+                                
+                                result = true;
+                                break;
+                            }
+                            else
+                            {
+                                _myCamera.MV_CC_FreeImageBuffer_NET(ref frameOutInfo);
+                            }
+                        }
+                        else
+                        {
+                            NlogHelper.Trace($"GetOneFrame : MV_CC_GetImageBuffer_NET is not ok {nRet}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        NlogHelper.Error(ex);
+                    }
+                    finally
+                    {
+                        tryTimes++;
+                    }
+                } while (tryTimes &lt;= RETRY_TIMES);
+
+                return result;
+            }
+        }
+</code></pre>
+<p>相机调用获取一帧MV_CC_GetImageBuffer_NET之前，先获取一下丢帧信息，然后调用获取一帧MV_CC_GetImageBuffer_NET之后，再获取一下，两个对象对比，如果有丢帧就重拍</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

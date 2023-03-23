@@ -1,0 +1,2038 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1>实现功能：</h1>
+<ul><li>自动创建继承ScriptableObject的C#数据类，每条Excel的数据，都有对应的字段的Get函数； </li></ul>
+<p><img alt="" height="131" src="image\8b417eefa2344eb6a27500870e43fee6.png" width="295"/> <img alt="" height="230" src="image\06fde7bb56c34ac6a4e3b4c910032b2b.png" width="302"/></p>
+<p></p>
+<ul><li>自动创建每个Excel的Asset生成类和生成函数，用于自动生成Asset文件</li></ul>
+<p><img alt="" height="377" src="image\4aa5aaa952a44e5b912075c70f5c8f61.png" width="604"/></p>
+<ul><li>使用Asset生成类自动序列化Excel数据到Asset文件，可直接在项目运行时加载使用</li></ul>
+<p><img alt="" height="148" src="image\9403ac53f3654648a2c362f173721b32.png" width="456"/></p>
+<p></p>
+<h1>实现原理：</h1>
+<h3>Excel配置格式：</h3>
+<ul><li>第1行对应特殊标记（可以设置有效性，指定要创建的文件）</li><li>第2行对应中文说明（作为第3行字段的注释）</li><li>第3行对应字段名称（自动创建的字段名称）</li><li>第4行对应字段类型（自动创建的字段类型，与字段名称一一对应）</li><li>第5行及以后对应字段值（所有数据，以行为单位解析、保存数据）</li><li>第一列固定字段为"id"，是代码中索引每行数据的Key</li></ul>
+<p><strong>Excel注释操作：</strong></p>
+<ul><li>字段名称行，每个字段单元格内容前加"//"，可以注释该字段，不会解析生成到C#类；</li><li>第一列的单元格内容前加"//"，可以注释一行数据，不会保存到Asset文件中；</li><li>注释可以用于添加说明行，或剔除指定无用数据。</li></ul>
+<p><img alt="" height="142" src="image\6feba95042e04ccfae134e7ac4de2310.png" width="427"/></p>
+<h3>生成的C#类格式：</h3>
+<p>行数据类，对应每一行数据：</p>
+<pre><code class="language-cs">[Serializable]
+public class TestConfigExcelItem : ExcelItemBase
+{
+	/// &lt;summary&gt;
+	/// 数据id
+	/// &lt;/summary&gt;&gt;
+	public int id;
+	/// &lt;summary&gt;
+	/// 字符串
+	/// &lt;/summary&gt;&gt;
+	public string testString;
+	/// &lt;summary&gt;
+	/// Int
+	/// &lt;/summary&gt;&gt;
+	public int testInt;
+	/// &lt;summary&gt;
+	/// Float
+	/// &lt;/summary&gt;&gt;
+	public float testFloat;
+}</code></pre>
+<p>完整数据类，包含所有行的数据、初始化函数、Get函数：</p>
+<pre><code class="language-cs">public class TestConfigExcelData : ExcelDataBase&lt;TestConfigExcelItem&gt;
+{
+	public TestConfigExcelItem[] items;
+
+	public Dictionary&lt;int,TestConfigExcelItem&gt; itemDic = new Dictionary&lt;int,TestConfigExcelItem&gt;();
+
+	public void Init()
+	{
+		itemDic.Clear();
+		if(items != null &amp;&amp; items.Length &gt; 0)
+		{
+			for(int i = 0; i &lt; items.Length; i++)
+			{
+				itemDic.Add(items[i].id, items[i]);
+			}
+		}
+	}
+
+	public TestConfigExcelItem GetTestConfigExcelItem(int id)
+	{
+		if(itemDic.ContainsKey(id))
+			return itemDic[id];
+		else
+			return null;
+	}
+	#region --- Get Method ---
+
+	public string GetTestString(int id)
+	{
+		var item = GetTestConfigExcelItem(id);
+		if(item == null)
+			return default;
+		return item.testString;
+	}
+
+	// ··· ···
+
+	#endregion
+}</code></pre>
+<h3>目前支持的数据结构：</h3>
+<table cellspacing="0" style="width:459.75pt;"><tbody><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">字符串</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testString</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">字符串数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testStringArray</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">字符串二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">testStringArray2</span></td></tr><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">Int</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testInt</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">Int数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testIntArray</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">Int二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">testIntArray2</span></td></tr><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">Float</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testFloat</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">Float数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testFloatArray</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">Float二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">testFloatArray2</span></td></tr><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">Bool</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testBool</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">Bool数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testBoolArray</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">Bool二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">testBoolArray2</span></td></tr><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">Enum|枚举名(或枚举值)</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testEnum</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">Enum数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testEnumArray</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">Enum二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">不支持</span></td></tr><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">Vector2</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testVector2</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">Vector2数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testVector2Array</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">Vector2二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">testVector2Array2</span></td></tr><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">Vector3</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testVector3</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">Vector3数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testVector3Array</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">Vector3二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">testVector3Array2</span></td></tr><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">Vector2Int</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testVector2Int</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">Vector2Int数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testVector2IntArray</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">Vector2Int二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">testVector2IntArray2</span></td></tr><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">Vector3Int</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testVector3Int</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">Vector3Int数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testVector3IntArray</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">Vector3Int二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">testVector3IntArray2</span></td></tr><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">Color</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testColor</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">Color数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testColorArray</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">Color二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">testColorArray2</span></td></tr><tr><td style="text-align:left;vertical-align:middle;width:60.75pt;"><span style="color:#000000;">Color32</span></td><td style="text-align:left;vertical-align:middle;width:103.5pt;"><span style="color:#000000;">testColor32</span></td><td style="text-align:left;vertical-align:middle;width:68.25pt;"><span style="color:#000000;">Color32数组</span></td><td style="text-align:left;vertical-align:middle;width:63.75pt;"><span style="color:#000000;">testColor32Array</span></td><td style="text-align:left;vertical-align:middle;width:65.25pt;"><span style="color:#000000;">Color32二维数组</span></td><td style="text-align:left;vertical-align:middle;width:98.25pt;"><span style="color:#000000;">testColor32Array2</span></td></tr></tbody></table>
+<p>因为Unity不能序列化二维数组，这里改成一维数组+结构体的方式实现：</p>
+<pre><code class="language-cs">[Serializable]
+public struct StringArr
+{
+    public string[] array;
+}
+
+//二维数组表示方式： StringArr[]</code></pre>
+<h3>Asset数据文件：</h3>
+<p>在自动生成数据的C#类时，会同步生成Asset文件的创建类，用于自动创建Asset文件并序列化数据。</p>
+<p><img alt="" height="147" src="image\21312c3276b54df1a8fdfd9900ab6baa.png" width="634"/></p>
+<h3>优点：</h3>
+<ul><li>数据修改后只需要重新一键生成即可</li><li>每个Excel对应一个类，使用灵活，对Excel限制少</li><li>自动创建C#类，不需要对每个Excel手动写代码，每条数据对应字段，不需要拆箱装修</li><li>自动创建ScriptableObject的Asset文件，自动序列化数据，方便查看，可以手动修改调整，不需要每次改动都在Excel里操作</li><li>在游戏内直接读取Asset的ScriptableObject子类，不需要额外操作，业务层直接调取数据字段</li></ul>
+<p></p>
+<h1>使用方法：</h1>
+<ul><li>按照标准格式配置Excel</li><li>一键生成C#类、Asset文件</li><li>项目运行时加载Asset资源，调用Init初始化，Get函数获取对应字段值即可</li></ul>
+<p><img alt="" height="211" src="image\e1c0fddb05e54845ad641d4a02022758.png" width="382"/><img alt="" height="208" src="image\ab04c93656634a7fb9ea600388cd41e3.png" width="282"/></p>
+<p></p>
+<h1>完整代码：</h1>
+<h3>扩展Unity编辑器窗口：</h3>
+<pre><code class="language-cs">using UnityEngine;
+using UnityEditor;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+
+public class BuildExcelWindow : EditorWindow
+{
+    [MenuItem("MyTools/Excel Window",priority = 100)]
+    public static void ShowReadExcelWindow()
+    {
+        BuildExcelWindow window = GetWindow&lt;BuildExcelWindow&gt;(true);
+        window.Show();
+        window.minSize = new Vector2(475,475);
+    }
+
+    //Excel读取路径，绝对路径，放在Assets同级路径
+    private static string excelReadAbsolutePath;
+
+    //自动生成C#类文件路径，绝对路径
+    private static string scriptSaveAbsolutePath;
+    private static string scriptSaveRelativePath;
+    //自动生成Asset文件路径，相对路径
+    private static string assetSaveRelativePath;
+
+    private List&lt;string&gt; fileNameList = new List&lt;string&gt;();
+    private List&lt;string&gt; filePathList = new List&lt;string&gt;();
+
+    private void Awake()
+    {
+        titleContent.text = "Excel配置表读取";
+
+        excelReadAbsolutePath = Application.dataPath.Replace("Assets","Excel");
+        scriptSaveAbsolutePath = Application.dataPath + CheckEditorPath("/Script/Excel/AutoCreateCSCode");
+        scriptSaveRelativePath = CheckEditorPath("Assets/Script/Excel/AutoCreateCSCode");
+        assetSaveRelativePath = CheckEditorPath("Assets/AssetData/Excel/AutoCreateAsset");
+    }
+
+    private void OnEnable()
+    {
+        RefreshExcelFile();
+    }
+
+    private void OnDisable()
+    {
+        fileNameList.Clear();
+        filePathList.Clear();
+    }
+
+    private Vector2 scrollPosition = Vector2.zero;
+    private void OnGUI()
+    {
+        GUILayout.Space(10);
+
+        scrollPosition = GUILayout.BeginScrollView(scrollPosition,GUILayout.Width(position.width),GUILayout.Height(position.height));
+
+        //展示路径
+        GUILayout.BeginHorizontal(GUILayout.Height(20));
+        if(GUILayout.Button("Excel读取路径",GUILayout.Width(100)))
+        {
+            EditorUtility.OpenWithDefaultApp(excelReadAbsolutePath);
+            Debug.Log(excelReadAbsolutePath);
+        }
+        if(GUILayout.Button("Script保存路径",GUILayout.Width(100)))
+        {
+            SelectObject(scriptSaveRelativePath);
+        }
+        if(GUILayout.Button("Asset保存路径",GUILayout.Width(100)))
+        {
+            SelectObject(assetSaveRelativePath);
+        }
+        GUILayout.EndHorizontal();
+
+        GUILayout.Space(5);
+
+        //Excel列表
+
+        GUILayout.Label("Excel列表：");
+        for(int i = 0; i &lt; fileNameList.Count; i++)
+        {
+            GUILayout.BeginHorizontal("Box",GUILayout.Height(40));
+
+            GUILayout.Label($"{i}:","Titlebar Foldout",GUILayout.Width(30),GUILayout.Height(35));
+            GUILayout.Box(fileNameList[i],"MeTransitionBlock",GUILayout.MinWidth(200),GUILayout.Height(35));
+            GUILayout.Space(10);
+
+            //生成CS代码
+            if(GUILayout.Button("Create Script",GUILayout.Width(100),GUILayout.Height(30)))
+            {
+                ExcelDataReader.ReadOneExcelToCode(filePathList[i],scriptSaveAbsolutePath);
+            }
+            //生成Asset文件
+            if(GUILayout.Button("Create Asset",GUILayout.Width(100),GUILayout.Height(30)))
+            {
+                ExcelDataReader.CreateOneExcelAsset(filePathList[i],assetSaveRelativePath);
+            }
+
+            GUILayout.EndHorizontal();
+            GUILayout.Space(5);
+        }
+        GUILayout.Space(10);
+
+        //一键处理所有Excel
+
+        GUILayout.Label("一键操作：");
+        GUILayout.BeginHorizontal("Box",GUILayout.Height(40));
+
+        GUILayout.Label("all","Titlebar Foldout",GUILayout.Width(30),GUILayout.Height(35));
+        GUILayout.Box("All Excel","MeTransitionBlock",GUILayout.MinWidth(200),GUILayout.Height(35));
+        GUILayout.Space(10);
+
+        if(GUILayout.Button("Create Script",GUILayout.Width(100),GUILayout.Height(30)))
+        {
+            ExcelDataReader.ReadAllExcelToCode(excelReadAbsolutePath,scriptSaveAbsolutePath);
+        }
+        if(GUILayout.Button("Create Asset",GUILayout.Width(100),GUILayout.Height(30)))
+        {
+            ExcelDataReader.CreateAllExcelAsset(excelReadAbsolutePath,assetSaveRelativePath);
+        }
+        GUILayout.EndHorizontal();
+
+        //
+        GUILayout.Space(20);
+        //
+        GUILayout.EndScrollView();
+    }
+
+    //读取指定路径下的Excel文件名
+    private void RefreshExcelFile()
+    {
+        fileNameList.Clear();
+        filePathList.Clear();
+
+        if(!Directory.Exists(excelReadAbsolutePath))
+        {
+            Debug.LogError("无效路径：" + excelReadAbsolutePath);
+            return;
+        }
+        string[] excelFileFullPaths = Directory.GetFiles(excelReadAbsolutePath,"*.xlsx");
+
+        if(excelFileFullPaths == null || excelFileFullPaths.Length == 0)
+        {
+            Debug.LogError(excelReadAbsolutePath + "路径下没有找到Excel文件");
+            return;
+        }
+
+        filePathList.AddRange(excelFileFullPaths);
+        for(int i = 0; i &lt; filePathList.Count; i++)
+        {
+            fileNameList.Add(Path.GetFileName(filePathList[i]));
+        }
+        Debug.Log("找到Excel文件：" + fileNameList.Count + "个");
+    }
+
+    private void SelectObject(string targetPath)
+    {
+        Object targetObj = AssetDatabase.LoadAssetAtPath&lt;Object&gt;(targetPath);
+        EditorGUIUtility.PingObject(targetObj);
+        Selection.activeObject = targetObj;
+        Debug.Log(targetPath);
+    }
+
+    private static string CheckEditorPath(string path)
+    {
+#if UNITY_EDITOR_WIN
+        return path.Replace("/","\\");
+#elif UNITY_EDITOR_OSX
+        return path.Replace("\\","/");
+#else
+        return path;
+#endif
+    }
+}</code></pre>
+<h3>Excel数据读取类： </h3>
+<pre><code class="language-cs">using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using System.IO;
+using Excel;
+using System.Reflection;
+using System;
+using System.Linq;
+
+public class ExcelDataReader
+{
+    //Excel第1行对应特殊标记
+    private const int specialSignRow = 0;
+    //Excel第2行对应中文说明
+    private const int excelNodeRow = 1;
+    //Excel第3行对应字段名称
+    private const int excelNameRow = 2;
+    //Excel第4行对应字段类型
+    private const int excelTypeRow = 3;
+    //Excel第5行及以后对应字段值
+    private const int excelDataRow = 4;
+
+    //标记注释行/列
+    private const string annotationSign = "//";
+
+    #region --- Read Excel ---
+
+    //创建Excel对应的C#类
+    public static void ReadAllExcelToCode(string allExcelPath,string codeSavePath)
+    {
+        //读取所有Excel文件
+        //指定目录中与指定的搜索模式和选项匹配的文件的完整名称（包含路径）的数组；如果未找到任何文件，则为空数组。
+        string[] excelFileFullPaths = Directory.GetFiles(allExcelPath,"*.xlsx");
+        if(excelFileFullPaths == null || excelFileFullPaths.Length == 0)
+        {
+            Debug.Log("Excel file count == 0");
+            return;
+        }
+        //遍历所有Excel，创建C#类
+        for(int i = 0; i &lt; excelFileFullPaths.Length; i++)
+        {
+            ReadOneExcelToCode(excelFileFullPaths[i],codeSavePath);
+        }
+    }
+
+    //创建Excel对应的C#类
+    public static void ReadOneExcelToCode(string excelFullPath,string codeSavePath)
+    {
+        //解析Excel获取中间数据
+        ExcelMediumData excelMediumData = CreateClassCodeByExcelPath(excelFullPath);
+        if(excelMediumData == null)
+        {
+            Debug.LogError($"读取Excel失败 : {excelFullPath}");
+            return;
+        }
+        if(!excelMediumData.isValid)
+        {
+            Debug.LogError($"读取Excel失败，Excel标记失效 : {excelMediumData.excelName}");
+            return;
+        }
+
+        if(!excelMediumData.isCreateCSharp &amp;&amp; !excelMediumData.isCreateAssignment)
+        {
+            Debug.LogError($"读取Excel失败，Excel不允许生成CSCode : {excelMediumData.excelName}");
+            return;
+        }
+
+        //根据数据生成C#脚本
+        string classCodeStr = ExcelCodeCreater.CreateCodeStrByExcelData(excelMediumData);
+        if(string.IsNullOrEmpty(classCodeStr))
+        {
+            Debug.LogError($"解析Excel失败 : {excelMediumData.excelName}");
+            return;
+        }
+
+        //检查导出路径
+        if(!Directory.Exists(codeSavePath))
+            Directory.CreateDirectory(codeSavePath);
+        //类名
+        string codeFileName = excelMediumData.excelName + "ExcelData";
+        //写文件，生成CS类文件
+        StreamWriter sw = new StreamWriter($"{codeSavePath}/{codeFileName}.cs");
+        sw.WriteLine(classCodeStr);
+        sw.Close();
+        //
+        UnityEditor.AssetDatabase.SaveAssets();
+        UnityEditor.AssetDatabase.Refresh();
+        //
+        Debug.Log($"生成Excel的CS成功 : {excelMediumData.excelName}");
+    }
+
+    #endregion
+
+    #region --- Create Asset ---
+
+    //创建Excel对应的Asset数据文件
+    public static void CreateAllExcelAsset(string allExcelPath,string assetSavePath)
+    {
+        //读取所有Excel文件
+        //指定目录中与指定的搜索模式和选项匹配的文件的完整名称（包含路径）的数组；如果未找到任何文件，则为空数组。
+        string[] excelFileFullPaths = Directory.GetFiles(allExcelPath,"*.xlsx");
+        if(excelFileFullPaths == null || excelFileFullPaths.Length == 0)
+        {
+            Debug.Log("Excel file count == 0");
+            return;
+        }
+        //遍历所有Excel，创建Asset
+        for(int i = 0; i &lt; excelFileFullPaths.Length; i++)
+        {
+            CreateOneExcelAsset(excelFileFullPaths[i],assetSavePath);
+        }
+    }
+
+    //创建Excel对应的Asset数据文件
+    public static void CreateOneExcelAsset(string excelFullPath,string assetSavePath)
+    {
+        //解析Excel获取中间数据
+        ExcelMediumData excelMediumData = CreateClassCodeByExcelPath(excelFullPath);
+        if(excelMediumData == null)
+        {
+            Debug.LogError($"读取Excel失败 : {excelFullPath}");
+            return;
+        }
+        if(!excelMediumData.isValid)
+        {
+            Debug.LogError($"读取Excel失败，Excel标记失效 : {excelMediumData.excelName}");
+            return;
+        }
+
+        if(!excelMediumData.isCreateAsset)
+        {
+            Debug.LogError($"读取Excel失败，Excel不允许生成Asset : {excelMediumData.excelName}");
+            return;
+        }
+
+        获取当前程序集
+        //Assembly assembly = Assembly.GetExecutingAssembly();
+        创建类的实例，返回为 object 类型，需要强制类型转换，assembly.CreateInstance("类的完全限定名（即包括命名空间）");
+        //object class0bj = assembly.CreateInstance(excelMediumData.excelName + "Assignment",true);
+
+        //必须遍历所有程序集来获得类型。当前在Assembly-CSharp-Editor中，目标类型在Assembly-CSharp中，不同程序将无法获取类型
+        Type assignmentType = null;
+        string assetAssignmentName = excelMediumData.excelName + "AssetAssignment";
+        foreach(var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            //查找目标类型
+            Type tempType = asm.GetType(assetAssignmentName);
+            if(tempType != null)
+            {
+                assignmentType = tempType;
+                break;
+            }
+        }
+        if(assignmentType == null)
+        {
+            Debug.LogError($"创界Asset失败，未找到Asset生成类 : {excelMediumData.excelName}");
+            return;
+        }
+
+        //反射获取方法
+        MethodInfo methodInfo = assignmentType.GetMethod("CreateAsset");
+        if(methodInfo == null)
+        {
+            if(assignmentType == null)
+            {
+                Debug.LogError($"创界Asset失败，未找到Asset创建函数 : {excelMediumData.excelName}");
+                return;
+            }
+        }
+
+        methodInfo.Invoke(null,new object[] { excelMediumData,assetSavePath });
+        //创建Asset文件成功
+        Debug.Log($"生成Excel的Asset成功 : {excelMediumData.excelName}");
+    }
+
+    #endregion
+
+    #region --- private ---
+
+    //解析Excel，创建中间数据
+    private static ExcelMediumData CreateClassCodeByExcelPath(string excelFileFullPath)
+    {
+        if(string.IsNullOrEmpty(excelFileFullPath))
+            return null;
+
+        excelFileFullPath = excelFileFullPath.Replace("\\","/");
+        //读取Excel
+        FileStream stream = File.Open(excelFileFullPath,FileMode.Open,FileAccess.Read);
+        if(stream == null)
+            return null;
+        //解析Excel
+        IExcelDataReader excelReader = ExcelReaderFactory.CreateOpenXmlReader(stream);
+        //无效Excel
+        if(excelReader == null || !excelReader.IsValid)
+        {
+            Debug.Log("Invalid excel ： " + excelFileFullPath);
+            return null;
+        }
+
+        Debug.Log("开始解析Excel : " + excelReader.Name);
+
+        //记录Excel数据
+        ExcelMediumData excelMediumData = new ExcelMediumData();
+
+        //Excel名字
+        excelMediumData.excelName = excelReader.Name;
+
+        //当前遍历的行
+        int curRowIndex = 0;
+        //开始读取，按行遍历
+        while(excelReader.Read())
+        {
+            //这一行没有读取到数据，视为无效行数据
+            if(excelReader.FieldCount &lt;= 0)
+            {
+                curRowIndex++;
+                continue;
+            }
+            //读取每一行的完整数据
+            string[] datas = new string[excelReader.FieldCount];
+            for(int j = 0; j &lt; excelReader.FieldCount; ++j)
+            {
+                //可以直接读取指定类型数据，不过只支持有限数据类型，这里统一读取string，然后再数据转化
+                //excelReader.GetInt32(j); excelReader.GetFloat(j);
+
+                //读取每一个单元格数据
+                datas[j] = excelReader.GetString(j);
+            }
+
+            switch(curRowIndex)
+            {
+                case specialSignRow:
+                    //特殊标记行
+                    string specialSignStr = datas[0];
+                    if(specialSignStr.Length &gt;= 4)
+                    {
+                        excelMediumData.isValid = specialSignStr[0] == 'T';
+                        excelMediumData.isCreateCSharp = specialSignStr[1] == 'T';
+                        excelMediumData.isCreateAssignment = specialSignStr[2] == 'T';
+                        excelMediumData.isCreateAsset = specialSignStr[3] == 'T';
+                    }
+                    else
+                    {
+                        Debug.LogError("未解析到特殊标记");
+                    }
+                    break;
+                case excelNodeRow:
+                    //数据注释行
+                    excelMediumData.propertyNodeArray = datas;
+                    break;
+                case excelNameRow:
+                    //数据名称行
+                    excelMediumData.propertyNameArray = datas;
+                    //注释列号
+                    for(int i = 0; i &lt; datas.Length; i++)
+                    {
+                        if(string.IsNullOrEmpty(datas[i]) || datas[i].StartsWith(annotationSign))
+                            excelMediumData.annotationColList.Add(i);
+                    }
+                    break;
+                case excelTypeRow:
+                    //数据类型行
+                    excelMediumData.propertyTypeArray = datas;
+                    break;
+                default:
+                    //数据内容行
+                    excelMediumData.allRowItemList.Add(datas);
+                    //注释行号
+                    if(string.IsNullOrEmpty(datas[0]) || datas[0].StartsWith(annotationSign))
+                        excelMediumData.annotationRowList.Add(excelMediumData.allRowItemList.Count - 1);
+                    break;
+            }
+            //
+            curRowIndex++;
+        }
+
+        if(CheckExcelMediumData(ref excelMediumData))
+        {
+            Debug.Log("读取Excel成功");
+            return excelMediumData;
+        }
+        else
+        {
+            Debug.LogError("读取Excel失败");
+            return null;
+        }
+    }
+
+    //校验Excel数据
+    private static bool CheckExcelMediumData(ref ExcelMediumData mediumData)
+    {
+        if(mediumData == null)
+            return false;
+
+        //检查数据有效性
+
+        if(!mediumData.isValid)
+        {
+            Debug.LogError("Excel被标记无效");
+            return false;
+        }
+
+        if(string.IsNullOrEmpty(mediumData.excelName))
+        {
+            Debug.LogError("Excel名字为空");
+            return false;
+        }
+
+        if(mediumData.propertyNameArray == null || mediumData.propertyNameArray.Length == 0)
+        {
+            Debug.LogError("未解析到数据名称");
+            return false;
+        }
+        if(mediumData.propertyTypeArray == null || mediumData.propertyTypeArray.Length == 0)
+        {
+            Debug.LogError("未解析到数据类型");
+            return false;
+        }
+        if(mediumData.propertyNameArray.Length != mediumData.propertyTypeArray.Length)
+        {
+            Debug.LogError("数据名称与数据类型数量不一致");
+            return false;
+        }
+        if(mediumData.allRowItemList.Count == 0)
+        {
+            Debug.LogError("数据内容为空");
+            return false;
+        }
+
+        if(mediumData.propertyNameArray[0] != "id")
+        {
+            Debug.LogError("第一个字段必须是id字段");
+            return false;
+        }
+
+        return true;
+    }
+
+    #endregion
+
+}</code></pre>
+<h3>C#代码生成类：</h3>
+<pre><code class="language-cs">using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using System.Text;
+using System.Linq;
+using System;
+
+public class ExcelCodeCreater
+{
+
+    //创建代码，生成数据C#类
+    public static string CreateCodeStrByExcelData(ExcelMediumData excelMediumData)
+    {
+        if(excelMediumData == null)
+            return null;
+
+        //行数据类名
+        string itemClassName = excelMediumData.excelName + "ExcelItem";
+        //整体数据类名
+        string dataClassName = excelMediumData.excelName + "ExcelData";
+
+        //开始生成类
+        StringBuilder classSource = new StringBuilder();
+        classSource.AppendLine("/*Auto Create, Don't Edit !!!*/");
+        classSource.AppendLine();
+        //添加引用
+        classSource.AppendLine("using UnityEngine;");
+        classSource.AppendLine("using System.Collections.Generic;");
+        classSource.AppendLine("using System;");
+        classSource.AppendLine("using System.IO;");
+        classSource.AppendLine();
+        //生成CSharp数据类
+        if(excelMediumData.isCreateCSharp)
+        {
+            //生成行数据类，记录每行数据
+            classSource.AppendLine(CreateExcelRowItemClass(itemClassName,excelMediumData));
+            classSource.AppendLine();
+            //生成整体数据类，记录整个Excel的所有行数据
+            classSource.AppendLine(CreateExcelAllDataClass(dataClassName,itemClassName,excelMediumData));
+            classSource.AppendLine();
+        }
+        //生成Asset创建类
+        if(excelMediumData.isCreateAssignment)
+        {
+            //生成Asset操作类，用于自动创建Excel对应的Asset文件并赋值
+            classSource.AppendLine(CreateExcelAssetClass(excelMediumData));
+            classSource.AppendLine();
+        }
+        //
+        return classSource.ToString();
+    }
+
+    //----------
+
+    //生成行数据类
+    private static string CreateExcelRowItemClass(string itemClassName,ExcelMediumData excelMediumData)
+    {
+        //生成Excel行数据类
+        StringBuilder classSource = new StringBuilder();
+        //类名
+        classSource.AppendLine("[Serializable]");
+        classSource.AppendLine($"public class {itemClassName} : ExcelItemBase");
+        classSource.AppendLine("{");
+        //声明所有字段
+        for(int i = 0; i &lt; excelMediumData.propertyNameArray.Length; i++)
+        {
+            //跳过注释字段
+            if(excelMediumData.annotationColList.Contains(i))
+                continue;
+
+            //添加注释
+            if(i &lt; excelMediumData.propertyNodeArray.Length)
+            {
+                string propertyNode = excelMediumData.propertyNodeArray[i];
+                if(!string.IsNullOrEmpty(propertyNode))
+                {
+                    classSource.AppendLine("\t/// &lt;summary&gt;");
+                    classSource.AppendLine($"\t/// {propertyNode}");
+                    classSource.AppendLine("\t/// &lt;/summary&gt;&gt;");
+                }
+            }
+
+            //声明行数据类的字段
+            string propertyName = excelMediumData.propertyNameArray[i];
+            string propertyType = excelMediumData.propertyTypeArray[i];
+            string typeStr = GetPropertyType(propertyType);
+            classSource.AppendLine($"\tpublic {typeStr} {propertyName};");
+        }
+        classSource.AppendLine("}");
+        return classSource.ToString();
+    }
+
+    //----------
+
+    //生成整体数据类
+    private static string CreateExcelAllDataClass(string dataClassName,string itemClassName,ExcelMediumData excelMediumData)
+    {
+        StringBuilder classSource = new StringBuilder();
+        //类名
+        classSource.AppendLine($"public class {dataClassName} : ExcelDataBase&lt;{itemClassName}&gt;");
+        classSource.AppendLine("{");
+        //声明字段，行数据类数组
+        classSource.AppendLine($"\tpublic {itemClassName}[] items;");
+        classSource.AppendLine();
+        //id字段类型
+        string idTypeStr = GetPropertyType(excelMediumData.propertyTypeArray[0]);
+        //声明字典
+        classSource.AppendLine($"\tpublic Dictionary&lt;{idTypeStr},{itemClassName}&gt; itemDic = new Dictionary&lt;{idTypeStr},{itemClassName}&gt;();");
+        classSource.AppendLine();
+        //字段初始化方法
+        classSource.AppendLine("\tpublic void Init()");
+        classSource.AppendLine("\t{");
+        classSource.AppendLine("\t\titemDic.Clear();");
+        classSource.AppendLine("\t\tif(items != null &amp;&amp; items.Length &gt; 0)");
+        classSource.AppendLine("\t\t{");
+        classSource.AppendLine("\t\t\tfor(int i = 0; i &lt; items.Length; i++)");
+        classSource.AppendLine("\t\t\t{");
+        classSource.AppendLine("\t\t\t\titemDic.Add(items[i].id, items[i]);");
+        classSource.AppendLine("\t\t\t}");
+        classSource.AppendLine("\t\t}");
+        classSource.AppendLine("\t}");
+        classSource.AppendLine();
+        //字典获取方法
+        classSource.AppendLine($"\tpublic {itemClassName} Get{itemClassName}({idTypeStr} id)");
+        classSource.AppendLine("\t{");
+        classSource.AppendLine("\t\tif(itemDic.ContainsKey(id))");
+        classSource.AppendLine("\t\t\treturn itemDic[id];");
+        classSource.AppendLine("\t\telse");
+        classSource.AppendLine("\t\t\treturn null;");
+        classSource.AppendLine("\t}");
+
+        //每个字段Get函数
+        classSource.AppendLine("\t#region --- Get Method ---");
+        classSource.AppendLine();
+
+        for(int i = 1; i &lt; excelMediumData.propertyNameArray.Length; i++)
+        {
+            if(excelMediumData.annotationColList.Contains(i))
+                continue;
+            string propertyName = excelMediumData.propertyNameArray[i];
+            string propertyType = excelMediumData.propertyTypeArray[i];
+            //每个字段Get函数
+            classSource.AppendLine(CreateCodePropertyMethod(itemClassName,idTypeStr,propertyName,propertyType));
+        }
+        classSource.AppendLine("\t#endregion");
+        classSource.AppendLine("}");
+        return classSource.ToString();
+    }
+
+    //生成数据字段对应Get方法
+    private static string CreateCodePropertyMethod(string itemClassName,string idTypeStr,string propertyName,string propertyType)
+    {
+        StringBuilder methodBuilder = new StringBuilder();
+        string itemNameStr = propertyName.FirstOrDefault().ToString().ToUpper() + propertyName.Substring(1);
+        string itemTypeStr = GetPropertyType(propertyType);
+        //字段Get函数
+        methodBuilder.AppendLine($"\tpublic {itemTypeStr} Get{itemNameStr}({idTypeStr} id)");
+        methodBuilder.AppendLine("\t{");
+        methodBuilder.AppendLine($"\t\tvar item = Get{itemClassName}(id);");
+        methodBuilder.AppendLine("\t\tif(item == null)");
+        methodBuilder.AppendLine("\t\t\treturn default;");
+        methodBuilder.AppendLine($"\t\treturn item.{propertyName};");
+        methodBuilder.AppendLine("\t}");
+        //如果是一维数组
+        if(propertyType.Contains("[]"))
+        {
+            //typeStr:int[]或IntArr[] ,返回值:int或IntArr
+            //string itemTypeStr1d = GetPropertyType(propertyType.Replace("[]",""));
+            string itemTypeStr1d = itemTypeStr.Replace("[]","");
+            methodBuilder.AppendLine($"\tpublic {itemTypeStr1d} Get{itemNameStr}({idTypeStr} id, int index)");
+            methodBuilder.AppendLine("\t{");
+            methodBuilder.AppendLine($"\t\tvar item0 = Get{itemClassName} (id);");
+            methodBuilder.AppendLine("\t\tif(item0 == null)");
+            methodBuilder.AppendLine("\t\t\treturn default;");
+            methodBuilder.AppendLine($"\t\tvar item1 = item0.{propertyName};");
+            methodBuilder.AppendLine("\t\tif(item1 == null || index &lt; 0 || index &gt;= item1.Length)");
+            methodBuilder.AppendLine("\t\t\treturn default;");
+            methodBuilder.AppendLine("\t\treturn item1[index];");
+            methodBuilder.AppendLine("\t}");
+        }
+        //如果是二维数组
+        if(propertyType.Contains("[][]"))
+        {
+            //propertyType:int[][], 返回值:int
+            string itemTypeStr1d = GetPropertyType(propertyType.Replace("[][]",""));
+            methodBuilder.AppendLine($"\tpublic {itemTypeStr1d} Get{itemNameStr}({idTypeStr} id, int index1, int index2)");
+            methodBuilder.AppendLine("\t{");
+            methodBuilder.AppendLine($"\t\tvar item0 = Get{itemClassName}(id);");
+            methodBuilder.AppendLine("\t\tif(item0 == null)");
+            methodBuilder.AppendLine("\t\t\treturn default;");
+            methodBuilder.AppendLine($"\t\tvar item1 = item0.{propertyName};");
+            methodBuilder.AppendLine("\t\tif(item1 == null || index1 &lt; 0 || index1 &gt;= item1.Length)");
+            methodBuilder.AppendLine("\t\t\treturn default;");
+            methodBuilder.AppendLine("\t\tvar item2 = item1[index1];");
+            methodBuilder.AppendLine("\t\tif(item2.array == null || index2 &lt; 0 || index2 &gt;= item2.array.Length)");
+            methodBuilder.AppendLine("\t\t\treturn default;");
+            methodBuilder.AppendLine("\t\treturn item2.array[index2];");
+            methodBuilder.AppendLine("\t}");
+        }
+        //
+        return methodBuilder.ToString();
+    }
+
+    //----------
+
+    //生成Asset创建类
+    private static string CreateExcelAssetClass(ExcelMediumData excelMediumData)
+    {
+        string itemClassName = excelMediumData.excelName + "ExcelItem";
+        string dataClassName = excelMediumData.excelName + "ExcelData";
+        string assignmentClassName = excelMediumData.excelName + "AssetAssignment";
+
+        StringBuilder classSource = new StringBuilder();
+        classSource.AppendLine("#if UNITY_EDITOR");
+        //类名
+        classSource.AppendLine($"public class {assignmentClassName}");
+        classSource.AppendLine("{");
+        //方法名
+        classSource.AppendLine("\tpublic static bool CreateAsset(ExcelMediumData excelMediumData, string excelAssetPath)");
+        //方法体，若有需要可加入try/catch
+        classSource.AppendLine("\t{");
+        classSource.AppendLine("\t\tvar allRowItemDicList = excelMediumData.GetAllRowItemDicList();");
+        classSource.AppendLine("\t\tif(allRowItemDicList == null || allRowItemDicList.Count == 0)");
+        classSource.AppendLine("\t\t\treturn false;");
+        classSource.AppendLine();
+        classSource.AppendLine("\t\tint rowCount = allRowItemDicList.Count;");
+        classSource.AppendLine($"\t\t{dataClassName} excelDataAsset = ScriptableObject.CreateInstance&lt;{dataClassName}&gt;();");
+        classSource.AppendLine($"\t\texcelDataAsset.items = new {itemClassName}[rowCount];");
+        classSource.AppendLine();
+        classSource.AppendLine("\t\tfor(int i = 0; i &lt; rowCount; i++)");
+        classSource.AppendLine("\t\t{");
+        classSource.AppendLine("\t\t\tvar itemRowDic = allRowItemDicList[i];");
+        classSource.AppendLine($"\t\t\texcelDataAsset.items[i] = new {itemClassName}();");
+
+        for(int i = 0; i &lt; excelMediumData.propertyNameArray.Length; i++)
+        {
+            if(excelMediumData.annotationColList.Contains(i))
+                continue;
+            string propertyName = excelMediumData.propertyNameArray[i];
+            string propertyType = excelMediumData.propertyTypeArray[i];
+            classSource.Append($"\t\t\texcelDataAsset.items[i].{propertyName} = ");
+            classSource.Append(AssignmentCodeProperty(propertyName,propertyType));
+            classSource.AppendLine(";");
+        }
+        classSource.AppendLine("\t\t}");
+        classSource.AppendLine("\t\tif(!Directory.Exists(excelAssetPath))");
+        classSource.AppendLine("\t\t\tDirectory.CreateDirectory(excelAssetPath);");
+        classSource.AppendLine($"\t\tstring fullPath = Path.Combine(excelAssetPath,typeof({dataClassName}).Name) + \".asset\";");
+        classSource.AppendLine("\t\tUnityEditor.AssetDatabase.DeleteAsset(fullPath);");
+        classSource.AppendLine("\t\tUnityEditor.AssetDatabase.CreateAsset(excelDataAsset,fullPath);");
+        classSource.AppendLine("\t\tUnityEditor.AssetDatabase.Refresh();");
+        classSource.AppendLine("\t\treturn true;");
+        classSource.AppendLine("\t}");
+        //          
+        classSource.AppendLine("}");
+        classSource.AppendLine("#endif");
+        return classSource.ToString();
+    }
+
+    //声明Asset操作类字段
+    private static string AssignmentCodeProperty(string propertyName,string propertyType)
+    {
+        string stringValue = $"itemRowDic[\"{propertyName}\"]";
+        string typeStr = GetPropertyType(propertyType);
+        switch(typeStr)
+        {
+            //字段
+            case "int":
+                return "StringUtility.StringToInt(" + stringValue + ")";
+            case "float":
+                return "StringUtility.StringToFloat(" + stringValue + ")";
+            case "bool":
+                return "StringUtility.StringToBool(" + stringValue + ")";
+            case "Vector2":
+                return "StringUtility.StringToVector2(" + stringValue + ")";
+            case "Vector3":
+                return "StringUtility.StringToVector3(" + stringValue + ")";
+            case "Vector2Int":
+                return "StringUtility.StringToVector2Int(" + stringValue + ")";
+            case "Vector3Int":
+                return "StringUtility.StringToVector3Int(" + stringValue + ")";
+            case "Color":
+                return "StringUtility.StringToColor(" + stringValue + ")";
+            case "Color32":
+                return "StringUtility.StringToColor32(" + stringValue + ")";
+            case "string":
+                return stringValue;
+            //一维
+            case "int[]":
+                return "StringUtility.StringToIntArray(" + stringValue + ")";
+            case "float[]":
+                return "StringUtility.StringToFloatArray(" + stringValue + ")";
+            case "bool[]":
+                return "StringUtility.StringToBoolArray(" + stringValue + ")";
+            case "Vector2[]":
+                return "StringUtility.StringToVector2Array(" + stringValue + ")";
+            case "Vector3[]":
+                return "StringUtility.StringToVector3Array(" + stringValue + ")";
+            case "Vector2Int[]":
+                return "StringUtility.StringToVector2IntArray(" + stringValue + ")";
+            case "Vector3Int[]":
+                return "StringUtility.StringToVector3IntArray(" + stringValue + ")";
+            case "Color[]":
+                return "StringUtility.StringToColorArray(" + stringValue + ")";
+            case "Color32[]":
+                return "StringUtility.StringToColor32Array(" + stringValue + ")";
+            case "string[]":
+                return "StringUtility.StringToStringArray(" + stringValue + ")";
+            //二维
+            case "IntArr[]":
+                return "StringUtility.StringToIntArray2D(" + stringValue + ")";
+            case "FloatArr[]":
+                return "StringUtility.StringToFloatArray2D(" + stringValue + ")";
+            case "BoolArr[]":
+                return "StringUtility.StringToBoolArray2D(" + stringValue + ")";
+            case "Vector2Arr[]":
+                return "StringUtility.StringToVector2Array2D(" + stringValue + ")";
+            case "Vector3Arr[]":
+                return "StringUtility.StringToVector3Array2D(" + stringValue + ")";
+            case "Vector2IntArr[]":
+                return "StringUtility.StringToVector2IntArray2D(" + stringValue + ")";
+            case "Vector3IntArr[]":
+                return "StringUtility.StringToVector3IntArray2D(" + stringValue + ")";
+            case "ColorArr[]":
+                return "StringUtility.StringToColorArray2D(" + stringValue + ")";
+            case "Color32Arr[]":
+                return "StringUtility.StringToColor32Array2D(" + stringValue + ")";
+            case "StringArr[]":
+                return "StringUtility.StringToStringArray2D(" + stringValue + ")";
+            default:
+                //枚举
+                if(propertyType.StartsWith("enum"))
+                {
+                    string enumType = propertyType.Split('|').FirstOrDefault();
+                    string enumName = propertyType.Split('|').LastOrDefault();
+                    if(enumType == "enum")
+                        return "StringUtility.StringToEnum&lt;" + enumName + "&gt;(" + stringValue + ")";
+                    else if(enumType == "enum[]")
+                        return "StringUtility.StringToEnumArray&lt;" + enumName + "&gt;(" + stringValue + ")";
+                    else if(enumType == "enum[][]")
+                        return "StringUtility.StringToEnumArray2D&lt;" + enumName + "&gt;(" + stringValue + ")";
+                }
+                return stringValue;
+        }
+    }
+
+    //判断字段类型
+    private static string GetPropertyType(string propertyType)
+    {
+        string lowerType = propertyType.ToLower();
+        switch(lowerType)
+        {
+            case "int":
+                return "int";
+            case "int[]":
+                return "int[]";
+            case "int[][]":
+                return "IntArr[]";
+            case "float":
+                return "float";
+            case "float[]":
+                return "float[]";
+            case "float[][]":
+                return "FloatArr[]";
+            case "bool":
+                return "bool";
+            case "bool[]":
+                return "bool[]";
+            case "bool[][]":
+                return "BoolArr[]";
+            case "string":
+                return "string";
+            case "string[]":
+                return "string[]";
+            case "string[][]":
+                return "StringArr[]";
+
+            case "vector2":
+                return "Vector2";
+            case "vector2[]":
+                return "Vector2[]";
+            case "vector2[][]":
+                return "Vector2Arr[]";
+            case "vector2int":
+                return "Vector2Int";
+            case "vector2int[]":
+                return "Vector2Int[]";
+            case "vector2int[][]":
+                return "Vector2IntArr[]";
+
+            case "vector3":
+                return "Vector3";
+            case "vector3[]":
+                return "Vector3[]";
+            case "vector3[][]":
+                return "Vector3Arr[]";
+            case "vector3int":
+                return "Vector3Int";
+            case "vector3int[]":
+                return "Vector3Int[]";
+            case "vector3int[][]":
+                return "Vector3IntArr[]";
+
+            case "color":
+                return "Color";
+            case "color[]":
+                return "Color[]";
+            case "color[][]":
+                return "ColorArr[]";
+            case "color32":
+                return "Color32";
+            case "color32[]":
+                return "Color32[]";
+            case "color32[][]":
+                return "Color32Arr[]";
+
+            default:
+                if(propertyType.StartsWith("enum"))
+                {
+                    string enumType = propertyType.Split('|').FirstOrDefault();
+                    string enumName = propertyType.Split('|').LastOrDefault();
+                    switch(enumType)
+                    {
+                        case "enum":
+                            return enumName;
+                        case "enum[]":
+                            return $"{enumName}[]";
+                        case "enum[][]":
+                            return $"EnumArr&lt;{enumName}&gt;[]";
+                        default:
+                            break;
+                    }
+                }
+                return "string";
+        }
+    }
+
+}
+</code></pre>
+<h3> Excel数据中间类：</h3>
+<pre><code class="language-cs">using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+//Excel中间数据
+public class ExcelMediumData
+{
+    //Excel名字
+    public string excelName;
+
+    //Excel是否有效
+    public bool isValid = false;
+    //是否生成CSharp数据类
+    public bool isCreateCSharp = false;
+    //是否生成Asset创建类
+    public bool isCreateAssignment = false;
+    //是否生成Asset文件
+    public bool isCreateAsset = false;
+
+    //数据注释
+    public string[] propertyNodeArray = null;
+    //数据名称
+    public string[] propertyNameArray = null;
+    //数据类型
+    public string[] propertyTypeArray = null;
+    //List&lt;每行数据内容&gt;
+    public List&lt;string[]&gt; allRowItemList = new List&lt;string[]&gt;();
+
+    //注释行号
+    public List&lt;int&gt; annotationRowList = new List&lt;int&gt;();
+    //注释列号
+    public List&lt;int&gt; annotationColList = new List&lt;int&gt;();
+
+    //List&lt;每行数据&gt;，List&lt;Dictionary&lt;单元格字段名称, 单元格字段值&gt;&gt;
+    public List&lt;Dictionary&lt;string,string&gt;&gt; GetAllRowItemDicList()
+    {
+        if(propertyNameArray == null || propertyNameArray.Length == 0)
+            return null;
+        if(allRowItemList.Count == 0)
+            return null;
+
+        List&lt;Dictionary&lt;string,string&gt;&gt; allRowItemDicList = new List&lt;Dictionary&lt;string,string&gt;&gt;(allRowItemList.Count);
+
+        for(int i = 0; i &lt; allRowItemList.Count; i++)
+        {
+            string[] rowArray = allRowItemList[i];
+            //跳过空数据
+            if(rowArray == null || rowArray.Length == 0)
+                continue;
+            //跳过注释数据
+            if(annotationRowList.Contains(i))
+                continue;
+
+            //每行数据，对应字段名称和字段值
+            Dictionary&lt;string,string&gt; rowDic = new Dictionary&lt;string,string&gt;();
+            for(int j = 0; j &lt; propertyNameArray.Length; j++)
+            {
+                //跳过注释字段
+                if(annotationColList.Contains(j))
+                    continue;
+
+                string propertyName = propertyNameArray[j];
+                string propertyValue = j &lt; rowArray.Length ? rowArray[j] : null;
+                rowDic[propertyName] = propertyValue;
+            }
+            allRowItemDicList.Add(rowDic);
+        }
+        return allRowItemDicList;
+    }
+
+}
+</code></pre>
+<h3>Excel数据基类、扩展类：</h3>
+<pre><code class="language-cs">using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using System.Linq;
+using System;
+
+public class ExcelDataBase&lt;T&gt; : ScriptableObject where T : ExcelItemBase
+{
+
+}
+
+public class ExcelItemBase
+{
+
+}
+
+
+[Serializable]
+public struct StringArr
+{
+    public string[] array;
+}
+[Serializable]
+public struct IntArr
+{
+    public int[] array;
+}
+[Serializable]
+public struct FloatArr
+{
+    public float[] array;
+}
+[Serializable]
+public struct BoolArr
+{
+    public bool[] array;
+}
+
+[Serializable]
+public struct Vector2Arr
+{
+    public Vector2[] array;
+}
+[Serializable]
+public struct Vector3Arr
+{
+    public Vector3[] array;
+}
+[Serializable]
+public struct Vector2IntArr
+{
+    public Vector2Int[] array;
+}
+[Serializable]
+public struct Vector3IntArr
+{
+    public Vector3Int[] array;
+}
+[Serializable]
+public struct ColorArr
+{
+    public Color[] array;
+}
+[Serializable]
+public struct Color32Arr
+{
+    public Color32[] array;
+}
+
+不支持泛型枚举序列化
+//[Serializable]
+//public struct EnumArr&lt;T&gt; where T : Enum
+//{
+//    public T[] array;
+//}
+
+</code></pre>
+<h3>字符串工具类：</h3>
+<pre><code class="language-cs">using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using System.Text.RegularExpressions;
+using System;
+using System.Text;
+using System.Linq;
+using System.Runtime.CompilerServices;
+
+public static class StringUtility
+{
+
+    #region --- AddColor ---
+
+    public static string AddColor(object obj,Color color)
+    {
+        return AddColor(obj,color);
+    }
+    public static string AddColor(this string str,Color color)
+    {
+        //把颜色转换为16进制字符串，添加到富文本
+        return string.Format("&lt;color=#{0}&gt;{1}&lt;/color&gt;",ColorUtility.ToHtmlStringRGBA(color),str);
+    }
+    public static string AddColor(string str1,string str2,Color color)
+    {
+        return AddColor(str1 + str2,color);
+    }
+    public static string AddColor(string str1,string str2,string str3,Color color)
+    {
+        return AddColor(str1 + str2 + str3,color);
+    }
+
+    #endregion
+
+    #region --- string length ---
+
+    /// &lt;summary&gt;
+    /// 化简字符串长度
+    /// &lt;/summary&gt;
+    /// &lt;param name="targetStr"&gt;&lt;/param&gt;
+    /// &lt;param name="targetLength"&gt;目标长度，英文字符==1，中文字符==2&lt;/param&gt;
+    /// &lt;returns&gt;&lt;/returns&gt;
+    public static string AbbrevStringWithinLength(string targetStr,int targetLength,string abbrevPostfix)
+    {
+        //C#实际统计：一个中文字符长度==1，英文字符长度==1
+        //UI显示要求：一个中文字符长度==2，英文字符长度==1
+
+        //校验参数
+        if(string.IsNullOrEmpty(targetStr) || targetLength &lt;= 0)
+            return targetStr;
+        //字符串长度 * 2 &lt;= 目标长度，即使是全中文也在长度范围内
+        if(targetStr.Length * 2 &lt;= targetLength)
+            return targetStr;
+        //遍历字符
+        char[] chars = targetStr.ToCharArray();
+        int curLen = 0;
+        for(int i = 0; i &lt; chars.Length; i++)
+        {
+            //累加字符串长度
+            if(chars[i] &gt;= 0x4e00 &amp;&amp; chars[i] &lt;= 0x9fbb)
+                curLen += 2;
+            else
+                curLen += 1;
+
+            //如果当前位置累计长度超过目标长度，取0~i-1，即Substring(0,i)
+            if(curLen &gt; targetLength)
+                return targetStr.Substring(0,i) + abbrevPostfix;
+        }
+        return targetStr;
+    }
+
+    #endregion
+
+    #region --- String To Array ---
+
+    //string
+
+    public static byte StringToByte(string valueStr)
+    {
+        byte value;
+        if(byte.TryParse(valueStr,out value))
+            return value;
+        else
+            return 0;
+    }
+
+    public static string[] StringToStringArray(string valueStr,char splitSign = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        return valueStr.Split(splitSign);
+    }
+
+    public static StringArr[] StringToStringArray2D(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        string[] strArr1 = valueStr.Split(splitSign1);
+        if(strArr1.Length == 0)
+            return null;
+
+        StringArr[] arrArr = new StringArr[strArr1.Length];
+        for(int i = 0; i &lt; strArr1.Length; i++)
+        {
+            arrArr[i] = new StringArr()
+            {
+                array = strArr1[i].Split(splitSign2)
+            };
+
+        }
+        return arrArr;
+    }
+
+    //int
+
+    public static int StringToInt(string valueStr)
+    {
+        int value;
+        if(int.TryParse(valueStr,out value))
+            return value;
+        else
+            return 0;
+    }
+
+    public static int[] StringToIntArray(string valueStr,char splitSign = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+
+        string[] valueArr = valueStr.Split(splitSign);
+        if(valueArr == null || valueArr.Length == 0)
+            return null;
+
+        int[] intArr = new int[valueArr.Length];
+        for(int i = 0; i &lt; valueArr.Length; i++)
+        {
+            intArr[i] = StringToInt(valueArr[i]);
+        }
+        return intArr;
+    }
+
+    public static IntArr[] StringToIntArray2D(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        string[] strArr1 = valueStr.Split(splitSign1);
+        if(strArr1.Length == 0)
+            return null;
+
+        IntArr[] arrArr = new IntArr[strArr1.Length];
+        for(int i = 0; i &lt; strArr1.Length; i++)
+        {
+            arrArr[i] = new IntArr()
+            {
+                array = StringToIntArray(strArr1[i],splitSign2)
+            };
+
+        }
+        return arrArr;
+    }
+
+    //float
+
+    public static float StringToFloat(string valueStr)
+    {
+        float value;
+        if(float.TryParse(valueStr,out value))
+            return value;
+        else
+            return 0;
+    }
+
+    public static float[] StringToFloatArray(string valueStr,char splitSign = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+
+        string[] valueArr = valueStr.Split(splitSign);
+        if(valueArr == null || valueArr.Length == 0)
+            return null;
+
+        float[] floatArr = new float[valueArr.Length];
+        for(int i = 0; i &lt; valueArr.Length; i++)
+        {
+            floatArr[i] = StringToFloat(valueArr[i]);
+        }
+        return floatArr;
+    }
+
+    public static FloatArr[] StringToFloatArray2D(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        string[] strArr1 = valueStr.Split(splitSign1);
+        if(strArr1.Length == 0)
+            return null;
+
+        FloatArr[] arrArr = new FloatArr[strArr1.Length];
+        for(int i = 0; i &lt; strArr1.Length; i++)
+        {
+            arrArr[i] = new FloatArr()
+            {
+                array = StringToFloatArray(strArr1[i],splitSign2)
+            };
+
+        }
+        return arrArr;
+    }
+
+    //bool
+
+    public static bool StringToBool(string valueStr)
+    {
+        bool value;
+        if(bool.TryParse(valueStr,out value))
+            return value;
+        else
+            return false;
+    }
+
+    public static bool[] StringToBoolArray(string valueStr,char splitSign = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+
+        string[] valueArr = valueStr.Split(splitSign);
+        if(valueArr == null || valueArr.Length == 0)
+            return null;
+
+        bool[] boolArr = new bool[valueArr.Length];
+        for(int i = 0; i &lt; valueArr.Length; i++)
+        {
+            boolArr[i] = StringToBool(valueArr[i]);
+        }
+        return boolArr;
+    }
+
+    public static BoolArr[] StringToBoolArray2D(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        string[] strArr1 = valueStr.Split(splitSign1);
+        if(strArr1.Length == 0)
+            return null;
+
+        BoolArr[] arrArr = new BoolArr[strArr1.Length];
+        for(int i = 0; i &lt; strArr1.Length; i++)
+        {
+            arrArr[i] = new BoolArr()
+            {
+                array = StringToBoolArray(strArr1[i],splitSign2)
+            };
+
+        }
+        return arrArr;
+    }
+
+    //enum
+
+    public static T StringToEnum&lt;T&gt;(string valueStr) where T : Enum
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return (T)default;
+
+        //先校验字符串是否为枚举值
+        int intValue;
+        if(int.TryParse(valueStr,out intValue))
+        {
+            if(Enum.IsDefined(typeof(T),intValue))
+                return (T)Enum.ToObject(typeof(T),intValue);
+        }
+        //如果不是枚举值，当做枚举名处理
+        try
+        {
+            T t = (T)Enum.Parse(typeof(T),valueStr);
+            if(Enum.IsDefined(typeof(T),t))
+                return t;
+        }
+        catch(Exception e)
+        {
+            Debug.LogError(e);
+        }
+        Debug.LogError(string.Format("解析枚举错误 {0} : {1}",typeof(T),valueStr));
+        return (T)default;
+    }
+
+    public static T[] StringToEnumArray&lt;T&gt;(string valueStr,char splitSign = '|') where T : Enum
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+
+        string[] valueArr = valueStr.Split(splitSign);
+        if(valueArr == null || valueArr.Length == 0)
+            return null;
+
+        T[] enumArr = new T[valueArr.Length];
+        for(int i = 0; i &lt; valueArr.Length; i++)
+        {
+            enumArr[i] = StringToEnum&lt;T&gt;(valueArr[i]);
+        }
+        return enumArr;
+    }
+
+    不支持泛型枚举序列化
+    //public static EnumArr&lt;T&gt;[] StringToEnumArray2D&lt;T&gt;(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|') where T : Enum
+    //{
+    //    if(string.IsNullOrEmpty(valueStr))
+    //        return null;
+    //    string[] strArr1 = valueStr.Split(splitSign1);
+    //    if(strArr1.Length == 0)
+    //        return null;
+
+    //    EnumArr&lt;T&gt;[] arrArr = new EnumArr&lt;T&gt;[strArr1.Length];
+    //    for(int i = 0; i &lt; strArr1.Length; i++)
+    //    {
+    //        arrArr[i] = new EnumArr&lt;T&gt;()
+    //        {
+    //            array = StringToEnumArray&lt;T&gt;(strArr1[i],splitSign2)
+    //        };
+
+    //    }
+    //    return arrArr;
+    //}
+
+    //vector2
+
+    public static Vector2 StringToVector2(string valueStr,char splitSign = ',')
+    {
+        Vector2 value = Vector2.zero;
+        if(!string.IsNullOrEmpty(valueStr))
+        {
+            string[] stringArray = valueStr.Split(splitSign);
+            if(stringArray != null &amp;&amp; stringArray.Length &gt;= 2)
+            {
+                value.x = StringToFloat(stringArray[0]);
+                value.y = StringToFloat(stringArray[1]);
+                return value;
+            }
+        }
+        Debug.LogWarning("String to Vector2 error");
+        return value;
+    }
+
+    public static Vector2[] StringToVector2Array(string valueStr,char splitSign = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+
+        string[] stringArray = valueStr.Split(splitSign);
+        if(stringArray == null || stringArray.Length == 0)
+            return null;
+
+        Vector2[] vector2s = new Vector2[stringArray.Length];
+        for(int i = 0; i &lt; stringArray.Length; i++)
+        {
+            vector2s[i] = StringToVector2(stringArray[i]);
+        }
+        return vector2s;
+    }
+
+    public static Vector2Arr[] StringToVector2Array2D(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        string[] strArr1 = valueStr.Split(splitSign1);
+        if(strArr1.Length == 0)
+            return null;
+
+        Vector2Arr[] arrArr = new Vector2Arr[strArr1.Length];
+        for(int i = 0; i &lt; strArr1.Length; i++)
+        {
+            arrArr[i] = new Vector2Arr()
+            {
+                array = StringToVector2Array(strArr1[i],splitSign2)
+            };
+        }
+        return arrArr;
+    }
+
+    //vector3
+
+    public static Vector3 StringToVector3(string valueStr,char splitSign = ',')
+    {
+        Vector3 value = Vector3.zero;
+        if(!string.IsNullOrEmpty(valueStr))
+        {
+            string[] stringArray = valueStr.Split(splitSign);
+            if(stringArray.Length &gt;= 3)
+            {
+                value.x = StringToFloat(stringArray[0]);
+                value.y = StringToFloat(stringArray[1]);
+                value.z = StringToFloat(stringArray[2]);
+                return value;
+            }
+        }
+        Debug.LogWarning("String to Vector3 error");
+        return value;
+    }
+
+    public static Vector3[] StringToVector3Array(string valueStr,char splitSign = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+
+        string[] stringArray = valueStr.Split(splitSign);
+        if(stringArray == null || stringArray.Length == 0)
+            return null;
+
+        Vector3[] vector3s = new Vector3[stringArray.Length];
+        for(int i = 0; i &lt; stringArray.Length; i++)
+        {
+            vector3s[i] = StringToVector3(stringArray[i]);
+        }
+        return vector3s;
+    }
+
+    public static Vector3Arr[] StringToVector3Array2D(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        string[] strArr1 = valueStr.Split(splitSign1);
+        if(strArr1.Length == 0)
+            return null;
+
+        Vector3Arr[] arrArr = new Vector3Arr[strArr1.Length];
+        for(int i = 0; i &lt; strArr1.Length; i++)
+        {
+            arrArr[i] = new Vector3Arr()
+            {
+                array = StringToVector3Array(strArr1[i],splitSign2)
+            };
+        }
+        return arrArr;
+    }
+
+    //vector2Int
+
+    public static Vector2Int StringToVector2Int(string valueStr,char splitSign = ',')
+    {
+        Vector2Int value = Vector2Int.zero;
+        if(!string.IsNullOrEmpty(valueStr))
+        {
+            string[] stringArray = valueStr.Split(splitSign);
+            if(stringArray != null &amp;&amp; stringArray.Length &gt;= 2)
+            {
+                value.x = StringToInt(stringArray[0]);
+                value.y = StringToInt(stringArray[1]);
+                return value;
+            }
+        }
+        Debug.LogWarning("String to Vector2Int error");
+        return value;
+    }
+
+    public static Vector2Int[] StringToVector2IntArray(string valueStr,char splitSign = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+
+        string[] stringArray = valueStr.Split(splitSign);
+        if(stringArray == null || stringArray.Length == 0)
+            return null;
+
+        Vector2Int[] vector2Ints = new Vector2Int[stringArray.Length];
+        for(int i = 0; i &lt; stringArray.Length; i++)
+        {
+            vector2Ints[i] = StringToVector2Int(stringArray[i]);
+        }
+        return vector2Ints;
+    }
+
+    public static Vector2IntArr[] StringToVector2IntArray2D(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        string[] strArr1 = valueStr.Split(splitSign1);
+        if(strArr1.Length == 0)
+            return null;
+
+        Vector2IntArr[] arrArr = new Vector2IntArr[strArr1.Length];
+        for(int i = 0; i &lt; strArr1.Length; i++)
+        {
+            arrArr[i] = new Vector2IntArr()
+            {
+                array = StringToVector2IntArray(strArr1[i],splitSign2)
+            };
+        }
+        return arrArr;
+    }
+
+    //vector3Int
+
+    public static Vector3Int StringToVector3Int(string valueStr,char splitSign = ',')
+    {
+        Vector3Int value = Vector3Int.zero;
+        if(!string.IsNullOrEmpty(valueStr))
+        {
+            string[] stringArray = valueStr.Split(splitSign);
+            if(stringArray.Length &gt;= 3)
+            {
+                value.x = StringToInt(stringArray[0]);
+                value.y = StringToInt(stringArray[1]);
+                value.z = StringToInt(stringArray[2]);
+                return value;
+            }
+        }
+        Debug.LogWarning("String to Vector3 error");
+        return value;
+    }
+
+    public static Vector3Int[] StringToVector3IntArray(string valueStr,char splitSign = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+
+        string[] stringArray = valueStr.Split(splitSign);
+        if(stringArray == null || stringArray.Length == 0)
+            return null;
+
+        Vector3Int[] vector3Ints = new Vector3Int[stringArray.Length];
+        for(int i = 0; i &lt; stringArray.Length; i++)
+        {
+            vector3Ints[i] = StringToVector3Int(stringArray[i]);
+        }
+        return vector3Ints;
+    }
+
+    public static Vector3IntArr[] StringToVector3IntArray2D(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        string[] strArr1 = valueStr.Split(splitSign1);
+        if(strArr1.Length == 0)
+            return null;
+
+        Vector3IntArr[] arrArr = new Vector3IntArr[strArr1.Length];
+        for(int i = 0; i &lt; strArr1.Length; i++)
+        {
+            arrArr[i] = new Vector3IntArr()
+            {
+                array = StringToVector3IntArray(strArr1[i],splitSign2)
+            };
+        }
+        return arrArr;
+    }
+
+    //color
+
+    public static Color StringToColor(string valueStr,char splitSign = ',')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return Color.white;
+
+        string[] stringArray = valueStr.Split(splitSign);
+        if(stringArray.Length &lt; 3)
+            return Color.white;
+
+        Color color = new Color()
+        {
+            r = StringToFloat(stringArray[0]),
+            g = StringToFloat(stringArray[1]),
+            b = StringToFloat(stringArray[2]),
+            a = stringArray.Length &lt; 4 ? 1 : StringToFloat(stringArray[3])
+        };
+        return color;
+    }
+    public static Color32 StringToColor32(string valueStr,char splitSign = ',')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return Color.white;
+
+        string[] stringArray = valueStr.Split(splitSign);
+        if(stringArray.Length &lt; 3)
+            return Color.white;
+
+        Color32 color = new Color32()
+        {
+            r = StringToByte(stringArray[0]),
+            g = StringToByte(stringArray[1]),
+            b = StringToByte(stringArray[2]),
+            a = stringArray.Length &lt; 4 ? (byte)1 : StringToByte(stringArray[3])
+        };
+        return color;
+    }
+
+    public static Color[] StringToColorArray(string valueStr,char splitSign = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+
+        string[] stringArray = valueStr.Split(splitSign);
+        if(stringArray == null || stringArray.Length == 0)
+            return null;
+
+        Color[] colors = new Color[stringArray.Length];
+        for(int i = 0; i &lt; stringArray.Length; i++)
+        {
+            colors[i] = StringToColor(stringArray[i]);
+        }
+        return colors;
+    }
+
+    public static Color32[] StringToColor32Array(string valueStr,char splitSign = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+
+        string[] stringArray = valueStr.Split(splitSign);
+        if(stringArray == null || stringArray.Length == 0)
+            return null;
+
+        Color32[] colors = new Color32[stringArray.Length];
+        for(int i = 0; i &lt; stringArray.Length; i++)
+        {
+            colors[i] = StringToColor32(stringArray[i]);
+        }
+        return colors;
+    }
+
+    public static ColorArr[] StringToColorArray2D(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        string[] strArr1 = valueStr.Split(splitSign1);
+        if(strArr1.Length == 0)
+            return null;
+
+        ColorArr[] arrArr = new ColorArr[strArr1.Length];
+        for(int i = 0; i &lt; strArr1.Length; i++)
+        {
+            arrArr[i] = new ColorArr()
+            {
+                array = StringToColorArray(strArr1[i],splitSign2)
+            };
+        }
+        return arrArr;
+    }
+    public static Color32Arr[] StringToColor32Array2D(string valueStr,char splitSign1 = '&amp;',char splitSign2 = '|')
+    {
+        if(string.IsNullOrEmpty(valueStr))
+            return null;
+        string[] strArr1 = valueStr.Split(splitSign1);
+        if(strArr1.Length == 0)
+            return null;
+
+        Color32Arr[] arrArr = new Color32Arr[strArr1.Length];
+        for(int i = 0; i &lt; strArr1.Length; i++)
+        {
+            arrArr[i] = new Color32Arr()
+            {
+                array = StringToColor32Array(strArr1[i],splitSign2)
+            };
+        }
+        return arrArr;
+    }
+
+    #endregion
+
+    #region MyRegion
+
+    public static string GetRandomString(int length)
+    {
+        StringBuilder builder = new StringBuilder();
+        string abc = "abcdefghijklmnopqrstuvwxyzo0123456789QWERTYUIOPASDFGHJKLZXCCVBMN";
+        for(int i = 0; i &lt; length; i++)
+        {
+            builder.Append(abc[UnityEngine.Random.Range(0,abc.Length - 1)]);
+        }
+        return builder.ToString();
+    }
+
+    public static string Join&lt;T&gt;(T[] arr,string join = ",")
+    {
+        if(arr == null || arr.Length == 0)
+            return null;
+
+        StringBuilder builder = new StringBuilder();
+        for(int i = 0; i &lt; arr.Length; i++)
+        {
+            builder.Append(arr[i]);
+            if(i &lt; arr.Length - 1)
+                builder.Append(join);
+        }
+        return builder.ToString();
+    }
+
+    /// &lt;summary&gt;
+    /// 中文逗号转英文逗号
+    /// &lt;/summary&gt;
+    /// &lt;param name="input"&gt;&lt;/param&gt;
+    /// &lt;returns&gt;&lt;/returns&gt;
+    public static string ToDBC(string input)
+    {
+        char[] c = input.ToCharArray();
+        for(int i = 0; i &lt; c.Length; i++)
+        {
+            if(c[i] == 12288)
+            {
+                c[i] = (char)32;
+                continue;
+            }
+            if(c[i] &gt; 65280 &amp;&amp; c[i] &lt; 65375)
+                c[i] = (char)(c[i] - 65248);
+        }
+        return new string(c);
+    }
+
+    /// &lt;summary&gt;
+    /// 字符转 ascii 码 
+    /// &lt;/summary&gt;
+    /// &lt;param name="character"&gt;&lt;/param&gt;
+    /// &lt;returns&gt;&lt;/returns&gt;
+    public static int Asc(string character)
+    {
+        if(character.Length == 1)
+        {
+            System.Text.ASCIIEncoding asciiEncoding = new System.Text.ASCIIEncoding();
+            int intAsciiCode = (int)asciiEncoding.GetBytes(character)[0];
+            return (intAsciiCode);
+        }
+        Debug.LogError("Character is not valid.");
+        return -1;
+    }
+
+    /// &lt;summary&gt;
+    /// ascii码转字符
+    /// &lt;/summary&gt;
+    /// &lt;param name="asciiCode"&gt;&lt;/param&gt;
+    /// &lt;returns&gt;&lt;/returns&gt;
+    public static string Chr(int asciiCode)
+    {
+        if(asciiCode &gt;= 0 &amp;&amp; asciiCode &lt;= 255)
+        {
+            System.Text.ASCIIEncoding asciiEncoding = new System.Text.ASCIIEncoding();
+            byte[] byteArray = new byte[] { (byte)asciiCode };
+            string strCharacter = asciiEncoding.GetString(byteArray);
+            return (strCharacter);
+        }
+        Debug.LogError("ASCII Code is not valid.");
+        return string.Empty;
+    }
+
+    /// &lt;summary&gt;
+    /// 过滤掉表情符号
+    /// &lt;/summary&gt;
+    /// &lt;returns&gt;The emoji.&lt;/returns&gt;
+    /// &lt;param name="str"&gt;String.&lt;/param&gt;
+    public static string FilterEmoji(string str)
+    {
+        List&lt;string&gt; patten = new List&lt;string&gt;() { @"\p{Cs}",@"\p{Co}",@"\p{Cn}",@"[\u2702-\u27B0]" };
+        for(int i = 0; i &lt; patten.Count; i++)
+        {
+            str = Regex.Replace(str,patten[i],"");//屏蔽emoji   
+        }
+        return str;
+    }
+
+    /// &lt;summary&gt;
+    /// 过滤掉表情符号
+    /// &lt;/summary&gt;
+    /// &lt;returns&gt;The emoji.&lt;/returns&gt;
+    /// &lt;param name="str"&gt;String.&lt;/param&gt;
+    public static bool IsFilterEmoji(string str)
+    {
+        bool bEmoji = false;
+        List&lt;string&gt; patten = new List&lt;string&gt;() { @"\p{Cs}",@"\p{Co}",@"\p{Cn}",@"[\u2702-\u27B0]" };
+        for(int i = 0; i &lt; patten.Count; i++)
+        {
+            bEmoji = Regex.IsMatch(str,patten[i]);
+            if(bEmoji)
+            {
+                break;
+            }
+        }
+        return bEmoji;
+    }
+
+    #endregion
+
+    #region StringObjectDictionaryExtensions
+
+    /// &lt;summary&gt;
+    /// 针对字典中包含以下键值进行结构：mctid0=xxx;mccount0=1,mctid1=kn2,mccount=2。将其前缀去掉，数字后缀变为键，如{后缀,(去掉前后缀的键,值)}，注意后缀可能是空字符串即没有后缀
+    /// &lt;/summary&gt;
+    /// &lt;param name="dic"&gt;&lt;/param&gt;
+    /// &lt;param name="prefix"&gt;前缀，可以是空引用或空字符串，都表示没有前缀。&lt;/param&gt;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static IEnumerable&lt;IGrouping&lt;string,(string, object)&gt;&gt; GetValuesWithoutPrefix(this IReadOnlyDictionary&lt;string,object&gt; dic,string prefix = null)
+    {
+        //prefix ??= string.Empty;
+        prefix = prefix ?? string.Empty;
+
+        var coll = from tmp in dic.Where(c =&gt; c.Key.StartsWith(prefix)) //仅针对指定前缀的键值
+                   let p3 = tmp.Key.Get3Segment(prefix)
+                   group (p3.Item2, tmp.Value) by p3.Item3;
+        return coll;
+    }
+
+    /// &lt;summary&gt;
+    /// 分解字符串为三段，前缀，词根，数字后缀(字符串形式)。
+    /// &lt;/summary&gt;
+    /// &lt;param name="str"&gt;&lt;/param&gt;
+    /// &lt;param name="prefix"&gt;前缀，可以是空引用或空字符串，都表示没有前缀。&lt;/param&gt;
+    /// &lt;returns&gt;&lt;/returns&gt;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static (string, string, string) Get3Segment(this string str,string prefix = null)
+    {
+        //prefix ??= string.Empty;
+        prefix = prefix ?? string.Empty;
+
+        //最后十进制数字尾串的长度
+        int suffixLen = Enumerable.Reverse(str).TakeWhile(c =&gt; char.IsDigit(c)).Count();
+        //获取十进制数字后缀
+        //string suufix = str[^suffixLen..];     //^suffixLen：倒序下标；suffixLen..：从指定位置开始直到末尾
+        string suufix = str.Substring(str.Length - suffixLen);
+
+        //return (prefix, str[prefix.Length..^suufix.Length], suufix);
+        string middle = str.Substring(prefix.Length,str.Length - prefix.Length - suufix.Length);
+        return (prefix, middle, suufix);
+    }
+
+    #endregion
+
+}
+</code></pre>
+<h1>Demo链接：</h1>
+<p><a class="has-card" href="https://download.csdn.net/download/qq_39108767/85913988" title="【Unity】升级版·Excel数据解析，自动创建C#类，自动创建ScriptableObject生成类，自动序列化Asset-Unity3D文档类资源-CSDN下载"><span class="link-card-box"><span class="link-title">【Unity】升级版·Excel数据解析，自动创建C#类，自动创建ScriptableObject生成类，自动序列化Asset-Unity3D文档类资源-CSDN下载</span><span class="link-desc">Excel数据解析，自动创建对应C#类，自动创建ScriptableObject生成类，自动序列化A更多下载资源、学习资料请访问CSDN下载频道.</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://download.csdn.net/download/qq_39108767/85913988</span></span></a></p>
+</div>
+</div>

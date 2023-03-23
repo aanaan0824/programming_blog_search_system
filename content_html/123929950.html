@@ -1,0 +1,85 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>感谢这位老哥编写的SDK：</p>
+<p><a class="has-card" href="https://github.com/pangdahua/php7-wxwork-finance-sdk" title="https://github.com/pangdahua/php7-wxwork-finance-sdk"><span class="link-card-box"><span class="link-title">https://github.com/pangdahua/php7-wxwork-finance-sdk</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon-default.png"/>https://github.com/pangdahua/php7-wxwork-finance-sdk</span></span></a>Readme.md讲太简单，可能会有坑，我这里借花献佛，把详细步骤写一下：</p>
+<p>1、将github上下载源代码包，再从企微官网API下载C版本的最新sdk，一起上传到服务器，</p>
+<p>进入到该目录。</p>
+<p><a class="has-card" href="https://wwcdn.weixin.qq.com/node/wework/images/sdk_20201116.rar" title="https://wwcdn.weixin.qq.com/node/wework/images/sdk_20201116.rar"><span class="link-card-box"><span class="link-title">https://wwcdn.weixin.qq.com/node/wework/images/sdk_20201116.rar</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon-default.png"/>https://wwcdn.weixin.qq.com/node/wework/images/sdk_20201116.rar</span></span></a><img alt="" height="159" src="image\bc8e8c6a10a14474a4521c0420e3bf6f.png" width="327"/></p>
+<p>目录大概是这个样子的，注意红框两个文件就是企微官网c版sdk，必不可少。</p>
+<p>2、找到服务器上 phpize php-config目录$PHP_PATH，根据目录进行编译：</p>
+<pre><code>$PHP_PATH/bin/phpize
+        
+./configure --with-php-config=$PHP_PATH/php-config --with-wxwork-finance-sdk=./
+       
+make 
+make test
+make install</code></pre>
+<p>如果make test通过，那就基本没问题了。如果以上有问题，可能原因：</p>
+<p>（1）php版本不对，php8版本arginfo不再是可选。</p>
+<p>（2）php不是编译安装的，导致编译器版本不一致。</p>
+<p>3、php.ini 增加 extension=wxwork_finance_sdk.so</p>
+<p><span style="color:#fe2c24;">4、重启php-fpm、Nginx，不然扩展不生效。</span></p>
+<p><span style="color:#fe2c24;">测试一下：</span></p>
+<pre><code>&lt;?php
+//phpinfo(); //phpinfo显示扩展已加载，也可能是无效的，必须用extension_loaded测试
+var_dump(extension_loaded('wxwork_finance_sdk'));</code></pre>
+<p>或者服务器端：</p>
+<pre><code>php -m</code></pre>
+<p><img alt="" height="191" src="image\d5ba8db2a49846108f6a46b38d174645.png" width="245"/></p>
+<p>以上配置成功环境参数如下：</p>
+<blockquote>
+<p>宝塔linux面板，centos 7.9，php 7.4，nginx 1.20 </p>
+</blockquote>
+<p>拉取企微会话消息demo：</p>
+<pre><code>&lt;?php
+try {
+	$obj = new WxworkFinanceSdk("xxxxxxxxxxxxxx", "xxxxxxxxxxxxxxxxxxxxxx");
+	// 私钥，必须注意对应的公钥的版本，我这里设置了两个
+    // 还有文本格式是Unix，在Windows编辑器下需要特别注意
+	$privateKey5 = '-----BEGIN RSA PRIVATE KEY-----
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+-----END RSA PRIVATE KEY-----'; 
+
+    $privateKey6 = '-----BEGIN RSA PRIVATE KEY-----
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+-----END RSA PRIVATE KEY-----'; 
+
+	$chats = json_decode($obj-&gt;getChatData(0, 10), true);
+	foreach ($chats['chatdata'] as $val) {
+		echo '公钥版本号：'.$val['publickey_ver'];
+		// @param1为需要解密的数据（base64）,@param2为解密后的数据，@param3为私钥
+        // @param4为对应的密钥格式（PKCS1开头：begin rsa private key，PKCS8开头：begin private key），都可以，只要@param4选择了正确的私钥读取参数
+        openssl_private_decrypt(base64_decode($val['encrypt_random_key']), $decryptRandKey, $privateKey6, OPENSSL_PKCS1_PADDING);
+		var_dump($decryptRandKey);
+		echo "&lt;hr/&gt;";
+		$msg = $obj-&gt;decryptData($decryptRandKey, $val['encrypt_chat_msg']);
+		echo $msg;
+		//$obj-&gt;downloadMedia($sdkFileId, "/media.mp4");
+	}
+
+}catch(\WxworkFinanceSdkException $e) {
+    var_dump($e-&gt;getMessage(), $e-&gt;getCode());
+}
+/**
+ * openssl_pkey_get_private这个函数可用来判断私钥是否是可用的，可用，返回资源
+ * @return bool
+ */
+function getPrivateKey($privateKey)
+{
+	return openssl_pkey_get_private($privateKey);
+}
+/**
+ * openssl_pkey_get_public这个函数可用来判断公钥是否是可用的，可用，返回资源
+ * @return bool
+ */
+function getPublicKey($publicKey)
+{
+	return openssl_pkey_get_public($publicKey);
+}
+</code></pre>
+<p></p>
+</div>
+</div>

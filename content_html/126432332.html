@@ -1,0 +1,69 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>如何驱动直流电机H桥驱动</h3>
+<ul><li><a href="#_2">直流减速电机驱动设计</a></li><li><ul><li><a href="#MOS_3">MOS管控制直流</a></li><li><a href="#H_19">H桥电路分析</a></li><li><ul><li><a href="#_21">正反转</a></li><li><ul><li><a href="#_22">正转</a></li><li><a href="#_27">反转</a></li><li><a href="#_31">损坏</a></li><li><a href="#_39">原因分析</a></li><li><a href="#_48">刹车</a></li><li><a href="#_55">调速</a></li></ul>
+</li></ul>
+</li><li><a href="#_60">单片机引脚驱动？</a></li><li><ul><li><ul><li><a href="#_75">那上桥臂可不可以跟下桥臂一样呢？</a></li><li><a href="#_111">最终得出结论</a></li></ul>
+</li></ul>
+</li><li><a href="#_130">电路设计</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<h1><a id="_2"></a>直流减速电机驱动设计</h1>
+<h2><a id="MOS_3"></a>MOS管控制直流</h2>
+<p><img alt="在这里插入图片描述" src="image\0246f8ef82494b21b233a9e25b0df425.png"/><br/> 我们知道单个MOS管可以控制直流电机的启动与停止，但是不能控制直流电机的正反转状态。如果要实现正反转，就需要用到H桥。</p>
+<p><img alt="图片" src="image\a467c930ba3442d49a483e4eb718c706.png"/><br/> 有两个MOS管组成的称为一个半桥。在上面的上桥臂也叫上管，在下面就下桥臂也叫下管。<br/> 两个半桥组成一个完整的H桥。</p>
+<p><img alt="在这里插入图片描述" src="image\72d84bdd42d44e199d19db305e095412.png"/></p>
+<p>我们看看H桥的拓扑结构，中间连接的负载也就是直流电机。</p>
+<p>假设我们在4个MOS管连接上MCU的引脚就可以控制4个MOS管来控制电流的流通状态，最终我们可以实现直流电机的正反转以及调速和刹车。</p>
+<h2><a id="H_19"></a>H桥电路分析</h2>
+<h3><a id="_21"></a>正反转</h3>
+<h4><a id="_22"></a>正转</h4>
+<p>假设要4个管通用不同的电流会有什么变化，我们来看看。<br/> <img alt="在这里插入图片描述" src="image\32646d1e1ff34179af627782dae15f7d.png"/><br/> Q1导通，Q4导通。很明显，直流电机流过了电流。现在以为以他为正转。</p>
+<h4><a id="_27"></a>反转</h4>
+<p><img alt="在这里插入图片描述" src="image\f2215430ca624b1f8ad9fbccc9e537fc.png"/><br/> 而Q1截止Q4截止 Q3导通。 Q2导通。直流电机就是反转。</p>
+<h4><a id="_31"></a>损坏</h4>
+<p><img alt="在这里插入图片描述" src="image\6a2c76b7941540bc9d6bd4d85dbcd207.png"/><br/> 当一个半桥。 Q1跟Q2导通很明显，电源VCC直接到GND地很明显是在短路状态。很容易烧坏MOS管。<br/> 上下桥同时导通的原因有：（1）MOS管的自带延时通断 （2）单片机的逻辑控制错误。</p>
+<p>例如：<br/> 电机现在是正转，突然来一个反转信号而导致MOS管的开关时间没有迅速关断状态。最终导致一个半桥的导通。最终短路损坏MOS管</p>
+<h4><a id="_39"></a>原因分析</h4>
+<p>电机正好从正转切到反转时Q1的下降沿正好对准Q2的上升沿，由于MOS管的通道，实际的边缘可能会有不同程度的滞后，这就导致某一时刻上下两MOS管的控制电压，同时为高电平时从而导致上管和下管导通。<br/> 为了让避免上下MOS管的道通需要加入死区。所谓的死区就是在上下两路控制信号的上升和下降沿之间，插入一小段头为低电平的区间，大约几百纳秒，从而避免上下两管的同时导通。</p>
+<p>现在的MCU都有控制死区的组件。比如有stm32，还有STC等单片机。</p>
+<p>如STC8H手册中的死区寄存器，详细的可以下载看看，里面包括有控制电机的代码和原理图<br/> <img alt="在这里插入图片描述" src="image\661f189d124144a7825d3f24a8dd68f6.png"/></p>
+<h4><a id="_48"></a>刹车</h4>
+<p>我们知道线圈有一个很大的特点。当电流减少时它会阻碍该电流的减弱。我们就是利用续流回路的特性。<br/> 可以使用直流电机将两个导线短接可以明显感觉到有一定的阻力。<br/> <img alt="在这里插入图片描述" src="image\1f96b34ff68f45feaae830255c1f5fac.png"/></p>
+<p>当Q1跟Q3导通。 Q2跟Q4截止。也就是说上两个管的上桥臂导通。起到刹车作用。也或者也可以Q1跟Q3的截止Q2跟Q4倒通也起到同样的作用。直流电机会刹车。</p>
+<h4><a id="_55"></a>调速</h4>
+<p><img alt="在这里插入图片描述" src="image\445c599aadd448eeb92e89a3bcf60cdf.png"/></p>
+<p>当上桥臂Q1输入信号为PWM模式，Q4为导通状态。那么经过pwm的占空比。直流电机的速度随之变化。占空比越大，速度就越快，占空比越少速度就越慢。当然也可以为。 Q4为输入PWM Q1导通。</p>
+<h2><a id="_60"></a>单片机引脚驱动？</h2>
+<p>单片机能否直接驱动NMOS和PMOS管吗？当中还需要什么条件来驱动MOS？</p>
+<p>关键参数：<br/> VGSTH<br/> RDSON对应的VGS电压 ：栅极开启电压</p>
+<p>图片<br/> 假如下桥使用的是si2302MOS管。<br/> <img alt="在这里插入图片描述" src="image\50727735db994497988908be9999492c.png"/><br/> 从数据手册中可以看到Vgs导通电压。为0.5~1.5伏。但是要注意这是最低的开启电压。<br/> 让MOS管完全导通的电压为以下图所示。<br/> <img alt="在这里插入图片描述" src="image\e4fbc34839fd41caa4411f096ab293d9.png"/><br/> 从上面截图可以看出VGS=4.5伏V时，内阻为65mΩ；当VGS=2.5时，内阻为80mΩ。结论是单片机可以直接驱动下桥臂，前提是相对应的电压要符合要求。</p>
+<h4><a id="_75"></a>那上桥臂可不可以跟下桥臂一样呢？</h4>
+<p><img alt="在这里插入图片描述" src="image\d116864eebf545b4859746215fdcf16c.png"/></p>
+<p>在9V电源电压下，Q1跟Q4的MOS管道通，Q1的MOS S极连接电机端点处就有9V电压，由此VGS=3.3-9V=-5.7V 结果是VGS&lt;0 不符合MOS管开启条件,也就是说MOS管开了一瞬间就马上关闭了。所以上桥臂使用N沟道的MOS管是无法使用单片机来控制的。要用到附加器件自举升压电路辅助。</p>
+<p>既然上桥无法使用NMOS管来开启那么使用PMOS管会这么呢？<br/> 导通条件VGS&lt;0 VG&lt;VS<br/> 断开条件VGS&gt;0 VG&gt;VS</p>
+<p>上桥使用的是si2301MOS管。手册数据如下<br/> <img alt="在这里插入图片描述" src="image\a56017c7d0b043779dd91849aad0ae8c.png"/><br/> 可以看到使用si2301MOS管。它的VGS为-2.5V。</p>
+<p>最终我们使单片机输出0V。可以让PMOS导通。Vs=9V， VGS=-9V 导通<br/> 但是想要关闭就行不通了。可以看到栅极开启电压VGS为-04.~-1.5V 让其关断应 VGS&gt;-1.5V<br/> 单片机输出。VG=3.3V Vs=9V VGS=3.3 - 9=-5.7 依然道通。</p>
+<p>断开需满足3.3V-VCC&gt;Vgs (th)</p>
+<p><img alt="图片" src="image\162f672f19a843b38548fc2873cc4b28.png"/></p>
+<p>VM=12V， 当G极控制电压为12V， VGS=12V-VM=0V 所以上桥使用12V也是行不通的。<br/> 为了让上条跟管导通后。不会因为S端的电压。 升高而关断。升高而关断就要驱使G端的电压和S端一起升高，并且让G端的电压始终比G端的电压高出12V，以确保上桥NMOS管能够持续导通，要实现这一功能，我们可以使用现成的芯片 有IR2103</p>
+<p>自举电压核心器件为二级管+电容</p>
+<p>对于下桥臂Q2MOS管可以使用STM32芯片引脚直接控制，因为STM32的PWM高电平是3.3V足够使N-MOS管导通。上桥臂Q1 MOS管无法直接使用STM32芯片引脚使其导通，因为假设Q1导通，漏极D和源极S电压几乎相等（Ros非常小），即VA=VCC=12V，这样要求Vg&gt;=Va+Vgs=14.5V。简单来说就是 Vg &gt; 14.5V，Q1导通，Vg&lt; 14.5V，Q1截止。</p>
+<h4><a id="_111"></a>最终得出结论</h4>
+<p>上桥臂驱动：自举电路<br/>   下桥臂驱动：电平控制</p>
+<p>所谓半桥驱动芯片，便是一块驱动芯片只能用于控制H桥一侧的2个MOS管。因此采用半桥驱动芯片时，需要两块该芯片才能控制一个完整的H桥。<br/>   相应的，全桥驱动芯片便是可以直接控制4个MOS管的导通与截止，一块该芯片便能完成一个完整H桥的控制。</p>
+<p>半桥驱动芯片EG3013 看下芯片特性<br/> <img alt="在这里插入图片描述" src="image\dccdbfe081504e77a082c0b2e8fea2ae.png"/><br/> 内部结构框图<br/> <img alt="在这里插入图片描述" src="image\48c7f1baf13e464f90b9c2fb083ced5f.png"/><br/> 引脚功能(来源于数据手册)<br/> <img alt="在这里插入图片描述" src="image\254bfd90d6f9470bb08cc5b7b4fa1e45.png"/><br/> 自举电路<br/> 此部分是理解该芯片的难点，需要进行重点讲解。从上面的典型电路图和最初的设计原理图中均可发现：该芯片在Vcc和VB脚之间接了一个二极管，在VB和VS之间接了一个电容。这便构成了一个自举电路。</p>
+<p>作用：由于负载(电机)相对于上桥臂和下桥臂MOS位置不同，而MOS的开启条件为Vgs&gt;Vth，这便会导致想要上桥臂MOS导通，则其栅极对地所需的电压较大。<br/>   因为下桥臂MOS源极接地，想要导通只需要令其栅极电压大于开启电压Vth。而上桥臂MOS源极接到负载，如果上桥臂MOS导通，那么其源极电压将上升到H桥驱动电压也就是MOS的供电电压，此时如果栅极对地电压不变，那么Vgs可能小于Vth，又关断。因此想要使上桥臂MOS导通，必须想办法使其Vgs始终大于或一段时间内大于Vth（即栅极电压保持大于MOS管的电源电压+Vth）。</p>
+<h2><a id="_130"></a>电路设计</h2>
+<p><img alt="图片" src="image\f30c99fa07c04d8092b11ae9d5580c3d.png"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

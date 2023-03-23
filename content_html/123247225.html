@@ -1,0 +1,208 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>在多线程程序中，可能多个线程都需要操作一个共用的List，而微软实现的List却是非线程安全的。也就是说，在多线程情况下，共用的List会产生线程安全问题。</p>
+<p>对于这个问题，有不少的解决方案，比如换用线程安全的类型，如：</p>
+<pre><code class="prism language-csharp">BlockingCollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>	
+ConcurrentBag<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>	
+ConcurrentDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span>	
+ConcurrentQueue<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>	
+ConcurrentStack<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>	
+OrderablePartitioner<span class="token operator">&lt;</span>TSource<span class="token operator">&gt;</span>	
+<span class="token class-name">Partitioner</span>	
+Partitioner<span class="token operator">&lt;</span>TSource<span class="token operator">&gt;</span>	
+</code></pre>
+<p>且在MSDN上有相关额介绍：<br/> <a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.collections.concurrent?view=net-6.0">https://docs.microsoft.com/zh-cn/dotnet/api/system.collections.concurrent?view=net-6.0</a></p>
+<p>但是，你会发现一个严重的问题，缺少删除(remove)。这样往往不是我们想要的。</p>
+<p>最简单的是，用lock锁。这里有两种使用方法</p>
+<p>第一种：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">private</span> <span class="token keyword">static</span> List<span class="token operator">&lt;</span>WxOAuth2Model<span class="token operator">&gt;</span> wxOAuth2 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token generic-method"><span class="token function">List</span><span class="token punctuation">&lt;</span><span class="token class-name">WxOAuth2Model</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">Test</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">lock</span><span class="token punctuation">(</span>wxOAuth2 <span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+	<span class="token comment">//对于wxOAuth2 进行读取，添加，删除</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>这种方案最为常见，副作用暂未研究。</p>
+<p>第二种：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">private</span> <span class="token keyword">static</span> List<span class="token operator">&lt;</span>WxOAuth2Model<span class="token operator">&gt;</span> wxOAuth2 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token generic-method"><span class="token function">List</span><span class="token punctuation">&lt;</span><span class="token class-name">WxOAuth2Model</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">Test</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	 <span class="token keyword">lock</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>wxOAuth2 <span class="token keyword">as</span> ICollection<span class="token punctuation">)</span><span class="token punctuation">.</span>SyncRoot<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+	<span class="token comment">//对于wxOAuth2 进行读取，添加，删除</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>将对象转换成ICollection接口类型，然后对这个接口的SyncRoot进行lock。<br/> 这种方案，在MSDN上有相关的介绍<br/> <a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.collections.icollection.syncroot">https://docs.microsoft.com/zh-cn/dotnet/api/system.collections.icollection.syncroot</a></p>
+<p>鼠标点击SyncRoot，按F12，得到ICollection的定义</p>
+<pre><code class="prism language-csharp">  <span class="token keyword">public</span> <span class="token keyword">interface</span> <span class="token class-name">ICollection</span> <span class="token punctuation">:</span> <span class="token class-name">IEnumerable</span>
+  <span class="token punctuation">{<!-- --></span>
+      <span class="token keyword">int</span> Count <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+      <span class="token keyword">bool</span> IsSynchronized <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+      <span class="token keyword">object</span> SyncRoot <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+      <span class="token keyword">void</span> <span class="token function">CopyTo</span><span class="token punctuation">(</span><span class="token class-name">Array</span> array<span class="token punctuation">,</span> <span class="token keyword">int</span> index<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+</code></pre>
+<p>其中包含一个只读的object 类型的SyncRoot属性。</p>
+<p>鼠标点击List中的list,按F12，会得到这个List的定义：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">List</span><span class="token operator">&lt;</span>T<span class="token operator">&gt;</span> <span class="token punctuation">:</span> 
+ICollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token punctuation">,</span> 
+IEnumerable<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token punctuation">,</span> 
+IEnumerable<span class="token punctuation">,</span> 
+IList<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token punctuation">,</span> 
+IReadOnlyCollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token punctuation">,</span> 
+IReadOnlyList<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token punctuation">,</span> 
+ICollection<span class="token punctuation">,</span> 
+IList
+<span class="token punctuation">{<!-- --></span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>从定义中可知，List继承（实现）了ICollection接口，因此将该List转换为ICollection后，就可以访问其SyncRoot 属性。</p>
+<p>再看一下Dictionary的实现</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Dictionary</span><span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span> TValue<span class="token operator">&gt;</span> <span class="token punctuation">:</span> 
+ICollection<span class="token operator">&lt;</span>KeyValuePair<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span> TValue<span class="token operator">&gt;</span><span class="token operator">&gt;</span><span class="token punctuation">,</span> 
+IEnumerable<span class="token operator">&lt;</span>KeyValuePair<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span> TValue<span class="token operator">&gt;</span><span class="token operator">&gt;</span><span class="token punctuation">,</span> 
+IEnumerable<span class="token punctuation">,</span> 
+IDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span> TValue<span class="token operator">&gt;</span><span class="token punctuation">,</span> 
+IReadOnlyCollection<span class="token operator">&lt;</span>KeyValuePair<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span> TValue<span class="token operator">&gt;</span><span class="token operator">&gt;</span><span class="token punctuation">,</span> 
+IReadOnlyDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span> TValue<span class="token operator">&gt;</span><span class="token punctuation">,</span> 
+ICollection<span class="token punctuation">,</span> 
+IDictionary<span class="token punctuation">,</span> 
+IDeserializationCallback<span class="token punctuation">,</span> 
+<span class="token class-name">ISerializable</span> <span class="token keyword">where</span> TKey <span class="token punctuation">:</span> notnull
+<span class="token punctuation">{<!-- --></span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>同样实现了ICollection接口，因此Dictionary也可以按照同样的方法进行锁定，以实现线程安全的操作。</p>
+<p>与集合相关的，MSDN上亦有介绍：<br/> <a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.collections.icollection?view=net-6.0">https://docs.microsoft.com/zh-cn/dotnet/api/system.collections.icollection?view=net-6.0</a></p>
+<p>可以如此操作的，罗列了一大堆，看看有么有你想要的？</p>
+<pre><code class="prism language-csharp">派生
+<span class="token class-name">Microsoft<span class="token punctuation">.</span>Build<span class="token punctuation">.</span>BuildEngine<span class="token punctuation">.</span>ToolsetCollection</span>
+<span class="token class-name">Microsoft<span class="token punctuation">.</span>Extensions<span class="token punctuation">.</span>DependencyInjection<span class="token punctuation">.</span>IServiceCollection</span>
+<span class="token class-name">Microsoft<span class="token punctuation">.</span>Extensions<span class="token punctuation">.</span>DependencyInjection<span class="token punctuation">.</span>ServiceCollection</span>
+<span class="token class-name">Microsoft<span class="token punctuation">.</span>Extensions<span class="token punctuation">.</span>Primitives<span class="token punctuation">.</span>StringValues</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Activities<span class="token punctuation">.</span>Hosting<span class="token punctuation">.</span>SymbolResolver</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Activities<span class="token punctuation">.</span>Presentation<span class="token punctuation">.</span>Model<span class="token punctuation">.</span>ModelItemCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Activities<span class="token punctuation">.</span>Presentation<span class="token punctuation">.</span>Model<span class="token punctuation">.</span>ModelItemDictionary</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Activities<span class="token punctuation">.</span>Presentation<span class="token punctuation">.</span>Toolbox<span class="token punctuation">.</span>ToolboxCategoryItems</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Concurrent<span class="token punctuation">.</span>ConcurrentDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>Dictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>Dictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">KeyCollection</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>Dictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">ValueCollection</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>HashSet<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>IDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>IList<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>ISet<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>LinkedList<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>List<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>SortedDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>SortedDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">KeyCollection</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>SortedDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">ValueCollection</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>SortedList<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>SortedSet<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>SynchronizedCollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic<span class="token punctuation">.</span>SynchronizedReadOnlyCollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableArray<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableArray<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">Builder</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">Builder</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableHashSet<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableHashSet<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">Builder</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableList<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableList<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">Builder</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableSortedDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableSortedDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">Builder</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableSortedSet<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Immutable<span class="token punctuation">.</span>ImmutableSortedSet<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">Builder</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>ObjectModel<span class="token punctuation">.</span>Collection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>ObjectModel<span class="token punctuation">.</span>ReadOnlyCollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>ObjectModel<span class="token punctuation">.</span>ReadOnlyDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>ObjectModel<span class="token punctuation">.</span>ReadOnlyDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">KeyCollection</span>
+System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>ObjectModel<span class="token punctuation">.</span>ReadOnlyDictionary<span class="token operator">&lt;</span>TKey<span class="token punctuation">,</span>TValue<span class="token operator">&gt;</span><span class="token punctuation">.</span><span class="token class-name">ValueCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Data<span class="token punctuation">.</span>Linq<span class="token punctuation">.</span>ChangeConflictCollection</span>
+System<span class="token punctuation">.</span>Data<span class="token punctuation">.</span>Linq<span class="token punctuation">.</span>EntitySet<span class="token operator">&lt;</span>TEntity<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>Data<span class="token punctuation">.</span>Objects<span class="token punctuation">.</span>DataClasses<span class="token punctuation">.</span>EntityCollection<span class="token operator">&lt;</span>TEntity<span class="token operator">&gt;</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Data<span class="token punctuation">.</span>Objects<span class="token punctuation">.</span>ObjectParameterCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Diagnostics<span class="token punctuation">.</span>ActivityTagsCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>DirectoryServices<span class="token punctuation">.</span>AccountManagement<span class="token punctuation">.</span>PrincipalCollection</span>
+System<span class="token punctuation">.</span>DirectoryServices<span class="token punctuation">.</span>AccountManagement<span class="token punctuation">.</span>PrincipalValueCollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Dynamic<span class="token punctuation">.</span>ExpandoObject</span>
+<span class="token class-name">System<span class="token punctuation">.</span>IO<span class="token punctuation">.</span>Log<span class="token punctuation">.</span>ReservationCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Json<span class="token punctuation">.</span>JsonArray</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Json<span class="token punctuation">.</span>JsonObject</span>
+System<span class="token punctuation">.</span>Net<span class="token punctuation">.</span>Http<span class="token punctuation">.</span>Headers<span class="token punctuation">.</span>HttpHeaderValueCollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Net<span class="token punctuation">.</span>Http<span class="token punctuation">.</span>HttpRequestOptions</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Net<span class="token punctuation">.</span>HttpListenerPrefixCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Net<span class="token punctuation">.</span>NetworkInformation<span class="token punctuation">.</span>GatewayIPAddressInformationCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Net<span class="token punctuation">.</span>NetworkInformation<span class="token punctuation">.</span>IPAddressCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Net<span class="token punctuation">.</span>NetworkInformation<span class="token punctuation">.</span>IPAddressInformationCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Net<span class="token punctuation">.</span>NetworkInformation<span class="token punctuation">.</span>MulticastIPAddressInformationCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Net<span class="token punctuation">.</span>NetworkInformation<span class="token punctuation">.</span>UnicastIPAddressInformationCollection</span>
+System<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>CompilerServices<span class="token punctuation">.</span>ReadOnlyCollectionBuilder<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Security<span class="token punctuation">.</span>Principal<span class="token punctuation">.</span>IdentityReferenceCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>ServiceModel<span class="token punctuation">.</span>Channels<span class="token punctuation">.</span>MessageProperties</span>
+<span class="token class-name">System<span class="token punctuation">.</span>ServiceModel<span class="token punctuation">.</span>Configuration<span class="token punctuation">.</span>CustomBindingElement</span>
+System<span class="token punctuation">.</span>ServiceModel<span class="token punctuation">.</span>Configuration<span class="token punctuation">.</span>ServiceModelExtensionCollectionElement<span class="token operator">&lt;</span>TServiceModelExtensionElement<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>ServiceModel<span class="token punctuation">.</span>Dispatcher<span class="token punctuation">.</span>IMessageFilterTable<span class="token operator">&lt;</span>TFilterData<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>ServiceModel<span class="token punctuation">.</span>Dispatcher<span class="token punctuation">.</span>MessageFilterTable<span class="token operator">&lt;</span>TFilterData<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>ServiceModel<span class="token punctuation">.</span>Dispatcher<span class="token punctuation">.</span>MessageQueryTable<span class="token operator">&lt;</span>TItem<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>ServiceModel<span class="token punctuation">.</span>Dispatcher<span class="token punctuation">.</span>XPathMessageFilterTable<span class="token operator">&lt;</span>TFilterData<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>ServiceModel<span class="token punctuation">.</span>ExtensionCollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+System<span class="token punctuation">.</span>ServiceModel<span class="token punctuation">.</span>IExtensionCollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Speech<span class="token punctuation">.</span>Recognition<span class="token punctuation">.</span>SemanticValue</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Web<span class="token punctuation">.</span>ModelBinding<span class="token punctuation">.</span>ModelBinderDictionary</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Web<span class="token punctuation">.</span>ModelBinding<span class="token punctuation">.</span>ModelStateDictionary</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Controls<span class="token punctuation">.</span>ColumnDefinitionCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Controls<span class="token punctuation">.</span>RowDefinitionCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Data<span class="token punctuation">.</span>XmlNamespaceMappingCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Documents<span class="token punctuation">.</span>TableCellCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Documents<span class="token punctuation">.</span>TableColumnCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Documents<span class="token punctuation">.</span>TableRowCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Documents<span class="token punctuation">.</span>TableRowGroupCollection</span>
+System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Documents<span class="token punctuation">.</span>TextElementCollection<span class="token operator">&lt;</span>TextElementType<span class="token operator">&gt;</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Forms<span class="token punctuation">.</span>NumericUpDownAccelerationCollection</span>
+System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>FreezableCollection<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Markup<span class="token punctuation">.</span>INameScopeDictionary</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Animation<span class="token punctuation">.</span>ClockCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Animation<span class="token punctuation">.</span>TimelineCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>CharacterMetricsDictionary</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>DoubleCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>DrawingCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Effects<span class="token punctuation">.</span>BitmapEffectCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>FamilyTypefaceCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>FontFamilyMapCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>GeneralTransformCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>GeometryCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>GradientStopCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Int32Collection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>LanguageSpecificStringDictionary</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Media3D<span class="token punctuation">.</span>GeneralTransform3DCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Media3D<span class="token punctuation">.</span>MaterialCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Media3D<span class="token punctuation">.</span>Model3DCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Media3D<span class="token punctuation">.</span>Point3DCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Media3D<span class="token punctuation">.</span>Transform3DCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Media3D<span class="token punctuation">.</span>Vector3DCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>Media3D<span class="token punctuation">.</span>Visual3DCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>PathFigureCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>PathSegmentCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>PointCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>TextEffectCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>TransformCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Media<span class="token punctuation">.</span>VectorCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>TextDecorationCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>TriggerActionCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Workflow<span class="token punctuation">.</span>Activities<span class="token punctuation">.</span>OperationParameterInfoCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Workflow<span class="token punctuation">.</span>ComponentModel<span class="token punctuation">.</span>ActivityCollection</span>
+<span class="token class-name">System<span class="token punctuation">.</span>Xml<span class="token punctuation">.</span>Xsl<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>XmlQueryNodeSequence</span>
+System<span class="token punctuation">.</span>Xml<span class="token punctuation">.</span>Xsl<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>XmlQuerySequence<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

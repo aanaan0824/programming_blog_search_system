@@ -1,0 +1,1096 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-github-gist" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="SSR_0"></a>图形学基础|屏幕空间反射(SSR)</h1>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#SSR_0">图形学基础|屏幕空间反射(SSR)</a></li><li><ul><li><a href="#_3">一、前言</a></li><li><a href="#_28">二、反射技术概述</a></li><li><ul><li><a href="#21__56">2.1 环境贴图反射</a></li><li><a href="#22_IBL_118">2.2 IBL反射</a></li><li><a href="#23_Planar_Reflections_154">2.3 平面反射（Planar Reflections）</a></li><li><a href="#24_Screen_Space_Reflection_177">2.4 屏幕空间反射（Screen Space Reflection）</a></li><li><ul><li><a href="#241_SSR_179">2.4.1 SSR的基本原理</a></li><li><a href="#242_SSR_200">2.4.2 SSR的优缺点</a></li></ul>
+</li></ul>
+</li><li><a href="#SSRScreenSpace_Reflection_221">三、SSR（Screen-Space Reflection）实现</a></li><li><ul><li><a href="#31_Efficient_GPU_ScreenSpace_Ray_Tracing_223">3.1 Efficient GPU Screen-Space Ray Tracing</a></li><li><ul><li><a href="#311_2D_Raymarching_vs_3D_Raymarching_231">3.1.1 2D Raymarching vs 3D Raymarching</a></li><li><a href="#312__331">3.1.2 实现</a></li></ul>
+</li><li><a href="#32_HiZ_ScreenSpace_Reflections_500">3.2 Hi-Z Screen-Space Reflections</a></li><li><ul><li><a href="#321_HiZ_Trace_516">3.2.1 Hi-Z Trace算法</a></li><li><a href="#322__668">3.2.2 实现</a></li></ul>
+</li><li><a href="#33_SSSRStochastic_Screen_Space_Reflections_867">3.3 SSSR（Stochastic Screen Space Reflections）</a></li></ul>
+</li><li><a href="#_873">参考博文</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<h2><a id="_3"></a>一、前言</h2>
+<p>反射效果，是游戏中比较常见且重要的一个效果。</p>
+<p>在表现光滑的表面（金属、光滑地面）、水面（湖面、地面积水）等材质时，反射出场景中的其他物体，可以让画面质量有很大提升，丰富真实感。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/020d84b4f97a44268f7456d9f05668e2.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7022512b9d144ae782abac728a92aa0c.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>当粗糙度越小，镜面反射的反射波瓣更加狭窄，光照更加高频，精度要求也更高。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/fd1c103e50114cbdadfbf80aeae940c1.png#pic_center"/></p>
+<p>本文将对实现反射效果的一些技术做简单的概述，并着重介绍<strong>基于屏幕空间的反射技术</strong>。</p>
+<p>以下是笔者的一些笔记。如有错误，还请见谅。</p>
+<h2><a id="_28"></a>二、反射技术概述</h2>
+<p>这里所说的反射，属于<strong>间接光照</strong>的范畴。</p>
+<p>直接光照下的反射是指：光源出发经过物体表面直接反射进入眼睛的光照。</p>
+<p>间接光照下的反射是指：当物体的表面比较光滑（如镜面，金属），其表面可以反射周围环境，反射的光线进入人眼。</p>
+<p>间接光照下的反射，如果严格计算求解，是相当复杂的：</p>
+<ol><li>需要对表面上的像素在其法线方向做半球积分；</li><li>并且光线经反射会继续地传递下去，直至能量衰减为0；</li></ol>
+<p>在实时渲染当中，完整地计算求解间接光照下的反射是很困难的，因此需要通过各种技术手段模拟和近似反射效果。</p>
+<p>各种性能友好的反射方法就应运而生，其中包含了以下几种常用的技术方案：</p>
+<ul><li>环境贴图反射；</li><li>IBL反射；</li><li>平面反射；</li><li>屏幕空间反射；</li></ul>
+<h3><a id="21__56"></a>2.1 环境贴图反射</h3>
+<p>最简单的模拟反射效果的技术方案是环境贴图反射（CubeMap反射）。</p>
+<p>这种技术通过计算反射的向量，采样（Fetch）环境贴图，从而实现反射的效果。</p>
+<p><em><strong>环境贴图</strong></em></p>
+<p>环境贴图CubeMap最简单的情况就是静态的环境，可以通过预先烘焙进行存储，在运行时加载渲染。</p>
+<p>如下展示了天空盒的渲染，其中，OpenGL渲染时需要注意<a href="https://blog.csdn.net/qjh5606/article/details/89847297">CubeMap的方向问题</a>。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/03aa31bc32fa4ab6ba4f96d98d17304e.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>并且，环境贴图的存储方式并不局限于CubeMap（立方体），还可以是八面体映射等。</p>
+<p><a href="https://zhuanlan.zhihu.com/p/144438588">环境映射技术漫谈</a>博文中介绍了四种环境映射技术的原理并分析了它们的优缺点。</p>
+<p><em><strong>反射向量</strong></em></p>
+<p>对环境贴图的采样需要反射向量，</p>
+<p>计算反射向量的原理可参考<a href="https://blog.csdn.net/puppet_master/article/details/81144266?utm_medium=distribute.pc_relevant_t0.none-task-blog-2%7Edefault%7EBlogCommendFromMachineLearnPai2%7Edefault-1.essearch_pc_relevant&amp;depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-2%7Edefault%7EBlogCommendFromMachineLearnPai2%7Edefault-1.essearch_pc_relevant">图形学相关数学（反射，折射公式）</a>。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5983b5d1a7d14515aabd9e56106ab1c8.png?x-oss-process=image,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>或在HLSL中，直接使用 <a href="https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-reflect">reflect</a> 函数，入射方向和法向量都为单位向量。</p>
+<pre><code class="prism language-c++">// 注意，V方向是指向相机的方向
+// 使用reflect，需要使用反向V
+float3 L = reflect(-V, N);
+</code></pre>
+<p><em><strong>伪代码</strong></em></p>
+<p>模拟天空盒反射的着色器如下：</p>
+<pre><code class="prism language-c++">float4 PS(float2 Tex : TEXCOORD, float4 SVPosition : SV_Position) : SV_Target
+{
+	float3 N = normalize(v_normal);
+    float3 V = normalize(v_camera_position - v_world_position);
+    float3 L = reflect(-V, N);
+    float3 Color = CubeMap.SampleLevel(LinearSampler, L, 0).xyz;
+    return float4(Color,1.0f);
+}
+</code></pre>
+<h3><a id="22_IBL_118"></a>2.2 IBL反射</h3>
+<p>2.1的环境贴图（天空盒）反射并没有考虑到粗糙度，reflect求解的反射向量是完全镜面反射。</p>
+<p>在PBR的IBL环境光计算中，考虑到粗糙度，根据表面的粗糙度来计算环境纹理的平均值。</p>
+<p>因为它需要获取一个区域的所有像素，所以发射多条光线进行采样计算平均值很慢。</p>
+<p>幸运的是，GPU可存储mipmap，mipmap是图像的模糊版本，这也适用于Cubemap。</p>
+<p>将预预过滤环境贴图存储在Mipmap中，通过粗糙度映射计算Mipmap等级，我们就可以从立方体贴图获取一个区域的环境纹理平均值了。</p>
+<p>实现方面可以参考笔者之前文章中的<a href="https://blog.csdn.net/qjh5606/article/details/118558172?spm=1001.2014.3001.5501">5.2.2 Prefilter EnvironmentMap</a>。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/70b033815d464047bb7cf1d3f8349e19.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>在实际应用时，会在场景中放置多个<code>Reflection Probe/反射探针</code>。</p>
+<p>在场景中选择一些关键位置，每个Reflection Probe都以自己所在位置为中心烘焙周围的环境光照。</p>
+<p>在渲染场景中的物体时, 选择一个或多个最近的Refelction Probe, 来确定周围的环境光照信息，<strong>尽管反射不够精确</strong>，但反射足够接近。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a5e94292382e46b6a4b5c8ef70443dbf.png?x-oss-process=image,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h3><a id="23_Planar_Reflections_154"></a>2.3 平面反射（Planar Reflections）</h3>
+<p>如果我们<strong>只关心平面上的反射</strong>，有这样一个办法。</p>
+<p>在平面上反射的相机的角度渲染场景，将结果存储在纹理中，并在最终渲染过程中使用它。</p>
+<p>如果是粗糙的平面，可以对得到的像再次进行模糊等后处理。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2eb531b5262b40dc868eeb74d81d6282.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>这是昂贵的，因为<strong>需要对反射进行整个场景的完整渲染</strong>。</p>
+<p>可参考的实现有：</p>
+<ul><li><a href="https://zhuanlan.zhihu.com/p/92633614">Unity平面反射实现</a></li><li><a href="https://www.lfzxb.top/screen-space-plana-reflection-in-urp-study/">URP平面反射学习笔记</a></li><li><a href="https://blog.csdn.net/puppet_master/article/details/80808486">Unity Shader-Planar Reflection</a></li></ul>
+<h3><a id="24_Screen_Space_Reflection_177"></a>2.4 屏幕空间反射（Screen Space Reflection）</h3>
+<h4><a id="241_SSR_179"></a>2.4.1 SSR的基本原理</h4>
+<p>屏幕空间反射（Screen Space Reflection，SSR），是一个非常著名的基于屏幕空间的技术。</p>
+<p>由于<strong>镜面反射的波瓣很窄</strong>，意味着可以使用<strong>少量的光线</strong>模拟反射，从而就可以得到不错的效果。</p>
+<p>算法本身的原理非常简单：</p>
+<ol><li>对于屏幕空间上的物体的每个像素，根据该像素对应的法线和视线信息，求解出反射向量；</li><li>当前点沿着反射向量在屏幕空间进行步进，判断步进后的坐标深度与深度缓存中存储的物体深度是否相交；</li><li>若相交，取交点处的物体颜色作为最终的反射颜色；</li></ol>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a4295528d8414925bb454fee63849a20.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h4><a id="242_SSR_200"></a>2.4.2 SSR的优缺点</h4>
+<p>优点：</p>
+<ol><li>针对任何面都可以实时反射，不需要求平面。</li><li>不需要额外的DrawCall，没有Planar Reflection那种翻倍DC的问题，计算都在GPU，解放CPU。</li><li>只需要额外的后处理Pass处理，无需大规模改动引擎管线，容易集成。</li><li>可以与Reflection Probe等结合使用。</li></ol>
+<p>缺点：</p>
+<ol><li>需要全屏深度和全屏法线，延迟渲染管线中是可以免费拿到的！但是前向渲染的话，需要额外渲染一遍DepthNormalMap。</li><li>Shader中需要进行RayMarching，对于GPU的负载较大，且步进是有一定步长的，它本身不可能非常精确。</li><li>效果存在自身缺陷，由于只有屏幕可见的物体信息，不在屏幕内的，就完全不会反射。这属于技术本身的瓶颈。</li></ol>
+<h2><a id="SSRScreenSpace_Reflection_221"></a>三、SSR（Screen-Space Reflection）实现</h2>
+<h3><a id="31_Efficient_GPU_ScreenSpace_Ray_Tracing_223"></a>3.1 Efficient GPU Screen-Space Ray Tracing</h3>
+<p>2.4.1中介绍了屏幕空间反射的基本原理：</p>
+<ul><li>在屏幕空间进行光线步进（<strong>Ray Marching</strong>）代替三维空间的光线步进，通过深度缓存判断是否相交。若相交，取交点处的物体颜色作为最终的反射颜色。</li></ul>
+<h4><a id="311_2D_Raymarching_vs_3D_Raymarching_231"></a>3.1.1 2D Raymarching vs 3D Raymarching</h4>
+<p>问题1：<strong>为什么要用屏幕空间的光线步进代替三维空间的光线步进呢</strong>？</p>
+<p>三维空间的光线步进过程如下（以世界空间为例）：</p>
+<ol><li>对于着色点<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         x
+        
+       
+       
+        x
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.43056em; vertical-align: 0em;"></span><span class="mord mathdefault">x</span></span></span></span></span>，根据其法线和视角方向，计算得到反射方向<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         R
+        
+       
+       
+        R
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.68333em; vertical-align: 0em;"></span><span class="mord mathdefault" style="margin-right: 0.00773em;">R</span></span></span></span></span>；</li><li>以着色点<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         x
+        
+       
+       
+        x
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.43056em; vertical-align: 0em;"></span><span class="mord mathdefault">x</span></span></span></span></span>为起点，沿着反射方向<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         R
+        
+       
+       
+        R
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.68333em; vertical-align: 0em;"></span><span class="mord mathdefault" style="margin-right: 0.00773em;">R</span></span></span></span></span>，每次步进一定距离，得到一个新的点，记作<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         
+          x
+         
+         
+          i
+         
+        
+       
+       
+        x_i
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.58056em; vertical-align: -0.15em;"></span><span class="mord"><span class="mord mathdefault">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.311664em;"><span class="" style="top: -2.55em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.15em;"><span class=""></span></span></span></span></span></span></span></span></span></span>，<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         
+          x
+         
+         
+          i
+         
+        
+        
+         =
+        
+        
+         x
+        
+        
+         +
+        
+        
+         i
+        
+        
+         ∗
+        
+        
+         Δ
+        
+        
+         p
+        
+       
+       
+        x_i = x + i * \Delta p
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.58056em; vertical-align: -0.15em;"></span><span class="mord"><span class="mord mathdefault">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.311664em;"><span class="" style="top: -2.55em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.15em;"><span class=""></span></span></span></span></span></span><span class="mspace" style="margin-right: 0.277778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.66666em; vertical-align: -0.08333em;"></span><span class="mord mathdefault">x</span><span class="mspace" style="margin-right: 0.222222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right: 0.222222em;"></span></span><span class="base"><span class="strut" style="height: 0.65952em; vertical-align: 0em;"></span><span class="mord mathdefault">i</span><span class="mspace" style="margin-right: 0.222222em;"></span><span class="mbin">∗</span><span class="mspace" style="margin-right: 0.222222em;"></span></span><span class="base"><span class="strut" style="height: 0.87777em; vertical-align: -0.19444em;"></span><span class="mord">Δ</span><span class="mord mathdefault">p</span></span></span></span></span>。</li><li>将这个新的点投影到屏幕空间，得到其UV坐标；</li><li>有了UV坐标之后，采样深度缓存，得到深度<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         S
+        
+        
+         a
+        
+        
+         m
+        
+        
+         p
+        
+        
+         l
+        
+        
+         e
+        
+        
+         D
+        
+        
+         e
+        
+        
+         p
+        
+        
+         t
+        
+        
+         h
+        
+       
+       
+        SampleDepth
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.88888em; vertical-align: -0.19444em;"></span><span class="mord mathdefault" style="margin-right: 0.05764em;">S</span><span class="mord mathdefault">a</span><span class="mord mathdefault">m</span><span class="mord mathdefault">p</span><span class="mord mathdefault" style="margin-right: 0.01968em;">l</span><span class="mord mathdefault">e</span><span class="mord mathdefault" style="margin-right: 0.02778em;">D</span><span class="mord mathdefault">e</span><span class="mord mathdefault">p</span><span class="mord mathdefault">t</span><span class="mord mathdefault">h</span></span></span></span></span>，将深度转换到世界空间与<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         
+          x
+         
+         
+          i
+         
+        
+       
+       
+        x_i
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.58056em; vertical-align: -0.15em;"></span><span class="mord"><span class="mord mathdefault">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.311664em;"><span class="" style="top: -2.55em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.15em;"><span class=""></span></span></span></span></span></span></span></span></span></span>的深度进行比较。</li></ol>
+<p>但上面的步骤存在以下的问题，如图所示。蓝色小格子代表一个一个的像素，红色代表该点所对应的像素。</p>
+<p>可以看到，非常多的点 <span class="katex--inline"><span class="katex"><span class="katex-mathml">
+    
+     
+      
+       
+        
+         x
+        
+        
+         i
+        
+       
+      
+      
+       x_i
+      
+     
+    </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.58056em; vertical-align: -0.15em;"></span><span class="mord"><span class="mord mathdefault">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.311664em;"><span class="" style="top: -2.55em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.15em;"><span class=""></span></span></span></span></span></span></span></span></span></span> 对应的是同一个像素，这就导致了一些区域<strong>过采样</strong>。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/387cf5dcdd52494dab21ac4b478de375.png?x-oss-process=image,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>又有下图的情况，<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+    
+     
+      
+       
+        
+         x
+        
+        
+         i
+        
+       
+      
+      
+       x_i
+      
+     
+    </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.58056em; vertical-align: -0.15em;"></span><span class="mord"><span class="mord mathdefault">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.311664em;"><span class="" style="top: -2.55em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.15em;"><span class=""></span></span></span></span></span></span></span></span></span></span>之间的间隔又比较大（跳过了一些像素），这就导致一些区域<strong>欠采样</strong>。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4b5ffae47bdb4e9bb5b52955cd2f0a55.png?x-oss-process=image,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_18,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>因此，<a href="http://jcgt.org/published/0003/04/04/">Efficient GPU Screen-Space Ray Tracing</a> 文章提供了在屏幕空间进行光线步进的方法！</p>
+<p>相比于基于3D空间的算法来说，有以下4点改进：</p>
+<ol><li>像素采样点是连续的；</li><li>每个像素采样点不会出现重复计算；</li><li>ray的取样范围会被限制在view frustum内；</li><li>算法内高效利用GPU特性，例如减少寄存器使用量、分支判断和耗时的内置函数；</li></ol>
+<p>问题2：<strong>如何在屏幕空间中进行光线步进</strong>？</p>
+<p>在屏幕空间中步进，其实就是在屏幕空间画直线！</p>
+<p>在做软光栅时，曾了解过两个经典的<a href="https://blog.csdn.net/qjh5606/article/details/88903067">画直线算法</a>，即DDA和Bresenham算法。</p>
+<p>其中，DDA画线算法是最简单的一种画线算法，它由公式 <span class="katex--inline"><span class="katex"><span class="katex-mathml">
+    
+     
+      
+       
+        y
+       
+       
+        =
+       
+       
+        k
+       
+       
+        x
+       
+       
+        +
+       
+       
+        b
+       
+      
+      
+       y=kx+b
+      
+     
+    </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.625em; vertical-align: -0.19444em;"></span><span class="mord mathdefault" style="margin-right: 0.03588em;">y</span><span class="mspace" style="margin-right: 0.277778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.77777em; vertical-align: -0.08333em;"></span><span class="mord mathdefault" style="margin-right: 0.03148em;">k</span><span class="mord mathdefault">x</span><span class="mspace" style="margin-right: 0.222222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right: 0.222222em;"></span></span><span class="base"><span class="strut" style="height: 0.69444em; vertical-align: 0em;"></span><span class="mord mathdefault">b</span></span></span></span></span> 推导得到。</p>
+<p>关键之处在于如何设定<strong>单位步进</strong>，<strong>即一个方向的步进为单位步进，即1</strong>，另一个方向的步进必然是小于1。</p>
+<p>如图所示，已知点A为<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+    
+     
+      
+       
+        (
+       
+       
+        x
+       
+       
+        ,
+       
+       
+        y
+       
+       
+        )
+       
+      
+      
+       (x,y)
+      
+     
+    </span><span class="katex-html"><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mopen">(</span><span class="mord mathdefault">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right: 0.166667em;"></span><span class="mord mathdefault" style="margin-right: 0.03588em;">y</span><span class="mclose">)</span></span></span></span></span>，那么下一个点<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+    
+     
+      
+       
+        
+         P
+        
+        
+         0
+        
+       
+      
+      
+       P_0
+      
+     
+    </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.83333em; vertical-align: -0.15em;"></span><span class="mord"><span class="mord mathdefault" style="margin-right: 0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.301108em;"><span class="" style="top: -2.55em; margin-left: -0.13889em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.15em;"><span class=""></span></span></span></span></span></span></span></span></span></span>为<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+    
+     
+      
+       
+        (
+       
+       
+        x
+       
+       
+        +
+       
+       
+        Δ
+       
+       
+        x
+       
+       
+        ,
+       
+       
+        y
+       
+       
+        +
+       
+       
+        Δ
+       
+       
+        y
+       
+       
+        )
+       
+      
+      
+       (x+\Delta x,y+\Delta y)
+      
+     
+    </span><span class="katex-html"><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mopen">(</span><span class="mord mathdefault">x</span><span class="mspace" style="margin-right: 0.222222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right: 0.222222em;"></span></span><span class="base"><span class="strut" style="height: 0.87777em; vertical-align: -0.19444em;"></span><span class="mord">Δ</span><span class="mord mathdefault">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right: 0.166667em;"></span><span class="mord mathdefault" style="margin-right: 0.03588em;">y</span><span class="mspace" style="margin-right: 0.222222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right: 0.222222em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord">Δ</span><span class="mord mathdefault" style="margin-right: 0.03588em;">y</span><span class="mclose">)</span></span></span></span></span>，再下一步则为<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+    
+     
+      
+       
+        
+         P
+        
+        
+         1
+        
+       
+       
+        =
+       
+       
+        
+         P
+        
+        
+         0
+        
+       
+       
+        +
+       
+       
+        (
+       
+       
+        Δ
+       
+       
+        x
+       
+       
+        ,
+       
+       
+        Δ
+       
+       
+        y
+       
+       
+        )
+       
+      
+      
+       P_1=P_0+(\Delta x,\Delta y)
+      
+     
+    </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.83333em; vertical-align: -0.15em;"></span><span class="mord"><span class="mord mathdefault" style="margin-right: 0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.301108em;"><span class="" style="top: -2.55em; margin-left: -0.13889em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.15em;"><span class=""></span></span></span></span></span></span><span class="mspace" style="margin-right: 0.277778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 0.83333em; vertical-align: -0.15em;"></span><span class="mord"><span class="mord mathdefault" style="margin-right: 0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.301108em;"><span class="" style="top: -2.55em; margin-left: -0.13889em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.15em;"><span class=""></span></span></span></span></span></span><span class="mspace" style="margin-right: 0.222222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right: 0.222222em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mopen">(</span><span class="mord">Δ</span><span class="mord mathdefault">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right: 0.166667em;"></span><span class="mord">Δ</span><span class="mord mathdefault" style="margin-right: 0.03588em;">y</span><span class="mclose">)</span></span></span></span></span>。</p>
+<p>主方向的步进单位一直为1，另一个方向的步进距离则为小于1的斜率，即：</p>
+<p><span class="katex--display"><span class="katex-display"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         {
+        
+        
+         
+          
+           
+            
+             
+              Δ
+             
+             
+              x
+             
+            
+           
+          
+          
+           
+            
+             
+              =
+             
+             
+              1
+             
+            
+           
+          
+         
+         
+          
+           
+            
+             
+              Δ
+             
+             
+              y
+             
+            
+           
+          
+          
+           
+            
+             
+              =
+             
+             
+              
+               
+                
+                 y
+                
+                
+                 B
+                
+               
+               
+                −
+               
+               
+                
+                 y
+                
+                
+                 A
+                
+               
+              
+              
+               
+                
+                 x
+                
+                
+                 B
+                
+               
+               
+                −
+               
+               
+                
+                 x
+                
+                
+                 A
+                
+               
+              
+             
+            
+           
+          
+         
+        
+       
+       
+        \left\{\begin{matrix} \Delta x &amp; = 1 \\ \Delta y &amp; = \frac{y_B-y_A}{x_B-x_A} \end{matrix}\right.
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 2.49974em; vertical-align: -0.999872em;"></span><span class="minner"><span class="mopen delimcenter" style="top: 0em;"><span class="delimsizing size3">{<!-- --></span></span><span class="mord"><span class="mtable"><span class="col-align-c"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 1.49987em;"><span class="" style="top: -3.65987em;"><span class="pstrut" style="height: 3em;"></span><span class="mord"><span class="mord">Δ</span><span class="mord mathdefault">x</span></span></span><span class="" style="top: -2.44543em;"><span class="pstrut" style="height: 3em;"></span><span class="mord"><span class="mord">Δ</span><span class="mord mathdefault" style="margin-right: 0.03588em;">y</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.999872em;"><span class=""></span></span></span></span></span><span class="arraycolsep" style="width: 0.5em;"></span><span class="arraycolsep" style="width: 0.5em;"></span><span class="col-align-c"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 1.49987em;"><span class="" style="top: -3.65987em;"><span class="pstrut" style="height: 3em;"></span><span class="mord"><span class="mrel">=</span><span class="mspace" style="margin-right: 0.277778em;"></span><span class="mord">1</span></span></span><span class="" style="top: -2.44543em;"><span class="pstrut" style="height: 3em;"></span><span class="mord"><span class="mrel">=</span><span class="mspace" style="margin-right: 0.277778em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.854439em;"><span class="" style="top: -2.655em;"><span class="pstrut" style="height: 3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathdefault mtight">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.3448em;"><span class="" style="top: -2.35671em; margin-left: 0em; margin-right: 0.0714286em;"><span class="pstrut" style="height: 2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathdefault mtight" style="margin-right: 0.05017em;">B</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.143293em;"><span class=""></span></span></span></span></span></span><span class="mbin mtight">−</span><span class="mord mtight"><span class="mord mathdefault mtight">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.3448em;"><span class="" style="top: -2.35671em; margin-left: 0em; margin-right: 0.0714286em;"><span class="pstrut" style="height: 2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathdefault mtight">A</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.143293em;"><span class=""></span></span></span></span></span></span></span></span></span><span class="" style="top: -3.23em;"><span class="pstrut" style="height: 3em;"></span><span class="frac-line" style="border-bottom-width: 0.04em;"></span></span><span class="" style="top: -3.44611em;"><span class="pstrut" style="height: 3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathdefault mtight" style="margin-right: 0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.3448em;"><span class="" style="top: -2.35671em; margin-left: -0.03588em; margin-right: 0.0714286em;"><span class="pstrut" style="height: 2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathdefault mtight" style="margin-right: 0.05017em;">B</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.143293em;"><span class=""></span></span></span></span></span></span><span class="mbin mtight">−</span><span class="mord mtight"><span class="mord mathdefault mtight" style="margin-right: 0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.3448em;"><span class="" style="top: -2.35671em; margin-left: -0.03588em; margin-right: 0.0714286em;"><span class="pstrut" style="height: 2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathdefault mtight">A</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.143293em;"><span class=""></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.445305em;"><span class=""></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.999872em;"><span class=""></span></span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></span></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/dc273ff29b0b421ea6bce3151f17915d.png?x-oss-process=image,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>通过DDA算法，可以得到直线结果：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/37f2a4d21e15453883af4be869eab511.png?x-oss-process=image,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>伪代码如下：</p>
+<pre><code class="prism language-c++">// 为了代码的简洁则可以交换x和y
+if(abs(xB - xA) &lt; abs(yB -yA))
+    swap(A,B);
+float deltaX = 1.0f;
+float deltaY = (yB - yA) / (xB - xA);
+Point P = A;
+for A to B
+    P += float2(deltaX, deltaY);
+    DrawPixel(int(P.x),int(P.y));
+</code></pre>
+<p>通过上述DDA算法实现的屏幕空间步进，可以明显地看出其与3D空间步进的区别：</p>
+<ul><li>3D空间中均匀步进后的采样点坐标投射到2D屏幕空间中，点与点之间的步长却是不均匀的，会出现跳过某些屏幕区域甚至在某些点处重复计算。如下图左所示，红色点标记的为过采样区域。</li><li>屏幕空间的步进可以保证：像素采样点是连续的，并且每个像素采样点不会出现重复计算。如下图右所示。</li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7f2c4c38123546459091b26b662b1e4f.png?x-oss-process=image,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h4><a id="312__331"></a>3.1.2 实现</h4>
+<p>论文的文章同样提供了示例的<a href="https://casual-effects.blogspot.com/2014/08/screen-space-ray-tracing.html">Shader代码</a>，同时参考UE4实现屏幕空间反射的着色器代码SSRTRelections.usf。</p>
+<p><strong>屏幕空间步进起点和方向</strong></p>
+<pre><code class="prism language-c++">float3 Screen0 = float3(Tex, Depth);
+// 恢复世界坐标
+float3 World0 = UnprojectScreen(Screen0);
+float3 V = normalize(CameraPos - World0);
+// 反射方向
+float3 L = reflect(-V, N);
+
+float3 World1 = World0 + L * WorldThickness;
+float3 Screen1 = ProjectWorldPos(World1);
+
+// 步进起点
+float3 StartScreen = Screen0;
+// 步进方向
+float3 StepScreen = normalize(Screen1 - Screen0);
+</code></pre>
+<p><strong>步进与相交测试</strong></p>
+<pre><code class="prism language-c++">for (int i = 0; i &lt; MaxLinearStep; ++i)
+{
+    // 光线步进
+    Ray += Step;
+    // 到达边界，没有相交
+    if (Ray.z &lt; 0 || Ray.z &gt; 1)
+        return false;
+    // 采样深度
+    Depth = SceneDepthZ.SampleLevel(PointSampler, Ray.xy, 0).x;
+    // 相交测试
+    if (Depth + PerPixelCompareBias &lt; Ray.z &amp;&amp; Ray.z &lt; Depth + PerPixelThickness)
+    {
+        // 返回相交的UV和深度
+        OutHitUVz = Ray;
+        return true;
+    }
+}
+</code></pre>
+<p>如何判断是否相交（笔者这里采用的是0到1的深度，即越靠近相机深度值越小）。</p>
+<p>笔者这里为：</p>
+<ul><li> <p>只有当光线步进的深度<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+      
+       
+        
+         
+          R
+         
+         
+          a
+         
+         
+          y
+         
+         
+          .
+         
+         
+          z
+         
+        
+        
+         Ray.z
+        
+       
+      </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.87777em; vertical-align: -0.19444em;"></span><span class="mord mathdefault" style="margin-right: 0.00773em;">R</span><span class="mord mathdefault">a</span><span class="mord mathdefault" style="margin-right: 0.03588em;">y</span><span class="mord">.</span><span class="mord mathdefault" style="margin-right: 0.04398em;">z</span></span></span></span></span>大于采样得到的深度<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+      
+       
+        
+         
+          D
+         
+         
+          e
+         
+         
+          p
+         
+         
+          t
+         
+         
+          h
+         
+        
+        
+         Depth
+        
+       
+      </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.88888em; vertical-align: -0.19444em;"></span><span class="mord mathdefault" style="margin-right: 0.02778em;">D</span><span class="mord mathdefault">e</span><span class="mord mathdefault">p</span><span class="mord mathdefault">t</span><span class="mord mathdefault">h</span></span></span></span></span>+一个偏移，且<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+      
+       
+        
+         
+          R
+         
+         
+          a
+         
+         
+          y
+         
+         
+          .
+         
+         
+          z
+         
+        
+        
+         Ray.z
+        
+       
+      </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.87777em; vertical-align: -0.19444em;"></span><span class="mord mathdefault" style="margin-right: 0.00773em;">R</span><span class="mord mathdefault">a</span><span class="mord mathdefault" style="margin-right: 0.03588em;">y</span><span class="mord">.</span><span class="mord mathdefault" style="margin-right: 0.04398em;">z</span></span></span></span></span>小于深度<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+      
+       
+        
+         
+          D
+         
+         
+          e
+         
+         
+          p
+         
+         
+          t
+         
+         
+          h
+         
+        
+        
+         Depth
+        
+       
+      </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.88888em; vertical-align: -0.19444em;"></span><span class="mord mathdefault" style="margin-right: 0.02778em;">D</span><span class="mord mathdefault">e</span><span class="mord mathdefault">p</span><span class="mord mathdefault">t</span><span class="mord mathdefault">h</span></span></span></span></span>+像素厚度，才为相交测试，即击中。</p> </li><li> <p>PerPixelCompareBias和PerPixelThickness需要通过参数进行调节。</p> </li></ul>
+<p><strong>采样纹理</strong></p>
+<p>当相交测试成功，即找到反射交点。接下来就需要去取相交点的物体颜色作为最终的反射颜色。</p>
+<p>这里我们需要去采样历史帧的颜色缓冲，涉及到 <a href="https://blog.csdn.net/qjh5606/article/details/118827463">时间抗锯齿</a> 中介绍到的<strong>Motion Vector Buffer</strong>，通过速度缓存，我们可以计算得到当前帧UV在上一帧的UV，进而去采样历史帧颜色缓冲。</p>
+<p><strong>镜面反射结果</strong></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4d221018161945a1853c626a5a04fb57.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p><strong>粗糙度模拟</strong></p>
+<p>上面实现的完全是镜面反射，粗糙度为0，得到的结果并不好，一般要加入粗糙度的影响。</p>
+<p>采用了UE4中的重要性采样方法生成反射方向。</p>
+<pre><code class="prism language-c++">// UE4 Random.ush
+// 3D random number generator inspired by PCGs (permuted congruential generator).
+uint3 Rand3DPCG16(int3 p)
+{
+	uint3 v = uint3(p);
+	v = v * 1664525u + 1013904223u;
+
+	// That gives a simple mad per round.
+	v.x += v.y*v.z;
+	v.y += v.z*v.x;
+	v.z += v.x*v.y;
+	v.x += v.y*v.z;
+	v.y += v.z*v.x;
+	v.z += v.x*v.y;
+
+	// only top 16 bits are well shuffled
+	return v &gt;&gt; 16u;
+}
+
+// 圆盘采样
+float2 UniformSampleDisk(float2 E)
+{
+	float Theta = 2 * PI * E.x;
+	float Radius = sqrt(E.y);
+	return Radius * float2(cos(Theta), sin(Theta));
+}
+
+// [ Heitz 2018, "Sampling the GGX Distribution of Visible Normals" ]
+float4 ImportanceSampleVisibleGGX( float2 DiskE, float a2, float3 V )
+{
+	// TODO float2 alpha for anisotropic
+	float a = sqrt(a2);
+
+	// stretch
+	float3 Vh = normalize( float3( a * V.xy, V.z ) );
+
+	// Orthonormal basis
+	// Tangent0 is orthogonal to N.
+	#if 1 // Stable tangent basis based on V.
+		float3 Tangent0 = (V.z &lt; 0.9999) ? normalize( cross( float3(0, 0, 1), V ) ) : float3(1, 0, 0);
+		float3 Tangent1 = normalize(cross( Vh, Tangent0 ));
+	#else
+		float3 Tangent0 = (Vh.z &lt; 0.9999) ? normalize( cross( float3(0, 0, 1), Vh ) ) : float3(1, 0, 0);
+		float3 Tangent1 = cross( Vh, Tangent0 );
+	#endif
+
+	float2 p = DiskE;
+	float s = 0.5 + 0.5 * Vh.z;
+	p.y = (1 - s) * sqrt( 1 - p.x * p.x ) + s * p.y;
+
+	float3 H;
+	H  = p.x * Tangent0;
+	H += p.y * Tangent1;
+	H += sqrt( saturate( 1 - dot( p, p ) ) ) * Vh;
+
+	// unstretch
+	H = normalize( float3( a * H.xy, max(0.0, H.z) ) );
+
+	float NoV = V.z;
+	float NoH = H.z;
+	float VoH = dot(V, H);
+
+	float d = (NoH * a2 - NoH) * NoH + 1;
+	float D = a2 / (PI*d*d);
+
+	float G_SmithV = 2 * NoV / (NoV + sqrt(NoV * (NoV - NoV * a2) + a2));
+
+	float PDF = G_SmithV * VoH * D / NoV;
+
+	return float4(H, PDF);
+}
+
+// 
+uint2 PixelPos = (uint2)SVPosition.xy;
+uint2 Random = Rand3DPCG16(int3(PixelPos, FrameIndexMod8)).xy;
+
+float2 E = Hammersley16(i, NumRays, Random);
+float3 H = mul(ImportanceSampleVisibleGGX(UniformSampleDisk(E), a2, TangentV).xyz, TangentBasis);
+float3 L = 2 * dot(V, H) * H - V;
+</code></pre>
+<p>调整粗糙度为0.1，可以得到结果如下：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/8b297ea407be434e8405bf27fa44883f.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h3><a id="32_HiZ_ScreenSpace_Reflections_500"></a>3.2 Hi-Z Screen-Space Reflections</h3>
+<p>GPU PRO5《Hi-Z Screen-Space Cone-Traced Reflections》介绍了一种计算动态3D场景反射的新方法，<strong>适用于任意形状（不仅是平面）</strong> 的表面。</p>
+<p>包含的技术有：</p>
+<ul><li><strong>Hierarchical-Z（Hi-Z）</strong> 加速光追；</li><li>光泽反射<strong>所需的所有预计算通道。</strong></li><li><strong>屏幕空间椎体跟踪</strong>的技术，用于近似粗糙表面，从而产生模糊的反射。</li></ul>
+<p>其中，<strong>Hi-Z</strong>（层级Z）屏幕空间追跟踪算法可以通过快速收敛来反射整个场景，并且比基于线性步长的Raymarching算法快几个数量级。</p>
+<p>接下来，将对Hi-Z的追踪算法进行介绍与实现。</p>
+<h4><a id="321_HiZ_Trace_516"></a>3.2.1 Hi-Z Trace算法</h4>
+<p>问题1：<strong>什么是层级Z（Hierarchical-Z）</strong>？</p>
+<p>Hierarchical-Z缓冲区，也称为Hi-Z缓冲区，是通过获取<strong>Z-buffer中</strong>四个相邻值得最小值或最大值，将其存储在原有缓冲区一半大小的缓冲区来构造的。</p>
+<p>Hi-Z结构的最小值版本是如何运行的，如下图所示：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/bb4a70664a354fa7a2eaef92d4d5519f.png#pic_center"/></p>
+<p>我们都知道，深度可以认为是场景几何结构的一种表示。</p>
+<p>如下图，这是将Hi-Z各级缓冲反投影到世界空间的可视化结果。</p>
+<ul><li>可以看出当Hiz的层级越高，就表示这是对场景越粗略的近似。</li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/acfca778aa1644fea3033c465d417a1f.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>GPU PRO5 提供了Hi-Z Buffer创建相应的Shader代码：</p>
+<pre><code class="prism language-c++">float4 main ( PS_INPUT input ) : SV_Target
+{
+    // Texture/image coord inates to sample/ load / read the depth
+    // values with .
+    float2 texcoords = input.tex ;
+    
+    float4 minDepth ;
+    minDepth.x = depthBuffer . SampleLevel ( pointSampler ,    texcoords , prevLevel , int2 ( 0 , 0) ) ;
+    minDepth.y = depthBuffer . SampleLevel ( pointSampler ,    texcoords , prevLevel , int2 ( 0, −1) ) ;
+    minDepth.z = depthBuffer . SampleLevel ( pointSampler ,    texcoords , prevLevel , int2 ( −1, 0) ) ;
+    minDepth.w = depthBuffer . SampleLevel ( pointSampler ,    texcoords , prevLevel , int2 ( −1 , −1) ) ;
+
+    // Take th e minimum o f th e f o u r d epth v a l u e s and r e t u r n i t .
+    float d = min ( min ( minDepth . x , minDepth . y ) , min ( minDepth . z ,minDepth . w ) );
+    return d ;
+}
+</code></pre>
+<p>问题2：<strong>如何在Hi-Z上做追踪</strong>？</p>
+<p>在这里使用 <a href="https://zhuanlan.zhihu.com/p/38528391">Stochastic Screen Space Reflections</a> 的PPT进行介绍。</p>
+<p>Hi-Z Trace的主要思想是：通过粗略的深度来加速步进步长，在Hi-Z层级之间行进，从而快速收敛到相交点。</p>
+<p>通过以下这个例子可以比较好地理解Hi-Z上如何进行追踪。</p>
+<p>我们从层次结构中<strong>最精细的级别</strong>开始。</p>
+<ol><li>如下图，在最精细的级别，但没有相交，所以会移动到更粗糙的一层。</li></ol>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c65a40f356ae452d8ace24fb7d1dca24.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<ol start="2"><li>如下图，因为上面没有相交，所以到了粗糙的一层。因而跳过了许多空白的空间。</li></ol>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d75f2133d51144ce85dce5e974b43787.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<ol start="3"><li>如下图，因为上面还是没有相交，就会进入下一层。一旦我们找到与 Z 平面的交点，我们就会移动到层次结构中更精细的级别。在这里，我们发生了相交。</li></ol>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/655e9f1de9aa451baa9ad22aadb9bfad.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<ol start="4"><li>因为发生了相交，所以要进入<strong>更精细的级别</strong>，如下图。</li></ol>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1568b5d87ddc4e59a352e191b65da9e5.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/27a27cc9f44d4792b842156bef7e852e.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<ol start="5"><li>继续步进，一旦我们在最精确的层级相交，我们就找到了交点。</li></ol>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3e77ee7534a74e14917722abc1f810cf.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>不像3.1中介绍的使用固定的小步长，Hi-Z通过采用大步长并通过在层次结构级别中索引来达到快速收敛。</p>
+<blockquote>
+<p>注：</p>
+<p>HiZ要求Buffer是严格的aligned quad tree（对齐四叉树），这样才能用于加速Raymarching的算法。<br/> 通过在不同层次结构级别中索引来有效且快速地到达我们所期望的交点/坐标。</p>
+</blockquote>
+<p>GPU PRO5 提供了HiZTrace相应的Shader代码：</p>
+<pre><code class="prism language-c++">// starting level to traverse from 
+// 从Level=0开始
+level = 0 
+
+// ray-trace until we descend below the root level defined by N,demo use 2
+// 光线跟踪直到我们下降到由N定义的级别以下
+// 层级不低于N，N以下就是一个可以认为相交的层级？
+while level not below N
+
+    minimumPlane = getCellMinimumDepthPlane(...)
+    
+    // reads from the Hi-Z texture using our ray
+    // 使用我们的光线读取Hi-Z纹理
+    boundaryPlane = getCellBoundaryDepthPlane(...)
+
+    // gets the distance to next Hi-Z cell boundary int ray direction
+    // 获取到下一个 Hi-Z 单元边界的距离 int ray 方向
+    closestPlane = min(minimumPlane, boundaryPlane)
+    // gets closest of both planes
+    // 获得两个平面最近的那个
+
+    ray = intersectPlane(...)
+    // intersects the closest plane, returns O + D * t only.
+    // 与最近的平面相交，仅返回 O + D * t。
+
+    if intersectedMinimumDepthPlane
+        // if we intersected the minimum plane we should go down a level and continue
+        // 如果我们与最小平面相交，我们应该下一层并继续
+        descend a level
+    
+    if intersectedBoundaryDepthPlane
+        // if we intersected the boundary plane we should go up a level and continue
+        // 如果我们与边界平面相交，我们应该向上一层并继续
+        ascend a level
+
+// we are now done with the Hi-Z ray marching so get color from the intersection
+// 我们现在完成了 Hi-Z 射线行进，因此从交叉点获取颜色
+color = getReflection(ray） 
+</code></pre>
+<h4><a id="322__668"></a>3.2.2 实现</h4>
+<p><strong>Hi-Z Buffer的创建</strong></p>
+<p>正如3.2.1提到的：<strong>HiZ要求Buffer是严格的aligned quad tree（对齐四叉树）</strong>，即缓冲的分辨率（宽、高）需要为2的幂次方。</p>
+<p>那么HiZ的Level0（第零级）的纹理分辨率需要如何根据深度图的纹理分辨率变换得到呢？</p>
+<p>UE4实现的方式如下：</p>
+<ol><li>将原图的分辨率（深度图）向上扩充成为2的幂次方；</li><li>再对宽、高分别取1/2；</li></ol>
+<p>例如：width = 1000，先补成1024，再取半分辨率。则为512。</p>
+<p>计算的代码如下：</p>
+<pre><code class="prism language-c++">int32_t NumMipsX = std::max((int32_t)std::ceil(std::log2(ScreenWidth) - 1.0), 1);
+int32_t NumMipsY = std::max((int32_t)std::ceil(std::log2(ScreenHeight) - 1.0), 1);
+int32_t HZBWidth = 1 &lt;&lt; NumMipsX;
+int32_t HZBHeight = 1 &lt;&lt; NumMipsY;
+</code></pre>
+<p>至于Level1、Level2等，则是对其上一级进行取半分率即可。</p>
+<p>这里采用ComputeShader实现HiZBuffer的创建：</p>
+<pre><code class="prism language-c++">void Gather4(float2 BufferUV, out float4 MinZ)
+{
+    // 偏移一点，点采样周围4个像素
+	float2 OffsetUV = BufferUV + float2(-0.25f, -0.25f) * SrcTexelSize;
+	float2 Range = InputViewportMaxBound - SrcTexelSize;
+	float2 UV = min(OffsetUV, Range);
+    // 取邻近4个深度
+	MinZ = SceneDepthZ.GatherRed(PointSampler, UV, 0);
+}
+
+[numthreads(8, 8, 1)]
+void CS_BuildHZB(uint2 GroupId : SV_GroupID,
+				 uint GroupThreadIndex : SV_GroupIndex,
+				 uint2 DispatchThreadId : SV_DispatchThreadID)
+{
+    // SrcTexelSize，（1.f / SrcWidth，1.f / SrcHeight）
+    // 求出像素在上一级的UV坐标
+	float2 BufferUV = (DispatchThreadId + 0.5) * SrcTexelSize * 2.0;
+	float4 MinDeviceZ4;
+	Gather4(BufferUV, MinDeviceZ4);
+    // 取最小深度
+	float MinDeviceZ = min(min(MinDeviceZ4.x, MinDeviceZ4.y), min(MinDeviceZ4.z, MinDeviceZ4.w));
+	ClosestHZB[DispatchThreadId] = MinDeviceZ;
+}
+</code></pre>
+<p><strong>Hi-Z Trace</strong></p>
+<p>层级Z追踪的代码实现非常美妙，<a href="https://www.jpgrenier.org/ssr.html">NOTES ON SCREEN SPACE HIZ TRACING</a> 提供了一份代码实现。</p>
+<p>并做了一个追踪过程的动图，展示了如何在屏幕空间进行Hi-Z追踪。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4d104b13aa354cb887e0236f7c49a1b8.gif#pic_center"/></p>
+<p>结合GPU PRO5提供的代码，笔者的代码如下：</p>
+<pre><code class="prism language-c++">float3 IntersectDepthPlane(float3 RayOrigin, float3 RayDir, float t)
+{
+	return RayOrigin + RayDir * t;
+}
+
+float2 GetCellCount(float2 Size, float Level)
+{
+	return floor(Size / (Level &gt; 0.0 ? exp2(Level) : 1.0));
+}
+
+float2 GetCell(float2 Ray, float2 CellCount)
+{
+	return floor(Ray * CellCount);
+}
+
+// 不同Cell返回真
+bool CrossedCellBoundary(float2 CellIdxA, float2 CellIdxB)
+{
+	return CellIdxA.x != CellIdxB.x || CellIdxA.y != CellIdxB.y;
+}
+
+float2 GetMinMaxDepthPlanes(float2 Ray, float Level)
+{
+	return HiZBuffer.SampleLevel(PointSampler, float2(Ray.x, Ray.y), Level).rg;
+}
+
+float3 IntersectCellBoundary(
+	float3 RayOrigin, float3 RayDirection, 
+	float2 CellIndex, float2 CellCount, 
+	float2 CrossStep, float2 CrossOffset)
+{
+    // 步进格子
+	float2 Cell = CellIndex + CrossStep;
+	Cell /= CellCount;
+	Cell += CrossOffset;
+
+	float2 delta = Cell - RayOrigin.xy;
+	delta /= RayDirection.xy;
+    // 取最小
+	float t = min(delta.x, delta.y);
+    // 步进光线
+	return IntersectDepthPlane(RayOrigin, RayDirection, t);
+}
+
+bool WithinThickness(float3 Ray, float MinZ, float TheThickness)
+{
+	return Ray.z &lt; MinZ + TheThickness;
+}
+
+bool CastHiZRay(float3 Start, float3 Direction, float ScreenDistance, out float3 OutHitUVz)
+{
+	float PerPixelThickness = ScreenDistance;
+	float PerPixelCompareBias = 0.85 * PerPixelThickness;
+
+	Direction = normalize(Direction);
+	
+    // Level0缓冲的分辨率
+	const float2 TextureSize = RootSizeMipCount.xy;
+    // 最高的Level
+	const float HIZ_MAX_LEVEL = RootSizeMipCount.z - 1;
+    // 0.5 in original paper, smaller value generate better result
+    // 一个小的偏移量
+	float2 HIZ_CROSS_EPSILON = 0.05 / TextureSize; 
+	
+    // 起始层级
+	float Level = HIZ_START_LEVEL;
+    // 迭代次数
+	float Iteration = 0.f;
+
+	float2 CrossStep = sign(Direction.xy);
+	float2 CrossOffset = CrossStep * HIZ_CROSS_EPSILON;
+	// for negative direction, the starting point is top-left corner, 'CrossOffset' is enough to step back one cell
+    // 对于负方向，CrossOffset带有负号足够可以让Ray返回一格
+	CrossStep = saturate(CrossStep);
+
+    // 找到近平面的交点O
+	float3 Ray = Start;
+	float3 D = Direction.xyz / Direction.z;
+	float3 O = IntersectDepthPlane(Start, D, -Start.z);
+
+	bool intersected = false;
+    
+    // 起止位置
+	float2 RayCell = GetCell(Ray.xy, TextureSize);
+	Ray =  IntersectCellBoundary(O, D, RayCell, TextureSize, CrossStep, CrossOffset);
+    
+	while (Level &gt;= HIZ_STOP_LEVEL &amp;&amp; Iteration &lt; MAX_ITERATIONS)
+	{
+		const float2 CellCount = GetCellCount(TextureSize, Level);
+		const float2 OldCellIdx = GetCell(Ray.xy, CellCount);
+		if (Ray.z &gt; 1.0)
+			return false;
+		
+		float2 MinMaxZ = GetMinMaxDepthPlanes(Ray.xy, Level);
+		float t = max(Ray.z, MinMaxZ.x + PerPixelCompareBias);
+		float3 TempRay = IntersectDepthPlane(O, D, t);
+		const float2 NewCellIdx = GetCell(TempRay.xy, CellCount);
+        
+        // 不同的Cell，表示没有碰撞，继续步进
+		if (CrossedCellBoundary(OldCellIdx, NewCellIdx))
+		{
+			TempRay = IntersectCellBoundary(O, D, OldCellIdx, CellCount, CrossStep, CrossOffset);
+			Level = min(HIZ_MAX_LEVEL, Level + 2);
+		}
+		else if (Level == HIZ_START_LEVEL &amp;&amp; WithinThickness(TempRay, MinMaxZ.x, PerPixelThickness))
+		{
+            // 在Level0，且满足厚度的相交条件，则相交！
+			intersected = true;
+		}
+		Ray = TempRay;
+		--Level;
+		++Iteration;
+	}
+	OutHitUVz = Ray;
+	return intersected;
+}
+</code></pre>
+<p>效果如下：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/fb3f95ddf8574385bf871e9e17224d2c.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5qGR5p2lOTM=,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h3><a id="33_SSSRStochastic_Screen_Space_Reflections_867"></a>3.3 SSSR（Stochastic Screen Space Reflections）</h3>
+<p>// TODO</p>
+<h2><a id="_873"></a>参考博文</h2>
+<ul><li><a href="https://blog.csdn.net/puppet_master/article/details/80808486">Unity Shader-反射效果（CubeMap，Reflection Probe，Planar Reflection，Screen Space Reflection）</a></li><li><a href="https://blog.csdn.net/hehemingsgc6/article/details/53888902">Screen Space Reflection 学习笔记</a></li><li><a href="https://casual-effects.blogspot.com/2014/08/screen-space-ray-tracing.html">Screen Space Ray Tracing</a></li><li><a href="https://zhuanlan.zhihu.com/p/386510829">【论文复现】Efficient GPU Screen-Space Ray Tracing</a></li><li><a href="https://zhuanlan.zhihu.com/p/353362777">Efficient GPU Screen Space Ray Tracing</a></li><li><a href="https://blog.csdn.net/ZJU_fish1996/article/details/87604771">Hi-Z屏幕空间锥跟踪反射</a></li></ul>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

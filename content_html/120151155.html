@@ -1,0 +1,130 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1 id="Pytorch%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0%EF%BC%88%E5%85%AB%EF%BC%89%E2%80%94%E2%80%94%20YOLOV5%E4%B8%ADNMS%E9%9D%9E%E6%9E%81%E5%A4%A7%E5%80%BC%E6%8A%91%E5%88%B6%E4%B8%8EDIOU-NMS%E7%AD%89%E6%94%B9%E8%BF%9B"><a id="_0"></a>Pytorch机器学习（八）—— YOLOV5中NMS非极大值抑制与DIOU-NMS等改进</h1>
+<p></p>
+<div>
+<p id="main-toc"><strong>目录</strong></p>
+<p id="Pytorch%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0%EF%BC%88%E5%85%AB%EF%BC%89%E2%80%94%E2%80%94%20YOLOV5%E4%B8%ADNMS%E9%9D%9E%E6%9E%81%E5%A4%A7%E5%80%BC%E6%8A%91%E5%88%B6%E4%B8%8EDIOU-NMS%E7%AD%89%E6%94%B9%E8%BF%9B-toc" style="margin-left:0px;"><a href="#Pytorch%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0%EF%BC%88%E5%85%AB%EF%BC%89%E2%80%94%E2%80%94%20YOLOV5%E4%B8%ADNMS%E9%9D%9E%E6%9E%81%E5%A4%A7%E5%80%BC%E6%8A%91%E5%88%B6%E4%B8%8EDIOU-NMS%E7%AD%89%E6%94%B9%E8%BF%9B">Pytorch机器学习（八）—— YOLOV5中NMS非极大值抑制与DIOU-NMS等改进</a></p>
+<p id="%E5%89%8D%E8%A8%80-toc" style="margin-left:0px;"><a href="#%E5%89%8D%E8%A8%80">前言</a></p>
+<p id="%E4%B8%80%E3%80%81NMS%E9%9D%9E%E6%9E%81%E5%A4%A7%E5%80%BC%E6%8A%91%E5%88%B6%E7%AE%97%E6%B3%95-toc" style="margin-left:0px;"><a href="#%E4%B8%80%E3%80%81NMS%E9%9D%9E%E6%9E%81%E5%A4%A7%E5%80%BC%E6%8A%91%E5%88%B6%E7%AE%97%E6%B3%95">一、NMS非极大值抑制算法</a></p>
+<p id="%E4%BA%8C%E3%80%81Hard-NMS%E9%9D%9E%E6%9E%81%E5%A4%A7%E5%80%BC%E4%BB%A3%E7%A0%81-toc" style="margin-left:0px;"><a href="#%E4%BA%8C%E3%80%81Hard-NMS%E9%9D%9E%E6%9E%81%E5%A4%A7%E5%80%BC%E4%BB%A3%E7%A0%81">二、Hard-NMS非极大值代码</a></p>
+<p id="%E4%B8%89%E3%80%81DIOU-NMS-toc" style="margin-left:0px;"><a href="#%E4%B8%89%E3%80%81DIOU-NMS">三、DIOU-NMS</a></p>
+<p id="%C2%A0%E5%9B%9B%E3%80%81soft-NMS-toc" style="margin-left:0px;"><a href="#%C2%A0%E5%9B%9B%E3%80%81soft-NMS"> 四、soft-NMS</a></p>
+<p id="-toc" style="margin-left:0px;"></p>
+</div>
+<hr/>
+<h1 id="%E5%89%8D%E8%A8%80"><a id="_14"></a>前言</h1>
+<p><span style="color:#0d0016;">在目标检测的预测阶段时，会输出许多候选的anchor box，其中有很多是明显重叠的预测边界框都围绕着同一个目标，这时候我就可以使用NMS来合并同一目标的类似边界框，或者说是保留这些边界框中最好的一个。</span></p>
+<p><span style="color:#0d0016;">如果对IOU等知识不了解的可以看我上篇博客<a href="https://blog.csdn.net/lzzzzzzm/article/details/119997391">Pytorch机器学习（五）——目标检测中的损失函数（l2，IOU，GIOU，DIOU, CIOU）</a></span></p>
+<hr/>
+<p></p>
+<h1 id="%E4%B8%80%E3%80%81NMS%E9%9D%9E%E6%9E%81%E5%A4%A7%E5%80%BC%E6%8A%91%E5%88%B6%E7%AE%97%E6%B3%95"><a id="pandas_23"></a>一、NMS非极大值抑制算法</h1>
+<p>我们先看一下NMS的直观理解，左图为两个ground truth的bbox，右图为我自己模拟网络输出的预测框。</p>
+<p><img alt="" height="300" src="image\20210907094000777.png" width="323"/><img alt="" height="301" src="image\20210907094013179.png" width="324"/></p>
+<p> 而下图则是我使用Pytorch官方提供的NMS实现的非极大值抑制，可以看到经过NMS后预测框保留了效果最好的，去除了冗余的预测框。</p>
+<p> <img alt="" height="453" src="image\20210907094456513.png" width="487"/></p>
+<p> 下面来讲讲NMS算法的流程，其实也是十分简单的</p>
+<p><strong>        </strong><strong>一.从所有候选框中选取置信度最高的预测边界框B1作为基准，然后将所有与B1的<span style="color:#fe2c24;">IOU</span>超过预定阈值的其他边界框移除。</strong></p>
+<p><strong>（这时所有边界框中B1为置信度最高的边界框且没有和其太过相似的边界框——<span style="color:#fe2c24;">非极大值置信度的边界框被抑制了</span><span style="color:#0d0016;">）</span></strong></p>
+<p>        二.<strong>从所有候选框中选取置信度第二高的边界框B2作为一个基准，将所有与B2的<span style="color:#fe2c24;">IOU</span>超过预定阈值的其他边界框移除。</strong></p>
+<p><strong>        三.重复上述操作，直到所有预测框都被当做基准——这时候没有一对边界框过于相似</strong></p>
+<p></p>
+<h1 id="%E4%BA%8C%E3%80%81Hard-NMS%E9%9D%9E%E6%9E%81%E5%A4%A7%E5%80%BC%E4%BB%A3%E7%A0%81"><a id="_30"></a>二、Hard-NMS非极大值代码</h1>
+<p>在YOLOV5的源码当中，作者是直接调用了Pytorch官方的NMS的API</p>
+<p><strong>在general.py中的non_max_suppression函数中</strong></p>
+<pre><code class="language-python">"""
+其中boxes为Nx4的tensor，N为框的数量，4则为x1 y1 x2 y2
+socres为N维的tensor，表示每个框的置信度
+iou_thres则为上面算法中的IOU阈值
+返回值为一个去除了过于相似框后的，根据置信度降序排列的列表，我们就可以根据此列表输出预测框
+"""
+i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS</code></pre>
+<p>为了便于后续其他NMS的改进，这里我们也自己写一个NMS算法，这里借鉴了沐神的代码<a href="https://www.bilibili.com/video/BV1aB4y1K7za?spm_id_from=333.999.0.0">b站链接</a>，<strong>大家可以直接在YOLOV5中把上面的torchvision.ops.nms更改为下面的NMS函数</strong></p>
+<pre><code class="language-python">def NMS(boxes, scores, iou_thres, GIoU=False, DIoU=False, CIoU=False):
+    """
+
+    :param boxes:  (Tensor[N, 4])): are expected to be in ``(x1, y1, x2, y2)
+    :param scores: (Tensor[N]): scores for each one of the boxes
+    :param iou_thres: discards all overlapping boxes with IoU &gt; iou_threshold
+    :return:keep (Tensor): int64 tensor with the indices
+            of the elements that have been kept
+            by NMS, sorted in decreasing order of scores
+    """
+    # 按conf从大到小排序
+    B = torch.argsort(scores, dim=-1, descending=True)
+    keep = []
+    while B.numel() &gt; 0:
+        # 取出置信度最高的
+        index = B[0]
+        keep.append(index)
+        if B.numel() == 1: break
+        # 计算iou,根据需求可选择GIOU,DIOU,CIOU
+        iou = bbox_iou(boxes[index, :], boxes[B[1:], :], GIoU=GIoU, DIoU=DIoU, CIoU=CIoU)
+        # 找到符合阈值的下标
+        inds = torch.nonzero(iou &lt;= iou_thres).reshape(-1)
+        B = B[inds + 1]
+    return torch.tensor(keep)</code></pre>
+<p>这里的计算IOU的函数——bbox_iou则是直接引用了YOLOV5中的代码，其简洁的集成了对与GIOU,DIOU,CIOU的计算。</p>
+<pre><code class="language-python">def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-9):
+    # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
+    box2 = box2.T
+
+    # Get the coordinates of bounding boxes
+    if x1y1x2y2:  # x1, y1, x2, y2 = box1
+        b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
+        b2_x1, b2_y1, b2_x2, b2_y2 = box2[0], box2[1], box2[2], box2[3]
+    else:  # transform from xywh to xyxy
+        b1_x1, b1_x2 = box1[0] - box1[2] / 2, box1[0] + box1[2] / 2
+        b1_y1, b1_y2 = box1[1] - box1[3] / 2, box1[1] + box1[3] / 2
+        b2_x1, b2_x2 = box2[0] - box2[2] / 2, box2[0] + box2[2] / 2
+        b2_y1, b2_y2 = box2[1] - box2[3] / 2, box2[1] + box2[3] / 2
+
+    # Intersection area
+    inter = (torch.min(b1_x2, b2_x2) - torch.max(b1_x1, b2_x1)).clamp(0) * \
+            (torch.min(b1_y2, b2_y2) - torch.max(b1_y1, b2_y1)).clamp(0)
+
+    # Union Area
+    w1, h1 = b1_x2 - b1_x1, b1_y2 - b1_y1 + eps
+    w2, h2 = b2_x2 - b2_x1, b2_y2 - b2_y1 + eps
+    union = w1 * h1 + w2 * h2 - inter + eps
+
+    iou = inter / union
+    if GIoU or DIoU or CIoU:
+        cw = torch.max(b1_x2, b2_x2) - torch.min(b1_x1, b2_x1)  # convex (smallest enclosing box) width
+        ch = torch.max(b1_y2, b2_y2) - torch.min(b1_y1, b2_y1)  # convex height
+        if CIoU or DIoU:  # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
+            c2 = cw ** 2 + ch ** 2 + eps  # convex diagonal squared
+            rho2 = ((b2_x1 + b2_x2 - b1_x1 - b1_x2) ** 2 +
+                    (b2_y1 + b2_y2 - b1_y1 - b1_y2) ** 2) / 4  # center distance squared
+            if DIoU:
+                return iou - rho2 / c2  # DIoU
+            elif CIoU:  # https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
+                v = (4 / math.pi ** 2) * torch.pow(torch.atan(w2 / h2) - torch.atan(w1 / h1), 2)
+                with torch.no_grad():
+                    alpha = v / ((1 + eps) - iou + v)
+                return iou - (rho2 / c2 + v * alpha)  # CIoU
+        else:  # GIoU https://arxiv.org/pdf/1902.09630.pdf
+            c_area = cw * ch + eps  # convex area
+            return iou - (c_area - union) / c_area  # GIoU
+    else:
+        return iou  # IoU</code></pre>
+<h1 id="%E4%B8%89%E3%80%81DIOU-NMS"><a id="1_31"></a>三、DIOU-NMS</h1>
+<p><strong>其实DIOU-NMS就是把我上面说的NMS算法中的IOU阈值改为DIOU，将NMS代码中的DIOU设置为True即可。</strong></p>
+<p>根据DIOU的论文，如果只是单纯的使用NMS，即是使用IOU作为阈值去筛掉其他预测框时，当两个物体过于接近时，很有可能另外一个物体的预测框就被滤除了。</p>
+<p>就像下图中的摩托。使用DIOU-NMS可以一定程度上提升对于靠近的物体的检测。</p>
+<p><img alt="" height="274" src="image\20210907102229197.png" width="635"/></p>
+<h1 id="%C2%A0%E5%9B%9B%E3%80%81soft-NMS"><strong> 四、soft-NMS</strong></h1>
+<p>网上还有一种soft-NMS的算法，其思想就是传统的NMS，如果只通过IOU值就将其他的框直接去掉，有可能会不妥，于是就引入了soft-NMS。</p>
+<p><strong>具体流程就是我们把NMS算法中去除其他边界框改成，修改其他边界框的置信度。</strong></p>
+<p><strong>以下引一个博主的图</strong></p>
+<p><img alt="" height="168" src="image\20210907105815681.png" width="357"/></p>
+<p> 其中的f（）函数，现在都是使用的高斯函数</p>
+<p><strong>si即为置信度，M为当前最大置信度的边界框，bi为其他边界框</strong></p>
+<p><img alt="" height="172" src="image\20210907110056826.png" width="487"/></p>
+<p></p>
+<p>网上对此的效果看法也是褒贬不一，我自己也没有试过，但从直觉来说，我个人觉得效果不会有很大的提升，如果感兴趣的可以自己试一试。</p>
+<p></p>
+<h1><a id="_67"></a></h1>
+</div>
+</div>

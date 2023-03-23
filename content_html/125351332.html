@@ -1,0 +1,306 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p></p>
+<p> 用友U8的二次开发,有一个重要的功能就是调用U8的API,生成或者审核U8的业务单据.当然这些单据可以直接通过写数据库的方式,直接插入或者更新数据表也能达到预期.但除非非常熟悉用友数据表的逻辑,否则这种直接写数据库的方式,有诸多风险,比如数据逻辑错误,关联错误等等.</p>
+<p>本文提供一以一种通用的API调用方式,避免受客户端环境(比如是否安装用友,用友的版本约束等)影响.估计有反应快的同学已经猜到,通过在服务器部署WebService或者WebAPI接口的方式,提供给客户端调用就可以实现这个方案.</p>
+<p>做过用友U8二次API开发的同学们都知道,调用用友API的首先的先决条件是登录系统,获得<span style="color:#956fe7;">U8Login</span>对象,这个对象是通过登录用友后获得的.主要的参数可以参考U8发布出来的通用文档.这个地方就不多说.</p>
+<p>1.打开 VS2019,创建一个WebService,或者AspMVC程序都行,反正能提供给客户端调用的接口的程序类型都行</p>
+<p><img alt="" height="618" src="image\9ac8a83b42c341f194f2c7e9c45c519e.png" width="1015"/></p>
+<p>2.要创建U8Login对象,需要在项目中引用以下dll</p>
+<p>UFIDA.U8.MomServiceCommon.dll</p>
+<p>UFIDA.U8.Portal.Common.dll</p>
+<p>UFIDA.U8.Portal.Framework.dll</p>
+<p>UFIDA.U8.Portal.Proxy.dll</p>
+<p>UFIDA.U8.U8APIFramework.dll</p>
+<p>UFIDA.U8.U8MOMAPIFramework.dll</p>
+<p>UFSoft.U8.Framework.Login.UI.dll</p>
+<p>生成U8Login对象的的代码如下具体</p>
+<pre><code>/第一步：构造u8login对象并登陆(引用U8API类库中的Interop.U8Login.dll)
+                //如果当前环境中有login对象则可以省去第一步
+                U8Login.clsLogin u8Login = new U8Login.clsLogin();
+                String sSubId = "AS";
+                String sAccID = ConfigurationManager.AppSettings["sAccID"].ToString();
+                String sYear = DateTime.Today.Year.ToString();
+                String sUserID = ConfigurationManager.AppSettings["sUserID"].ToString();
+                String sPassword = ConfigurationManager.AppSettings["sPassword"].ToString();
+                String sDate = DateTime.Today.ToString("yyyy-MM-dd");
+                String sServer = ConfigurationManager.AppSettings["sServer"].ToString();
+                String sSerial = "";
+                if (!u8Login.Login(ref sSubId, ref sAccID, ref sYear, ref sUserID, ref sPassword, ref sDate, ref sServer, ref sSerial))
+                {
+                    resp.resp = "fail";
+                    resp.msg = "登陆失败，原因：" + u8Login.ShareString;
+                    result = "{\"resp\":\"" + resp.resp + "\",\"msg\":\"" + resp.msg + "\",\"retcode\":\"" + dmlist.cDLCode + "\"}";
+                    return false;
+                }
+</code></pre>
+<p>U8Login对象可以在调用的时候建立,或者在Web应用程序初始化的建立,作为全局对象保存,需要的时候直接使用.另外,透露一个U8的秘密,对于从IIS进程,JAVA进程发起的Login请求,U8是不校验U8Login对象是否是调试版的U8Login.</p>
+<p>3.拿到U8Login对应以后,就可以调用U8API了.具体API的声明以及参数使用,参考用友的API资源管理器中的范例,此处用一个范例说明</p>
+<pre><code>//第二步：构造环境上下文对象，传入login，并按需设置其它上下文参数
+                U8EnvContext envContext = new U8EnvContext();
+                envContext.U8Login = u8Login;
+
+                //销售所有接口均支持内部独立事务和外部事务，默认内部事务
+                //如果是外部事务，则需要传递ADO.Connection对象，并将IsIndependenceTransaction属性设置为false
+                //envContext.BizDbConnection = new ADO.Connection();
+                //envContext.IsIndependenceTransaction = false;
+
+                //设置上下文参数
+                envContext.SetApiContext("VoucherType", VoucherType); //上下文数据类型：int，含义：单据类型
+
+                //第三步：设置API地址标识(Url)
+                //当前API：新增或修改的地址标识为：U8API/Consignment/Save
+                U8ApiAddress myApiAddress = new U8ApiAddress(cAds);
+
+                //第四步：构造APIBroker
+                U8ApiBroker broker = new U8ApiBroker(myApiAddress, envContext);
+
+                //第五步：API参数赋值
+
+                //给BO表头参数domHead赋值，此BO参数的业务类型为发货单，属表头参数。BO参数均按引用传递
+                //提示：给BO表头参数domHead赋值有两种方法
+
+                //方法一是直接传入MSXML2.DOMDocumentClass对象
+                //broker.AssignNormalValue("domHead", new MSXML2.DOMDocumentClass())
+                ADODB.Connection conn = new ADODB.ConnectionClass();
+                ADODB.Recordset rs = new ADODB.RecordsetClass();
+                MSXML2.DOMDocument domhead = new MSXML2.DOMDocumentClass();
+                string strConn = string.Format("Provider=SQLOLEDB;Initial Catalog={0};Data Source={1};", ConfigurationManager.AppSettings["sDBname"].ToString(), u8Login.dbServerName);
+                conn.Open(strConn, "sa", u8Login.SysPassword, 0);
+                string sql = "select * from Sales_FHD_T where 1=0";
+                rs.Open(sql, conn, ADODB.CursorTypeEnum.adOpenForwardOnly, ADODB.LockTypeEnum.adLockOptimistic, -1);
+                rs.Save(domhead, ADODB.PersistFormatEnum.adPersistXML);
+                U8APIHelper.FormatDom(ref domhead, "A");
+                broker.AssignNormalValue("DomHead", domhead);
+
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cdlcode").nodeValue = dmlist.cDLCode;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("ddate").nodeValue = dmlist.dDate;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cbustype").nodeValue = dmlist.cSTCode == "03" ? "委托代销" : dmlist.cBusType;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cstname").nodeValue = GetSTNameByCode(dmlist.cSTCode);
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("ccusabbname").nodeValue = GetCusAbbNameByCode(dmlist.cCusCode);
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cdepname").nodeValue = GetDepNameByCode(dmlist.cDepCode);
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cstcode").nodeValue = dmlist.cSTCode;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("ivtid").nodeValue = U8APIHelper.GetVTIDByCardNum(u8Login, cCardNum);
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("ccusname").nodeValue = GetCusNameByCode(dmlist.cCusCode);
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("ccuscode").nodeValue = dmlist.cCusCode;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cmaker").nodeValue = u8Login.cUserName;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cexch_name").nodeValue = dmlist.cExch_Name;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("iexchrate").nodeValue = exRate.ToString();// dmlist.cSTCode == "02" ? "6.8" : "1";
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("itaxrate").nodeValue = dmlist.iTaxRate;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cdepcode").nodeValue = dmlist.cDepCode;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("breturnflag").nodeValue = dmlist.cFlag;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cvouchname").nodeValue = VType;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cvouchtype").nodeValue = dmlist.cSTCode == "03" ? "06" : "05";
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cpersonname").nodeValue = GetPerNameByCode(dmlist.cPerCode);
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cpersoncode").nodeValue = dmlist.cPerCode;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cmemo").nodeValue = dmlist.cMemo;
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("bneedbill").nodeValue = "1";
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("isale").nodeValue = "0";
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("iflowid").nodeValue = "0";
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("iverifystate").nodeValue = "0";
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("ireturncount").nodeValue = "0";
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("iswfcontrolled").nodeValue = "0";
+                //收付款协议
+                string AgrCode = GetCusSAProtocol(dmlist.cCusCode);
+                AgrCode = "SA10";
+                if (AgrCode != "")
+                {
+                    domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cgatheringplan").nodeValue = AgrCode;
+                    domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cgatheringplanname").nodeValue = GetAgrName(AgrCode);
+                    domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("dcreditstart").nodeValue = dmlist.dDate;
+                    domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("dgatheringdate").nodeValue = Convert.ToDateTime(dmlist.dDate).AddDays(GetAgrNum(AgrCode)).ToString("yyyy-MM-dd");
+                    domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("icreditdays").nodeValue = GetAgrNum(AgrCode).ToString();
+                    //domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("bcredit").nodeValue = "1";
+                }
+                //固定值
+                // domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("cgatheringplan").nodeValue = "S10";
+                domhead.selectSingleNode("//rs:data/z:row").attributes.getNamedItem("bcredit").nodeValue = "0";
+
+                List&lt;FHDetails&gt; ddlst = dmlist.cDetails;
+                MSXML2.DOMDocument domBody = new MSXML2.DOMDocumentClass();
+                ADODB.Connection conn1 = new ADODB.ConnectionClass();
+                ADODB.Recordset rs1 = new ADODB.RecordsetClass();
+                string strConn1 = string.Format("Provider=SQLOLEDB;Initial Catalog={0};Data Source={1};", ConfigurationManager.AppSettings["sDBname"].ToString(), u8Login.dbServerName);
+                conn1.Open(strConn, "sa", u8Login.SysPassword, 0);
+                sql = "select * from Sales_FHD_W where 1=0";
+                rs1.Open(sql, conn, ADODB.CursorTypeEnum.adOpenForwardOnly, ADODB.LockTypeEnum.adLockOptimistic, -1);
+                rs1.Save(domBody, ADODB.PersistFormatEnum.adPersistXML);
+                U8APIHelper.FormatDom(ref domBody, ddlst.Count, "A");
+                broker.AssignNormalValue("domBody", domBody);
+
+                for (int i = 0; i &lt; ddlst.Count; i++)
+                {
+                    DataTable dtinv = GetInvInfo(ddlst[i].cInvCode);
+                    string _iquantity = ddlst[i].xnflag == "1" ? "0" : ddlst[i].iQuantity;
+
+                    if (dtinv.Rows.Count == 0)
+                    {
+                        resp.resp = "fail";
+                        resp.msg = "存货编码[" + ddlst[i].cInvCode + "]不存在！";
+                        result = "{\"resp\":\"" + resp.resp + "\",\"msg\":\"" + resp.msg + "\",\"retcode\":\"" + dmlist.cDLCode + "\"}";
+                        u8Login.ShutDown();
+                        broker.Release();
+                        return false;
+                    }
+
+                    //LogException.WriteTxt(dmlist.cDLCode + ":" + ddlst[i].cInvCode + ":" + _iquantity, "AAAADISJSON");
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("cwhcode").nodeValue = ddlst[i].cWhCode;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("cinvcode").nodeValue = ddlst[i].cInvCode;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("iquantity").nodeValue = _iquantity;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("itaxunitprice").nodeValue = ddlst[i].iTaxUnitPrice;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("irowno").nodeValue = i + 1;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("cwhname").nodeValue = GetWhNameByCode(ddlst[i].cWhCode);
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("cinvstd").nodeValue = dtinv.Rows[0]["cinvstd"];
+
+                    double iNatsum = 0, iNatunitprice = 0, iNatmoney = 0, itax = 0;
+                    double isum = 0, iunitPrice = 0, imoney = 0, inattax = 0;
+                   // if (dmlist.cSTCode == "02")
+                   if(exRate!=1)
+                    {
+                        iNatsum = Convert.ToDouble(ddlst[i].iQuantity) * Convert.ToDouble(ddlst[i].iTaxUnitPrice) * (double)exRate;
+                        isum = Convert.ToDouble(ddlst[i].iQuantity) * Convert.ToDouble(ddlst[i].iTaxUnitPrice);
+
+                        iunitPrice = Convert.ToDouble(ddlst[i].iTaxUnitPrice);
+                        iNatunitprice = Convert.ToDouble(ddlst[i].iTaxUnitPrice) * (double)exRate;
+
+                        iNatmoney = Convert.ToDouble(ddlst[i].iQuantity) * iNatunitprice;
+                        imoney = Convert.ToDouble(ddlst[i].iQuantity) * iunitPrice;
+
+                        itax = isum - imoney;
+                        inattax = iNatsum - iNatmoney;
+                    }
+                    else
+                    {
+                        iNatsum = Convert.ToDouble(ddlst[i].iQuantity) * Convert.ToDouble(ddlst[i].iTaxUnitPrice);
+                        isum = iNatsum;
+
+                        iNatunitprice = Convert.ToDouble(ddlst[i].iTaxUnitPrice) / (1 + Convert.ToDouble(dmlist.iTaxRate) / 100);
+                        iunitPrice = iNatunitprice;
+
+                        iNatmoney = Convert.ToDouble(ddlst[i].iQuantity) * iNatunitprice;
+                        imoney = iNatmoney;
+
+                        itax = isum - imoney;
+                        inattax = iNatsum - iNatmoney;
+                    }
+
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("iquotedprice").nodeValue = 0;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("iunitprice").nodeValue = iunitPrice.ToString("F2");
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("imoney").nodeValue = imoney.ToString("F2");
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("itax").nodeValue = itax.ToString("F2");
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("isum").nodeValue = isum.ToString("F2");
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("idiscount").nodeValue = 0;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("inatunitprice").nodeValue = iNatunitprice.ToString("F2");
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("inatmoney").nodeValue = iNatmoney.ToString("F2");
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("inattax").nodeValue = inattax.ToString("F2");
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("inatsum").nodeValue = iNatsum.ToString("F2");
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("inatdiscount").nodeValue = 0;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("itaxrate").nodeValue = dmlist.iTaxRate;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("kl2").nodeValue = 100;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("kl").nodeValue = 100;
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("ccomunitcode").nodeValue = dtinv.Rows[0]["ccomunitcode"];
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("cinvm_unit").nodeValue = dtinv.Rows[0]["ccomunitname"];
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("igrouptype").nodeValue = dtinv.Rows[0]["igrouptype"];
+                    domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("cgroupcode").nodeValue = dtinv.Rows[0]["cgroupcode"];
+                    if (Convert.ToBoolean(dtinv.Rows[0]["bfree1"]))
+                        domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("cfree1").nodeValue = ddlst[i].cFree1;
+                    if (Convert.ToBoolean(dtinv.Rows[0]["bfree2"]))
+                        domBody.selectNodes("//rs:data/z:row")[i].attributes.getNamedItem("cfree2").nodeValue = ddlst[i].cFree2;
+                }
+                //给普通参数VoucherState赋值。此参数的数据类型为int，此参数按值传递，表示状态:0增加;1修改
+                broker.AssignNormalValue("VoucherState", 0);
+
+                //该参数vNewID为INOUT型普通参数。此参数的数据类型为string，此参数按值传递。在API调用返回时，可以通过GetResult("vNewID")获取其值
+                broker.AssignNormalValue("vNewID", "");
+
+                //给普通参数DomConfig赋值。此参数的数据类型为MSXML2.IXMLDOMDocument2，此参数按引用传递，表示ATO,PTO选配
+                MSXML2.IXMLDOMDocument2 domMsg = new MSXML2.DOMDocumentClass();
+                broker.AssignNormalValue("DomConfig", domMsg);
+
+                //第六步：调用API
+                if (!broker.Invoke())
+                {
+                    //错误处理
+                    Exception apiEx = broker.GetException();
+                    if (apiEx != null)
+                    {
+                        if (apiEx is MomSysException)
+                        {
+                            MomSysException sysEx = apiEx as MomSysException;
+                            resp.resp = "fail";
+                            resp.msg = "系统异常：" + sysEx.Message;
+                            result = "{\"resp\":\"" + resp.resp + "\",\"msg\":\"" + resp.msg + "\",\"retcode\":\"" + dmlist.cDLCode + "\"}";
+                            //todo:异常处理
+                        }
+                        else if (apiEx is MomBizException)
+                        {
+                            MomBizException bizEx = apiEx as MomBizException;
+                            resp.resp = "fail";
+                            resp.msg = "API异常：" + bizEx.Message;
+                            result = "{\"resp\":\"" + resp.resp + "\",\"msg\":\"" + resp.msg + "\",\"retcode\":\"" + dmlist.cDLCode + "\"}";
+                            //todo:异常处理
+                        }
+                        //异常原因
+                        String exReason = broker.GetExceptionString();
+                        if (exReason.Length != 0)
+                        {
+                            resp.resp = "fail";
+                            resp.msg = "异常原因：" + exReason;
+                            result = "{\"resp\":\"" + resp.resp + "\",\"msg\":\"" + resp.msg + "\",\"retcode\":\"" + dmlist.cDLCode + "\"}";
+                        }
+                    }
+                    u8Login.ShutDown();
+                    //结束本次调用，释放API资源
+                    broker.Release();
+                    return false;
+                }
+
+                //第七步：获取返回结果
+
+                //获取返回值
+                //获取普通返回值。此返回值数据类型为System.String，此参数按值传递，表示成功返回空串
+                System.String res = broker.GetReturnValue() as System.String;
+
+                //获取out/inout参数值
+
+                //获取普通INOUT参数vNewID。此返回值数据类型为string，在使用该参数之前，请判断是否为空
+                string vNewIDRet = broker.GetResult("vNewID") as string;
+
+                if (string.IsNullOrEmpty(res) &amp;&amp; vNewIDRet != "")
+                {
+                    resp.resp = "succ";
+                    resp.msg = VType + "[" + dmlist.cDLCode + "]创建成功！";
+                    result = "{\"resp\":\"" + resp.resp + "\",\"msg\":\"" + resp.msg + "\",\"retcode\":\"" + dmlist.cDLCode + "\"}";
+
+                    bool isExistDispCode = CheckIsExistsDispCode(dmlist.cDLCode);
+                    if (!isExistDispCode)
+                    {
+                        resp.resp = "fail";
+                        resp.msg = VType + "[" + dmlist.cDLCode + "] 用友对应单据不存在！";
+                        result = "{\"resp\":\"" + resp.resp + "\",\"msg\":\"" + resp.msg + "\",\"retcode\":\"" + dmlist.cDLCode + "\"}";
+                        u8Login.ShutDown();
+                        broker.Release();
+                        return false;
+                    }
+                    //VerifyDispatchlist(u8Login, VoucherType, vNewIDRet);
+                    审核销售出库单
+                    //string ckid = U8APIHelper.GetChildIDByFatherID(u8Login, "ID", "rdrecord32", "cDLCode", vNewIDRet);
+                    //VerifyRd32(u8Login, ckid);
+                }
+                else
+                {
+                    resp.resp = "fail";
+                    resp.msg = VType + "[" + dmlist.cDLCode + "]创建失败！" + res;
+                    result = "{\"resp\":\"" + resp.resp + "\",\"msg\":\"" + resp.msg + "\",\"retcode\":\"" + dmlist.cDLCode + "\"}";
+                    u8Login.ShutDown();
+                    broker.Release();
+                    return false;
+                }
+                u8Login.ShutDown();
+                //结束本次调用，释放API资源
+                broker.Release();</code></pre>
+<p>完整代码:<a class="has-card" href="https://download.csdn.net/download/daniel_qsy/85686892" title="https://download.csdn.net/download/daniel_qsy/85686892"><span class="link-card-box"><span class="link-title">https://download.csdn.net/download/daniel_qsy/85686892</span><span class="link-link"><img alt="icon-default.png?t=M5H6" class="link-link-icon" src="https://csdnimg.cn/release/blog_editor_html/release2.1.4/ckeditor/plugins/CsdnLink/icons/icon-default.png?t=M5H6"/>https://download.csdn.net/download/daniel_qsy/85686892</span></span></a> </p>
+<p></p>
+</div>
+</div>

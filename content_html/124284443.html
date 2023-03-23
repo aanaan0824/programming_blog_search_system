@@ -1,0 +1,51 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h4><a id="1_0"></a>1、行锁分类</h4>
+<ul><li> <p>1、记录锁：即锁住记录本身</p> </li><li> <p>2、间隙锁：锁住一段没有记录的间隙，可以是两条记录的中间部分，也可以是第一条记录的前置部分或最后一条记录的后续部分</p> </li><li>
+<ul><li>2.1 需要注意的是，间隙锁仅仅是阻塞对该间隙进行插入操作，而不阻塞对该间隙的查询操作；如有表tab，有索引idx，对(5,10)加入间隙锁，执行下面两条命令：</li></ul> </li><li>
+<ul><li>insert into tab (idx) values(7); 阻塞</li></ul> </li><li>
+<ul><li>select * from tab where idx = 7 for update; 不阻塞但无数据</li></ul> </li><li> <p>3、next-key锁：是记录锁与间隙锁的结合，特点为左开右闭，如(4,10]，由间隙锁(4,10)和记录锁idx = 10组成</p> </li></ul>
+<h4><a id="2_9"></a>2、唯一索引的加锁规则</h4>
+<ol><li>等值查询：</li></ol>
+<ul><li>若查询记录存在则将next-key锁退化成记录锁，只锁住查询的记录；</li><li>若查询记录不存在，则next-key锁退化为间隙锁，锁住记录所在空隙，此处空隙是指与所查询记录（如果存在的话）相邻的两条记录之间的空隙，这两条记录除了可以是数据库表中实际存在的，也可以是其他记录拟插入的（执行了插入sql但是未提交或回滚事务，因为其他事务的插入操作加了记录锁，故而将间隙分为两半）</li><li>第二种情况中，若其他事务拟插入的数据进行了提交，则间隙锁固定，若选择回滚，则间隙扩大至下一条记录之前</li></ul>
+<ol start="2"><li>范围查询：有以下两种情况，以下的<strong>范围内</strong>指截至是最后一条符合条件的记录后的间隙</li></ol>
+<ul><li> <p>&gt;和&lt;：若起始索引记录不存在，则锁住起始索引所在间隙及后续记录和间隙；若存在，则从起始索引记录（不包含）开始，锁住范围内的记录和间隙</p> </li><li> <p>&gt;=：若起始索引不存在，则锁住起始索引记录所在间隙以及后续记录和间隙，若存在，则从起始索引记录（包含）开始，锁住范围内所有的记录和间隙</p> </li><li> <p>&lt;=：若起始索引不存在，则锁住起始索引所在间隙与后续的记录和间隙，若存在，则从起始索引记录开始，锁住范围内记录和间隙，并锁住起始索引另一侧的间隙，验证如下：</p> <pre><code>  如下表：表名为foo，uid为主键索引，也即唯一索引，idx为普通索引
+  +-----+-----+------+
+  | uid | age | idx  |
+  +-----+-----+------+
+  |   1 |   1 |    1 |
+  |   3 |   3 |    3 |
+  |   4 |   4 |    4 |
+  |  10 |  10 |   10 |
+  |  16 |  16 |   16 |
+  +-----+-----+------+
+  
+  事务A：执行select * from foo where uid &gt;= 10 and uid &lt;= 16 for update;
+  事务B：执行insert into foo values(9,9,9);
+  事务C：执行update foo set age = 5 where uid = 4;
+  事务D：执行insert into foo values(17,17,17);
+  其中事务B和C成功执行，事务D阻塞，分析可得[16, 正无穷)被锁住，而[4,10)未被锁住
+  
+  若是事务A修改为：select * from foo where uid &gt;= 10 and uid &lt; 16 for update;
+  则事务D不会被阻塞，也即(16,正无穷)未被锁住
+</code></pre> </li></ul>
+<h4><a id="3_40"></a>3、普通索引的加锁规则</h4>
+<ul><li>等值查询：若查询记录存在，除了加上next-key锁（即锁住本记录和上一条记录之间的间隙）以外，还会对本记录到下一条记录之间的间隙加锁</li><li>范围查询：与唯一索引的区别在于：<br/> 1、&gt;=会将另一侧的间隙也一起锁住；<br/> 2、&lt;会将锁住第一条不满足条件的记录<br/> 如事务A执行：select * from foo where idx&gt;= 10 and idx &lt; 12 for update;<br/> 其中idx为普通索引，按照上表，(4,10)之间会加上间隙锁，且16会被锁住，也即[10,16]锁住</li></ul>
+<h4><a id="4_48"></a>4、行锁的加锁技巧</h4>
+<p>事务加锁时，其他事务进行写操作时会受到阻塞，这个阻塞时间当然是越短越好，那么对于一个事务当中不同需要加锁的语句，可以采用以下方式控制：</p>
+<ul><li>对语句所需要锁住的记录条数进行预估，在不影响业务的情况下，将锁住记录多的语句排在锁住记录少的后面，锁粒度大的容易发生冲突，这样安排可以减少与其他事务冲突时间</li><li>将热点记录的加锁操作排在事务后面执行</li><li>批量操作分几次进行，减少锁冲突的概率和时间</li></ul>
+<p>举个两个简单例子，来自MySQL实战45讲<br/> 1、用户A、B要到影院C购票，需要进行以下操作：</p>
+<ul><li>用户金额扣除，票数+1</li><li>影院金额增加，票数-1</li><li></li></ul>
+<p>分析业务，容易得出影院的记录是热点记录，相较用户记录更改频繁，因此可以将影院操作语句放在事务后面，减少影院记录上锁时间</p>
+<p>2、删除一个表中的前10000条数据，给出三种方案，那种最合适</p>
+<ul><li>delete from table limit 10000;</li><li>开启20个连接，执行delete from table limit 500;</li><li>同一连接连续开启20次事务，执行delete from table limit 500;</li></ul>
+<p>答案是第三种，原因如下</p>
+<ul><li>第一个需要锁住一次性锁住10000记录，范围大，容易发生冲突，且删除期间这10000条记录会被锁住，其他事务被阻塞概率大；</li><li>第二个多个连接之间可能发生冲突，互相阻塞，浪费资源；</li><li>第三个只有一个连接，每次加锁的记录少，不容易发生冲突；</li></ul>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

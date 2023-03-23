@@ -1,0 +1,37 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p><strong>环境：</strong></p>
+<ul><li>window 11</li><li>.net core 3.1</li><li>vs2022</li></ul>
+<p><strong>问题来源：</strong></p>
+<p>在一段测试代码中我需要开启多个线程模拟并发问题，于是，我写了下面的代码（已改造成控制台）：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">internal</span> <span class="token keyword">class</span> <span class="token class-name">Program</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name"><span class="token keyword">var</span></span> tasks <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>Task<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> <span class="token number">10</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">var</span></span> tmp <span class="token operator">=</span> i<span class="token punctuation">;</span>
+            tasks<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>Task<span class="token punctuation">.</span>Factory<span class="token punctuation">.</span><span class="token function">StartNew</span><span class="token punctuation">(</span><span class="token keyword">async</span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+             <span class="token punctuation">{<!-- --></span>
+                 <span class="token keyword">await</span> Task<span class="token punctuation">.</span><span class="token function">Delay</span><span class="token punctuation">(</span><span class="token number">1000</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                 Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span>tmp<span class="token punctuation">)</span><span class="token punctuation">;</span>
+             <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        Task<span class="token punctuation">.</span><span class="token function">WaitAll</span><span class="token punctuation">(</span>tasks<span class="token punctuation">.</span><span class="token function">ToArray</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"ok"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>预想的是控制台会输出0-9 这10个数字，但运行后大失所望：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/47551506a6b0460d9e00a1ee999f1766.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAamFja2xldHRlcg==,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>看运行的结果，是 <code>task.factory.startnew</code>开启的任务没执行吗，还是<code>task.waitall</code>没起作用，于是，我改成<code>task.run</code>试试：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e4ada784d6204812a31446df17f7c030.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAamFja2xldHRlcg==,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 这就奇怪了，为什么<code>task.run</code>可以而<code>task.factory.startnew</code>就不行呢？？？</p>
+<p>偶然间我把光标悬浮在<code>task.factory.startnew</code>上面，当我看到它的返回值时，呆住了：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d8f8d96611d04e8d912a83849665729d.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAamFja2xldHRlcg==,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 找到了问题，我立刻就换了写法，代码也正常了：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/64fa873d06184c77a1dc3034c3ca9155.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAamFja2xldHRlcg==,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 代码虽然可以运行了，但是我仍然不明白<code>task.factory.startnew</code>为什么返回<code>Task&lt;Task&gt;</code>而不是<code>Task</code>，于是看了下它门的定义：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6354bdcfe81649eba288adc9a2f042da.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAamFja2xldHRlcg==,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>看过定义后，我们应该就明白了，当我们使用<code>task.facotory.startnew</code>时，里面的方法有没有<code>async</code>是不一样的，不带<code>async</code>的返回的是<code>Task</code>，带<code>async</code>的返回的是<code>Task&lt;Task&gt;</code>：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/135168725bc94300a9e761f59756ea65.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/837cb98823be41ffa16fc3840003e96e.png"/><br/> 之前一直以为<code>task.factory.starnew</code>里面写带<code>async</code>的方法是返回<code>Task</code>的，没想到返回的竟然是<code>Task&lt;Task&gt;</code>，还好之前的代码也没有需要等待这个task执行完成的需求，如果有的话，请加两个<code>await</code>：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a908bc3d6b374fd1bb1d9ebddcbb2bee.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAamFja2xldHRlcg==,size_13,color_FFFFFF,t_70,g_se,x_16"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

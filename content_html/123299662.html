@@ -1,0 +1,272 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>智能指针shared_ptr的原理、用法和注意事项</h3>
+<ul><li><a href="#1__2">1 前言</a></li><li><a href="#2_shared_ptr_11">2 shared_ptr原理</a></li><li><a href="#3_shared_ptr_134">3 shared_ptr的基本用法</a></li><li><ul><li><a href="#31__135">3.1 初始化</a></li><li><a href="#32__222">3.2 获取原始指针</a></li></ul>
+</li><li><a href="#4__232">4 智能指针和动态数组</a></li><li><ul><li><a href="#41_c17_247">4.1 c++17前需指定删除器</a></li><li><a href="#42_c17opreatorint_268">4.2 `c++17`增加了`opreator[]`和使用`int[]`类的数组类型做模板参数</a></li><li><a href="#43_c20stdmake_shared_294">4.3 `c++20`支持`std::make_shared`</a></li></ul>
+</li><li><a href="#5_shared_ptr_304">5 使用`shared_ptr`需要注意的问题</a></li></ul>
+</div>
+<p></p>
+<h1><a id="1__2"></a>1 前言</h1>
+<p>在实际的C++开发过程中，我们经常会遇到诸如程序运行中突然崩溃、程序运行所用的内存越来越多最终不得不重启等问题，这些问题往往都是内存管理资源不当造成的。比如：<br/> ①有些内存资源已经释放，但指向它的指针并没有改变指向，最终成为了野指针，并且后续还在使用；<br/> ②有些内存资源已经被释放，后期又试图再释放一次，最终导致重复释放同一块内存会使程序运行崩溃；<br/> ③没有及时释放不再使用的内存资源，造成内存泄漏，程序占用的内存资源越来越多。<br/> 针对以上情况，C++提供了更友好的内存管理机制，让程序员更专注于开发项目的各个功能上，而不是自己进行内存管理。事实上，显示内存管理的替代方案很早就有了，早在1959年前后，就有人提出“垃圾自动回收”机制，“垃圾”指的是那些不再使用或者没有任何指针指向的内存空间，而“回收”指的是将这些“垃圾”收集起来以便再次利用。<br/> 在C++98/03标准中，支持使用<code>anto_ptr</code>智能指针来实现堆内存的自动回收，C++11新标准在废弃<code>auto_ptr</code>的同时，增加了<code>nique_ptr</code>、<code>shared_ptr</code> 以及 <code>weak_ptr</code> 这 3 个智能指针来实现堆内存的自动回收。<br/> 智能指针和普通指针用法相似，<strong>智能指针的本质是一个模板类，对普通指针进行了封装，通过在构造函数中初始化分配内存，在析构函数中释放内存，达到自己管理内存，不需要手动管理内存的效果</strong>，因此智能指针可以在适当时机自动释放分配的内存，即使用智能指针可以很好地避免“忘记释放内存而导致内存泄漏”问题，由此可见，C++开始支持了垃圾回收机制，但是目前支持的程度有限。<br/> 接下来对<code>shared_ptr</code>的原理和用法做详细的解释说明。</p>
+<h1><a id="2_shared_ptr_11"></a>2 shared_ptr原理</h1>
+<p><code>shared_ptr</code>是以类模板的方式实现的，<code>shared_ptr&lt;T&gt;</code>（其中 T 表示指针指向的具体数据类型）的定义位于<code>&lt;memory&gt;</code>头文件，并位于<code> std</code> 命名空间中，因此在使用该类型指针时，程序中应包含如下 2 行代码：</p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;memory&gt;</span></span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span> <span class="token comment">//这一行代码不是必须的，如果不添加则在后续使用shared_ptr 智能指针时，就需要明确指明std::</span>
+</code></pre>
+<p><strong>shared_ptr的简单实现如下：</strong></p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;mutex&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;thread&gt;</span></span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span>
+
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">class</span> <span class="token class-name">T</span><span class="token operator">&gt;</span>  <span class="token comment">//模板类</span>
+<span class="token keyword">class</span> <span class="token class-name">Shared_Ptr</span><span class="token punctuation">{<!-- --></span>
+<span class="token keyword">public</span><span class="token operator">:</span>
+    <span class="token comment">//以普通指针进行构造</span>
+	<span class="token function">Shared_Ptr</span><span class="token punctuation">(</span>T<span class="token operator">*</span> ptr <span class="token operator">=</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token operator">:</span><span class="token function">_pPtr</span><span class="token punctuation">(</span>ptr<span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_pRefCount</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_pMutex</span><span class="token punctuation">(</span><span class="token keyword">new</span> mutex<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span><span class="token punctuation">}</span>
+    
+    <span class="token comment">//析构函数</span>
+	<span class="token operator">~</span><span class="token function">Shared_Ptr</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">Release</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+    
+    <span class="token comment">//拷贝构造函数</span>
+	<span class="token function">Shared_Ptr</span><span class="token punctuation">(</span><span class="token keyword">const</span> Shared_Ptr<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token operator">&amp;</span> sp<span class="token punctuation">)</span>
+		<span class="token operator">:</span><span class="token function">_pPtr</span><span class="token punctuation">(</span>sp<span class="token punctuation">.</span>_pPtr<span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_pRefCount</span><span class="token punctuation">(</span>sp<span class="token punctuation">.</span>_pRefCount<span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_pMutex</span><span class="token punctuation">(</span>sp<span class="token punctuation">.</span>_pMutex<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">AddRefCount</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+    
+    <span class="token comment">//重载赋值号，使得同一类型的shared_ptr智能指针可以相互赋值</span>
+	Shared_Ptr<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token operator">&amp;</span> <span class="token keyword">operator</span><span class="token operator">=</span><span class="token punctuation">(</span><span class="token keyword">const</span> Shared_Ptr<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token operator">&amp;</span> sp<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>_pPtr <span class="token operator">!=</span> sp<span class="token punctuation">.</span>_pPtr<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			<span class="token comment">// 释放管理的旧资源</span>
+			<span class="token function">Release</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+			<span class="token comment">// 共享管理新对象的资源，并增加引用计数</span>
+			_pPtr <span class="token operator">=</span> sp<span class="token punctuation">.</span>_pPtr<span class="token punctuation">;</span>
+			_pRefCount <span class="token operator">=</span> sp<span class="token punctuation">.</span>_pRefCount<span class="token punctuation">;</span>
+			_pMutex <span class="token operator">=</span> sp<span class="token punctuation">.</span>_pMutex<span class="token punctuation">;</span>
+			<span class="token function">AddRefCount</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+		<span class="token keyword">return</span> <span class="token operator">*</span><span class="token keyword">this</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+    
+    <span class="token comment">//	重载 * 号，获取当前 shared_ptr 智能指针对象指向的数据</span>
+	T<span class="token operator">&amp;</span> <span class="token keyword">operator</span><span class="token operator">*</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">return</span> <span class="token operator">*</span>_pPtr<span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+    
+    <span class="token comment">//重载 -&gt; 号，当智能指针指向的数据类型为自定义的结构体时，通过 -&gt; 运算符可以获取其内部的指定成员</span>
+	T<span class="token operator">*</span> <span class="token keyword">operator</span><span class="token operator">-&gt;</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">return</span> _pPtr<span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+    
+    <span class="token comment">//返回同当前 shared_ptr 对象（包括它）指向相同的所有 shared_ptr 对象的数量</span>
+	<span class="token keyword">int</span> <span class="token function">UseCount</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> <span class="token keyword">return</span> <span class="token operator">*</span>_pRefCount<span class="token punctuation">;</span> <span class="token punctuation">}</span>
+    
+    <span class="token comment">//返回 shared_ptr 对象内部包含的普通指针</span>
+	T<span class="token operator">*</span> <span class="token function">Get</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> <span class="token keyword">return</span> _pPtr<span class="token punctuation">;</span> <span class="token punctuation">}</span>
+    
+	<span class="token keyword">void</span> <span class="token function">AddRefCount</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		_pMutex<span class="token operator">-&gt;</span><span class="token function">lock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token operator">++</span><span class="token punctuation">(</span><span class="token operator">*</span>_pRefCount<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		_pMutex<span class="token operator">-&gt;</span><span class="token function">unlock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token keyword">private</span><span class="token operator">:</span>
+	<span class="token keyword">void</span> <span class="token function">Release</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">bool</span> deleteflag <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+		_pMutex<span class="token operator">-&gt;</span><span class="token function">lock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">--</span><span class="token punctuation">(</span><span class="token operator">*</span>_pRefCount<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			<span class="token keyword">delete</span> _pRefCount<span class="token punctuation">;</span>
+			<span class="token keyword">delete</span> _pPtr<span class="token punctuation">;</span>
+			deleteflag <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+		_pMutex<span class="token operator">-&gt;</span><span class="token function">unlock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>deleteflag <span class="token operator">==</span> <span class="token boolean">true</span><span class="token punctuation">)</span>
+			<span class="token keyword">delete</span> _pMutex<span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token keyword">private</span><span class="token operator">:</span>
+	<span class="token keyword">int</span> <span class="token operator">*</span>_pRefCount<span class="token punctuation">;</span>  <span class="token comment">//定义一个引用计数指针</span>
+	T<span class="token operator">*</span> _pPtr<span class="token punctuation">;</span>   <span class="token comment">//定义一个存储指针</span>
+	mutex<span class="token operator">*</span> _pMutex<span class="token punctuation">;</span>  <span class="token comment">//定义一个锁指针，为了保证线程安全，防止资源未释放或程序崩溃</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre>
+<p>从<code>shared_ptr</code>源码可以看出模板类<code>Shared_Ptr</code>有一个存储指针（ _pPtr），一个锁指针（ _pMutex）和一个引用计数指针（ _pRefCount），共三个成员。为了方便用户使用 <code>shared_ptr</code> 智能指针，<code>shared_ptr&lt;T&gt;</code> 模板类还提供有一些实用的成员方法，它们各自的功能如下：</p>
+<table><thead><tr><th>成员方法名</th><th>功 能</th></tr></thead><tbody><tr><td>operator=()</td><td>重载赋值号，使得同一类型的 <code>shared_ptr</code> 智能指针可以相互赋值。</td></tr><tr><td>operator*()</td><td>重载 * 号，获取当前 <code>shared_ptr</code> 智能指针对象指向的数据。</td></tr><tr><td>operator-&gt;()</td><td>重载 -&gt; 号，当智能指针指向的数据类型为自定义的结构体时，通过 -&gt; 运算符可以获取其内部的指定成员。</td></tr><tr><td>swap()</td><td>交换 2 个相同类型 <code>shared_ptr</code> 智能指针的内容。</td></tr><tr><td>reset()</td><td>当函数没有实参时，该函数会使当前 shared_ptr 所指堆内存的引用计数减 1，同时将当前对象重置为一个空指针；当为函数传递一个新申请的堆内存时，则调用该函数的 <code>shared_ptr</code> 对象会获得该存储空间的所有权，并且引用计数的初始值为 1</td></tr><tr><td>get()</td><td>获得 <code>shared_ptr </code>对象内部包含的普通指针。</td></tr><tr><td>use_count()</td><td>返回同当前 <code>shared_ptr</code> 对象（包括它）指向相同的所有 shared_ptr 对象的数量。</td></tr><tr><td>unique()</td><td>判断当前<code>shared_ptr</code>对象指向的堆内存，是否不再有其它 shared_ptr 对象再指向它。</td></tr><tr><td>operator bool()</td><td>判断当前 <code>shared_ptr</code> 对象是否为空智能指针，如果是空指针，返回 false；反之，返回 true。</td></tr><tr><td>make_shared(args)</td><td>返回一个<code>shared_ptr</code>，指向一个动态分配的类型为T的对象。使用args初始化次对</td></tr></tbody></table>
+<p>想系统的了解share_ptr的详细功能，可见<code>shared_ptr</code>官网：<a href="http://www.cplusplus.com/reference/memory/shared_ptr/shared_ptr/">share_ptr官网</a></p>
+<p><code>shared_ptr</code>的原理：是<strong>通过引用计数的方式来实现多个shared_ptr对象之间共享资源</strong>。<br/> ①<code>shared_ptr</code>的<strong>存储指针和引用计数指针是一一对应的</strong>，即<code>shared_ptr</code>里存的是存储指针，对应的引用计数指针就是对<code>stored pointer</code>的加一，因此<code>shared_ptr</code>在其内部，<strong>给每个资源都维护着一份计数，用来记录该份资源被几个对象共享</strong>；<br/> ②在对象被销毁时，即调用了析构函数，说明自己不使用该资源了，对象的引用计数减一；<br/> ③如果<strong>引用计数是0</strong>，说明自己是最后一个使用该资源的对象，<strong>必须释放该对象</strong>；<br/> ④如果不是0，说明除了自己还有其他对象在使用该份资源，不能释放资源，否则其他对象就成了野指针。<br/> ⑤ <strong>锁指针是为了保证线程安全。</strong> 智能指针对象中引用计数是多个智能指针对象共享的，两个线程中智能指针的引用计数同时<code>++</code>或<code>--</code>，这个操作不是原子的，引用计数原来是1，如果两个线程同时访问，<code>++</code>了两次可能还是2，这样的引用计数都是错乱的，会导致资源未释放或程序崩溃的问题。因此智能指针引用计数<code>++</code>和<code>--</code>是需要加锁的，这样能够保证引用计数的操作是线程安全的。</p>
+<h1><a id="3_shared_ptr_134"></a>3 shared_ptr的基本用法</h1>
+<h2><a id="31__135"></a>3.1 初始化</h2>
+<p>可以通过构造函数、<code>std::make_shared</code>和<code>reset</code>初始化三种初始化方式</p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"stdafx.h"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;future&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;thread&gt;</span></span>
+
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span>
+<span class="token keyword">class</span> <span class="token class-name">Person</span>
+<span class="token punctuation">{<!-- --></span>
+<span class="token keyword">public</span><span class="token operator">:</span>
+    <span class="token function">Person</span><span class="token punctuation">(</span><span class="token keyword">int</span> v<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        value <span class="token operator">=</span> v<span class="token punctuation">;</span>
+        std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"Cons"</span> <span class="token operator">&lt;&lt;</span>value<span class="token operator">&lt;&lt;</span> std<span class="token double-colon punctuation">::</span>endl<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token operator">~</span><span class="token function">Person</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"Des"</span> <span class="token operator">&lt;&lt;</span>value<span class="token operator">&lt;&lt;</span> std<span class="token double-colon punctuation">::</span>endl<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">int</span> value<span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//构造函数初始化</span>
+    std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span>Person<span class="token operator">&gt;</span> <span class="token function">p1</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token function">Person</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// Person(1)的引用计数为1</span>
+	
+    <span class="token comment">//std::make_shared初始化</span>
+    std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span>Person<span class="token operator">&gt;</span> p2 <span class="token operator">=</span> std<span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">make_shared</span><span class="token generic class-name"><span class="token operator">&lt;</span>Person<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">//reset初始化</span>
+    p1<span class="token punctuation">.</span><span class="token function">reset</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token function">Person</span><span class="token punctuation">(</span><span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// 首先生成新对象，然后引用计数减1，引用计数为0，故析构Person(1)</span>
+                            <span class="token comment">// 最后将新对象的指针交给智能指针</span>
+
+    std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span>Person<span class="token operator">&gt;</span> p3 <span class="token operator">=</span> p1<span class="token punctuation">;</span><span class="token comment">//现在p1和p3同时指向Person(3)，Person(3)的引用计数为2</span>
+
+    p1<span class="token punctuation">.</span><span class="token function">reset</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//Person(3)的引用计数为1</span>
+    p3<span class="token punctuation">.</span><span class="token function">reset</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//Person(3)的引用计数为0，析构Person(3)</span>
+    <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>初始化方式有很多，下面具体讲下每个初始化方式的用法<br/> 构造函数初始化方式</p>
+<pre><code class="prism language-cpp"><span class="token comment">//1.通过如下两种方式，可以构造出 shared_ptr&lt;T&gt; 类型的空智能指针，对于空的指针，其初始引用计数方式为0，不是1</span>
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> p1<span class="token punctuation">;</span>             <span class="token comment">//不传入任何实参</span>
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> <span class="token function">p2</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token punctuation">)</span><span class="token punctuation">;</span>    <span class="token comment">//传入空指针 nullptr</span>
+
+
+<span class="token comment">//2.创建指针时，可以明确指向</span>
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> <span class="token function">p3</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//指向一个存有10这个int类型数据的堆内存空间</span>
+
+<span class="token comment">//3.调用拷贝构造函数</span>
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> <span class="token function">p4</span><span class="token punctuation">(</span>p3<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//或者 std::shared_ptr&lt;int&gt; p4 = p3; 如果P3为空，则P4也为空，其引用计数初始值为0，反之，则表明P4和P3指向同一块堆内存，同时堆内存的引用次数会加1.</span>
+
+<span class="token comment">//4.调用移动构造函数</span>
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> <span class="token function">p5</span><span class="token punctuation">(</span>std<span class="token double-colon punctuation">::</span><span class="token function">move</span><span class="token punctuation">(</span>p4<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//或者 std::shared_ptr&lt;int&gt; p5 = std::move(p4); 即P5拥有了P4的堆内存，而P4则变成了空智能指针</span>
+</code></pre>
+<p><code>std::make_shared</code> 初始化方式，<code>C++11 </code>标准中提供了 <code>std::make_shared&lt;T&gt; </code>模板函数，其可以用于初始化<code> shared_ptr</code> 智能指针</p>
+<pre><code class="prism language-cpp"><span class="token comment">//1.定义一个空的智能指针</span>
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> p6 <span class="token operator">=</span> std<span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">make_shared</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 
+
+<span class="token comment">//2.创建指针，并明确指向</span>
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> p7 <span class="token operator">=</span> std<span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">make_shared</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//3.auto关键字代替std::shared_ptr，p8指向一个动态分配的空vector&lt;int&gt;</span>
+<span class="token keyword">auto</span> p8 <span class="token operator">=</span> <span class="token generic-function"><span class="token function">make_shared</span><span class="token generic class-name"><span class="token operator">&lt;</span>vector<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><code>reset</code>初始化</p>
+<pre><code class="prism language-cpp"><span class="token comment">//创建了一个指针，并明确指向</span>
+<span class="token comment">//调用reset（new xxx())重新赋值时，智能指针首先是生成新对象，然后将旧对象的引用计数减1（当然，如果发现引用计数为0时，则析构旧对象），然后将新对象的指针交给智能指针保管。</span>
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> p8 <span class="token operator">=</span> <span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+p8<span class="token punctuation">.</span><span class="token function">reset</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//当智能指针中有值的时候，调用reset()会使引用计数减1，如果引用计数为0时，则析构旧对象</span>
+p8<span class="token punctuation">.</span><span class="token function">reset</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="32__222"></a>3.2 获取原始指针</h2>
+<p>智能指针一般都提供了<code>get()</code>成员函数，用来执行显示转换，即返回智能指针内部的原始指针。</p>
+<pre><code class="prism language-cpp"> std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> <span class="token function">p9</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">(</span><span class="token number">5</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token keyword">int</span> <span class="token operator">*</span>pInt <span class="token operator">=</span> p9<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>如果需要调用成员函数，由于几乎所有的智能指针都重载了 <code>*</code> ，<code>-&gt;</code>操作符，所以直接使用把智能指针当做一般的指针变量来使用就可以了。但是有时候需要传递参数，如果参数是 <code>T*</code>，那么传递一个智能指针类是无法识别的，因此需要使用原始指针。</p>
+<h1><a id="4__232"></a>4 智能指针和动态数组</h1>
+<p>在<code>c++17</code>前<code>std::shared_ptr</code>是不支持动态数组的，如下</p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;memory&gt;</span></span>
+
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token operator">&gt;</span> <span class="token function">sp1</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">[</span><span class="token number">10</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 错误，c++17前不能传递数组类型作为shared_ptr的模板参数</span>
+std<span class="token double-colon punctuation">::</span>unique_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token operator">&gt;</span> <span class="token function">up1</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">[</span><span class="token number">10</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// ok, unique_ptr对此做了特化</span>
+ 
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> <span class="token function">sp2</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">[</span><span class="token number">10</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 错误，可以编译，但会产生未定义行为，请不要这么做</span>
+</code></pre>
+<p><code>sp1</code>错误的原因很明显，然而<code>sp2</code>的就没有那么好找了，究其原因，是因为<code>std::shared_ptr</code>对非数组类型都使用<code>delete p</code>释放资源，显然这对于<code>new int[10]</code>来说是不对的，对它应该使用<code>delete [] p</code>。</p>
+<p>其实<code>c++17</code>前的解决方案并不复杂，我们可以借助<code>std::default_delete</code>，它用于提供对应类型的正确的<code>delete</code>操作，即 <strong>指定删除器</strong> 。</p>
+<h2><a id="41_c17_247"></a>4.1 c++17前需指定删除器</h2>
+<p>智能指针可以指定删除器，当智能指针的引用计数为0时，自动调用指定的删除器来释放内存。<code>std::shared_ptr</code>可以指定删除器的一个原因是在<code>C++11</code>标准中其默认删除器不支持数组对象，比如，对于申请的动态数组来说，<code>shared_ptr</code> 指针默认的释放规则是不支持释放数组的，只能自定义对应的释放规则，才能正确地释放申请的堆内存，这一点需要注意。对于申请的动态数组，释放规则可以使用<code>C++11</code>标准中提供的 <code>default_delete&lt;T&gt; </code>模板类，我们也可以自定义释放规则：</p>
+<pre><code class="prism language-cpp"><span class="token comment">//指定 default_delete 作为释放规则</span>
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> <span class="token function">p6</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">[</span><span class="token number">10</span><span class="token punctuation">]</span><span class="token punctuation">,</span> std<span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">default_delete</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//自定义释放规则</span>
+<span class="token keyword">void</span> <span class="token function">deleteInt</span><span class="token punctuation">(</span><span class="token keyword">int</span><span class="token operator">*</span>p<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">delete</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>p<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token comment">//初始化智能指针，并自定义释放规则</span>
+std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> <span class="token function">p7</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">[</span><span class="token number">10</span><span class="token punctuation">]</span><span class="token punctuation">,</span> deleteInt<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>以上，我们可以用默认的删除器，也可以用制定的删除器进行正确的<code>delete</code>操作，但是用默认删除器的缺点是明显的：</p>
+<ul><li>我们想管理的值是<code>int[]</code>类型的，然而事实上传给模板参数的是<code>int</code></li><li>需要显示提供<code>delete functor</code></li><li>不能使用<code>std::make_shared</code>，无法保证异常安全</li><li><code>c++17</code>前<code>shared_ptr</code>未提供<code>opreator[]</code>，所以当需要类似操作时不得不使用<code>p7.get()[index]</code>的形式</li></ul>
+<h2><a id="42_c17opreatorint_268"></a>4.2 <code>c++17</code>增加了<code>opreator[]</code>和使用<code>int[]</code>类的数组类型做模板参数</h2>
+<p>以上的代码可以简化为：</p>
+<pre><code class="prism language-cpp">std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token operator">&gt;</span> <span class="token function">p7</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">[</span><span class="token number">10</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>对于访问分配的空间，可以将<code>p7.get()[index]</code>替换为<code>p7[index]</code>。看个具体的例子：</p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;memory&gt;</span></span>
+ 
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token operator">&gt;</span> <span class="token function">p7</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">[</span><span class="token number">5</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> <span class="token number">5</span><span class="token punctuation">;</span> <span class="token operator">++</span>i<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        p7<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">(</span>i<span class="token operator">+</span><span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">*</span> <span class="token punctuation">(</span>i<span class="token operator">+</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+ 
+    <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> <span class="token number">5</span><span class="token punctuation">;</span> <span class="token operator">++</span>i<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> p7<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">&lt;&lt;</span> std<span class="token double-colon punctuation">::</span>endl<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><code>c++17</code>缺点：无法使用<code>std::make_shared</code>，而我们除非指定自己的<code>delete functor</code>，否则我们应该尽量使用<code>std::make_shared</code>。</p>
+<h2><a id="43_c20stdmake_shared_294"></a>4.3 <code>c++20</code>支持<code>std::make_shared</code></h2>
+<pre><code class="prism language-cpp"><span class="token keyword">auto</span> up2 <span class="token operator">=</span> std<span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">make_unique</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 从c++14开始，分配一个管理有10个int元素的动态数组的unique_ptr</span>
+ 
+<span class="token comment">// c++20中你可以这样写，与上一句相似，只不过返回的是shared_ptr</span>
+<span class="token keyword">auto</span> sp3 <span class="token operator">=</span> std<span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">make_shared</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h1><a id="5_shared_ptr_304"></a>5 使用<code>shared_ptr</code>需要注意的问题</h1>
+<p>①不要用一个原始指针初始化多个<code>shared_ptr</code>，原因在于，会造成二次销毁，如下所示：</p>
+<pre><code class="prism language-cpp"> <span class="token keyword">int</span> <span class="token operator">*</span>p5 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">;</span>
+ std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> <span class="token function">p6</span><span class="token punctuation">(</span>p5<span class="token punctuation">)</span><span class="token punctuation">;</span>
+ std<span class="token double-colon punctuation">::</span>shared_ptr<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> <span class="token function">p7</span><span class="token punctuation">(</span>p5<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// logic error</span>
+</code></pre>
+<p>②不要在函数实参中创建<code>shared_ptr</code>。因为<code>C++</code>的函数参数的计算顺序在不同的编译器下是不同的。正确的做法是先创建好，然后再传入。</p>
+<pre><code class="prism language-cpp"> <span class="token function">function</span><span class="token punctuation">(</span><span class="token generic-function"><span class="token function">shared_ptr</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">g</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>③看了很多书籍或博客，都说<code>shared_ptr</code>不支持动态数组，但是本地编译器由通过了，这是为啥？</p>
+<p>随着标准越来越新，<code>C++17</code>及以后是支持动态数组的，<code>C++11/14</code>是不支持的，只要是最新的编译器是没问题的。<code>shared_pt</code>r动态数组定义如下：<code>std::shared_ptr&lt;int[]&gt; p(new int[10])</code>;<code>C++11</code> 中<code>shared_ptr</code>默认调用的析构函数是<code>default_delete()</code>，而非<code>default_delete&lt;_Ty[]&gt;</code>，很显然，如果分配数组，当然应该使用<code>delete[]</code>, 所以直到<code>C++17</code>才被支持。</p>
+<p>④避免循环引用。智能指针最大的一个陷阱是循环引用，循环引用会导致内存泄漏。</p>
+<p>⑤线程安全问题。<br/> 参考<a href="https://blog.csdn.net/solstice/article/details/8547547">线程安全</a></p>
+<p>假设一个简单的场景，有 3 个 <code>shared_ptr </code>对象 x、g、n：</p>
+<pre><code class="prism language-cpp">shared_ptr<span class="token operator">&lt;</span>Foo<span class="token operator">&gt;</span> <span class="token function">g</span><span class="token punctuation">(</span><span class="token keyword">new</span> Foo<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 线程之间共享的 shared_ptr</span>
+shared_ptr<span class="token operator">&lt;</span>Foo<span class="token operator">&gt;</span> x<span class="token punctuation">;</span> <span class="token comment">// 线程 A 的局部变量</span>
+shared_ptr<span class="token operator">&lt;</span>Foo<span class="token operator">&gt;</span> <span class="token function">n</span><span class="token punctuation">(</span><span class="token keyword">new</span> Foo<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 线程 B 的局部变量</span>
+</code></pre>
+<p>每个线程需要操作两个成员：new出来的对象以及计数器<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3a256add89ea4aec840c990af62d8515.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASmlheHh4eHh4,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/26aa95ba3cde4499995828e03c6759cf.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASmlheHh4eHh4,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3a393d3c90ad4e528db90be2a72ed55d.png"/></p>
+<p>因此，<code>shared_ptr</code>的线程不安全性在于它需要操作两个成员，即<code>new</code>出来的对象和计数器。在多线程下，不能保证<code>new</code>出来一个对象一定能被放入<code>shared_ptr</code>中，也不能保证智能指针管理的引用计数的正确性，这是因为<code>shared_ptr</code>操作不是一气呵成的。即存在以下情况：同一个<code>shared_ptr</code>对象可以被多线程同时读取。不同的shared_ptr对象可以被多线程同时修改。同一个<code>shared_ptr</code>对象不能被多线程直接修改，但可以通过原子函数完成。因此在创建一个<code>shared_ptr</code>时，需要使用<code>C++11</code>提供的<code>make_shared</code>模板，<code>make_shared</code>创建<code>shared_ptr</code>只申请一次内存，避免了上述错误，也提高了性能，同时在读写操作时，需要加锁。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

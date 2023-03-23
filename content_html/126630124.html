@@ -1,0 +1,190 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="__0"></a>一. 简介</h2>
+<p>这是FPGA之旅的第六个实例设计啦，驱动动态数码管，也是非常重要且基础的硬件电路。在数码管上，可以显示的字符有0-9和A-F，通过数码管，就可以将内部的相关信息直接显示出来，在学习初期使用的比较多，在课设中，一般利用数码管做数字时钟的比较多。其他例如可以显示DS18B20的温度数值和MPU6050传感器的ID值等等。</p>
+<h2><a id="__4"></a>二. 硬件电路</h2>
+<p>每个数码管共有八个LED灯，分别标号为a-f和dp(dp通常用作小数点)，点亮原理和普通的一样。从图中可以看到，八个数码管的八个LED灯连在了一起，进行了复用。这时候，通过上面的LED1-LED8片选来控制当前的数码管是否使能。使能了的数码管正常亮灭，没有使能的，始终处于灭的状态。</p>
+<p>数码管共有两种接法，一种是共阴，即复用端给高电平，对应的LED亮，另外一种为共阳，即复用端给低电平，对应的LED亮<br/> <img alt="在这里插入图片描述" src="image\fcfdbcc85a6e4735988880722b0b676a.png"/></p>
+<p>本实例使用的是共阳数码管。</p>
+<h2><a id="_Verilog_14"></a>三. Verilog代码实现—译码</h2>
+<p>当需要显示的字符为2的时候，很显然，并不能直接给这八个LED灯赋值为2，而是需要经过一个译码，将2转成数码管上显示2所对应的量。译码的过程也很容易，是个体力活，将2对应到数码管上，可以看到需要点亮的LED灯有:a,b,g,c,d，其余的LED灯均灭。如果按照{dp,g,f,e,d,c,b,a}排列组成一个byte的话，那么显示2对应的byte值为8’b1010_0100也就是0xA4，其余字符的译码也是如此。对应成代码如下(只译码了0-9)</p>
+<pre><code class="prism language-c">module <span class="token function">Decode</span><span class="token punctuation">(</span>
+	input<span class="token punctuation">[</span><span class="token number">2</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>	 		 in_data<span class="token punctuation">,</span>		<span class="token comment">//输入的数据</span>
+    output reg<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>	     out_data		<span class="token comment">//解码输出	</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+always@<span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span>
+begin
+	<span class="token keyword">case</span><span class="token punctuation">(</span>in_data<span class="token punctuation">)</span>
+	<span class="token char">'d0:	out_data &lt;= 8'</span>b1100_0000<span class="token punctuation">;</span>
+	<span class="token char">'d1:    out_data &lt;= 8'</span>b1111_1001<span class="token punctuation">;</span>
+	<span class="token char">'d2:    out_data &lt;= 8'</span>b1010_0100<span class="token punctuation">;</span>
+	<span class="token char">'d3:	out_data &lt;= 8'</span>b1011_0000<span class="token punctuation">;</span>
+	<span class="token char">'d4:	out_data &lt;= 8'</span>b1001_1001<span class="token punctuation">;</span>
+	<span class="token char">'d5:	out_data &lt;= 8'</span>b1001_0010<span class="token punctuation">;</span>
+	<span class="token char">'d6:	out_data &lt;= 8'</span>b1000_0010<span class="token punctuation">;</span>
+	<span class="token char">'d7:	out_data &lt;= 8'</span>b1111_1000<span class="token punctuation">;</span>
+	<span class="token char">'d8:	out_data &lt;= 8'</span>b1000_0000<span class="token punctuation">;</span>
+	<span class="token char">'d9:	out_data &lt;= 8'</span>b1001_0000<span class="token punctuation">;</span>
+	<span class="token keyword">default</span><span class="token operator">:</span>	out_data <span class="token operator">&lt;=</span> <span class="token number">8</span>'hff<span class="token punctuation">;</span>
+	endcase
+end
+</code></pre>
+<p>这样就完成了一个译码的模块，将需要显示的数据输入这个模块即可。</p>
+<h2><a id="_Verilog_43"></a>四. Verilog代码显示–数码管显示</h2>
+<p>一个数码管显示的话，就将译码过后的数据，输出即可。动态数码管，什么是动态呢？当数码管的个数达到两个以上的时候，要想显示两个不同的字符的话，这个时候，就需要在数码管的片选端来回切换，利用视觉残留效应，可以在多个数码管上显示不同的信息，来回切换的过程记为动态。</p>
+<p>假如我们需要显示四个数据在数码管上，</p>
+<pre><code class="prism language-c">module <span class="token function">Seg_scan</span><span class="token punctuation">(</span>
+	input	 			clk<span class="token punctuation">,</span>
+	input				rst<span class="token punctuation">,</span>
+
+    output reg<span class="token punctuation">[</span><span class="token number">3</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>		sel<span class="token punctuation">,</span>  <span class="token comment">//数码管片选，低电平选中</span>
+    output reg<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>		dig<span class="token punctuation">,</span>  <span class="token comment">//数码管LED</span>
+	
+    <span class="token comment">//经译码过后的数据</span>
+    input<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>		seg_data_0<span class="token punctuation">,</span>	 	
+	input<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>		seg_data_1<span class="token punctuation">,</span>		
+	input<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>		seg_data_2<span class="token punctuation">,</span>		
+	input<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>		seg_data_3		
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+parameter SCAN_FREQ <span class="token operator">=</span> <span class="token number">100000</span><span class="token punctuation">;</span>     <span class="token comment">//扫描频率</span>
+reg<span class="token punctuation">[</span><span class="token number">30</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>	scan_cnt<span class="token punctuation">;</span>
+reg<span class="token punctuation">[</span><span class="token number">3</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span> 	scan_sel<span class="token punctuation">;</span>     <span class="token comment">//扫描选择</span>
+
+always@<span class="token punctuation">(</span>posedge clk or negedge rst<span class="token punctuation">)</span>
+begin
+	<span class="token keyword">if</span><span class="token punctuation">(</span>rst <span class="token operator">==</span> <span class="token number">1</span>'b0<span class="token punctuation">)</span>
+		scan_cnt <span class="token operator">&lt;=</span> 'd0<span class="token punctuation">;</span>
+	<span class="token keyword">else</span>	<span class="token keyword">if</span><span class="token punctuation">(</span>scan_cnt <span class="token operator">&gt;=</span> SCAN_FREQ<span class="token punctuation">)</span>
+		scan_cnt <span class="token operator">&lt;=</span> 'd0<span class="token punctuation">;</span>
+	<span class="token keyword">else</span>
+		scan_cnt <span class="token operator">&lt;=</span> scan_cnt <span class="token operator">+</span> <span class="token number">1</span>'b1<span class="token punctuation">;</span>
+end
+<span class="token comment">//选择数码管</span>
+always@<span class="token punctuation">(</span>posedge clk or negedge rst<span class="token punctuation">)</span>
+begin
+	<span class="token keyword">if</span><span class="token punctuation">(</span>rst <span class="token operator">==</span> <span class="token number">1</span>'b0<span class="token punctuation">)</span>
+		scan_sel <span class="token operator">&lt;=</span> 'd0<span class="token punctuation">;</span>
+	<span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>scan_cnt <span class="token operator">&gt;=</span> SCAN_FREQ<span class="token punctuation">)</span>
+		<span class="token keyword">if</span><span class="token punctuation">(</span>scan_sel <span class="token operator">&gt;=</span> <span class="token number">3</span>'b100<span class="token punctuation">)</span>
+			scan_sel <span class="token operator">&lt;=</span> <span class="token number">3</span>'b000<span class="token punctuation">;</span>
+		<span class="token keyword">else</span>
+			scan_sel <span class="token operator">&lt;=</span> scan_sel <span class="token operator">+</span> <span class="token number">1</span>'b1<span class="token punctuation">;</span>
+end
+always@<span class="token punctuation">(</span>posedge clk or negedge rst<span class="token punctuation">)</span>
+begin
+	<span class="token keyword">if</span><span class="token punctuation">(</span>rst <span class="token operator">==</span> <span class="token number">1</span>'b0<span class="token punctuation">)</span>
+		begin
+				sel <span class="token operator">&lt;=</span> <span class="token number">4</span>'b1111<span class="token punctuation">;</span>
+				dig <span class="token operator">&lt;=</span> <span class="token number">8</span>'hff<span class="token punctuation">;</span>
+		end
+	<span class="token keyword">else</span>
+		<span class="token keyword">case</span><span class="token punctuation">(</span>scan_sel<span class="token punctuation">)</span>
+		<span class="token number">3</span>'b000<span class="token operator">:</span>
+			begin
+				sel <span class="token operator">&lt;=</span> <span class="token number">4</span>'b1101<span class="token punctuation">;</span>
+				dig <span class="token operator">&lt;=</span> seg_data_0<span class="token punctuation">;</span>
+			end
+		<span class="token number">3</span>'b001<span class="token operator">:</span>
+			begin
+				sel <span class="token operator">&lt;=</span> <span class="token number">4</span>'b1110<span class="token punctuation">;</span>
+				dig <span class="token operator">&lt;=</span> seg_data_1<span class="token punctuation">;</span>
+			end
+		<span class="token number">3</span>'b010<span class="token operator">:</span>
+			begin
+				sel <span class="token operator">&lt;=</span> <span class="token number">4</span>'b1011<span class="token punctuation">;</span>
+				dig <span class="token operator">&lt;=</span> seg_data_2<span class="token punctuation">;</span>
+			end
+		<span class="token number">3</span>'b011<span class="token operator">:</span>
+			begin
+				sel <span class="token operator">&lt;=</span> <span class="token number">4</span>'b0111<span class="token punctuation">;</span>
+				dig <span class="token operator">&lt;=</span> seg_data_3<span class="token punctuation">;</span>
+			end
+		<span class="token number">3</span>'b100<span class="token operator">:</span>
+			begin
+				sel <span class="token operator">&lt;=</span> <span class="token number">4</span>'b0000<span class="token punctuation">;</span>
+				dig <span class="token operator">&lt;=</span> <span class="token number">8</span>'hff<span class="token punctuation">;</span>
+			end	
+		<span class="token keyword">default</span>
+		begin
+				sel <span class="token operator">&lt;=</span> <span class="token number">4</span>'b1111<span class="token punctuation">;</span>
+				dig <span class="token operator">&lt;=</span> <span class="token number">8</span>'hff<span class="token punctuation">;</span>
+		end
+		endcase
+end
+endmodule 
+</code></pre>
+<h2><a id="_testbeach_131"></a>五. testbeach编写</h2>
+<p>接下来就是编写测试模块了，这个模块也很容易，主要是看译码后的数据是否正确，二是数码管的片选端是否正常切换。</p>
+<pre><code class="prism language-c">`timescale <span class="token number">1</span>ns<span class="token operator">/</span><span class="token number">1</span>ps
+module <span class="token function">testbeach</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    reg     clk<span class="token punctuation">;</span>
+    reg     rst<span class="token punctuation">;</span>
+    reg<span class="token punctuation">[</span><span class="token number">2</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>    in_data0<span class="token punctuation">;</span>
+    reg<span class="token punctuation">[</span><span class="token number">2</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>    in_data1<span class="token punctuation">;</span>
+    reg<span class="token punctuation">[</span><span class="token number">2</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>    in_data2<span class="token punctuation">;</span>
+    reg<span class="token punctuation">[</span><span class="token number">2</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>    in_data3<span class="token punctuation">;</span>
+
+    wire<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>   dedata0<span class="token punctuation">;</span>
+    wire<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>   dedata1<span class="token punctuation">;</span>
+    wire<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>   dedata2<span class="token punctuation">;</span>
+    wire<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>   dedata3<span class="token punctuation">;</span>
+
+    wire<span class="token punctuation">[</span><span class="token number">3</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>   sel<span class="token punctuation">;</span>   <span class="token comment">//数码管片选</span>
+    wire<span class="token punctuation">[</span><span class="token number">7</span><span class="token operator">:</span><span class="token number">0</span><span class="token punctuation">]</span>   dig<span class="token punctuation">;</span>   <span class="token comment">//数码管数据</span>
+
+
+    always #<span class="token number">50</span> clk <span class="token operator">&lt;=</span> <span class="token operator">~</span>clk<span class="token punctuation">;</span>
+
+    initial begin
+        clk <span class="token operator">=</span> <span class="token number">1</span>'b0<span class="token punctuation">;</span>
+        rst <span class="token operator">=</span> <span class="token number">1</span>'b1<span class="token punctuation">;</span>
+
+        in_data0 <span class="token operator">&lt;=</span> 'd1<span class="token punctuation">;</span>
+        in_data1 <span class="token operator">&lt;=</span> 'd3<span class="token punctuation">;</span>
+        in_data2 <span class="token operator">&lt;=</span> 'd5<span class="token punctuation">;</span>
+        in_data3 <span class="token operator">&lt;=</span> 'd8<span class="token punctuation">;</span>
+        #<span class="token number">100</span>
+        rst <span class="token operator">=</span> <span class="token number">1</span>'b0<span class="token punctuation">;</span>
+        #<span class="token number">100</span>
+        rst <span class="token operator">=</span> <span class="token number">1</span>'b1<span class="token punctuation">;</span>
+    end
+Decode <span class="token function">DecodeHP1</span><span class="token punctuation">(</span>
+	<span class="token punctuation">.</span><span class="token function">in_data</span>        <span class="token punctuation">(</span>in_data0<span class="token punctuation">)</span><span class="token punctuation">,</span>		<span class="token comment">//输入的数据</span>
+	<span class="token punctuation">.</span><span class="token function">out_data</span>       <span class="token punctuation">(</span>dedata0<span class="token punctuation">)</span>		<span class="token comment">//解码输出	</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+Decode <span class="token function">DecodeHP2</span><span class="token punctuation">(</span>
+	<span class="token punctuation">.</span><span class="token function">in_data</span>        <span class="token punctuation">(</span>in_data1<span class="token punctuation">)</span><span class="token punctuation">,</span>		<span class="token comment">//输入的数据</span>
+	<span class="token punctuation">.</span><span class="token function">out_data</span>       <span class="token punctuation">(</span>dedata1<span class="token punctuation">)</span>		<span class="token comment">//解码输出	</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+Decode <span class="token function">DecodeHP3</span><span class="token punctuation">(</span>
+	<span class="token punctuation">.</span><span class="token function">in_data</span>        <span class="token punctuation">(</span>in_data2<span class="token punctuation">)</span><span class="token punctuation">,</span>		<span class="token comment">//输入的数据</span>
+	<span class="token punctuation">.</span><span class="token function">out_data</span>       <span class="token punctuation">(</span>dedata2<span class="token punctuation">)</span>		<span class="token comment">//解码输出	</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+Decode <span class="token function">DecodeHP4</span><span class="token punctuation">(</span>
+	<span class="token punctuation">.</span><span class="token function">in_data</span>        <span class="token punctuation">(</span>in_data3<span class="token punctuation">)</span><span class="token punctuation">,</span>		<span class="token comment">//输入的数据</span>
+	<span class="token punctuation">.</span><span class="token function">out_data</span>       <span class="token punctuation">(</span>dedata3<span class="token punctuation">)</span>		<span class="token comment">//解码输出	</span>
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+Seg_scan <span class="token function">Seg_scanHP</span><span class="token punctuation">(</span>
+	<span class="token punctuation">.</span><span class="token function">clk</span>                <span class="token punctuation">(</span>clk<span class="token punctuation">)</span><span class="token punctuation">,</span>
+	<span class="token punctuation">.</span><span class="token function">rst</span>                <span class="token punctuation">(</span>rst<span class="token punctuation">)</span><span class="token punctuation">,</span>
+	<span class="token punctuation">.</span><span class="token function">sel</span>                <span class="token punctuation">(</span>sel<span class="token punctuation">)</span><span class="token punctuation">,</span>
+	<span class="token punctuation">.</span><span class="token function">dig</span>                <span class="token punctuation">(</span>dig<span class="token punctuation">)</span><span class="token punctuation">,</span>
+	
+	<span class="token punctuation">.</span><span class="token function">seg_data_0</span>         <span class="token punctuation">(</span>dedata0<span class="token punctuation">)</span><span class="token punctuation">,</span>		
+	<span class="token punctuation">.</span><span class="token function">seg_data_1</span>         <span class="token punctuation">(</span>dedata1<span class="token punctuation">)</span><span class="token punctuation">,</span>		
+	<span class="token punctuation">.</span><span class="token function">seg_data_2</span>         <span class="token punctuation">(</span>dedata2<span class="token punctuation">)</span><span class="token punctuation">,</span>		
+	<span class="token punctuation">.</span><span class="token function">seg_data_3</span>         <span class="token punctuation">(</span>dedata3<span class="token punctuation">)</span>		
+<span class="token punctuation">)</span><span class="token punctuation">;</span>
+endmodule
+</code></pre>
+<p><img alt="在这里插入图片描述" src="image\f32247f7d8a3422aa3f2cb61a9f13bf8.png"/></p>
+<p>仿真波形如上图所示。可以看到片选和所译码给出的数据是一致的，也就是说我们的数码管可以正常显示啦。</p>
+<p>欢迎关注<strong>微信公众号</strong> 回复 F<strong>PGA之旅设计99例之第六例</strong> 获取完整工程。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

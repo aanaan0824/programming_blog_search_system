@@ -1,0 +1,230 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>       网络办公正逐渐成为常态，无纸化办公也是一个潮流，这二者需要电子签章，最简单的方法就是在纸上盖一个章然后扫描成电子图片文件，最后在你的系统加载这个签章电子图片文件。但这样就会些不理想的地方，如果不是透明的，叠加在有文字等的地方会遮盖了原来的内容；如果做成透明的，图片会失真，看上去很不真实。</p>
+<p>       那就用代码画一个签章吧，本来以为是挺简单，其实不是。大小、形状、颜色这些都很受容易处理，难点就在文字按椭圆曲线排列上，涉及到字间距、倾斜角度等，实现起来还是要花一点时间的。</p>
+<p style="text-align:center;"><img alt="" src="image\e7a81edf0455400380d516f7076f0f04.png"/></p>
+<p>        既然是要用代码来画，那就要用到 Graphics 这个GDI了。为了画出高质量边缘无锯齿的透明图形，需要对Graphics的绘画质量进行设置，并清除背景色。</p>
+<pre><code class="hljs">            Image img = new Bitmap(imgWidth, imgHeight);
+            Graphics g = Graphics.FromImage(img);
+            g.SmoothingMode = SmoothingMode.HighQuality;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.CompositingQuality = CompositingQuality.HighQuality;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+            g.Clear(Color.Transparent);
+</code></pre>
+<p>       印章形状有圆形和椭圆形二种，圆形的话高和宽调成165的话打印出来和实际印章大小比较接近，椭圆形的宽和高则设置成197和131，当然在实际中是有不同大小的印章，只要调整宽和高就可。设置好宽和高后就可定义要画的图形大小和位置了，这里包含印章外边框和印章名称二个。</p>
+<p>       印章外边框的大小和位置</p>
+<p>       Rectangle rect = new Rectangle(new Point(2, 2), new Size(imgWidth - 5, imgHeight - 5));</p>
+<p>        圆形印章名称的大小和位置</p>
+<p>        Rectangle rectString = new Rectangle(new Point(6, 6), new Size(imgWidth - 12, imgHeight - 12));</p>
+<p>       椭圆形印章名称的大小和位置</p>
+<p>       rectString = new Rectangle(new Point(9, 9), new Size(imgWidth - 16, imgHeight - 16));</p>
+<p>       画印章外边框比较容易，直接画一个宽度为4的椭圆开就好了，圆形当椭圆一处理</p>
+<p>       g.DrawEllipse(new Pen(foreColor, 4), rect);</p>
+<p>      还要确定印章中心点的坐标</p>
+<p>      Point center = new Point((imgWidth - 1) / 2, (imgHeight - 1) / 2);</p>
+<p>       印章名称的绘画就复杂一点，为了文字的左右对称，需要设置绘画文字的起始角度、字间距和字体。实质上是把文字文字均匀地附加在圆形路径上。</p>
+<pre><code class="hljs">public void DrawEllipseString(Rectangle rect, Graphics g, Font font, Color foreColor, float startAngle, string str, bool isFill, int split)
+        {
+            Point origin = new Point(rect.X + rect.Width / 2, rect.Y + rect.Height / 2);
+            StringFormat format = new StringFormat()
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center,
+            };
+            if (rect.Width == rect.Height)
+            {
+                try
+                {
+                    g.TranslateTransform(origin.X, origin.Y);
+                    g.RotateTransform(startAngle);
+                    float angle = startAngle + 90;
+                    foreach (var c in str)
+                    {
+                        SizeF txtSize = g.MeasureString(c.ToString(), font);
+                        Point pointB = GetPiePoint(rect, angle);
+                        Double distance = GetRealDistance(origin, pointB);
+                        int radius = (int)(distance - txtSize.Height / 2);
+                        PointF pointF = new PointF(0, -radius);
+                        g.DrawString(c.ToString(), font, new SolidBrush(foreColor), pointF, format);
+                        float fltAngle = 360f / str.Length;
+                        if (!isFill) fltAngle = (float)((txtSize.Width + split - 2) / (rect.Width * Math.PI) * 360);
+                        g.RotateTransform(fltAngle);
+                        angle += fltAngle;
+                    }
+                    g.ResetTransform();
+                }
+                catch { }
+            }
+            else
+            {
+                float angle = startAngle - 90;
+                SizeF txtSize = g.MeasureString(str.ToString(), font);
+                rect = new Rectangle(rect.X + (int)txtSize.Height / 2, rect.Y + (int)txtSize.Height / 2, rect.Width - (int)txtSize.Height, rect.Height - (int)txtSize.Height);
+                try
+                {
+                    for (int i = 0; i &lt; str.Length; i++)
+                    {
+                        txtSize = g.MeasureString(str[i].ToString(), font);
+                        Point pointB = GetPiePoint(rect, angle);
+                        double distance = GetRealDistance(origin, pointB);
+                        g.TranslateTransform(pointB.X, pointB.Y);
+                        if (angle == -90)
+                        {
+                            g.RotateTransform(angle + 90);
+                        }
+                        else if (angle == 0)
+                        {
+                            g.RotateTransform(angle + 90);
+                        }
+                        else if (angle == 90)
+                        {
+                            g.RotateTransform(angle + 90);
+                        }
+                        else if (angle == 180)
+                        {
+                            g.RotateTransform(angle + 90);
+                        }
+                        else if (angle == 270)
+                        {
+                            g.RotateTransform(angle + 90);
+                        }
+                        else if (angle == 360)
+                        {
+                            g.RotateTransform(angle - 45);
+                        }
+                        else
+                        {
+                            double a = rect.Width / 2;
+                            double b = rect.Height / 2;
+                            if (rect.Height &gt; rect.Width)
+                            {
+                                a = rect.Height / 2;
+                                b = rect.Width / 2;
+                            }
+                            double c = Math.Sqrt(a * a - b * b);
+                            Point f1 = new Point((int)(origin.X - c), origin.Y);
+                            Point f2 = new Point((int)(origin.X + c), origin.Y);
+                            if (rect.Height &gt; rect.Width)
+                            {
+                                f1 = new Point(origin.X, (int)(origin.Y - c));
+                                f2 = new Point(origin.X, (int)(origin.Y + c));
+                            }
+                            double pf1 = GetRealDistance(f1, pointB);
+                            double pf2 = GetRealDistance(f2, pointB);
+                            double f1f2 = GetRealDistance(f1, f2);
+                            double PC = Math.Acos((distance * distance + pf2 * pf2 - c * c) / (2 * distance * pf2)) / Math.PI * 180;
+                            if (angle &gt; 270) PC = Math.Acos((distance * distance + pf1 * pf1 - c * c) / (2 * distance * pf1)) / Math.PI * 180;
+                            if (angle &lt; 90) PC = Math.Acos((distance * distance + pf1 * pf1 - c * c) / (2 * distance * pf1)) / Math.PI * 180;
+                            if (PC.ToString() == "NaN") PC = 0;
+                            double P = Math.Acos((pf1 * pf1 + pf2 * pf2 - f1f2 * f1f2) / (2 * pf1 * pf2)) / Math.PI * 180;
+                            double Q = P / 2 - PC;
+                            if (P &lt; 0) Q = 0;
+                            if (P == 0) Q = 0;
+                            if (Q.ToString() == "非数字") Q = 0;
+                            if (Q &lt; 0) Q = 0;
+                            float angleQ = angleQ = angle + 90 + (float)Q;
+                            if (angle &gt; 90 &amp;&amp; angle &lt; 180) angleQ = angle + 90 - (float)Q;
+                            if (angle &gt; 270 &amp;&amp; angle &lt; 360) angleQ = angle + 90 - (float)Q;
+                            if (rect.Height &gt; rect.Width) angleQ = angle + 90 - (float)Q;
+                            g.RotateTransform(angleQ);
+                        }
+                        g.TranslateTransform(-pointB.X, -pointB.Y);
+                        g.DrawString(str[i].ToString(), font, new SolidBrush(foreColor), pointB, format);
+                        g.ResetTransform();
+                        float fltAngle = 360f / str.Length;
+                        if (!isFill)
+                        {
+                            double stringWidth = txtSize.Width + split - 2;
+                            for (float n = angle; n &lt; 720; n += 0.1F)
+                            {
+                                Point pointN = GetPiePoint(rect, n);
+                                double stringN = GetRealDistance(pointN, pointB);
+                                if (stringN &gt; stringWidth)
+                                {
+                                    fltAngle = n - angle;
+                                    break;
+                                }
+                            }
+                        }
+                        angle += fltAngle;
+                        if (angle &gt; 360) angle -= 360;
+                    }
+                }
+                catch { }
+            }
+        }</code></pre>
+<p>这里面要计算每一个文字的起始角度和坐标，还要计算二个点之间的距离</p>
+<pre><code class="hljs">public Point GetPiePoint(Rectangle lpRect, float angle)
+        {
+            Point pt = new Point();
+            double a = lpRect.Width / 2.0f;
+            double b = lpRect.Height / 2.0f;
+            if (a == 0 || b == 0) return new Point(lpRect.X, lpRect.Y);
+            //弧度            
+            double radian = angle * Math.PI / 180.0f;
+            //获取弧度正弦值            
+            double yc = Math.Sin(radian);
+            //获取弧度余弦值            
+            double xc = Math.Cos(radian);
+            //获取曲率 r = ab/\Sqrt((a.Sinθ)^2+(b.Cosθ)^2 
+            double radio = (a * b) / Math.Sqrt(Math.Pow(yc * a, 2.0) + Math.Pow(xc * b, 2.0));
+            //计算坐标            
+            double ax = radio * xc;
+            double ay = radio * yc;
+            pt.X = (int)(lpRect.X + a + ax);
+            pt.Y = (int)(lpRect.Y + b + ay);
+            return pt;
+        }
+
+
+public double GetRealDistance(Point pointA, Point pointB)
+        {
+            double distance = Math.Sqrt(Math.Pow(pointA.X - pointB.X, 2.0) + Math.Pow(pointA.Y - pointB.Y, 2.0));
+            return distance;
+        }</code></pre>
+<p>印章中间的五角星形可以用特殊字符来做，但大小等的控制不如直接画线来得方便。</p>
+<pre><code class="hljs">                int radius = 27;
+                PointF[] pentagons = new PointF[] { new PointF(center.X, center.Y - radius),
+                new PointF((float)(center.X + radius * Math.Sin(72 * Math.PI / 180)), (float)(center.Y - radius * Math.Cos(72 * Math.PI / 180))),
+                new PointF((float)(center.X + radius * Math.Sin(36 * Math.PI / 180)), (float)(center.Y + radius * Math.Cos(36* Math.PI / 180))),
+                new PointF((float)(center.X - radius * Math.Sin(36 * Math.PI / 180)),(float)( center.Y + radius * Math.Cos(36 * Math.PI / 180))),
+                new PointF((float)(center.X - radius * Math.Sin(72 * Math.PI / 180)), (float)(center.Y - radius * Math.Cos(72 * Math.PI / 180))),
+                };
+
+                GraphicsPath path = new GraphicsPath(FillMode.Winding);
+                path.AddLine(pentagons[0], pentagons[2]);
+                path.AddLine(pentagons[2], pentagons[4]);
+                path.AddLine(pentagons[4], pentagons[1]);
+                path.AddLine(pentagons[1], pentagons[3]);
+                path.AddLine(pentagons[3], pentagons[0]);
+                path.CloseFigure();
+                g.FillPath(new SolidBrush(foreColor), path);
+</code></pre>
+<p>       印章的中间和底部文字相对简单，把字体设置小一点直接画就是，注意区分圆形和椭圆形。</p>
+<pre><code class="hljs">if (showCenterString)
+            {
+                if (isEllipse)
+                {
+                    g.DrawString(centerString, new Font(font.Name, font.Size - 1), new SolidBrush(foreColor), center, format);
+                }
+                else
+                {
+                    g.DrawString(centerString, new Font(font.Name, font.Size - 4), new SolidBrush(foreColor), center, format);
+                }
+            }
+            if (showBottomString)
+            {
+                if (isEllipse)
+                {
+                    g.DrawString(bottomString, new Font(font.Name, font.Size - 1), new SolidBrush(foreColor), center.X, center.Y + 35, format);
+                }
+                else
+                {
+                    g.DrawString(bottomString, new Font(font.Name, font.Size - 4), new SolidBrush(foreColor), center.X, center.Y + 50, format);
+                }
+            }</code></pre>
+<p><a class="link-info" href="https://download.csdn.net/download/xgh815/86405594" title="自动生成电子印章完整实例下载">自动生成电子印章完整实例下载</a></p>
+</div>
+</div>

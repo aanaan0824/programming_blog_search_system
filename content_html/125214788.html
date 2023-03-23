@@ -1,0 +1,97 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>刷完了<a href="https://github.com/type-challenges/type-challenges">type-challenges</a>的所有简单和中等难度的题目后，对<strong>TypeScript</strong>的类型操作有了一些新的理解和认识。特此用几篇文章来记录下一些重要的知识点。</p>
+<blockquote>
+<p>本系列文章需要您对<strong>TypeScript</strong>有基本的了解</p>
+</blockquote>
+<h4><a id="_6"></a>基本用法</h4>
+<p><strong>JavaScript</strong>通过<code> Object.keys()</code>获取对象的所有属性键值，而<strong>typescript</strong>主要关注的是类型操作，通过 <code>keyof</code> 操作符可以获取对象中的所有键类型组成的<strong>联合类型</strong>。</p>
+<p>为了具体了解<code>keyof</code>操作符的作用，我们通过一些例子来解释下：</p>
+<pre><code>type Person = {
+  id: number;
+  name: string;
+  age: number;
+};
+
+type P1 = keyof Person; //'id' | 'name' | 'age'
+</code></pre>
+<blockquote>
+<p><code>keyof</code>操作符得到的是<code>Person</code>类型的所有键值类型即 <code>'id'</code>,<code>'name'</code>和<code>'age'</code> 三个<strong>字面量类型</strong>组成的联合类型<code>'id' | 'name' | 'age'</code>。</p>
+</blockquote>
+<h4><a id="_24"></a>实际应用</h4>
+<p>接下来我会用一些例子讲解<code>keyof</code>的应用。</p>
+<h6><a id="_28"></a>获取对象所有属性的类型</h6>
+<pre><code>type P2 = Person[keyof Person];  // number | string
+</code></pre>
+<blockquote>
+<ol><li><code>Person['key']</code> 是<strong>查询类型(Lookup Types)</strong>, 可以获取到对应属性类型的类型；</li><li><code>Person[keyof Person]</code>本质上是执行 <code>Person['id' | 'name' | 'age']</code>；</li><li>由于联合类型具有分布式的特性，<code>Person['id' | 'name' | 'age']</code> 变成了 <code>Person['id'] ｜ Person['name'] ｜ Person['age']</code>；</li><li>最后得到的结果就是 <code>number | string</code>.</li></ol>
+</blockquote>
+<h6><a id="_39"></a>约束范型参数的范围</h6>
+<pre><code>type MyPick&lt;T, K extends keyof T&gt; = { [P in K]: T[P] };
+type P3 = MyPick&lt;Person, 'id' | 'age'&gt;
+
+</code></pre>
+<blockquote>
+<ol><li><code>K extends keyof T</code>对<code>K</code>进行了约束，只能是<code>'id'，'name'，'age'</code>中的一个类型或者几个类型组成的联合类型;</li><li>如果没有这个约束，<code>{ [P in K]: T[P] }</code> 则会报错。</li></ol>
+</blockquote>
+<h6><a id="_49"></a>和映射类型组合实现某些功能</h6>
+<ul><li>给对象类型的所有属性加上<code>readonly</code>修饰符</li></ul>
+<pre><code>type MyReadonly&lt;T&gt; = { readonly [P in keyof T]: T[P] };
+type P4 = MyReadonly&lt;Person&gt;;  // { readonly id: number; readonly name: string; readonly age: number; }
+</code></pre>
+<blockquote>
+<ol><li><code>[P in keyof T]</code>是对所有属性的键值类型进行遍历，案例中得到的<code>P</code> 分别是<code>'id'</code>,<code>'name'</code>和<code>'age'</code>;</li><li><code>T[P]</code>是查询类型，上面介绍过了，<code>Person['id']</code> 的结果是<code>number</code>，<code>Person['name']</code> 的结果是<code>string</code>，<code>Person['age']</code> 的结果是<code>number</code>。</li><li>将每个属性类型添加<code>readonly</code>修饰符，最后的结果就是 <code>{ readonly id: number; readonly name: string; readonly age: number; }</code></li></ol>
+</blockquote>
+<ul><li>去掉对象类型的某些属性</li></ul>
+<p>微软官是通过<code>Pick</code> 和<code>exclude</code>组合来实现<code>Omit</code>逻辑的，我们可以通过以下的代码实现同样的功能。</p>
+<pre><code>type MyOmit&lt;T, K&gt; = { [P in keyof T as P extends K ? never : P]: T[P] };
+type P5 = MyOmit&lt;Person, 'id' | 'name'&gt; // {age: number;}
+</code></pre>
+<blockquote>
+<p>代码中的<code>as P extends K ? never : P</code>这部分代码叫做<strong>重映射</strong> ，因为我们不一定需要的是<code>P</code>，有些情况下需要对<code>P</code>进行一些转换；案例中<code>K</code> 中包含的<code>P</code>键值类型则通过<code>never</code>忽略了，相反则保留。所以最后的结果是<code>{age: number;}</code></p>
+</blockquote>
+<ul><li>给对象类型添加新的属性</li></ul>
+<pre><code>type AppendToObject&lt;T, U extends keyof any, V&gt; = {[P in keyof T | U]: P extends keyof T ? T[P] : V}
+type P6 = AppendToObject&lt;Person, 'address', string&gt; // { address: string; id: number; name: string; age: number; }
+</code></pre>
+<h6><a id="_80"></a>和条件类型组合实现功能</h6>
+<ul><li>两个对象类型合并成一个新的类型</li></ul>
+<pre><code>type Merge&lt;F extends Record&lt;string, any&gt;, S extends Record&lt;string, any&gt;&gt; = {
+  [P in keyof F | keyof S]: P extends keyof S ? S[P] : P extends keyof F ? F[P] : never;
+};
+
+type Skill = {
+  run: () =&gt; void;
+}
+
+type P7 = Merge&lt;Person, Skill&gt;; // { id: number; name: string; age: number; run: () =&gt; void; }
+</code></pre>
+<blockquote>
+<p>案例中<code>P extends keyof S ？ X : Y</code> 的部分叫做 <code>条件类型</code>（后面也会单独介绍）。代码中的含义就是如果 <code>P</code>是<code>F</code>的属性类型，则取<code>F[P]</code>，如果<code>P</code>是<code>S</code>的属性类型，则取<code>S[P]</code>。</p>
+</blockquote>
+<h4><a id="_98"></a>小结</h4>
+<p>经过前面的介绍，应该对<code>keyof</code>的使用有一些感觉了。下面我列一些代码，大家可以感受下：</p>
+<pre><code>type _DeepPartial&lt;T&gt; = { [K in keyof T]?: _DeepPartial&lt;T[K]&gt; }
+</code></pre>
+<pre><code>type Diff&lt;T extends Record&lt;string, any&gt;, U extends Record&lt;string, any&gt;&gt; = {
+  [P in keyof U | keyof T as P extends keyof U
+    ? P extends keyof T
+      ? never
+      : P
+    : P extends keyof T
+    ? P
+    : never]: P extends keyof U ? U[P] : P extends keyof T ? T[P] : never;
+};
+
+</code></pre>
+<blockquote>
+<p>这个实现逻辑涉及到了其他的知识点有点复杂，没完全看懂没关系，后面会介绍。</p>
+</blockquote>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,402 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#0__5">0 前言</a></li><li><a href="#1__27">1 简介</a></li><li><a href="#2__31">2 主要器件</a></li><li><a href="#3__37">3 实现效果</a></li><li><a href="#4__44">4 设计原理</a></li><li><a href="#5__63">5 部分核心代码</a></li><li><a href="#5__433">5 最后</a></li></ul>
+</div>
+<p></p>
+<hr color="#000000" size='1"'/>
+<h1><a id="0__5"></a>0 前言</h1>
+<p>🔥 这两年开始毕业设计和毕业答辩的要求和难度不断提升，传统的毕设题目缺少创新和亮点，往往达不到毕业答辩的要求，这两年不断有学弟学妹告诉学长自己做的项目系统达不到老师的要求。</p>
+<p>为了大家能够顺利以及最少的精力通过毕设，学长分享优质毕业设计项目，今天要分享的是</p>
+<p>🚩 <strong>便携式STM32的红外信号分析仪</strong></p>
+<p>🥇学长这里给一个题目综合评分(每项满分5分)</p>
+<ul><li>难度系数：3分</li><li>工作量：3分</li><li>创新点：5分</li></ul>
+<p>🧿 <strong>选题指导, 项目分享：</strong></p>
+<p><a href="https://gitee.com/dancheng-senior/project-sharing-1/blob/master/%E6%AF%95%E8%AE%BE%E6%8C%87%E5%AF%BC/README.md">https://gitee.com/dancheng-senior/project-sharing-1/blob/master/%E6%AF%95%E8%AE%BE%E6%8C%87%E5%AF%BC/README.md</a></p>
+<br/>
+<h1><a id="1__27"></a>1 简介</h1>
+<p>由STM32F411CEU6作为主控芯片的带有姿态感应，红外输入，红外输出，可根据任意录入的红外信号进行存储，然后发出红外线控制各种电器设备, 并具有测电流，电压，电阻，电容能力的手表，是对于电子工程师来说具有较强实用性的小工具。</p>
+<h1><a id="2__31"></a>2 主要器件</h1>
+<ul><li>STM32F411CEU6主控芯片</li><li>ACS712电流传感器芯片</li><li>TC单片机</li></ul>
+<h1><a id="3__37"></a>3 实现效果</h1>
+<p><img alt="在这里插入图片描述" src="image\218a8f7bfc474a63bc356b0e2226d27f.png" width="500"/><br/> <img alt="在这里插入图片描述" src="image\c5a1517f58bc418b8d0c1cf880c5905b.png" width="500"/><br/> <img alt="在这里插入图片描述" src="image\7168cd606b87418ebf9c7f238d28e7ed.png" width="500"/><br/> <img alt="在这里插入图片描述" src="image\cdaee43470bc4f9096f820c6c219f8a2.png" width="500"/></p>
+<h1><a id="4__44"></a>4 设计原理</h1>
+<p><strong>硬件</strong></p>
+<ul><li>电压检测电路，主要是将外部-15v<sub>15v的电压通过几个限压电阻根据KCL和KVL转化成0</sub>3.3v，再由ADC芯片采集；</li><li>电阻检测电路，根据简单的分压原理，将待测电阻通过模拟开关分别与1k和1M欧高精度电阻串联测得分压，从而实现精确测量较大范围内的电阻阻值；</li><li>电容检测电路，根据电容的一阶零状态响应，算出时间常数，再根据串联的电阻计算出接入电容的电容值；</li><li>）红外接收发射电路，采用外加一块STC单片机(一个模块~~~~)，里面预先烧录红外解码程序，再通过串口与STM32通讯，实现对外部输入红外信号的解码和调制发射；</li></ul>
+<p><strong>软件</strong></p>
+<ul><li>姿态解算算法，实现步数计算，抬手感应，翻腕感应，LCD虚拟触屏；</li><li>针对不同红外信号的解码和发射算法，红外信号存储算法等；</li><li>电阻，电容测量算法；</li><li>自制定时器系统任务调度算法。</li></ul>
+<p><strong>主要原理图</strong><br/> <img alt="在这里插入图片描述" src="image\f12b9ce07f034535bf45c95688b7f4c3.png" width="500"/></p>
+<h1><a id="5__63"></a>5 部分核心代码</h1>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"main.h"</span></span>
+
+
+
+<span class="token comment">/********************变量声明区_START********************/</span>
+u8 flag_Power_On <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">,</span> flag_MPU_Refresh <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+bool LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+<span class="token class-name">uint8_t</span> RTC_hour <span class="token operator">=</span> <span class="token number">23</span><span class="token punctuation">,</span> RTC_minute <span class="token operator">=</span> <span class="token number">14</span><span class="token punctuation">,</span> RTC_second <span class="token operator">=</span> <span class="token number">10</span><span class="token punctuation">;</span>
+u8 IR_flag <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">,</span> IR_Channel <span class="token operator">=</span> <span class="token number">0x01</span><span class="token punctuation">,</span> flag_BEEP <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">,</span> flag_ADS_readC <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">,</span> flag_ADS_readR <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+
+u8 Arm_Position <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+
+<span class="token keyword">short</span> aacx<span class="token punctuation">,</span> aacy<span class="token punctuation">,</span> aacz<span class="token punctuation">;</span>		<span class="token comment">//加速度传感器原始数据</span>
+
+bool Raised_Flag <span class="token operator">=</span> false<span class="token punctuation">;</span>
+bool Reversed_Flag <span class="token operator">=</span> false<span class="token punctuation">;</span>
+
+u8 flag_of_STATE <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token class-name">uint16_t</span> Menu_Pointer<span class="token punctuation">[</span><span class="token number">7</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">35</span><span class="token punctuation">,</span> <span class="token number">69</span><span class="token punctuation">,</span> <span class="token number">103</span><span class="token punctuation">,</span> <span class="token number">137</span><span class="token punctuation">,</span> <span class="token number">171</span><span class="token punctuation">,</span> <span class="token number">205</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+u8 Fill_IR_Code<span class="token punctuation">[</span><span class="token number">4</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">}</span><span class="token punctuation">;</span>		<span class="token comment">//显示红外码存储区是否为空：0-空 1-有</span>
+<span class="token class-name">uint16_t</span> time_set_Pos<span class="token punctuation">[</span><span class="token number">4</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token number">54</span><span class="token punctuation">,</span> <span class="token number">102</span><span class="token punctuation">,</span> <span class="token number">150</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token class-name">uint16_t</span> clock_set_Pos<span class="token punctuation">[</span><span class="token number">3</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token number">5</span><span class="token punctuation">,</span> <span class="token number">135</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">/**
+ * @brief 决定系统状态的选择
+ * @param 菜单;红外收发模式;红外通道选择模式;陀螺仪模式;模拟量测试模式;
+ */</span>
+<span class="token keyword">enum</span> <span class="token class-name">STATUS</span> <span class="token punctuation">{<!-- --></span>
+    MENU <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">,</span>
+    TIMERUN<span class="token punctuation">,</span>
+    TIME_SET<span class="token punctuation">,</span>
+    CLOCK_SET<span class="token punctuation">,</span>
+    IR_REMOTE<span class="token punctuation">,</span>
+    IR_CHANNEL_CHOOSE<span class="token punctuation">,</span>
+    MPU6050<span class="token punctuation">,</span>
+    AD_VAL<span class="token punctuation">,</span>
+<span class="token punctuation">}</span> STATE<span class="token punctuation">;</span>
+
+
+
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span>  <span class="token macro-name">PUT_UP</span>     <span class="token expression"><span class="token number">1</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span>  <span class="token macro-name">LAY_DOWN</span>   <span class="token expression"><span class="token number">2</span></span></span>
+
+<span class="token comment">//mpu6050</span>
+<span class="token keyword">short</span> cnt_up <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token keyword">short</span> cnt_down <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token keyword">short</span> cnt_reverse <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token keyword">short</span> cnt_raising <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+
+<span class="token keyword">short</span> Stale_aacx_Data <span class="token operator">=</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+<span class="token keyword">short</span> Stale_aacy_Data <span class="token operator">=</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+
+<span class="token keyword">short</span> Reverse_status <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token comment">/********************变量声明区_END********************/</span>
+
+
+
+<span class="token comment">/********************API声明区_START********************/</span>
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">Proc2msTask</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>    <span class="token comment">//处理2ms任务</span>
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">Proc50msTask</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>   <span class="token comment">//处理50ms任务</span>
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">InitSoftware</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">InitHardware</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+<span class="token keyword">void</span> <span class="token function">ST7789_SHOW</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">void</span> <span class="token function">KEY_Process</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">Get_Arm_Position</span><span class="token punctuation">(</span><span class="token keyword">short</span><span class="token operator">*</span> aacx<span class="token punctuation">,</span> <span class="token keyword">short</span><span class="token operator">*</span> aacy<span class="token punctuation">,</span> <span class="token keyword">short</span><span class="token operator">*</span> aacz<span class="token punctuation">,</span> u8<span class="token operator">*</span> Arm_Position<span class="token punctuation">,</span> bool<span class="token operator">*</span> Raised_Flag<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">static</span>  bool  <span class="token function">Judge_Wrist_Reverse</span><span class="token punctuation">(</span><span class="token keyword">short</span><span class="token operator">*</span> aacx<span class="token punctuation">,</span> <span class="token keyword">short</span><span class="token operator">*</span> aacy<span class="token punctuation">,</span> <span class="token keyword">short</span><span class="token operator">*</span> aacz<span class="token punctuation">,</span> u8<span class="token operator">*</span> Arm_Position<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">void</span> <span class="token function">MPU6050_Process</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">Page0_Menu</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">Page1_TimeRunning</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">Page2_Timeset</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//static  void  Page3_Clockset1(void);</span>
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">Page4_Clockset2</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">Page5_IR_Remote</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">Page7_AD_VAL</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">/********************API声明区_END********************/</span>
+
+
+
+<span class="token comment">/*********************************************************************************************************
+* 函    数: main
+* 注    意: 作者为了让main看起来更漂亮，整了些花里胡哨的API QWQ
+*********************************************************************************************************/</span>
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+
+    <span class="token function">InitSoftware</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">InitHardware</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    STATE <span class="token operator">=</span> MENU<span class="token punctuation">;</span>
+    <span class="token function">ST7789_Fill_Color</span><span class="token punctuation">(</span>WHITE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+
+        <span class="token keyword">if</span><span class="token punctuation">(</span>flag_Power_On<span class="token punctuation">)</span><span class="token function">Proc2msTask</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span>flag_MPU_Refresh <span class="token operator">==</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            flag_MPU_Refresh <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+            <span class="token function">ST7789_Fill_Color</span><span class="token punctuation">(</span>BLACK<span class="token punctuation">)</span><span class="token punctuation">;</span>
+			<span class="token keyword">if</span><span class="token punctuation">(</span>flag_Power_On<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+				LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+				<span class="token function">ST7789_Fill_Color</span><span class="token punctuation">(</span>WHITE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+        <span class="token function">Proc50msTask</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+
+
+
+
+<span class="token comment">/*********************************************************************************************************
+*                                              内部函数实现
+*********************************************************************************************************/</span>
+<span class="token comment">/*********************************************************************************************************
+* 函数名称: Proc2msTask
+* 函数功能: 处理2ms任务
+* 输入参数: void
+* 输出参数: void
+* 返 回 值: void
+* 注    意:
+*********************************************************************************************************/</span>
+<span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">Proc2msTask</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token function">Get2msFlag</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">static</span> u8 <span class="token class-name">tmp_t</span> <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span>LCD_Already_Updated<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token function">ST7789_SHOW</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">if</span><span class="token punctuation">(</span>flag_BEEP <span class="token operator">==</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token function">BEEP</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            flag_BEEP <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>flag_BEEP <span class="token operator">==</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">for</span><span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> <span class="token number">5</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token function">BEEP</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            flag_BEEP <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token class-name">tmp_t</span> <span class="token operator">==</span> <span class="token number">5</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token function">KEY_Process</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name">tmp_t</span> <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token class-name">tmp_t</span><span class="token operator">++</span><span class="token punctuation">;</span>
+
+        <span class="token function">Clr2msFlag</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/*********************************************************************************************************
+* 函数名称: Proc50msTask
+* 函数功能: 处理50ms任务
+* 输入参数: void
+* 输出参数: void
+* 返 回 值: void
+* 注    意:
+*********************************************************************************************************/</span>
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">Proc50msTask</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token function">Get50msFlag</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">MPU6050_Process</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token function">Clr50msFlag</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+
+
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">InitSoftware</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+
+<span class="token punctuation">}</span>
+
+<span class="token keyword">static</span>  <span class="token keyword">void</span>  <span class="token function">InitHardware</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token function">SystemInit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token function">NVIC_PriorityGroupConfig</span><span class="token punctuation">(</span>NVIC_PriorityGroup_2<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置系统中断优先级分组2</span>
+    <span class="token function">delay_init</span><span class="token punctuation">(</span><span class="token number">104</span><span class="token punctuation">)</span><span class="token punctuation">;</span>  			<span class="token comment">//初始化延时函数</span>
+    <span class="token function">uart_init</span><span class="token punctuation">(</span><span class="token number">115200</span><span class="token punctuation">)</span><span class="token punctuation">;</span>			<span class="token comment">//初始化串口</span>
+    <span class="token function">InitTimer</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>				<span class="token comment">//初始化任务调度定时器</span>
+    <span class="token function">GPIO_ALLInit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>				<span class="token comment">//初始化蜂鸣器，LED，KEY外设</span>
+    <span class="token function">five_keys_exti_config</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>	<span class="token comment">//初始化五向按键</span>
+    <span class="token function">ST7789_Init</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>				<span class="token comment">//初始化LCD-ST7789</span>
+    <span class="token function">MPU_Init</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>					<span class="token comment">//初始化MPU6050</span>
+    <span class="token function">My_RTC_Init</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">RTC_Set_WakeUp</span><span class="token punctuation">(</span>RTC_WakeUpClock_CK_SPRE_16bits<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>		<span class="token comment">//配置WAKE UP中断,1秒钟中断一次</span>
+
+    <span class="token keyword">while</span><span class="token punctuation">(</span><span class="token function">mpu_dmp_init</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"MPU6050 Init Error!\r\n"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">delay_ms</span><span class="token punctuation">(</span><span class="token number">200</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"Init OK\r\n"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+
+
+<span class="token keyword">void</span> <span class="token function">ST7789_SHOW</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">switch</span><span class="token punctuation">(</span>STATE<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+
+    <span class="token keyword">case</span> MENU<span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">SPI_ChangeConfig</span><span class="token punctuation">(</span>LCD<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">Page0_Menu</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        LCD_Already_Updated <span class="token operator">=</span> true<span class="token punctuation">;</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">case</span> TIMERUN<span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">SPI_ChangeConfig</span><span class="token punctuation">(</span>LCD<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">Page1_TimeRunning</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        LCD_Already_Updated <span class="token operator">=</span> true<span class="token punctuation">;</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">case</span> TIME_SET<span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">SPI_ChangeConfig</span><span class="token punctuation">(</span>LCD<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">Page2_Timeset</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        LCD_Already_Updated <span class="token operator">=</span> true<span class="token punctuation">;</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">case</span> CLOCK_SET<span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">SPI_ChangeConfig</span><span class="token punctuation">(</span>LCD<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">Page4_Clockset2</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        LCD_Already_Updated <span class="token operator">=</span> true<span class="token punctuation">;</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">case</span> IR_REMOTE<span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">SPI_ChangeConfig</span><span class="token punctuation">(</span>LCD<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">Page5_IR_Remote</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        LCD_Already_Updated <span class="token operator">=</span> true<span class="token punctuation">;</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">case</span> IR_CHANNEL_CHOOSE<span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">SPI_ChangeConfig</span><span class="token punctuation">(</span>LCD<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">ST7789_DrawImage</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">240</span><span class="token punctuation">,</span> <span class="token number">240</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token class-name">uint16_t</span> <span class="token operator">*</span><span class="token punctuation">)</span>IR_ChannelChoosing<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        LCD_Already_Updated <span class="token operator">=</span> true<span class="token punctuation">;</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">case</span> AD_VAL<span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">SPI_ChangeConfig</span><span class="token punctuation">(</span>ADS<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">cin_get_cap_init</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">ADS1118GPIOInit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">ADS1118_Init</span><span class="token punctuation">(</span>ADS1118_SS_NONE<span class="token punctuation">,</span> ADS1118_MODE_LX<span class="token punctuation">,</span> ADS1118_DR_128<span class="token punctuation">,</span> ADS1118_PULL_UP_EN_E<span class="token punctuation">,</span> ADS1118_NOP_W<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">SPI_ChangeConfig</span><span class="token punctuation">(</span>LCD<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">Page7_AD_VAL</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">default</span> <span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+        LCD_Already_Updated <span class="token operator">=</span> true<span class="token punctuation">;</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+
+
+<span class="token keyword">void</span> <span class="token function">KEY_Process</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    u8 key <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    key <span class="token operator">=</span> <span class="token function">KEY_Scan</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//得到键值</span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span>key<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">switch</span><span class="token punctuation">(</span>key<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">case</span> KEY1_PRES<span class="token operator">:</span>
+            <span class="token comment">//红外选择通道：1/2/3/4</span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> IR_CHANNEL_CHOOSE<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                IR_Channel <span class="token operator">=</span> <span class="token number">0x01</span><span class="token punctuation">;</span>
+                STATE <span class="token operator">=</span> MENU<span class="token punctuation">;</span>
+                LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+                <span class="token function">ST7789_Fill_Color</span><span class="token punctuation">(</span>WHITE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token comment">//红外收发模式</span>
+            <span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> IR_REMOTE<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                IR_flag <span class="token operator">=</span> <span class="token operator">!</span>IR_flag<span class="token punctuation">;</span>
+                <span class="token keyword">if</span><span class="token punctuation">(</span>IR_flag<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    LED2 <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+                    <span class="token function">memset</span><span class="token punctuation">(</span>USART_RX_BUF<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span>USART_RX_BUF<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token function">USART1_Tx_Puts</span><span class="token punctuation">(</span>cmd_stor_buffer1<span class="token punctuation">,</span> IR_Channel<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+                    LED2 <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                    <span class="token keyword">if</span><span class="token punctuation">(</span>flag_USART_Get<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                        Fill_IR_Code<span class="token punctuation">[</span>IR_Channel <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                        LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+						flag_USART_Get <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+                        Fill_IR_Code<span class="token punctuation">[</span>IR_Channel <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+                        LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+						flag_USART_Get <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                    <span class="token comment">//print_buffer;</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> AD_VAL<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                flag_ADS_readC <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token function">BEEP</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">break</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">case</span> KEY2_PRES<span class="token operator">:</span>
+            <span class="token comment">//红外选择通道：1/2/3/4</span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> IR_CHANNEL_CHOOSE<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                IR_Channel <span class="token operator">=</span> <span class="token number">0x02</span><span class="token punctuation">;</span>
+                STATE <span class="token operator">=</span> MENU<span class="token punctuation">;</span>
+                LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+                <span class="token function">ST7789_Fill_Color</span><span class="token punctuation">(</span>WHITE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token comment">//红外收发模式</span>
+            <span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> IR_REMOTE<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token function">USART1_Tx_Puts</span><span class="token punctuation">(</span>cmd_send_buffer1<span class="token punctuation">,</span> IR_Channel<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> AD_VAL<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                flag_ADS_readR <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token function">BEEP</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">break</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">case</span> KEY3_PRES<span class="token operator">:</span>
+            <span class="token comment">//红外选择通道：1/2/3/4</span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> IR_CHANNEL_CHOOSE<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                IR_Channel <span class="token operator">=</span> <span class="token number">0x03</span><span class="token punctuation">;</span>
+                STATE <span class="token operator">=</span> MENU<span class="token punctuation">;</span>
+                LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+                <span class="token function">ST7789_Fill_Color</span><span class="token punctuation">(</span>WHITE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> TIME_SET<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token function">ST7789_DrawRectangle</span><span class="token punctuation">(</span>time_set_Pos<span class="token punctuation">[</span>time_set_Pos<span class="token punctuation">[</span><span class="token number">3</span><span class="token punctuation">]</span><span class="token punctuation">]</span><span class="token punctuation">,</span> <span class="token number">110</span><span class="token punctuation">,</span>
+                                     time_set_Pos<span class="token punctuation">[</span>time_set_Pos<span class="token punctuation">[</span><span class="token number">3</span><span class="token punctuation">]</span><span class="token punctuation">]</span> <span class="token operator">+</span> <span class="token number">36</span><span class="token punctuation">,</span> <span class="token number">148</span><span class="token punctuation">,</span> WHITE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                time_set_Pos<span class="token punctuation">[</span><span class="token number">3</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">(</span>time_set_Pos<span class="token punctuation">[</span><span class="token number">3</span><span class="token punctuation">]</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token operator">?</span> <span class="token number">2</span> <span class="token operator">:</span> <span class="token punctuation">(</span>time_set_Pos<span class="token punctuation">[</span><span class="token number">3</span><span class="token punctuation">]</span> <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> CLOCK_SET<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token function">ST7789_DrawRectangle</span><span class="token punctuation">(</span>clock_set_Pos<span class="token punctuation">[</span>clock_set_Pos<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">]</span><span class="token punctuation">,</span> <span class="token number">50</span><span class="token punctuation">,</span>
+                                     clock_set_Pos<span class="token punctuation">[</span>clock_set_Pos<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">]</span> <span class="token operator">+</span> <span class="token number">100</span><span class="token punctuation">,</span> <span class="token number">150</span><span class="token punctuation">,</span> WHITE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                clock_set_Pos<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">(</span>clock_set_Pos<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token operator">?</span> <span class="token number">1</span> <span class="token operator">:</span> <span class="token number">0</span><span class="token punctuation">;</span>
+                LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token function">BEEP</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">break</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">case</span> KEY4_PRES<span class="token operator">:</span>
+            <span class="token comment">//红外选择通道：1/2/3/4</span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> IR_CHANNEL_CHOOSE<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                IR_Channel <span class="token operator">=</span> <span class="token number">0x04</span><span class="token punctuation">;</span>
+                STATE <span class="token operator">=</span> MENU<span class="token punctuation">;</span>
+                LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+                <span class="token function">ST7789_Fill_Color</span><span class="token punctuation">(</span>WHITE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> TIME_SET<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span><span class="token punctuation">(</span>time_set_Pos<span class="token punctuation">[</span><span class="token number">3</span><span class="token punctuation">]</span> <span class="token operator">==</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    RTC_second <span class="token operator">=</span> <span class="token punctuation">(</span>RTC_second <span class="token operator">==</span> <span class="token number">59</span><span class="token punctuation">)</span> <span class="token operator">?</span> <span class="token number">0</span> <span class="token operator">:</span> RTC_second <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>time_set_Pos<span class="token punctuation">[</span><span class="token number">3</span><span class="token punctuation">]</span> <span class="token operator">==</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    RTC_minute <span class="token operator">=</span> <span class="token punctuation">(</span>RTC_minute <span class="token operator">==</span> <span class="token number">59</span><span class="token punctuation">)</span> <span class="token operator">?</span> <span class="token number">0</span> <span class="token operator">:</span> RTC_minute <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+                    RTC_hour <span class="token operator">=</span> <span class="token punctuation">(</span>RTC_hour <span class="token operator">==</span> <span class="token number">23</span><span class="token punctuation">)</span> <span class="token operator">?</span> <span class="token number">0</span> <span class="token operator">:</span> RTC_hour <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>STATE <span class="token operator">==</span> CLOCK_SET<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span><span class="token punctuation">(</span>clock_set_Pos<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span> <span class="token operator">==</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    RTC_minute <span class="token operator">=</span> <span class="token punctuation">(</span>RTC_minute <span class="token operator">==</span> <span class="token number">59</span><span class="token punctuation">)</span> <span class="token operator">?</span> <span class="token number">0</span> <span class="token operator">:</span> RTC_minute <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+                    RTC_hour <span class="token operator">=</span> <span class="token punctuation">(</span>RTC_hour <span class="token operator">==</span> <span class="token number">23</span><span class="token punctuation">)</span> <span class="token operator">?</span> <span class="token number">0</span> <span class="token operator">:</span> RTC_hour <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token function">BEEP</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">break</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        LCD_Already_Updated <span class="token operator">=</span> false<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span> <span class="token comment">//else delay_ms(10);</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<br/>
+<h1><a id="5__433"></a>5 最后</h1>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

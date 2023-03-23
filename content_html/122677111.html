@@ -1,0 +1,416 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#_1">前言</a></li><li><ul><li><a href="#_2">概念简介</a></li><li><a href="#_15">观察者模式？发布-订阅模式？</a></li></ul>
+</li><li><a href="#_47">观察者（发布-订阅）模式应用</a></li><li><ul><li><a href="#_53">不用设计模式实现</a></li><li><a href="#_130">用接口实现</a></li><li><ul><li><a href="#_131">观察者模式代码结构介绍</a></li><li><a href="#_185">实现发布-订阅模式</a></li></ul>
+</li><li><a href="#_295">用事件实现</a></li><li><a href="#_398">改进</a></li><li><ul><li><a href="#_403">接口法改进方式</a></li><li><a href="#_557">事件管理中心</a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<h1><a id="_1"></a>前言</h1>
+<h2><a id="_2"></a>概念简介</h2>
+<p>先来看一段比较正式的介绍：<br/> 观察者模式是软件开发中一种十分常见的设计模式，又被称为<strong>发布-订阅（Publish/Subscribe）模式</strong>，属于行为型模式的一种。它定义了一种一对多的依赖关系，让多个<strong>观察者对象</strong>(Observer)同时监听某一个<strong>主题对象</strong>(Subject)。这个主题对象在状态变化时，会通知所有的观察者对象，使他们能够自动更新自己。</p>
+<p>以运动会的跑步比赛为例，假设场上有这几个对象：裁判，运动员，观众。那怎么才能知道比赛开始呢？这时候运动员和观众就会作为观察者，“关注”裁判（此时裁判就是主题对象），当裁判的发令枪响起时（主题对象状态发生改变），标志着比赛开始。然后运动员和观众收到“比赛开始”的通知后，各自做出他们的响应（观察者状态更新）：跑步运动员向终点奔去，观众开始注视场上的赛况。</p>
+<p>所以整合一下，观察者模式要包括这些组成部分：<br/> 1）一个主题对象，这个名词看起来比较抽象，我们干脆叫它 <strong>“被观察者”</strong> 吧<br/> 2）多个 <strong>关注/订阅</strong> 被观察者的 <strong>观察者</strong><br/> 3）被观察者的状态发生改变时，观察者会收到通知，然后观察者会做出他们各自的响应（或者说改变他们自己的状态）</p>
+<h2><a id="_15"></a>观察者模式？发布-订阅模式？</h2>
+<p>关于“观察者模式和发布-订阅模式算不算两个独立的设计模式”这一讨论也是争议不断。<br/> 之前提过观察者模式的别称是“发布-订阅模式”，但是有些地方会说这两种模式是不同的两个模式。<br/> 从两者的<font color="red">实现结构</font>来看，确实会有些不同。我这里用两张图来进行比较：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5cb4c766ea99474a9cc2053d0ff58408.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWVktbmI=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f6a1027b604a4435906ec18baacc966f.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWVktbmI=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>可以明显地看到，发布-订阅模式在原来的观察者和被观察者之间加了一个<strong>调度中心</strong>。<br/> 那么消息发送者(Publisher)就不会将消息直接发送给订阅者(Subscriber)，这意味着发布者和订阅者不知道彼此的存在。他们之间的通信全交给了作为第三方的调度中心。</p>
+<p>同样举个生活中的例子：一个 CSDN 博主被好几个粉丝关注，这些粉丝充当了“订阅者”的角色，他们“关注”（订阅）了博主。每当博主（消息发送者）发了一条新的博客，这条博客是发到了 CSDN 平台（作为调度中心）上，那么 CSDN 平台会将“博主发了一条新博客”这个消息通知给关注博主的粉丝们，然后这些粉丝就会做出他们各自的响应（比如浏览博文，点赞之类的）。<br/> 有了调度中心后，博主只要安心地专注于发博客这件事情身上，他不用管谁是他的粉丝，因为“把更新消息发给粉丝”这件事是由 CSDN 平台这个调度中心来执行的，无需博主亲自通知；粉丝关注博主也是借由 CSDN 平台来记录的。<br/> 总结来说，此时 CSDN 平台知道一个博主的粉丝具体是谁，然后当博主在 CSDN 平台上发博客时，CSDN 平台就通知该博主的所有粉丝。</p>
+<p>用程序的话语来解释：</p>
+<blockquote>
+<p>订阅者把自己想订阅的事件注册到调度中心，在发布者发布该事件到调度中心后，由调度中心统一调度订阅者用于响应事件的处理代码（订阅者收到事件触发消息后所要做的事）。</p>
+</blockquote>
+<p>那么对于发布-订阅模式：<br/> 1）一共有3个组成部分：发布者，订阅者，调度中心<br/> 2）发布者和订阅者<strong>完全不存在耦合</strong>。<br/> 对于观察者模式：<br/> 1）一共有2个组成部分：被观察者，观察者<br/> 2）被观察者和观察者是直接关联的，但它们是松耦合。这个是指被观察者状态变化时会自动触发观察者状态的变化，只是被观察者需要知道谁是观察者。</p>
+<p>但是发布-订阅模式弱化了对象之间的关联也会存在一些缺点，过度使用可能会使代码不好理解（这个后面会根据实际例子进行说明）</p>
+<p>从<strong>组成结构</strong>上来看，它们确实会有不同。<br/> 从<strong>实现目的</strong>来看，它们是相同的，都是一个对象的状态发生改变时会通知那些与此对象关联的其他对象。<br/> 我的个人理解是，发布-订阅模式是观察者模式的变种，也可以说是观察者模式的优化升级。我们也许不必把太纠结于“它们是不是同一种设计模式”，而是要充分学习它们的思想，在合适的时候运用到实际的开发中，为我们带来便利。不过理解它们在<strong>组成结构</strong>上的区别还是有必要的，万一面试会考呢？</p>
+<h1><a id="_47"></a>观察者（发布-订阅）模式应用</h1>
+<p>试想一个常见的游戏场景：玩家 Gameover（死亡）<br/> 玩家死亡时，会伴随着其他的一些事情发生，比如敌人停止移动，界面出现游戏失败 UI …<br/> 这里我们先来考虑玩家死亡时敌人停止移动怎么实现<br/> 注：这里就不展示敌人停止移动具体的代码实现了，我们用一个输出语句来表示；然后为了快速表示玩家死亡，我直接按下键盘的J键来触发</p>
+<h2><a id="_53"></a>不用设计模式实现</h2>
+<p>那么<strong>借助 Unity 引擎和 C# 语言</strong>，我们用一种简单的实现方式：<br/> 首先简单搭下游戏场景<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/314bc7f8592a4bad942d29d09b50ba88.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWVktbmI=,size_10,color_FFFFFF,t_70,g_se,x_16"/><br/> 球表示玩家，方块表示敌人。<br/> 敌人脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Enemy</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">StopMove</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">print</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">gameObject<span class="token punctuation">.</span>name</span><span class="token punctuation">}</span></span><span class="token string">停止移动"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>敌人停止移动时把信息输出在控制台上。</p>
+<p>玩家脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Player</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token class-name">Enemy<span class="token punctuation">[</span><span class="token punctuation">]</span></span> enemies<span class="token punctuation">;</span>
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Update</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>Input<span class="token punctuation">.</span><span class="token function">GetKeyDown</span><span class="token punctuation">(</span>KeyCode<span class="token punctuation">.</span>J<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token function">PlayerDead</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">PlayerDead</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">NotifyEnemy</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">NotifyEnemy</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> enemies<span class="token punctuation">.</span>Length<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            enemies<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">StopMove</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>让玩家持有敌人的引用，然后玩家死亡时去调用敌人的 StopMove 方法。<br/> 然后我们要在 Unity 编辑器里<strong>通过拖拽的方式</strong>把敌人游戏物体赋给 Player 的 enemies 数组<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c7834d8e900147f38c832427352babb4.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWVktbmI=,size_10,color_FFFFFF,t_70,g_se,x_16"/><br/> 那么当我们运行游戏，按下 J 键时就会看到控制台输出了我们想要的结果：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3fcc2623f2b54a65816d89d3d1c261cb.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWVktbmI=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 到这里我们的需求就实现完了，是不是很简单呀？不用什么观察者模式都能实现。<br/> 那么现在我给项目<strong>增加需求</strong>（你是故意找茬是不是？）（其实需求变化在软件开发中是很常见的事啦，习惯就好）<br/> <font color="red">玩家死亡后，不仅要让敌人停止移动，还要显示游戏失败的UI</font><br/> 为了表示方便，我还是用输出语句来模拟<br/> UI 脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">GameoverUI</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ShowGameOver</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">print</span><span class="token punctuation">(</span><span class="token string">"Game over"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>修改玩家脚本：<br/> <img alt="" src="image\7b3b3d88ec004cddbb09af7c915a5854.png"/><br/> 我们同样在编辑器中通过拖拽的方式为新增的公有变量 gameoverUI 赋值，并且还要修改 PlayerDead 方法。<br/> 可以看到玩家脚本需要持有与它相关联的其他所有脚本对象，进而去调用这些脚本拥有的方法。<br/> 也就是<strong>一个类要去调用另一个类的方法，一种最简单的方式就是去引用另一个类的对象</strong>。Player 脚本拥有了 Enemy 和 GameoverUI 类的成员，在通过面板拖拽实例化后，便能调用 Enemy 类和 GameoverUI 类的方法。<br/> 那么设想如果玩家死亡会触发一系列对象状态的改变，远不止我们前面设置的2个需求，我们就不得不在玩家类中添加其他脚本的对象引用，这么做<strong>伴随着几个缺点</strong>：</p>
+<ol><li>玩家类和其他与玩家死亡所关联的类会紧紧地耦合在一起，比如说 Enemy 类原先的 StopMove 方法换了个名字，那么我们<strong>不得不回到 Player 类中进行对应的修改</strong>。当一个类发生修改会影响到另一个类时，会对项目的维护和更新增添许多麻烦。</li><li>如果增加一个玩家死亡触发的事情，比如玩家死亡后播放一段音效，那么我们还要回到 Player 类对 PlayerDead 方法进行修改。</li><li>玩家类持有其他相关类的<strong>引用</strong>，这些引用变量要实例化后才能使用，否则会报 NullReferenceException。前面的例子中我是声明 public 成员变量，然后在编辑器面板中通过拖拽的方式进行赋值实例化。<strong>假如玩家类有很多其他类的引用，那我们还要在面板中一个个地拖拽</strong>。随着项目量的增大，有时候大量的拖拽赋值反而会很麻烦，也会显得很乱。当然有的童鞋可能会想把其他相关类的引用声明成 <strong>private</strong>，然后通过 <strong>GameObject.Find(“xxx”) ，GameObject.FindWithTag(“xxx”)</strong> 等方法来找到对应的游戏物体，接着通过 <strong>GetComponent</strong> 方法去找到脚本的组件将对象实例化，来替代面板上的拖拽。虽然也可以实现目的，但是依然比较麻烦，找游戏物体的过程中也会损耗性能，并且仍然存在前两点提的缺点：<strong>耦合性比较强</strong>。</li></ol>
+<p>现在我们用观察者（发布-订阅）模式对代码进行优化。</p>
+<h2><a id="_130"></a>用接口实现</h2>
+<h3><a id="_131"></a>观察者模式代码结构介绍</h3>
+<p>先看一种比较标准的观察者模式结构，这里用一种不大标准的 UML 图简要的表示下（用种简要的图来表示观察者模式中的各组成部分之间的联系）：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1ce6ea8f8bc84ec09acd22b604b072dc.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWVktbmI=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <font color="purple" size="4">Observer</font>：<strong>抽象</strong>观察者，提供收到被观察者状态变化的通知时触发的方法，我们先不管这个“抽象”的意思，先来看 Subject。</p>
+<p><font color="purple" size="4">Subject</font>：<strong>抽象</strong>主题对象（被观察者），持有抽象观察者的<strong>列表</strong>，因为一个被观察者可以有很多个观察者，但是<font color="red">观察者的类可能是不同的，为每种观察者定义一个列表显然是麻烦的</font>，那我们要定义一个什么样的列表来容纳各个种类的观察者呢？这时候就要用上“基类”的思想，可以让所有的观察者继承自同一个父类，最后列表里装的是这个父类就行了，而这个父类其实并不需要是具体存在的某一个观察者，我们只需把它定义成<strong>抽象</strong>的，然后在运行期间让这个抽象的父类去指代某一个具体的观察者（有点像多态，也是面向对象设计原则中 <strong>“里氏替换原则”</strong> 的应用）。这样我们<font color="red">写代码时只用处理抽象基类，而这个抽象基类具体指代的是哪一个具体的子类，是程序运行时会根据实际情况转化的</font>。这种思想可以用两种方式来实现：<font color="blue">抽象类和接口</font>。我推荐用接口来实现，原因如下：</p>
+<ol><li>像一些语言如 C# 和 Java ，只允许单继承，如果我们用抽象类来表示的话，会占用掉唯一的继承位，比如 Unity 挂在物体上的游戏脚本要继承自 MonoBehaviour，这种情况下我们只能用接口，因为一个类可以实现多个接口。很多编程语言都有类似“接口”的相关语法，因此用接口实现观察者模式是比较通用的思想，基本不受各语言语法差异的影响。</li><li>这些观察者的<strong>共同点</strong>只是<strong>收到主题对象状态的通知后要触发某些事情</strong>，假如我们用一个 Update 方法来表示触发时执行的方法(观察者状态的更新），那既然<strong>每个观察者只要实现各自的 Update 方法</strong>就行了，其实我们不妨用<font color="red">“实现接口”来替代“继承父类”</font>。只实现抽象的方法更符合接口的定义。</li></ol>
+<p>因此可以定义一个接口作为抽象观察者，让各个观察者去实现这个接口，那么 Subject 的列表里装的就是抽象的接口，在运行期间去访问观察者列表是实际上访问的也就是具体的那些观察者。</p>
+<p>被观察者也可以有一个统一的接口，提供<font color="red">添加观察者，移除观察者，以及通知观察者</font>的方法。每个具体的被观察者可以实现这个接口。</p>
+<p><font color="purple" size="4">ConcreteObserver</font>：实现了 Observer 接口的具体观察者。<br/> <font color="purple" size="4">ConcreteSubject</font>：实现了 Subject 接口的具体被观察者。</p>
+<p>以上是从代码层面介绍观察者模式各组成部分与各部分之间的联系。这样<strong>被观察者只负责在自身状态发生改变或做出某种行为时向自身的订阅清单（也就是存储观察者的列表）发出“通知”(Notify)</strong>；<strong>观察者只负责向目标“订阅”它的变化（通过 Subject 的 Attach），以及定义自身在收到目标“通知”后所需要做出的具体行为 (Observer 的 Update）</strong>。至于被观察者怎样准确地通知到每一个观察者，这件事交给被观察者的抽象观察者列表去处理，在运行期间再转化为具体的观察者对象，而不是 “被观察者先持有所有观察者的对象，再直接调用这些对象的行为（方法）”。</p>
+<p>那么用代码实现观察者模式的实现思路就是：<br/> 1）定义<strong>抽象观察者</strong>的接口，定义自身在收到通知后触发的方法，然后用<strong>具体观察者</strong>去实现接口。<br/> 2）定义<strong>抽象被观察者</strong>的接口，定义添加观察者，移除观察者，通知观察者的方法，然后用<strong>具体被观察者</strong>去实现接口。<br/> 因为 C# 的接口不能定义字段，所以我们不能在抽象被观察者中定义一个列表。在实际的使用过程中，我倾向于把定义观察者列表这一操作放到具体被观察者中去实现。</p>
+<p>3）接下来就是让观察者和被观察者关联到一起。虽然被观察者仍然持有了观察者列表，但是这个列表里装的东西是抽象的接口，我们不必直接持有每一个观察者对象的引用，像之前写的 Player 脚本那样：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a58e326faf104b9598bf81e3d8bc9f05.png"/></p>
+<p>而是存储统一的类似所有观察者基类的抽象观察者，所以我们能用<strong>抽象观察者去概括具体观察者，能用一个统一的列表去涵盖所有的观察者</strong>。</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Player</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">ISubject</span></span><span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">private</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>IObeserver<span class="token punctuation">&gt;</span></span> observers<span class="token operator">=</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>IObeserver<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token range operator">..</span><span class="token punctuation">.</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>然后每个观察者在自己的类中把自己添加到被观察者的观察者列表中（相当于订阅了被观察者），当被观察者发起通知时，会去遍历持有的观察者列表，调用每个<strong>抽象观察者</strong>的 “Update” 方法，那么调用抽象层实际上也就会调用具体观察者重写的抽象接口中的方法。<br/> 在被观察者的眼中，它所交互的都是抽象的观察者，因此不管观察者的代码怎么发生变动，在被观察者的眼中始终是一模一样的抽象观察者，只是实际运行时抽象才指代具体，这样对被观察者的代码本身没有任何影响。所以说观察者模式是低耦合的。</p>
+<p><strong><font color="red">因此从代码层面理解观察者模式，就是在原先的结构上加了“抽象”层。</font></strong></p>
+<p>为什么被观察者的观察者列表要是抽象的？为什么抽象能帮助代码解耦？如果看到这里你能够在心中回答这两个问题，相信你有能力手写观察者模式的代码了。如果还是不太清楚也没关系，毕竟概念可能会有一点“抽象”，那么我们直接通过实战来学习！</p>
+<p>下面用具体代码对之前玩家死亡的案例进行改进，来帮助大家加深对上述概念的理解。（这里只会给出部分代码，因为我把重点放在更实用的发布-订阅模式上）<br/> 如果用严格意义上的观察者模式，作为观察者的敌人需要把自己添加给被观察者的列表，但是添加的方法是定义在抽象被观察者接口中的。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/043b832d65b64b6f99a1f6b62667ecc1.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWVktbmI=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>因此具体的被观察者，也就是玩家，持有“添加观察者”这个实例方法，如果要调用一个类的实例方法，就必须先实例化这个类，这就导致我们要在具体观察者的类中持有对玩家的引用，提高了观察者与被观察者之间的耦合性，就像下面这张图这样：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/248f6220682a4842afaff90836c82ac7.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWVktbmI=,size_10,color_FFFFFF,t_70,g_se,x_16"/><br/> 当然，稍微变通一下是可以解决。比如将玩家类加上单例模式，或者在被观察者接口中删去添加观察者和移除观察者的方法，然后把玩家类中的观察者列表改为 static，这样我们可以直接在具体观察者类中获取玩家类中静态的列表，调用列表本身的添加方法：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c9a26d8e19d04a818034bbf435db68a8.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d0b57a1407514820a6cd9e93a6f5a9d5.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWVktbmI=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 但是使用静态会让一个类的所有实例共享这个数据，有时候可能并不适用。把所有被观察者设为单例也并不是个好的选择。</p>
+<p>那之前说了，观察者模式的升级版——发布-订阅模式添加了一个调度中心，能够使观察者和被观察者完全解耦，这在实际开发中是很实用的。因此接下来我会着重于用接口来实现发布-订阅模式。</p>
+<h3><a id="_185"></a>实现发布-订阅模式</h3>
+<p>我们用一个 GameManager 作为调度中心，相当于一个管理者来管理所有的观察者，并且对外提供添加、移除观察者和通知的方法。那么原先的被观察者发布通知，直接调用的是 GameManager 的通知方法，观察者把自己添加到观察者列表，调用的是 GameManager 的添加方法。观察者与被观察者之间不建立任何联系，全靠第三方的调度中心通信，这样可实现跨模块的交互。<br/> 观察者接口：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">interface</span> <span class="token class-name">IObserver</span> 
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ResponseToNotify</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>这里因为有了 GameManger，我们就无需写个多余的被观察者接口。而且像 GameManager 这种作为管理者的脚本，整个游戏期间只需有唯一的对象，因此<strong>建议利用单例模式把管理器脚本设为单例</strong>，一旦将 GameManager 实例化后，之后使用的都是这个唯一存在的 GameManager【本篇博客不会详细介绍单例模式的相关知识点，但会演示如何使用，并且使用的也是简单的单例模式版本。想要了解更多关于单例模式的可以看这篇文章 <a href="https://blog.csdn.net/qq_46044366/article/details/122768530">Unity 单例基类（结合单例模式）</a>。】</p>
+<p>GameManager脚本（无需继承 MonoBehaviour，我们不必把此脚本挂到任何游戏物体上）：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">GameManager</span> 
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//单例模式应用</span>
+    <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">GameManager</span> instance<span class="token punctuation">;</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name">GameManager</span> Instance
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">get</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>instance <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+                instance <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">GameManager</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> instance<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>IObserver<span class="token punctuation">&gt;</span></span> observers <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>IObserver<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//添加观察者</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">AddObserver</span><span class="token punctuation">(</span><span class="token class-name">IObserver</span> observer<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        observers<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>observer<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//移除观察者</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">RemoveObserver</span><span class="token punctuation">(</span><span class="token class-name">IObserver</span> observer<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        observers<span class="token punctuation">.</span><span class="token function">Remove</span><span class="token punctuation">(</span>observer<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//发送通知给观察者</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Notify</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> observers<span class="token punctuation">.</span>Count<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            observers<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">?.</span><span class="token function">ResponseToNotify</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>玩家脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">NewPlayer</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Update</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>Input<span class="token punctuation">.</span><span class="token function">GetKeyDown</span><span class="token punctuation">(</span>KeyCode<span class="token punctuation">.</span>J<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">Notify</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//触发玩家死亡通知</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>敌人脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">NewEnemy</span> <span class="token punctuation">:</span><span class="token type-list"><span class="token class-name">MonoBehaviour</span><span class="token punctuation">,</span> <span class="token class-name">IObserver</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Start</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">AddObserver</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">OnDestroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">RemoveObserver</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ResponseToNotify</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">print</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">gameObject<span class="token punctuation">.</span>name</span><span class="token punctuation">}</span></span><span class="token string">停止移动"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>游戏结束 UI 脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">NewGameOverUI</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span><span class="token punctuation">,</span><span class="token class-name">IObserver</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ResponseToNotify</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">print</span><span class="token punctuation">(</span><span class="token string">"游戏结束"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Start</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">AddObserver</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">OnDestroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">RemoveObserver</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>那么以上就是用接口实现发布-订阅模式的代码。<br/> 可以看到，当被观察者 Player 发布死亡通知时，GameManager 会去遍历自身的抽象观察者列表，在它的眼中，无论是敌人还是 UI，全都当作抽象观察者来处理。因此<strong>在不修改接口的前提下</strong>，观察者与被观察者的代码变动互不影响。被观察者只管将消息发布到 GameManager，然后通知观察者的事全让 GameManager 来做。观察者的其他代码不管怎么改，在 GameManager 眼中始终是抽象的观察者，而且与被观察者也没有任何联系。<br/> <strong>需要注意的是</strong>：<br/> <font color="red"><strong>将观察者添加到观察者列表后，必须在合适的时候把观察者从观察者列表中移除掉！！！</strong></font><br/> 举个例子，如果在当前游戏场景把敌人添加到列表中，然后转入下一个没有敌人的游戏场景。因为 GameManager 相当于全局的对象，此时<strong>前一个场景的敌人仍然存在于观察者列表里</strong>，我们知道发布通知时会通知观察者列表里的所有对象，可是此时敌人在场景中已经不存在了呀，这时可能就会发生诡异的事情了。<br/> 一般来说推荐的组合是：<br/> 1）在 Awake/Start 方法中把观察者添加到列表中，在 OnDestroy 方法中把观察者从列表中移除。<br/> 2）在 OnEnable 方法中把观察者添加到列表中，在 OnDisable 方法中把观察者从列表中移除。</p>
+<h2><a id="_295"></a>用事件实现</h2>
+<p>现在大家回想一下观察者（发布-订阅）模式的实现目的，是不是和 C# 事件的概念差不多啊？<br/> C# 事件的概念大致是：</p>
+<blockquote>
+<p>一个类或者对象中的事件发生后会<strong>通知</strong><font color="red">订阅</font>了这个事件的其他类、其他对象。别的类、对象在接收到这个通知之后就会纷纷作出他们各自的<strong>响应</strong>。</p>
+</blockquote>
+<p>完美契合观察者模式。👍</p>
+<p>那刚刚用接口实现的方式一定能用事件替代。可我为什么要先介绍接口的实现方式呢？因为抛掉语言包袱，接口的实现还是更加通用一点。不过，C# 把 观察者模式的思想嵌入到了事件这一语法当中，如果你是 C# 的开发者，直接使用 C# 提供的事件，多是一件美事啊~</p>
+<p>玩家死亡本身可以当作玩家的一个事件，死亡事件触发后，与玩家死亡关联的敌人和 UI 会收到通知，随后触发各自的一些事情。那么现在我用事件来实现玩家死亡的需求。<br/> 有了事件之后，我们不必把观察者的整个类存在列表里了。因为事件是基于委托的，相当于委托的包装器，而委托绑定的是与之相匹配的方法，所以我们不必定义一个观察者列表，只需定义一个事件，就能涵盖所有与之相匹配的方法。现在我们具体关注的只是事件发生后观察者的<strong>某一个会随之触发的方法</strong>。<br/> 为了解耦，我们还是把事件定义在一个 EventManager 当中，作用和 GameManager 是一样的。这个事件可以匹配无参无返回值的方法。<br/> EventManager 脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span>  <span class="token keyword">class</span> <span class="token class-name">EventManager</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">private</span> <span class="token keyword">event</span> <span class="token class-name">UnityAction</span> OnPlayerDead<span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">EventManager</span> instance<span class="token punctuation">;</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name">EventManager</span> Instance
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">get</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>instance <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+                instance <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">EventManager</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> instance<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">AddListener</span><span class="token punctuation">(</span><span class="token class-name">UnityAction</span> action<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        OnPlayerDead <span class="token operator">+=</span> action<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">RemoveListener</span><span class="token punctuation">(</span><span class="token class-name">UnityAction</span> action<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        OnPlayerDead <span class="token operator">-=</span> action<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">TriggerEvent</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        OnPlayerDead<span class="token punctuation">?.</span><span class="token function">Invoke</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>玩家脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Player</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Update</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>Input<span class="token punctuation">.</span><span class="token function">GetKeyDown</span><span class="token punctuation">(</span>KeyCode<span class="token punctuation">.</span>J<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            EventManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">TriggerEvent</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+   
+<span class="token punctuation">}</span>
+</code></pre>
+<p>敌人脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Enemy</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Start</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        EventManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">AddListener</span><span class="token punctuation">(</span>StopMove<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">OnDestroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        EventManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">RemoveListener</span><span class="token punctuation">(</span>StopMove<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">StopMove</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">print</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">gameObject<span class="token punctuation">.</span>name</span><span class="token punctuation">}</span></span><span class="token string">停止移动"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>游戏结束 UI 脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">GameoverUI</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Start</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        EventManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">AddListener</span><span class="token punctuation">(</span>ShowGameOver<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">OnDestroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        EventManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">RemoveListener</span><span class="token punctuation">(</span>ShowGameOver<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ShowGameOver</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">print</span><span class="token punctuation">(</span><span class="token string">"Game over"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>运行结果：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/bd2ecef059df4ad0ae522d0b8fcd5c90.png"/></p>
+<h2><a id="_398"></a>改进</h2>
+<p>前面我们分别用接口和事件的方式，利用发布-订阅模式的思想，将最初的代码结构优化了许多，降低了对象间的耦合，此时观察者和被观察者之间的通信全由调度中心来转接。但是我们优化后的代码仍然存在一定的问题。</p>
+<p>不管是接口还是事件的实现方式，在消息通知发布时触发的方法全是无参无返回值的，如果我的触发方法带有参数要怎么办？而且游戏中不只有玩家死亡这个情况符合观察者模式，比如游戏胜利，触碰到某个机关，敌人死亡…都可以当作游戏中比较重要的事件。只要是事件，那么就能符合观察者模式的思想。<strong>对于接口实现方式，我要对观察者列表进行升级，使之能够涵盖各个事件中涉及的观察者；对于事件实现方法，我要将各种类型的事件存储起来。</strong></p>
+<h3><a id="_403"></a>接口法改进方式</h3>
+<p>首先解决带有参数的通知问题，我们沿用 C# 事件中的 EventArgs 类（要先 using System 引入 EventArgs 所在的命名空间)，它相当于一个参数基类，然后实际传参时可以自定义这个基类的子类，包装我们想要传入的参数类型。<br/> 不过 EventArgs 是 C# 为我们提供好的一个类，如果是用其他语言实现怎么办？我们可以模拟 EventArgs ，自定义一个参数基类，然后再定义这个基类的各个子类用于包装参数。</p>
+<p>然后我们对观察者接口进行改进，接口方法的参数设为 EventArgs，如果到时候触发的方法是无参的，我们传入 null 或者 EventArgs.Empty 就行</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">interface</span> <span class="token class-name">IObserver</span> 
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ResponseToNotify</span><span class="token punctuation">(</span><span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>借助“事件”的思想，把原来的观察者列表升级为观察者字典，key 是事件名，value是抽象观察者列表：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">GameManager</span> 
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//单例模式应用</span>
+    <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">GameManager</span> instance<span class="token punctuation">;</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name">GameManager</span> Instance
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">get</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>instance <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+                instance <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">GameManager</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> instance<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token class-name">Dictionary<span class="token punctuation">&lt;</span><span class="token keyword">string</span><span class="token punctuation">,</span> List<span class="token punctuation">&lt;</span>IObserver<span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span> observerDic <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Dictionary<span class="token punctuation">&lt;</span><span class="token keyword">string</span><span class="token punctuation">,</span> List<span class="token punctuation">&lt;</span>IObserver<span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//添加观察者</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">AddObserver</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> eventName<span class="token punctuation">,</span> <span class="token class-name">IObserver</span> observer<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>observerDic<span class="token punctuation">.</span><span class="token function">ContainsKey</span><span class="token punctuation">(</span>eventName<span class="token punctuation">)</span><span class="token punctuation">)</span>
+            observerDic<span class="token punctuation">[</span>eventName<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>observer<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">else</span>
+            observerDic<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>eventName<span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>IObserver<span class="token punctuation">&gt;</span></span> <span class="token punctuation">{<!-- --></span> observer <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+    <span class="token punctuation">}</span>
+    <span class="token comment">//移除观察者</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">RemoveObserver</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> eventName<span class="token punctuation">,</span> <span class="token class-name">IObserver</span> observer<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>observerDic<span class="token punctuation">.</span><span class="token function">ContainsKey</span><span class="token punctuation">(</span>eventName<span class="token punctuation">)</span><span class="token punctuation">)</span>
+            observerDic<span class="token punctuation">[</span>eventName<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">Remove</span><span class="token punctuation">(</span>observer<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//发送通知给观察者</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Notify</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> eventName<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>observerDic<span class="token punctuation">.</span><span class="token function">ContainsKey</span><span class="token punctuation">(</span>eventName<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">for</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> observerDic<span class="token punctuation">[</span>eventName<span class="token punctuation">]</span><span class="token punctuation">.</span>Count<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                observerDic<span class="token punctuation">[</span>eventName<span class="token punctuation">]</span><span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">i</span></span><span class="token punctuation">]</span><span class="token punctuation">?.</span><span class="token function">ResponseToNotify</span><span class="token punctuation">(</span>e<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>其实为了代码复用，可以把单例模式的写法封装成一个单例模块，然后让管理器脚本继承单例模块。这个操作会在稍后介绍事件中心时演示。</p>
+<p>此外，我们可以把各个事件的名字设成常量放在一个全局的静态类，方便后面调用：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">class</span> <span class="token class-name">EventName</span> 
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">string</span></span> PlayerDead <span class="token operator">=</span> <span class="token string">"PlayerDead"</span><span class="token punctuation">;</span>
+    <span class="token keyword">public</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">string</span></span> Test <span class="token operator">=</span> <span class="token string">"Test"</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>这时候我们测试传参的情况，假设<strong>玩家死亡时会把玩家名字传给游戏失败 UI 来显示</strong><br/> 先自定义一个用于包装参数的类，继承自 EventArgs：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">PlayerDeadEventArgs</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">EventArgs</span></span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token class-name"><span class="token keyword">string</span></span> playerName<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>玩家脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">NewPlayer</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+     <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Update</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>Input<span class="token punctuation">.</span><span class="token function">GetKeyDown</span><span class="token punctuation">(</span>KeyCode<span class="token punctuation">.</span>J<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">Notify</span><span class="token punctuation">(</span>EventName<span class="token punctuation">.</span>PlayerDead<span class="token punctuation">,</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">PlayerDeadEventArgs</span> <span class="token punctuation">{<!-- --></span>playerName<span class="token operator">=</span>gameObject<span class="token punctuation">.</span>name <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//触发玩家死亡通知</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>Notify 方法的第二个参数便是我们自定义的传参类，我们把玩家游戏物体的名字封装进我们自定义的这个传参类。如果不需要传参，此处可以传个 null 或者 EventArgs.Empty，如：</p>
+<pre><code class="prism language-csharp">GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">Notify</span><span class="token punctuation">(</span><span class="token string">"xxx"</span><span class="token punctuation">,</span>EventArgs<span class="token punctuation">.</span>Empty<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>EventArgs.Empty 出自于 EventArgs 类，是已经定义好的了，相当于表示空的事件参数。既然系统为我们提供好了，那我们就可以直接拿来用了。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e1d7782582784144b184cf8369d71739.png"/></p>
+<p>游戏失败 UI 脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">NewGameOverUI</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span><span class="token punctuation">,</span><span class="token class-name">IObserver</span></span>
+<span class="token punctuation">{<!-- --></span>
+   
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Start</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">AddObserver</span><span class="token punctuation">(</span>EventName<span class="token punctuation">.</span>PlayerDead<span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">OnDestroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">RemoveObserver</span><span class="token punctuation">(</span>EventName<span class="token punctuation">.</span>PlayerDead<span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ResponseToNotify</span><span class="token punctuation">(</span><span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name"><span class="token keyword">var</span></span> data <span class="token operator">=</span> e <span class="token keyword">as</span> <span class="token class-name">PlayerDeadEventArgs</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>data <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token function">print</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"游戏结束，</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">data<span class="token punctuation">.</span>playerName</span><span class="token punctuation">}</span></span><span class="token string">阵亡"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>收到自定义的参数类后，我们可以用<font color="blue"> as</font> 进行类型转换，如果不为空，说明我们收到了参数类，然后就可以取出封装在参数类中的数据。</p>
+<p>敌人脚本：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">NewEnemy</span> <span class="token punctuation">:</span><span class="token type-list"><span class="token class-name">MonoBehaviour</span><span class="token punctuation">,</span> <span class="token class-name">IObserver</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Start</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">AddObserver</span><span class="token punctuation">(</span>EventName<span class="token punctuation">.</span>PlayerDead<span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">OnDestroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        GameManager<span class="token punctuation">.</span>Instance<span class="token punctuation">.</span><span class="token function">RemoveObserver</span><span class="token punctuation">(</span>EventName<span class="token punctuation">.</span>PlayerDead<span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ResponseToNotify</span><span class="token punctuation">(</span><span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">print</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">gameObject<span class="token punctuation">.</span>name</span><span class="token punctuation">}</span></span><span class="token string">停止移动"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>敌人脚本在事件触发时无需对传的参数进行处理。<br/> 运行结果：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/63cdb13c2f1b43eba434350d22e3e0a9.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAWVktbmI=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<h3><a id="_557"></a>事件管理中心</h3>
+<p>既然是 C#，我们直接用事件会更加方便。为了改进之前的不足，我们可以<strong>创建一个字典来存储所有事件</strong>。然后其他的思路与接口改进版类似。这里我单独为事件管理中心写了篇文章。<br/> 这里是链接：<a href="https://blog.csdn.net/qq_46044366/article/details/122722948">Unity 事件管理中心</a></p>
+<hr/>
+<p>小瑕疵：<br/> 虽然发布-订阅模式能够极大地降低耦合，但是有个缺点就是我们看代码可能很难看出观察者和被观察者的关系，因为被中间的一个调度中心给隔开了，有时候可能不方便 debug。</p>
+<hr/>
+<p>委托与事件系列：<br/> <a href="https://blog.csdn.net/qq_46044366/article/details/122550088">C#委托（结合 Unity）</a><br/> <a href="https://blog.csdn.net/qq_46044366/article/details/122728869">C#事件（结合 Unity）</a><br/> <a href="https://blog.csdn.net/qq_46044366/article/details/122677111">观察者模式（结合C# Unity）</a><br/> <a href="https://blog.csdn.net/qq_46044366/article/details/122722948">Unity 事件管理中心</a><br/> <a href="https://blog.csdn.net/qq_46044366/article/details/122806863">事件番外篇：UnityEvent</a></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

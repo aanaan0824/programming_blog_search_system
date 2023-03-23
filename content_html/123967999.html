@@ -1,0 +1,297 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="_0"></a>微信支付详解</h1>
+<h3><a id="1_1"></a>1.为什么要写这篇文章</h3>
+<p>参考了字节跳动官方的文档之后发现写的太简单，完全一头雾水摸不清头脑，后来在百度了别人的实现方案，才得以总结出来。</p>
+<h3><a id="2_4"></a>2.背景</h3>
+<p>我司要开发一个头条小程序，需要支持支付宝和微信支付</p>
+<h3><a id="3_7"></a>3.签约以及配置流程（不过多描述）</h3>
+<h3><a id="4_8"></a>4.业务代码</h3>
+<p>一开始看了字节跳动的官方文档<a href="https://microapp.bytedance.com/dev/cn/mini-app/develop/api/open-interface/payment/tt.pay">tt.pay</a>确实是没怎么看懂（可能是能力问题），而且demo中也没有php的案例，让phper实在是为难，后来百度了一下，发现广大的网友还是很强大的，总结了一下实现的方式：</p>
+<h3><a id="_10"></a>第一种</h3>
+<ul><li>第一步：获取预支付单号</li><li>第二步：获取支付宝APP支付返回的orderInfo</li><li>第三步：生成字节跳动小程序支付请求参数<br/> 但是这种我在官方文档中并没有发现这中实现方式，可能是文档更新了（疑问疑问？？）</li></ul>
+<pre><code>&lt;?php
+/**
+ * Created by PhpStorm.
+ * User: langziqiang
+ * Date: 2020-05-22
+ * Time: 10:43
+ */
+
+namespace Common\Service;
+
+use http\Exception;
+
+class TouTiaoService{
+
+    private $tt_config;         //头条小程序配置
+    private $order;             //订单信息
+    private $user;              //用户信息
+    private $ip;                //用户ip,调用预支付单号需要传
+    private $tt_trade_no;       //支付预支付单号
+    private $ali_orderinfo;     //支付宝app支付orderInfo
+
+    const PRE_PAY_NUMBER_URL = 'https://tp-pay.snssdk.com/gateway';
+
+    public function __construct($order, $uid, $ip){
+        $this-&gt;tt_config = C('ZIJIETIAODONG');
+        $this-&gt;order     = $order;
+        $this-&gt;user      = M('Users')-&gt;find($uid);
+        $this-&gt;ip        = $ip;
+    }
+    /**
+     * Notes:入口
+     * User: langziqiang
+     * Date: 2020-05-22
+     * Time: 14:28
+     * @return array
+     */
+    public function getTouTiaoAliPayResult(){
+        //第一步：获取预支付单号
+        $this-&gt;createPrePayNumber();
+
+        //第二步：获取支付宝APP支付返回的orderInfo
+        $this-&gt;createAliAppPay();
+
+        //第三步：生成字节跳动小程序支付请求参数
+        $res = $this-&gt;createProgramData();
+        return $res;
+    }
+
+    /**
+     * Notes:获取预支付单号
+     * User: langziqiang
+     * Date: 2020-05-22
+     * Time: 11:04
+     */
+    public function createPrePayNumber(){
+        //业务数据
+        $biz_content = array(
+            'out_order_no' =&gt; date("YmdHi") . intval(microtime() * 1000) . $this-&gt;user['uid'],   //商户唯一订单号
+            'uid'          =&gt; 'openid',                                                                     //头条用户openid
+            'merchant_id'  =&gt; $this-&gt;tt_config['merchant_id'],                                              //字节跳动小程序支付中的商户id
+            'total_amount' =&gt; $this-&gt;order['all_money'] * 100,                                              //订单金额
+            'currency'     =&gt; 'CNY',                                                                        //固定CNY
+            'subject'      =&gt; $this-&gt;user['company'] . "的账单",                                             //商户订单名称
+            'body'         =&gt; $this-&gt;user['company'] . "的账单",                                             //商户订单详情
+            'trade_time'   =&gt; time(),                                                                       //下单时间戳，精确到秒
+            'valid_time'   =&gt; '120',                                                                        //订单有效时间（单位 秒)
+            'notify_url'   =&gt; get_ali_app_notify(),                                                         //填任意非空 URL 即可
+            'risk_info'    =&gt; json_encode(['ip' =&gt; $this-&gt;ip])                                              // 输出示例： "{\"ip\":\"110.90.28.70\"}",
+        );
+
+        $biz_content = json_encode($biz_content);
+        //公共请求参数
+        $params['app_id']      = $this-&gt;tt_config['app_id'];        //头条appid
+        $params['biz_content'] = $biz_content;                      //业务数据json
+        $params['method']      = 'tp.trade.create';                 //注意：此处固定值 tp.trade.create
+        $params['charset']     = 'utf-8';                           //定值
+        $params['sign_type']   = 'MD5';                             //定值
+        $params['timestamp']   = time();                            //当前时间戳
+        $params['version']     = 2.0;                               //定值
+
+
+        $this-&gt;getSignContent($params);
+        //注意post的参数必须是a=1&amp;b=2这种格式，官方文档并没有说明
+        $res = Http::curl_post2(self::PRE_PAY_NUMBER_URL, http_build_query($params));
+        $res = json_decode($res, true);
+        $res = $res['response'];
+        if($res['code'] == '10000'){
+            $this-&gt;tt_trade_no = $res['trade_no']; //头条预支付单号
+        }else{
+            E("支付失败!");
+        }
+    }
+
+    /**
+     * Notes:创建支付宝app支付
+     * User: langziqiang
+     * Date: 2020-05-22
+     * Time: 14:23
+     */
+    public function createAliAppPay(){
+        $alipay              = new AliPayService();
+        $alipay-&gt;order_id    = $this-&gt;order['order_id'];
+        $alipay-&gt;order       = $this-&gt;order;
+        $orderInfo           = $alipay-&gt;aliAppPay($this-&gt;order);
+        $this-&gt;ali_orderinfo = $orderInfo;
+    }
+
+
+    /**
+     * Notes:组装小程序唤起参数
+     * User: langziqiang
+     * Date: 2020-05-22
+     * Time: 14:23
+     * @return array
+     */
+    public function createProgramData(){
+        $res                 = [];
+        $res['app_id']       = $this-&gt;tt_config['app_id'];                      //字节跳动小程序app_id
+        $res['sign_type']    = 'MD5';                                           //定值
+        $res['uid']          = 'open_id';                                       //字节跳动小程序open_id
+        $res['total_amount'] = $this-&gt;order['all_money'] * 100;                 //金额
+        $res['timestamp']    = (string)time();                                  //当前时间戳
+        $res['trade_no']     = $this-&gt;tt_trade_no;                              //注意：这里为字节跳动小程序返回的预支付单号
+        $res['merchant_id']  = $this-&gt;tt_config['merchant_id'];                 //字节跳动商户号
+        $res['params']       = json_encode(['url' =&gt; $this-&gt;ali_orderinfo]);    //特殊parme,json
+        $this-&gt;getSignContent($res);                                   //sign
+        $res['method']      = 'tp.trade.confirm';                               //注意：这里于获取预支付单号不同，固定为 tp.trade.confirm
+        $res['pay_channel'] = 'ALIPAY_NO_SIGN';                                 //定值
+        $res['pay_type']    = "ALIPAY_APP";                                     //定值
+        $res['risk_info']   = $this-&gt;ip;                                        //ip
+        $res['url']         = $this-&gt;ali_orderinfo;                             //支付宝链接
+        return $res;
+    }
+
+    /**
+     * 签名处理
+     * @param $params
+     * @param $charset
+     * @return string
+     */
+    public function getSignContent(&amp;$params, $charset = 'utf-8'){
+        ksort($params);
+        $stringToBeSigned = "";
+        $i                = 0;
+        foreach($params as $k =&gt; $v){
+            if(false === $this-&gt;checkEmpty($v) &amp;&amp; "@" != substr($v, 0, 1)){
+                // 转换成目标字符集
+                $v = $this-&gt;characet($v, $charset);
+                if($i == 0){
+                    $stringToBeSigned .= "$k" . "=" . "$v";
+                }else{
+                    $stringToBeSigned .= "&amp;" . "$k" . "=" . "$v";
+                }
+                $i++;
+            }
+        }
+        $stringToBeSigned = $stringToBeSigned . $this-&gt;tt_config['secret'];
+        unset ($k, $v);
+        $params['sign'] = md5($stringToBeSigned);
+    }
+
+
+    /**
+     * 校验$value是否非空
+     * @param $value
+     * @return  boolean;
+     *  if not set ,return true;
+     *  if is null , return true;
+     **/
+    public function checkEmpty($value){
+        if(!isset($value))
+            return true;
+        if($value === null)
+            return true;
+        if(trim($value) === "")
+            return true;
+        return false;
+    }
+
+
+    /**
+     * 转换字符集编码
+     * @param $data
+     * @param $targetCharset
+     * @return string
+     */
+    public function characet($data, $targetCharset){
+        if(!empty($data)){
+            $fileType = "UTF-8";
+            if(strcasecmp($fileType, $targetCharset) != 0){
+                $data = mb_convert_encoding($data, $targetCharset, $fileType);
+            }
+        }
+        return $data;
+    }
+}
+</code></pre>
+<h3><a id="_214"></a>第二种</h3>
+<ul><li>直接返回orderInfo给前端</li></ul>
+<pre><code> public function getTouTiaoAliPayResult2(){
+        $data               = [
+            'merchant_id'  =&gt; $this-&gt;tt_config['merchant_id'],                                                //头条商户id
+            'app_id'       =&gt; $this-&gt;tt_config['app_id'],                                                     //头条appId
+            'sign_type'    =&gt; 'MD5',                                                                          //定值
+            'out_order_no' =&gt; date("YmdHi") . intval(microtime() * 1000) . $this-&gt;user['uid'],     //商家订单号
+            'timestamp'    =&gt; time(),                                                                          //时间戳
+            'version'      =&gt; '2.0',                                                                           //定值
+            'trade_type'   =&gt; 'H5',                                                                             //定值
+            'product_code' =&gt; 'pay',                                                                            //定值
+            'payment_type' =&gt; 'direct',                                                                         //定值
+            'uid'          =&gt; 'open_id',                                                                        //头条openid
+            'total_amount' =&gt; intval($this-&gt;order['all_money'] * 100),                                      //订单金额
+            'currency'     =&gt; 'CNY',                                                                            //定值
+            'subject'      =&gt; $this-&gt;user['company'] . "的账单",                                                 //商品名称
+            'body'         =&gt; $this-&gt;user['company'] . "的账单",                                                 //商品详情
+            'trade_time'   =&gt; time(),                                                                           //下单时间戳
+            'valid_time'   =&gt; 120,                                                                              //订单有效时间（单位 秒）
+            'notify_url'   =&gt; get_ali_app_notify(),                                                             //回调地址
+            'risk_info'    =&gt; json_encode(['ip' =&gt; $this-&gt;ip]),                                                 //用户ip
+        ];
+        $data['alipay_url'] = $this-&gt;createAliAppPay($data);                                                    //支付宝url
+        $this-&gt;getSignContent($data, 'utf-8');                                                  //签名
+        dump($data);
+    }
+
+</code></pre>
+<h3><a id="_245"></a>小程序前段代码（针对第二种实现方案）</h3>
+<pre><code>$.ajax({
+            url: "后台接口",
+            method: "POST",
+            data: {
+              cid: that.data.info.id
+            },
+            success(r) {
+              tt.pay({
+                orderInfo: r.data,
+                service: 1,
+                getOrderStatus(res) {
+                  let { out_order_no } = res;
+                  return new Promise(function (resolve, reject) {
+                    // 商户前端根据 out_order_no 请求商户后端查询微信支付订单状态
+                    tt.request({
+                      url: "https://www.xxxxx.com/api/v1/wechat/notify",
+                      data: { out_order_no: out_order_no },
+                      method: 'POST',
+                      success(res) {
+                        // 商户后端查询的微信支付状态，通知收银台支付结果
+                        resolve({ code: res.data.code })
+                      },
+                      fail(err) {
+                        reject(err);
+                      }
+                    });
+                  });
+                },
+                success(res) {
+                  if (res.code == 0) {
+                    // 支付成功处理逻辑，只有res.code=0时，才表示支付成功
+                    // 但是最终状态要以商户后端结果为准
+                    that.onLoad(that.data.info)
+                  }
+                },
+                fail(res) {
+                  // 调起收银台失败处理逻辑
+                  tt.showModal({
+                    content: JSON.stringify(res) + '1'
+                  });
+                }
+              });
+              console.log(r.data)
+            }
+          })
+</code></pre>
+<h1><a id="api_293"></a>总结：字节跳动的api文档写的真的不可描述</h1>
+<p>大家有问题可以相互交流</p>
+<h4><a id="Golang_296"></a>一起来学习Golang吧</h4>
+<p><img alt="golang" src="https://img-blog.csdnimg.cn/img_convert/f4b4cba95489479a90fa74912f9c76bd.png"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

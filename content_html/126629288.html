@@ -1,0 +1,127 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1>1.安装包依赖</h1>
+<p>与上篇<a class="link-info" href="https://blog.csdn.net/qq_17486399/article/details/126608176?spm=1001.2014.3001.5501" title="通过摄像头动态识别人脸">通过摄像头动态识别人脸</a>一样，先下载好opencv-python、face-recognition，这里因为使用的是照片对比的方式，特意使用tkinter画了一个简单的GUI方便操作。</p>
+<p>在python 3以上版本tkinter是环境自带的，所以这里不需要安装</p>
+<h1>2.代码示例</h1>
+<pre><code class="language-python">import os
+import cv2
+import numpy as np
+import face_recognition
+import tkinter as tk  
+import tkinter.filedialog
+from PIL import Image,ImageTk 
+
+classNames=[]
+img_path='Picture'
+img_recognition_path='Recognition'
+existsEncodeingList=[]
+#对人脸集合进行编码进行处理
+def findEncodeings(images):
+    for img in images:
+        #灰度处理
+        img=cv2.cvtColor(src=img,code=cv2.COLOR_BGR2RGB)
+        #face_encodings对图片对象a_images进行编码并返回数组0位置编码结果
+        encode=face_recognition.face_encodings(img)[0]
+        existsEncodeingList.append(encode)
+
+#获取当前存储的人脸编码集合
+def findExistsEncodeingList(img_path):
+    images=[]
+    #列出已经上传的所有图片
+    imgList=os.listdir(img_path)
+    #处理存储的图片得到其人脸编码
+    for pic in imgList:
+        img=cv2.imread('{}/{}'.format(img_path,pic))
+        images.append(img)
+        classNames.append(os.path.splitext(pic)[0])
+    findEncodeings(images)
+
+#选择并对比图片
+def choosepic():
+    choosepath = tkinter.filedialog.askopenfilename()
+    path.set(choosepath)
+    img_open = Image.open(entry.get()).resize((530,750))
+    img = ImageTk.PhotoImage(img_open)
+    lableShowImage.config(image=img)
+    lableShowImage.image = img
+    lableShowImage.place(x=30, y=70, width=530, height=750)
+    faceRecognition(choosepath)
+
+def faceRecognition(choosepath):
+    frame=cv2.imread(choosepath)
+    frameRGB=cv2.cvtColor(src=frame,code=cv2.COLOR_BGR2RGB)
+    #对摄像头读取的检测人脸
+    facesLocate=face_recognition.face_locations(frameRGB)
+    #进行特征编码
+    faceEncoded=face_recognition.face_encodings(frameRGB,facesLocate)
+	#遍历检测的人脸和库中读取的图片进行对比，计算其相似度
+    name='unknow'
+    for (top,right, bottom,left),face_encoding in zip(facesLocate,faceEncoded):
+        #进行匹配
+        matchs=face_recognition.compare_faces(existsEncodeingList,face_encoding)
+        #计算相似度
+        distance=face_recognition.face_distance(existsEncodeingList,face_encoding)
+        lab='unknow'
+        for index, item in enumerate(distance):
+           if item&lt;0.5:
+                if matchs[index]:
+                    #得到匹配到的图片名称与相似度值
+                    lab='name:{}; Similarity:{}'.format(classNames[index],item)
+                    name=classNames[index]
+                    break
+        #初始化面部捕捉框显示绿色
+        color1 =(0,255,0)
+        if name =='unknow':
+            #未能识别的时候显示蓝色
+            color1 =(255,0,0)
+        #画面部捕捉框
+        cv2.rectangle(img=frame,pt1=(left,top),pt2=(right,bottom),color=color1,thickness=3)
+        #在捕捉框上添加匹配到的图片信息
+        cv2.putText(frame, lab, (left,top-8),cv2.FONT_HERSHEY_SIMPLEX, 0.7, color1, 2)
+        cv2.imwrite('{}/{}.png'.format(img_recognition_path,name),frame)
+    img_Recognition = Image.open('{}/{}.png'.format(img_recognition_path,name)).resize((530,750))
+    img = ImageTk.PhotoImage(img_Recognition)
+    lableShowImage2.config(image=img)
+    lableShowImage2.image = img
+    lableShowImage2.place(x=630, y=70, width=530, height=750)
+
+if __name__ == '__main__':
+    findExistsEncodeingList(img_path)
+    #生成tk界面 app即主窗口
+    app = tk.Tk()  
+    #修改窗口titile
+    app.title("show pictue")  
+    #设置主窗口的大小和位置
+    app.geometry("1200x900+200+50")
+    #Entry widget which allows displaying simple text.
+    path = tk.StringVar()
+    entry = tk.Entry(app, state='readonly', text=path,width = 100)
+    entry.pack()
+    #使用Label显示图片
+    lableShowImage = tk.Label(app)
+    lableShowImage.pack()
+     #使用Label2显示处理后的图片
+    lableShowImage2 = tk.Label(app)
+    lableShowImage2.pack()
+    #选择图片的按钮
+    buttonSelImage = tk.Button(app, text='choose picture', command=choosepic)
+    buttonSelImage.pack()
+    app.mainloop()</code></pre>
+<h1>3.说明</h1>
+<p>首先我将需要被识别的人脸的照片预设到项目目录的Picture文件夹下，然后创建一个Recognition目录存放识别过的图片，这样方便在一个界面上展示对比结果照片。</p>
+<p><img alt="" height="271" src="image\c505cad092a84a769ee8ecdcd306c8b8.png" width="710"/></p>
+<p> 其实对比结果也可以不用存，直接将处理后的图片缓存直接展示在界面上，这里需要改一下此处的代码，将上述代码注释掉，然后换成下面的那行，通过数组直接转成图片</p>
+<p><img alt="" height="620" src="image\3482f5f52ddd46d49db30ed3f7893a38.png" width="847"/></p>
+<p> 但是效果会存在色彩的失真，效果如下：</p>
+<p><img alt="" height="938" src="image\c962840bf49f462da439eb7e55a9e249.png" width="1200"/></p>
+<p>也尝试了PIL的九种不同图片模式: 1，L，P，RGB，RGBA，CMYK，YCbCr，I，F，最终效果也没达到，大概与我resize((530,750))这个有关，也没继续纠结，有兴趣的同学可以尝试一下。</p>
+<p>这里简单提下PIL的九种不同图片模式：</p>
+<table><thead><tr><th>modes</th><th>描述</th></tr></thead><tbody><tr><td>1</td><td>1位像素，黑和白，存成8位的像素</td></tr><tr><td>L</td><td>8位像素，黑白</td></tr><tr><td>P</td><td>8位像素，使用调色板映射到任何其他模式</td></tr><tr><td>RGB</td><td>3× 8位像素，真彩</td></tr><tr><td>RGBA</td><td>4×8位像素，真彩+透明通道</td></tr><tr><td>CMYK</td><td>4×8位像素，颜色隔离</td></tr><tr><td>YCbCr</td><td>3×8位像素，彩色视频格式</td></tr><tr><td>I</td><td>32位整型像素</td></tr><tr><td>F</td><td>32位浮点型像素</td></tr></tbody></table>
+<h1>4.实现效果</h1>
+<p> <img alt="" height="938" src="image\49a940aa533549f493faa141c8fed302.png" width="1200"/></p>
+<p> <img alt="" height="938" src="image\6f63bdad8d1a4f38976b0f9c03626788.png" width="1200"/></p>
+<p> 可以实现简单的人脸对比，Similarity代表相似度值，值越小代表人脸与预设的图片越相似。</p>
+</div>
+</div>

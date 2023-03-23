@@ -1,0 +1,261 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1><img alt="" height="390" src="image\abfcacdb3e8744c3b32b0fcfb9060afa.png" width="709"/></h1>
+<p> </p>
+<p></p>
+<p></p>
+<p><img alt="" height="400" src="image\2b3a6e4ef4814588a001ac551d689e42.png" width="338"/><img alt="" height="211" src="image\be7285fb1fd846b291aec4436b432cf3.png" width="336"/></p>
+<p></p>
+<h3> 刚上大学就喜欢玩，英雄联盟陪伴了我整个大学生涯，承载了满满的回忆，现在老娘要亲手做一个！！【文末有福利哦~】</h3>
+<p><img alt="" height="464" src="image\ccfb67d80330416f9d431fea7f4aa2a2.png" width="311"/></p>
+<p>相信做开发的小伙伴们都有一个“游戏梦”，就是亲手制作出自己热爱的游戏，然后和小伙伴们在线玩耍~~~ 很多小伙伴觉得自己开发游戏很难，需要大量的时间、精力、资源等投入。</p>
+<p>Emmmmmm  ~   ~  其实并不是啦~  ~ 开发一款自己喜欢的游戏其实是非常简单轻松的事情，只要把……模型、动画、地形、渲染、算法、脚本、网络、光影、Editor、内存管理、多线程、bilabilabila…（此处省略500个知识点）都掌握好，就可以很轻松的做出一款游戏啦，是不是很简单啊~（手动狗头）</p>
+<p class="img-center"><img alt="" height="370" src="image\9f5477208de7a8e1d27a0882b8afc33c.png" width="333"/></p>
+<h1>第一章：Socket制作帧同步网络框架</h1>
+<p>相信小伙伴们都知道Moba类属于强联网游戏，需要使用帧同步网络技术以实时同步传输对局中所有玩家的操作指令，做到无差错、无重复、并按顺序接收等，这里讲解一下游戏实现帧同步的原理：</p>
+<p><span style="color:#ff9900;"><strong>某个客户端在当前时间点当前帧发送数据给服务器==&gt;服务器接收后记录并统一发送操作命令给所有客户端==&gt;所有客户端接收后对比时间帧执行命令==&gt;客户端对比当前时间帧之间的差值做补间动画==&gt;客户端继续发送数据……</strong></span></p>
+<p><span style="color:#4da8ee;"><strong>了解了原理后开发起来就简单多啦，这里直接上一段简单的案例代码。</strong></span></p>
+<p><strong>Unity 版本：2020.3.3</strong></p>
+<p><strong>第一步：开启服务器，等待客户端连接</strong></p>
+<pre><code>
+    void Main()
+    {
+        //定义socket
+        //获取本地ip地址
+        //string ip = ClientController.GetLocalIpAddress("InterNetwork");
+        //端口号
+
+        serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        IPEndPoint ipendPoint = new IPEndPoint(IPAddress.Parse(ip), port);
+        Debug.Log("ip地址:" + ip);
+        Debug.Log("开始绑定端口号:" + port);
+        //将ip地址和端口号绑定
+        serverSocket.Bind(ipendPoint);
+        Debug.Log("绑定端口号成功，开启服务器....");
+        //开启服务器
+        serverSocket.Listen(100);
+        Debug.Log("启动服成功!");
+        while (true)
+        {
+            Debug.Log("等待链接.....");
+            Socket clinetSocket = serverSocket.Accept();
+            ClientController controller = new ClientController(clinetSocket);
+            //添加到列表中
+            clientControllerList.Add(controller);
+            Debug.Log("当前有" + clientControllerList.Count + "个用户");
+            Debug.Log("有一个用户链接....");
+        }
+    }
+
+</code></pre>
+<p><strong>第二步：客户端连接服务器，发送登录请求。</strong></p>
+<pre><code>
+    /// &lt;summary&gt;
+    /// 开始链接服务器
+    /// &lt;/summary&gt;
+    /// &lt;param name="ip"&gt;&lt;/param&gt;
+    /// &lt;param name="port"&gt;&lt;/param&gt;
+    public void ConnectToServer(string ip,int port)
+    {
+        //创建socket对象
+        clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+        IPEndPoint ipendPoint = new IPEndPoint(IPAddress.Parse(ip), port);
+        Debug.Log("开始链接服务器！！！");
+        //请求链接
+        clientSocket.BeginConnect(ipendPoint, ConnectCallback, "");
+
+    }
+
+    /// &lt;summary&gt;
+    /// 链接的回调
+    /// &lt;/summary&gt;
+    /// &lt;param name="ar"&gt;&lt;/param&gt;
+    public void ConnectCallback(IAsyncResult ar)
+    {
+        try
+        {
+            clientSocket.EndConnect(ar);
+        }
+        catch(Exception e)
+        {
+            Debug.Log(e.ToString());
+        }
+        //判断到底链接成功了还是没有
+        if(clientSocket.Connected == true)
+        {
+            //调用链接成功的回调
+            onConnectSuccess();
+            //开启接收消息
+            ReceiveMessageFromServer();
+        }
+        else
+        {
+            //链接失败
+            onConnectExcept();
+        }
+    }
+
+
+
+ private void Update()
+    {
+      
+            //监控控制当前玩家的英雄移动
+            if (Input.GetMouseButtonDown(0))
+            {
+                
+                    Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+                    RaycastHit hit;
+                    if (Physics.Raycast(ray, out hit, 1000.0f, LayerMask.GetMask("Terrain")))
+                    {
+                        TCPData_Move tCPData_Move = new TCPData_Move();
+                        tCPData_Move.position = hit.point;
+                        ChatUIController.Single.SendMoveData(tCPData_Move);
+                    }
+
+            }
+    }
+
+  </code></pre>
+<h3>第三步：服务器接收消息后，做统一分发给所有客户端：</h3>
+<pre><code>  void ReceiveFromClient()
+    {
+        while (true)
+        {
+            byte[] buffer = new byte[4096];
+            int lenght = clientSocket.Receive(buffer, 0, buffer.Length, SocketFlags.None);
+            string json = System.Text.Encoding.UTF8.GetString(buffer, 0, lenght);
+            json.TrimEnd();
+                MessageData data = LitJson.JsonMapper.ToObject&lt;MessageData&gt;(json);
+                switch (data.msgType)
+                {
+                    case MessageType.Login://如果是登陆消息
+                        playerSocketData = JsonUtility.FromJson&lt;PlayerSocketData&gt;(data.playerSocketData);
+                        //需要告诉所有客户端，***加入了房间
+                        MessageData chatData = new MessageData();
+                        chatData.msgType = MessageType.Login;
+                        chatData.playerSocketData = JsonUtility.ToJson(playerSocketData);
+                        chatData.msg = JsonUtility.ToJson(playerList);
+                        SendMessageDataToAllClient(chatData);
+                     
+                        break;
+                    case MessageType.Chat://如果是聊天消息
+                                          //转发聊天信息
+                        MessageData chatMessageData = new MessageData();
+                        chatMessageData.msgType = MessageType.Chat;
+                        chatMessageData.playerSocketData= JsonUtility.ToJson(playerSocketData);
+                        chatMessageData.msg = data.msg;
+                        SendMessageDataToAllClient(chatMessageData);
+
+                        break;
+                    case MessageType.Exit://客户端请求退出
+                        //告诉所有的其他用户，**退出了房间
+                        MessageData logOutChatData = new MessageData();
+                        logOutChatData.msgType = MessageType.Exit;
+                        logOutChatData.playerSocketData = JsonUtility.ToJson(playerSocketData);
+                        logOutChatData.msg = nickName + " 断开了连接";
+                        SendMessageDataToAllClient(logOutChatData);
+                       
+                        break;
+                    case MessageType.Move://同步玩家移动
+                        MessageData MoveMessageData = new MessageData();
+                        MoveMessageData.msgType = MessageType.Move;
+                        MoveMessageData.playerSocketData = JsonUtility.ToJson(playerSocketData); 
+                        MoveMessageData.msg = data.msg;
+                        SendMessageDataToAllClient(MoveMessageData);
+                        break;
+                }
+        }
+    }</code></pre>
+<h3>第四步：所有客户端接收消息（先判断数据类型，然后执行对应命令方法）</h3>
+<pre><code>/// &lt;summary&gt;
+    /// 读取数据并调用控制
+    /// &lt;/summary&gt;
+    private void ReceiveSocketData()
+    {
+        if (isStart == true)
+        {
+            while (socketDatas_Receive.Count &gt; 0)
+            {
+
+                MessageData messageData = socketDatas_Receive.Dequeue();
+                switch (messageData.msgType)
+                {
+                    case MessageType.Chat:
+                        EventManager.playerControl_C.Action_Talk(messageData);
+                        break;
+                    case MessageType.Login:
+                        EventManager.playerControl_C.AddPlayer(messageData);
+                        break;
+                    case MessageType.Exit:
+                         EventManager.playerControl_C.RemovePlayer(messageData);
+                        break;
+                    case MessageType.Close:
+                        EventManager.playerControl_C.CloseServer();
+                        break;
+                    case MessageType.Move:
+                        EventManager.playerControl_C.Action_Move(messageData);
+                        break;
+                    case MessageType.Other:
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }</code></pre>
+<h3>第五步：执行命令，并做补间动画。</h3>
+<pre><code>  /// &lt;summary&gt;
+    /// 执行移动
+    /// &lt;/summary&gt;
+    /// &lt;param name="move_SocketData"&gt;&lt;/param&gt;
+    public void ActionMove(TCPData_Move tCPData_Move)
+    {
+        Target = tCPData_Move.position;
+        isMove = true;
+       //寻路
+        moveForward(this.gameObject.transform, Target);
+       //转向
+        turnForward(this.gameObject.transform, Target);
+        animation.Play("run");
+    }
+
+
+    void moveForward(Transform obj, Vector3 target)
+    {
+        obj.transform.position = Vector3.Lerp(obj.transform.position, target, Time.deltaTime);
+    }
+
+    /// &lt;summary&gt;
+    /// 直接用transform.LookAt(targetPos);当目标点和远点不在一个高度时，会使物体发生倾斜来看想目标点
+    /// 该方法使物体朝向指向的方向，同时保持物体不倾斜，只绕y轴旋转一定角度
+    /// &lt;/summary&gt;
+    /// &lt;param name="origin"&gt;&lt;/param&gt;
+    /// &lt;param name="target"&gt;&lt;/param&gt;
+    void turnForward(Transform origin, Vector3 target)
+    {
+        //将原坐标和目的坐标映射到XOZ平面，从而过滤掉y轴方向的旋转的影响
+        Vector3 t1 = new Vector3(origin.position.x, 0, origin.position.z);
+        Vector3 t2 = new Vector3(target.x, 0, target.z);
+
+        Vector3 forward_dir = t2 - t1;
+        Quaternion rotate = Quaternion.FromToRotation(origin.forward, forward_dir);
+        float angle = rotate.eulerAngles.y;
+        //实现旋转
+        //origin.rotation *= rotate;
+        //实现平滑旋转
+        origin.rotation = Quaternion.Lerp(origin.rotation, origin.rotation * rotate, Time.deltaTime * 100);
+    }</code></pre>
+<h3>局域网内，让一台电脑为服务器，多个网段开启客户端，即可实现多人同步在线帧同步传输数据啦（移动端和PC端互通），附上效果：</h3>
+<p></p>
+<h3><img alt="" height="360" src="https://img-blog.csdnimg.cn/9f80959d0bbb441180d07e9812456013.gif" width="640"/></h3>
+<h3>欢迎小伙伴们关注+关注哈~</h3>
+<h3>【文末福利】</h3>
+<p><img alt="" height="727" src="image\b9590bf7218f418d8422705f4d110e17.png" width="576"/></p>
+<p><img alt="" height="569" src="image\15ef2cfa07b3431f8cabd8e3580168ba.png" width="640"/></p>
+<p></p>
+<p></p>
+</div>
+</div>

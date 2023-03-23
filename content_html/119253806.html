@@ -1,0 +1,158 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="SQLHQL_0"></a>SQL和HQL的区别</h2>
+<h3><a id="_1"></a>整体</h3>
+<p>1、存储位置：Hive在Hadoop上；Mysql将数据存储在设备或本地系统中；<br/> 2、数据更新：Hive不支持数据的改写和添加，是在加载的时候就已经确定好了；数据库可以CRUD；<br/> 3、索引：Hive无索引，每次扫描所有数据，底层是MR，并行计算，适用于大数据量；MySQL有索引，适合在线查询数据；<br/> 4、执行：Hive底层是MapReduce；MySQL底层是执行引擎；<br/> 5、可扩展性：Hive：大数据量；MySQL:相对就很少了。</p>
+<p>SQL执行顺序：<br/> from -&gt; where -&gt; group by -&gt; having -&gt; select -&gt; order by -&gt; limit</p>
+<h3><a id="_11"></a>语法</h3>
+<table><thead><tr><th>内容</th><th>SQL</th><th>Hive</th></tr></thead><tbody><tr><td>非等值连接</td><td>支持</td><td>不支持</td></tr><tr><td>子查询</td><td>支持</td><td>不支持</td></tr><tr><td>insert和update</td><td>支持</td><td>不支持,仅支持覆盖重写整个表</td></tr><tr><td>IS [NOT] NULL</td><td>null代表空值</td><td>String类型的字段若是空(empty)字符串, 即长度为0, 那么对它进行IS NULL的判断结果是False</td></tr><tr><td>数组拆分</td><td></td><td>LATERAL VIEW explode(数组类型字段) newTable AS newzd</td></tr><tr><td>数组包含</td><td>find_in_set(value,Array)</td><td>array_contains(Array, value)</td></tr><tr><td>分号</td><td>语句结束标识</td><td>需要对分号进行转义表示</td></tr><tr><td>不等于</td><td>!=或者&lt;&gt;</td><td>不能使用!=,只能使用&lt;&gt;</td></tr><tr><td><strong>group by别名问题</strong></td><td>select中新命名的别名可以直接在group by 中使用</td><td>不能直接使用别名，只能使用原内容或者再嵌套一层</td></tr></tbody></table>
+<p>更多相关细节：<br/> https://zhuanlan.zhihu.com/p/322399014<br/> https://www.cnblogs.com/yxzfscg/p/4892124.html</p>
+<h2><a id="SQL_28"></a>SQL相关面试题</h2>
+<p>学生成绩表Grade</p>
+<table><thead><tr><th>id</th><th>name</th><th>subject</th><th>grade</th></tr></thead><tbody><tr><td>001</td><td>张三</td><td>语文</td><td>81</td></tr><tr><td>001</td><td>张三</td><td>数学</td><td>75</td></tr><tr><td>002</td><td>李四</td><td>语文</td><td>76</td></tr><tr><td>002</td><td>李四</td><td>数学</td><td>90</td></tr><tr><td>003</td><td>王五</td><td>语文</td><td>81</td></tr><tr><td>003</td><td>王五</td><td>数学</td><td>100</td></tr></tbody></table>
+<p>学生班级表Class</p>
+<table><thead><tr><th>name</th><th>class</th></tr></thead><tbody><tr><td>张三</td><td>一班</td></tr><tr><td>李四</td><td>二班</td></tr><tr><td>王五</td><td>二班</td></tr></tbody></table>
+<p>题目一：用一条SQL 语句查询出每门课都大于80分的学生姓名<br/> 法一：</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> name 
+<span class="token keyword">from</span> Grade 
+<span class="token keyword">group</span> <span class="token keyword">by</span> name 
+<span class="token keyword">having</span> <span class="token function">min</span><span class="token punctuation">(</span>grade<span class="token punctuation">)</span> <span class="token operator">&gt;</span> <span class="token number">80</span>
+</code></pre>
+<p>法二：</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> <span class="token keyword">distinct</span> name 
+<span class="token keyword">from</span> Grade 
+<span class="token keyword">where</span> name <span class="token operator">not</span> <span class="token operator">in</span> <span class="token punctuation">(</span><span class="token keyword">select</span> <span class="token keyword">distinct</span> name 
+                   <span class="token keyword">from</span> Grade 
+                   <span class="token keyword">where</span> grade <span class="token operator">&lt;=</span> <span class="token number">80</span><span class="token punctuation">)</span>
+</code></pre>
+<p>题目二：用一条SQL语句查询出每个班语文成绩排名第一的学生班级以及姓名<br/> 法一：</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> class<span class="token punctuation">,</span>name
+<span class="token keyword">from</span>
+<span class="token punctuation">(</span><span class="token keyword">select</span> Grade<span class="token punctuation">.</span>name<span class="token punctuation">,</span>class<span class="token punctuation">,</span>grade<span class="token punctuation">,</span>
+ dense_rank<span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword">over</span><span class="token punctuation">(</span><span class="token keyword">partition</span> <span class="token keyword">by</span> class <span class="token keyword">order</span> <span class="token keyword">by</span> Grade<span class="token punctuation">.</span>grade <span class="token keyword">desc</span><span class="token punctuation">)</span> <span class="token keyword">as</span> ranking
+<span class="token keyword">from</span> Grade<span class="token punctuation">,</span>Class
+<span class="token keyword">where</span> Grade<span class="token punctuation">.</span>name <span class="token operator">=</span> Class<span class="token punctuation">.</span>name <span class="token operator">and</span> subject <span class="token operator">=</span> <span class="token string">"语文"</span>
+<span class="token punctuation">)</span>
+<span class="token keyword">where</span> ranking <span class="token operator">=</span> <span class="token number">1</span>
+</code></pre>
+<p>法二：</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> class<span class="token punctuation">,</span>name 
+<span class="token keyword">from</span>
+<span class="token punctuation">(</span><span class="token keyword">select</span> class<span class="token punctuation">,</span><span class="token function">max</span><span class="token punctuation">(</span>grade<span class="token punctuation">)</span> <span class="token keyword">as</span> grade
+<span class="token keyword">from</span>  Grade<span class="token punctuation">,</span>Class
+<span class="token keyword">where</span> Grade<span class="token punctuation">.</span>name <span class="token operator">=</span> Class<span class="token punctuation">.</span>name <span class="token operator">and</span> subject <span class="token operator">=</span> <span class="token string">"语文"</span>
+<span class="token keyword">group</span> <span class="token keyword">by</span> class
+<span class="token punctuation">)</span> a 
+<span class="token keyword">join</span>
+<span class="token punctuation">(</span><span class="token keyword">select</span> class<span class="token punctuation">,</span>name<span class="token punctuation">,</span>grade
+ <span class="token keyword">from</span>  Grade<span class="token punctuation">,</span>Class
+ <span class="token keyword">where</span> Grade<span class="token punctuation">.</span>name <span class="token operator">=</span> Class<span class="token punctuation">.</span>name <span class="token operator">and</span> subject <span class="token operator">=</span> <span class="token string">"语文"</span>
+<span class="token punctuation">)</span> b
+ <span class="token keyword">on</span> a<span class="token punctuation">.</span>class <span class="token operator">=</span> b<span class="token punctuation">.</span>class <span class="token operator">and</span> a<span class="token punctuation">.</span>grade <span class="token operator">=</span> b<span class="token punctuation">.</span>grade
+</code></pre>
+<p>注意：<br/> <mark>dense_rank()是密集排列，结果是1、1、2、3、4、5<br/> rank()是跳跃排列，结果是1、1、3、4、5、6<br/> row_number()是不重复排列，结果是1、2、3、4、5、6</mark><br/> 题目三：语文成绩全校排名第三的学生姓名和成绩</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> name<span class="token punctuation">,</span>grade
+<span class="token keyword">from</span> Grade
+<span class="token keyword">where</span> subject <span class="token operator">=</span> <span class="token string">'语文'</span>
+<span class="token keyword">order</span> <span class="token keyword">by</span> grade <span class="token keyword">desc</span>
+<span class="token keyword">limit</span> <span class="token number">2</span><span class="token punctuation">,</span><span class="token number">1</span>
+<span class="token comment">-- 含义是跳过2条取出1条数据，limit跳过2条信息，读取1条信息，即读取第3条数据</span>
+</code></pre>
+<p>题目四：将学生姓名表转化为横表</p>
+<pre><code class="prism language-sql"><span class="token comment">-- 此种写法某门课没有成绩记录的学生，成绩将变为0</span>
+<span class="token keyword">select</span> name<span class="token punctuation">,</span><span class="token function">max</span><span class="token punctuation">(</span>math<span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token function">max</span><span class="token punctuation">(</span>chinese<span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token function">max</span><span class="token punctuation">(</span>english<span class="token punctuation">)</span>
+<span class="token keyword">from</span>
+<span class="token punctuation">(</span><span class="token keyword">select</span> name<span class="token punctuation">,</span>
+          <span class="token keyword">case</span> <span class="token keyword">when</span> subject <span class="token operator">=</span> <span class="token string">"语文"</span> <span class="token keyword">then</span> grade <span class="token keyword">else</span> <span class="token number">0</span> <span class="token keyword">end</span> <span class="token keyword">as</span> chinese<span class="token punctuation">,</span>
+          <span class="token keyword">case</span> <span class="token keyword">when</span> subject <span class="token operator">=</span> <span class="token string">"数学"</span> <span class="token keyword">then</span> grade <span class="token keyword">else</span> <span class="token number">0</span> <span class="token keyword">end</span> <span class="token keyword">as</span> math<span class="token punctuation">,</span>
+          <span class="token keyword">case</span> <span class="token keyword">when</span> subject <span class="token operator">=</span> <span class="token string">"英语"</span> <span class="token keyword">then</span> grade <span class="token keyword">else</span> <span class="token number">0</span> <span class="token keyword">end</span> <span class="token keyword">as</span> english
+ <span class="token keyword">from</span> Grade
+ <span class="token punctuation">)</span>
+ <span class="token keyword">group</span> <span class="token keyword">by</span> name
+</code></pre>
+<p>若横表转竖表</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> name <span class="token punctuation">,</span> <span class="token string">'语文'</span> <span class="token keyword">as</span> subject<span class="token punctuation">,</span> chinese <span class="token keyword">as</span> grade <span class="token keyword">from</span> tb1
+<span class="token keyword">union</span> <span class="token keyword">all</span>
+<span class="token keyword">select</span> name <span class="token punctuation">,</span> <span class="token string">'数学'</span> <span class="token keyword">as</span> subject<span class="token punctuation">,</span> math <span class="token keyword">as</span> grade <span class="token keyword">from</span> tb1
+<span class="token keyword">union</span> <span class="token keyword">all</span>
+<span class="token keyword">select</span> name <span class="token punctuation">,</span> <span class="token string">'英语'</span> <span class="token keyword">as</span> subject<span class="token punctuation">,</span> english <span class="token keyword">as</span> grade <span class="token keyword">from</span> tb1
+</code></pre>
+<p><strong>union all与union的区别是union all不会去除重复记录，union会去除重复记录，为了保证数据库效果，除非必要，还是使用union all。</strong></p>
+<p>题目五：查询每门功课的及格人数和不及格人数</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> subject<span class="token punctuation">,</span>
+     <span class="token function">sum</span><span class="token punctuation">(</span><span class="token keyword">case</span> <span class="token keyword">when</span> grade <span class="token operator">&gt;=</span> <span class="token number">60</span> <span class="token keyword">then</span> <span class="token number">1</span> <span class="token keyword">else</span> <span class="token number">0</span> <span class="token keyword">end</span><span class="token punctuation">)</span> <span class="token keyword">as</span> 及格人数，
+     <span class="token function">sum</span><span class="token punctuation">(</span><span class="token keyword">case</span> <span class="token keyword">when</span> grade <span class="token operator">&lt;</span> <span class="token number">60</span> <span class="token keyword">then</span> <span class="token number">1</span> <span class="token keyword">else</span> <span class="token number">0</span> <span class="token keyword">end</span><span class="token punctuation">)</span> <span class="token keyword">as</span> 不及格人数
+<span class="token keyword">from</span> Grade
+<span class="token keyword">group</span> <span class="token keyword">by</span> subject
+</code></pre>
+<p>题目五： 将每个学生的成绩按照由大到小写在一起，用逗号隔开</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> name<span class="token punctuation">,</span>
+group_concat<span class="token punctuation">(</span>cast<span class="token punctuation">(</span>grade <span class="token keyword">as</span> <span class="token keyword">char</span><span class="token punctuation">)</span> <span class="token keyword">order</span> <span class="token keyword">by</span> grade <span class="token keyword">desc</span> separator <span class="token string">','</span><span class="token punctuation">)</span>
+<span class="token keyword">from</span> Grade
+<span class="token keyword">group</span> <span class="token keyword">by</span> name
+</code></pre>
+<p>题目六：按营业额倒序，累计超过3000w的前面的所有公司，用sum() over</p>
+<p>题目七：获取每个学生的成绩均值和中位数<br/> 方法一：</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> t<span class="token punctuation">.</span>name<span class="token punctuation">,</span>avg_gade<span class="token punctuation">,</span>mid_grade
+<span class="token keyword">from</span>
+<span class="token punctuation">(</span><span class="token keyword">select</span> name<span class="token punctuation">,</span><span class="token function">avg</span><span class="token punctuation">(</span>grade<span class="token punctuation">)</span> <span class="token keyword">as</span> mid_grade
+<span class="token keyword">from</span>
+<span class="token punctuation">(</span><span class="token keyword">select</span> name<span class="token punctuation">,</span>grade<span class="token punctuation">,</span>
+row_number<span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword">over</span><span class="token punctuation">(</span><span class="token keyword">partition</span> <span class="token keyword">by</span> name <span class="token keyword">order</span> <span class="token keyword">by</span> grade <span class="token keyword">asc</span><span class="token punctuation">,</span> id <span class="token operator">*</span><span class="token operator">*</span><span class="token keyword">asc</span><span class="token operator">*</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">as</span> <span class="token string">'id1'</span><span class="token punctuation">,</span>
+row_number<span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword">over</span><span class="token punctuation">(</span><span class="token keyword">partition</span> <span class="token keyword">by</span> name <span class="token keyword">order</span> <span class="token keyword">by</span> grade <span class="token keyword">desc</span><span class="token punctuation">,</span> id <span class="token operator">*</span><span class="token operator">*</span><span class="token keyword">desc</span><span class="token operator">*</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">as</span> <span class="token string">'id2'</span>
+<span class="token keyword">from</span> student<span class="token punctuation">)</span> <span class="token keyword">as</span> newtable
+<span class="token keyword">where</span> abs<span class="token punctuation">(</span>id1<span class="token operator">-</span>id2<span class="token punctuation">)</span><span class="token operator">=</span><span class="token number">1</span> <span class="token operator">or</span> id1<span class="token operator">=</span>id2<span class="token punctuation">;</span>
+<span class="token keyword">group</span> <span class="token keyword">by</span> name
+<span class="token punctuation">)</span> t
+<span class="token keyword">join</span>
+<span class="token punctuation">(</span><span class="token keyword">select</span> name<span class="token punctuation">,</span><span class="token function">avg</span><span class="token punctuation">(</span>grade<span class="token punctuation">)</span> <span class="token keyword">as</span> avg_grade
+<span class="token keyword">from</span> student
+<span class="token punctuation">)</span> tt
+<span class="token keyword">on</span> t<span class="token punctuation">.</span>name <span class="token operator">=</span> tt<span class="token punctuation">.</span>name
+</code></pre>
+<p>参考：https://zhuanlan.zhihu.com/p/162089174</p>
+<p>MySQL doesn’t yet support ‘LIMIT &amp; IN/ALL/ANY/SOME subquery’<br/> 以下写法可以，将id = 改为 id in 则不可以。</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> Candidate<span class="token punctuation">.</span>Name
+<span class="token keyword">from</span> Candidate
+<span class="token keyword">where</span> id <span class="token operator">=</span> 
+    <span class="token punctuation">(</span>
+     <span class="token keyword">select</span> CandidateId
+     <span class="token keyword">from</span> Vote
+     <span class="token keyword">group</span> <span class="token keyword">by</span> CandidateId
+     <span class="token keyword">order</span> <span class="token keyword">by</span> <span class="token function">count</span><span class="token punctuation">(</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token keyword">desc</span>
+     <span class="token keyword">limit</span> <span class="token number">1</span>
+    <span class="token punctuation">)</span>
+</code></pre>
+<table><thead><tr><th>函数</th><th>作用</th><th>举例</th></tr></thead><tbody><tr><td>concat(str1, str2,…)</td><td>将多个字符串连接成一个字符串</td><td>select concat (name , ‘,’ , score) as info from t1</td></tr><tr><td>concat_ws(separator, str1, str2, …)</td><td>将多个字符串连接成一个字符串，<strong>但是可以一次性指定分隔符</strong></td><td>select concat (‘,’ , name, score) as info from t1</td></tr><tr><td>group_concat( [distinct] 要连接的字段 [order by 排序字段 asc/desc ] [separator ‘分隔符’] )</td><td>将group by产生的同一个分组中的值连接起来，返回一个字符串结果</td><td>select name, group_concat(score) from t1 group by name</td></tr></tbody></table>
+<p>题目八：分割字符串，将grade中的数值分割为数学、语文、英语<br/> id|name|grade|<br/> |–|–|–|–|<br/> 001|张三|81,80,88||<br/> 002|李四 | 75,80,90|<br/> 003|王五 | 80,90,100|<br/> 方法一：</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> name<span class="token punctuation">,</span>
+          substring_index<span class="token punctuation">(</span>grade<span class="token punctuation">,</span><span class="token string">','</span><span class="token punctuation">,</span><span class="token number">1</span><span class="token punctuation">)</span> <span class="token keyword">as</span> 数学<span class="token string">',
+          substring_index(substring_index(grade,'</span><span class="token punctuation">,</span><span class="token string">',2),'</span><span class="token punctuation">,</span><span class="token string">','</span><span class="token operator">-</span><span class="token number">1</span><span class="token string">') as '</span>语文<span class="token string">',
+          substring_index(grade,'</span><span class="token punctuation">,</span>'<span class="token punctuation">,</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span> <span class="token keyword">as</span> 英语
+<span class="token keyword">from</span> Grade
+</code></pre>
+<p>字符串函数：<br/> SUBSTRING_INDEX（str, delim, count）<br/> delim:表示分割字符串，count:表示第几个分割字符串，当 count 为正数，取第 n 个分隔符之前的所有字符； 当 count 为负数，取倒数第 n 个分隔符之后的所有字符。<br/> SUBSTRING(string,position):获取Position之后的所有字符<br/> SUBSTRING(string,position,length)：获取position之后的长度为Length的字符串，其中position的长度从1开始。</p>
+<p>疑问：<br/> order by 1 和 order by 字段在效率上的区别，实际运行时，order by 1的效率比order by 字段的效率要高。</p>
+<p><mark>详细字符串操作的四种方式：</mark><br/> https://blog.csdn.net/qq_37260640/article/details/79731295?utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7Edefault-5.no_search_link&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7Edefault-5.no_search_link</p>
+<p>数据库常见面试题：https://www.cnblogs.com/diffrent/p/8854995.html</p>
+<p><mark>SQL使用问题</mark><br/> 问题1：A left join B join C 和 A left join (B join C)的区别？<br/> 多表相连不符合交换律，即从左到右执行和从右到左执行的结果是不一样的，<br/> A left join B join C = (A left join B) join C != A left join (B join C)</p>
+<p>2、sort by 和order by的区别<br/> order by实现的是全局排序，在hive引擎中将会只有1个reduce。而使用sort by会起多个reduce，只会在每个reduce中排序，如果不指定分组的话，跑出来的数据看起来是杂乱无章的，如果指定reduce个数是1，那么结果和order by是一致的。<br/> order by一般配合group by使用，而group by需要配合聚合函数使用。<br/> sort by分组时需要使用distribute by，和group by类似，但是它不需要配合聚合函数使用，也就不影响原数据的函数，这点和开窗函数有点类似。<br/> 参考：https://www.pianshen.com/article/17082054431/</p>
+<p>3、如果group by的key中有null，会怎么样<br/> group by 不对 null 进行分组统计。在使用 group by某列名进行分组统计时，该列名的数据有些为 null, 因而会出现 null 的数据行全部分成一组最终导致数据错误。<br/> 解决方法：为null值随机生成一个独一无二的数，这样为null的记录将不会被分组，维持原样。可以使用UUID() 函数生成这个独一无二的数。<br/> group by IFNULL(‘列名’, UUID())</p>
+<p>参考：https://www.cnblogs.com/CF1314/p/14132397.html<br/> 4、日期相关函数<br/> date_format()<br/> date_diff()<br/> date_add()<br/> select date_add(‘2021-05-01’, interval +1 day) as result</p>
+<p><strong>5、了解数据倾斜&amp;解决办法</strong><br/> 数据倾斜有三种形式得倾斜：<br/> 一是分区不均，某几个分区对应的key太多。多数情况都是这种倾斜。<br/> 二是单个key对应的数据量太多<br/> 三是单条记录数据太大（比如数组中的值太多）<br/> （1）加并行度<br/> 这是一种很简单的处理方案，将分区增多，数据打得更散，充分发挥分布式的优势。但是分区增量task也会增多，带来的额外的管理成本就更多了，分的太多反而跑得更慢，存储结果的成本也增加了，不是一个很好的解决方案。<br/> 可以在以下几个地方增加分区。<br/> 1.在倾斜的stage之前使用reparation重分区。<br/> 2.设置shuffle的并行度，大部分情况都使用这个。<br/> （2）处理特殊case<br/> 这种就比较常见了，经常会发现很多stage跑到剩下一个task死活跑不过或者耗时非常久。倾斜的key我们可以通过group by key进行count来寻找，一般都是空值、空字符串、还有特别热点的key。如何处理这就看你的业务需求咯。<br/> （3）利用小trick打散key<br/> 针对第二种倾斜的形式，我们可以在key上加随机前缀或后缀这样加盐的方式来将一个key变成多个key先进行一次shuffle，最后再还原回来。<br/> 例如我们需要进行分组统计，但是数据倾斜了，我们可以对key加随机前缀，把一个key变成多个进行count，最后sum。<br/> 这种方式比较麻烦特别是在join的情况下，要考虑的东西比较多。<br/> 加盐的方式也会数据量不是那么多的key也打的更散了，计算起来有点浪费资源。<br/> （4）自定义分区方案<br/> 这种就更高端了些，需要自己去实现一个partitioner，不多说，还不如构造key来实现自定义分区。<br/> 参考：https://www.jianshu.com/p/3635cd26b26a</p>
+<p><strong>6、HIVE的抽样方法有哪些</strong><br/> <strong>数据块抽样（tablesample()函数）</strong><br/> 按照hive表的比例、大小、行数对hive表进行随机抽样，在测试过程中发现，select语句不能带where条件且不支持子查询，可通过新建中间表或使用随机抽样解决，具体语句如下：<br/> create table xxx_new as select * from xxx tablesample(10 percent)</p>
+<p><strong>分桶抽样</strong><br/> hive中分桶其实就是根据某一个字段Hash取模，放入指定数据的桶中，比如将表table_1按照ID分成100个桶，其算法是hash(id) % 100，这样，hash(id) % 100 = 0的数据被放到第一个桶中，hash(id) % 100 = 1的记录被放到第二个桶中。具体语法是TABLESAMPLE (BUCKET x OUT OF y [ON colname])<br/> 例如：将表随机分成10组，抽取其中的第一个桶的数据<br/> select * from table_01 tablesample(bucket 1 out of 10 on rand())</p>
+<p><strong>随机抽样（rand()函数）</strong><br/> 1）使用rand()函数进行随机抽样，limit关键字限制抽样返回的数据，其中rand函数前的distribute和sort关键字可以保证数据在mapper和reducer阶段是随机分布的，案例如下：<br/> select * from table_name where col=xxx distribute by rand() sort by rand() limit num;<br/> 2）使用order 关键词<br/> 案例如下：<br/> select * from table_name where col=xxx order by rand() limit num;<br/> 经测试对比，千万级数据中进行随机抽样 order by方式耗时更长，大约多30秒左右。<br/> 参考：https://www.cnblogs.com/w-j-q/p/14139007.html</p>
+<h2><a id="_285"></a>数据库相关知识点</h2>
+<p>1、等值连接与自然连接的区别和联系<br/> （1）自然连接一定是等值连接，但等值连接不一定是自然连接。<br/> （2）等值连接要求相等的分量，不一定是公共属性；而自然连接要求相等的分量必须是公共属性。<br/> （3）等值连接不把重复的属性除去；而自然连接要把重复的属性除去。<br/> 2、数据库的三范式分别是什么，有什么区别？<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/23c0e5afde0242aaa20a91e4e36cfe34.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQwMzk2Mzgw,size_16,color_FFFFFF,t_70"/><br/> <img alt="第二范式" src="https://img-blog.csdnimg.cn/f5ef7067abeb4b668777935fcf0f4cd2.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQwMzk2Mzgw,size_16,color_FFFFFF,t_70"/><br/> <img alt="第三范式" src="https://img-blog.csdnimg.cn/ed2f042454df454fb6280566a0821278.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQwMzk2Mzgw,size_16,color_FFFFFF,t_70"/><br/> 参考：http://www.blogjava.net/hijackwust/archive/2007/10/21/154793.html</p>
+<p>3、什么是视图？和表的区别是什么？<br/> （1）视图是已经编译好的sql语句，而表不是；<br/> （2）视图没有实际的物理记录，而表有；<br/> （3）表是内容，视图是窗口；<br/> （4）表占用物理空间而视图不占用物理空间，表可以及时对它进行修改，但视图只是逻辑概念的存在，只能用创建的语句来修改；<br/> （5）表是三级模式结构中的概念模式，视图是外模式；</p>
+<p>4、什么是事务？什么是锁？<br/> 事务就是被绑定在一起作为一个逻辑工作单元的SQL 语句分组，如果任何一个语句操作失败那么整个操作就被失败，以后操作就会回滚到操作前状态，或者是上有个节点。为了确保要么执行，要么不执行，就可以使用事务。事务具有四个特性，分别是原子性，一致性，隔离性和持久性。</p>
+<table><thead><tr><th>特性</th><th>解释</th></tr></thead><tbody><tr><td>原子性</td><td>一个原子事务要么完整执行，要么干脆不执行。</td></tr><tr><td>一致性</td><td>底层数据存储的完整性。在一次转账过程中，从某一账户中扣除的金额必须与另一账户中存入的金额相等。</td></tr><tr><td>隔离性</td><td>事务必须在不干扰其他进程或事务的前提下独立执行</td></tr><tr><td>持久性</td><td>在某个事务的执行过程中，对数据所作的所有改动都必须在事务成功结束前保存至某种物理存储设备。</td></tr><tr><td><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/538f9c3798b24a7cbb79f57705e60989.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQwMzk2Mzgw,size_16,color_FFFFFF,t_70"/></td><td></td></tr><tr><td><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/825b94c4c1bb47da8507d2a2ecb7ff9e.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQwMzk2Mzgw,size_16,color_FFFFFF,t_70"/></td><td></td></tr><tr><td><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4d718e1257f042c68fd9ae91c8dd7619.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzQwMzk2Mzgw,size_16,color_FFFFFF,t_70"/></td><td></td></tr></tbody></table>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

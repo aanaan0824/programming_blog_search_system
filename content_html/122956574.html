@@ -1,0 +1,1601 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>参考博客 <a href="https://www.cnblogs.com/xiaoyantongxue/p/15677256.html" title="小程序授权登录并 laravel7(laravel8)  token 应用  - 王越666 - 博客园">小程序授权登录并 laravel7(laravel8) token 应用 - 王越666 - 博客园</a></p>
+<p> </p>
+<p></p>
+<p>                 <a href="https://www.jianshu.com/p/7179c325d4a5" title="微信小程序sku商品规格选择器 - 简书">微信小程序sku商品规格选择器 - 简书</a>  </p>
+<p><a href="https://blog.csdn.net/guanj0623/article/details/122029899" title="                微信小程序 和 laravel8 实现搜索后分页 加载_guanj0623的博客-CSDN博客">                微信小程序 和 laravel8 实现搜索后分页 加载_guanj0623的博客-CSDN博客</a></p>
+<p>                <a href="https://www.jb51.net/article/207552.htm" title="https://www.jb51.net/article/207552.htm">https://www.jb51.net/article/207552.htm</a></p>
+<p>.wxml(授权登录页面)</p>
+<pre><code>&lt;!--前台页面，通过判断决定展示登录还是信息--&gt;
+&lt;view wx:if="{<!-- -->{isHide}}"&gt;
+    &lt;view wx:if="{<!-- -->{canIUse}}" &gt;
+        &lt;view class='header'&gt;
+            &lt;image src='/images/x.jpg'&gt;&lt;/image&gt;
+        &lt;/view&gt;
+ 
+        &lt;view class='content'&gt;
+            &lt;view&gt;申请获取以下权限&lt;/view&gt;
+            &lt;text&gt;获得你的公开信息(昵称，头像等)&lt;/text&gt;
+        &lt;/view&gt;
+ 
+        &lt;button type="primary"  open-type="getUserInfo" bind:tap="login"&gt;授权登录&lt;/button&gt;
+    &lt;/view&gt;
+    &lt;view wx:else&gt;请升级微信版本&lt;/view&gt;
+&lt;/view&gt;
+ 
+&lt;view wx:else&gt;
+    &lt;view&gt;我的首页内容&lt;/view&gt;
+&lt;/view&gt;
+</code></pre>
+<p> .wxss(授权登录页面)</p>
+<pre><code>.header {
+  margin: 90rpx 0 90rpx 50rpx;
+  border-bottom: 1px solid #ccc;
+  text-align: center;
+  width: 650rpx;
+  height: 300rpx;
+  line-height: 450rpx;
+}
+
+.header image {
+  width: 200rpx;
+  height: 200rpx;
+}
+
+.content {
+  margin-left: 50rpx;
+  margin-bottom: 90rpx;
+}
+
+.content text {
+  display: block;
+  color: #9d9d9d;
+  margin-top: 40rpx;
+}
+
+.bottom {
+  border-radius: 80rpx;
+  margin: 70rpx 50rpx;
+  font-size: 35rpx;
+}
+</code></pre>
+<p>.js(授权登录)</p>
+<pre><code>// index.js
+// 获取应用实例
+const app = getApp()
+ 
+Page({
+  data: {
+    canIUse: wx.canIUse('button.open-type.getUserInfo'),
+    // 前台判断用的就是这个
+    isHide: true
+  },
+ 
+  // 微信授权
+  login(evt){
+    var that=this;
+    //    wx.getUserProfile获取用户信息
+    wx.getUserProfile({
+      // desc    声明获取用户个人信息后的用途，不超过30个字符
+      desc: 'desc',
+      success:res=&gt;{
+        if (res.userInfo) {
+          /*  wx.login 调用接口获取登录凭证（code）。通过凭证进而换取用户登录态信息，包括用户在当前小程序的唯一标识（openid）、微信开放平台帐号下的唯一标识（unionid，若当前小程序已绑定到微信开放平台帐号）及本次登录的会话密钥（session_key）*/
+          wx.login({
+            success:ret=&gt;{
+              
+              // 获取code
+              var code=ret.code;
+              
+              // 获取用户昵称
+              var nickName=res.userInfo.nickName;
+              // 获取用户照片
+              var log=res.userInfo.avatarUrl;
+              // 发送至php后端
+              wx.request({
+                url: 'http://www.yk.com/api/v1/wxlogin', //仅为示例，并非真实的接口地址
+                data: {
+                  code:code,
+                  nickName:nickName,
+                  log:log
+                },
+                method:"POST",
+                header: {
+                  'content-type': 'application/json' // 默认值
+                },
+                // 数据返回json格式
+                    success (res) {
+                   
+                        // 获取返回来的token，并将token进行保存至本地缓冲中
+                     wx.setStorageSync('token', res.data.data.token)
+                    // // 将用户id储存于本地
+                    wx.setStorageSync('userid', res.data.data.id);
+                    wx.reLaunch({
+                      url: '/pages/mine/mine',
+                    })
+                    }
+              })
+            }
+          })
+        }else{
+          console.log('用户拒绝啦');
+        }
+      }
+    })
+  }
+})
+</code></pre>
+<p> 控制器</p>
+<pre><code>&lt;?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Service\JwtServer;
+use App\Service\Token;
+use Illuminate\Http\Request;
+
+
+class LoginController extends Controller
+{
+    public function loginInfo(Request $request)
+    {
+        //接收前台传来的值
+        $params = $request-&gt;post();
+        $code=$request-&gt;post('code');
+        //获取appid
+        $appID = "wx1378003a2bdb6c0c";
+        // 从微信公众平台获得secret
+        $appSecret = "37e8b20e2f4bb7e85707c92cc1f4f0e4";
+
+         // 发送请求换取openid和sessionkey
+        $url="https://api.weixin.qq.com/sns/jscode2session?appid=".$appID."&amp;secret=".$appSecret."&amp;js_code=".$code."&amp;grant_type=authorization_code";
+        // 暂使用file_get_contents()发送请求，你可以使用CURL扩展的形式实现,获取opid和session_key
+
+        $res = json_decode(file_get_contents($url), true);
+
+
+       //调用成功后定义一个新的数组，最主要的session_key和openid两个值
+        $params['openid'] = $res['openid'];
+
+        //  给$params追加session_key
+        $params['session_key'] = $res['session_key'];
+
+       //查看数据库里是否有openid,有就修改，没有就添加
+        $res = User::where('openid', $params['openid'])-&gt;first();
+
+        //用查找到的用户信息的id生成token
+            $token=JwtServer::createToken($res['id']);
+        //将token发送至小程序，小程序进行缓冲token和用户id
+        $res['token']=$token;
+
+       //有就修改用户的额openID
+        if ($res) {
+            User::where('openid', $params['openid'])-&gt;update($params);
+            return ['code' =&gt; 201, 'meg' =&gt; '修改成功', 'data' =&gt; $res];
+        } else {
+         //没有就添加新用户
+            $add =User::create($params);
+            return ['code' =&gt; 200, 'meg' =&gt; '添加成功', 'data' =&gt; $res];
+        }
+
+    }
+}
+</code></pre>
+<p>App\Service新建Curl.php文件</p>
+<pre><code>&lt;?php
+
+
+namespace App\Service;
+
+
+class Curl
+{
+    public static function getCurl($url)
+    {
+        $headerArray =array("Content-type:application/json;","Accept:application/json");
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, FALSE);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch,CURLOPT_HTTPHEADER,$headerArray);
+        $output = curl_exec($ch);
+        curl_close($ch);
+        $output = json_decode($output,true);
+        return $output;
+    }
+
+}
+</code></pre>
+<p> composer 下载jwt</p>
+<pre><code>composer require firebase/php-jwt</code></pre>
+<p> service下建一个JwtServer.php，加人以下代码</p>
+<p><img alt="" height="243" src="image\477a34acf76d432c80a136a13d597d61.png" width="220"/></p>
+<p> App\Http\Middleware 下新建JwtToken.php 文件,toekn中间件</p>
+<pre><code>&lt;?php
+namespace App\Http\Middleware;
+use App\Service\JwtServer;
+use Closure;
+use Illuminate\Http\Request;
+
+class JwtToken
+{
+    /**
+     * Handle an incoming request.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  \Closure  $next
+     * @return mixed
+     */
+    public function handle(Request $request, Closure $next)
+    {
+        $token = $request-&gt;header('token');
+
+        if(empty($token)){
+            return response()-&gt;json(['code'=&gt;40001,'msg'=&gt;'请先登录','data'=&gt;$token]);
+        }
+        $userId=JwtServer::decodeToken($token);
+        if(!is_numeric($userId)){
+            return response()-&gt;json(['code'=&gt;40002,'msg'=&gt;'token过期','data'=&gt;$userId]);
+        }
+        $request['id'] = $userId;
+        return $next($request);
+
+    }
+}
+</code></pre>
+<p> 中间件kernel.php文件下</p>
+<pre><code>    protected $routeMiddleware = [
+        'auth' =&gt; \App\Http\Middleware\Authenticate::class,
+        'auth.basic' =&gt; \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
+        'cache.headers' =&gt; \Illuminate\Http\Middleware\SetCacheHeaders::class,
+        'can' =&gt; \Illuminate\Auth\Middleware\Authorize::class,
+        'guest' =&gt; \App\Http\Middleware\RedirectIfAuthenticated::class,
+        'password.confirm' =&gt; \Illuminate\Auth\Middleware\RequirePassword::class,
+        'signed' =&gt; \Illuminate\Routing\Middleware\ValidateSignature::class,
+        'throttle' =&gt; \Illuminate\Routing\Middleware\ThrottleRequests::class,
+        'verified' =&gt; \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+//        中间件
+        'jwt'=&gt;JwtToken::class
+    ];</code></pre>
+<p> 定义api路由，注意api路由书写格式，默认api前缀</p>
+<pre><code>Route::group(['prefix'=&gt;'v1','namespace'=&gt;'Api'],function (){
+//小程序登录
+    Route::any('wxlogin','LoginController@loginInfo');
+});
+
+
+Route::group(['middleware'=&gt;'jwt','prefix'=&gt;'v2','namespace'=&gt;'Api'],function (){
+    //获取手机验证码
+    Route::get('phone','PhoneController@PhoneCode');
+    //绑定手机
+    Route::get('bound','PhoneController@bound');
+//    查询商品列表
+    Route::get('goods','IndexController@index');
+//    获取商品详情
+    Route::get('detail','IndexController@detail');
+//    获取商品规格属性值
+    Route::get('specs','IndexController@specs');
+    //添加订单
+    Route::post('orders','IndexController@orders');
+    //获取订单详情
+    Route::get('order','IndexController@order');
+    //支付接口
+    Route::post('pay','IndexController@pay');
+});
+</code></pre>
+<p>手机发送验证码 </p>
+<p> .wxss(手机发送验证码)</p>
+<pre><code>&lt;!--pages/logins/logins.wxml--&gt;
+&lt;view class="container"&gt;
+  &lt;view class="title"&gt;绑定手机号&lt;/view&gt;
+  &lt;form catchsubmit="login"&gt;
+    &lt;view class="inputView"&gt;
+      &lt;input class="inputText" placeholder="请输入手机号" name="phone" bindinput="phone" /&gt;
+    &lt;/view&gt;
+    &lt;view class="inputView"&gt;
+      &lt;input class="inputText" placeholder="请输入验证码" name="code" /&gt;
+      &lt;button class="line"  size="mini" bindtap="sendcode"&gt;{<!-- -->{codebtn}}&lt;/button&gt;
+    &lt;/view&gt;
+    &lt;view class="loginBtnView"&gt;
+      &lt;button class="loginBtn" type="primary" formType="submit"&gt;绑定&lt;/button&gt;
+    &lt;/view&gt;
+  &lt;/form&gt;
+&lt;/view&gt;
+</code></pre>
+<p> .wxss</p>
+<pre><code>.container { 
+  display: flex;  
+  flex-direction: column; 
+  padding: 0; 
+ } 
+ .inputView { 
+  line-height: 45px; 
+  border-bottom:1px solid #999999;
+ } 
+.title{
+  width: 80%;
+  font-weight: bold;
+  font-size: 30px;
+}
+ .inputText { 
+  display: inline-block; 
+  line-height: 45px; 
+  padding-left: 10px; 
+  margin-top: 11px;
+  color: #cccccc; 
+  font-size: 14px;
+ } 
+ 
+ .line {
+  border: 1px solid #ccc;
+  border-radius: 20px; 
+  float: right; 
+  margin-top: 9px;
+  color: #cccccc;
+ } 
+ .loginBtn { 
+  margin-top: 40px; 
+  border-radius:10px;
+ }
+ 
+</code></pre>
+<p>.js</p>
+<pre><code>// pages/logins/logins.js
+Page({
+ 
+  /**
+   * 页面的初始数据
+   */
+  data: {
+    phone:'',
+    code: '',
+    codebtn:'发送验证码',
+    disabled:false,
+ 
+  },
+
+  // 获取输入账号 
+  phone: function (e) {
+    let phone = e.detail.value;
+    this.setData({
+      phone: e.detail.value
+    })
+  },
+  //发送验证码
+  sendcode:function(){
+    let that=this;
+    let phone =this.data.phone;
+    let token=wx.getStorageSync('token');
+    // console.log(token)
+    wx.request({
+      url: 'http://www.yk.com/api/v2/phone', //仅为示例，并非真实的接口地址
+      data: {phone},
+      header: {token},
+      method:"GET",
+      success (res) {
+        console.log(res.data)
+        that.setData({
+          code:res.data
+        })
+      }
+    })
+  },
+ 
+  // 绑定处理
+  login: function (evt) {
+    // console.log(evt);
+    var that = this;
+    // console.log(this.data.code)
+    var userid=wx.getStorageSync('userid')
+    var token=wx.getStorageSync('token');
+ 
+      wx.request({
+        url: 'http://www.yk.com/api/v2/bound', // 仅为示例，并非真实的接口地址
+        method: 'get',
+        data: {
+          phone: that.data.phone,
+         code:that.data.code,
+          userid:userid
+        },
+        header: {
+         token
+        },
+        success(res) {
+          if (res.data.code == "10000") {
+            wx.reLaunch({
+              url: '/pages/home/home',
+            })
+          } else {
+            wx.showToast({
+              title: res.data.msg,
+              icon: 'none',
+              duration: 2000
+            })
+          }
+        }
+      })
+    }
+    
+  
+})
+</code></pre>
+<p>控制器</p>
+<pre><code>&lt;?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+
+class PhoneController extends Controller
+{
+    /**
+     * 获取验证码方法
+     *  Request $request参数
+     * $getphone 手机号 $code 验证码
+     */
+    public function PhoneCode(Request $request){
+//       接收手机号码
+        $getPhone=$request-&gt;get('phone');
+
+//       生成一个随机四位的随机数
+        $code=mt_rand(1111,9999);
+
+        if(empty($getPhone) || empty($code)){
+            return ['code'=&gt;0,'data'=&gt;'','msg'=&gt;'参数不能为空'];
+        }
+
+        Cache::set($getPhone,$code,5000);
+//
+//        $statusStr = array(
+//            "0" =&gt; "短信发送成功",
+//            "-1" =&gt; "参数不全",
+//            "-2" =&gt; "服务器空间不支持,请确认支持curl或者fsocket，联系您的空间商解决或者更换空间！",
+//            "30" =&gt; "密码错误",
+//            "40" =&gt; "账号不存在",
+//            "41" =&gt; "余额不足",
+//            "42" =&gt; "帐户已过期",
+//            "43" =&gt; "IP地址限制",
+//            "50" =&gt; "内容含有敏感词"
+//        );
+//        $smsapi = "http://api.smsbao.com/";
+//        $user = "tannanping"; //短信平台帐号
+//        $pass = md5(""); //短信平台密码
+//        $content="短信内容".$code;//要发送的短信内容
+//        $phone = $getPhone;//要发送短信的手机号码
+//        $sendurl = $smsapi."sms?u=".$user."&amp;p=".$pass."&amp;m=".$phone."&amp;c=".urlencode($content);
+//        $result =file_get_contents($sendurl) ;
+//       echo $statusStr[$result];
+        return $code;
+    }
+
+    /**
+     * 登录方法
+     * 参数 Request $request
+     */
+
+    public function bound(Request $request){
+        $phone=$request-&gt;get('phone');
+        $code=$request-&gt;get('code');
+
+//       取出缓存内的验证码
+        $oldCode=Cache::get($phone);
+        if($code!=$oldCode){
+            return ['code'=&gt;10001,'data'=&gt;'','msg'=&gt;'验证码不正确'];
+        }else{
+            $model=new User();
+            $res=$model-&gt;where('phone',$phone)-&gt;first();
+            if(empty($res)){
+                return ['code'=&gt;10002,'data'=&gt;'','msg'=&gt;'账号不存在'];
+            }else{
+                return ['code'=&gt;10000,'data'=&gt;$res,'msg'=&gt;'绑定成功'];
+            }
+        }
+
+    }
+
+}
+</code></pre>
+<p>app.js(先验证是否登录 判断token是否存在)</p>
+<pre><code>//app.js
+App({
+  onLaunch: function () {
+    // 展示本地存储能力
+    var logs = wx.getStorageSync('logs') || []
+    logs.unshift(Date.now())
+    wx.setStorageSync('logs', logs)
+    var token=wx.getStorageSync('token');
+
+    if(token!=""){
+      wx.reLaunch({
+        url: '/pages/mine/mine',
+      })
+    }else{
+      wx.reLaunch({
+        url: '/pages/index/index',
+      })
+    }
+
+
+
+    // 登录
+    wx.login({
+      success: res =&gt; {
+        // 发送 res.code 到后台换取 openId, sessionKey, unionId
+      }
+    })
+    // 获取用户信息
+    wx.getSetting({
+      success: res =&gt; {
+        if (res.authSetting['scope.userInfo']) {
+          // 已经授权，可以直接调用 getUserInfo 获取头像昵称，不会弹框
+          wx.getUserInfo({
+            success: res =&gt; {
+              // 可以将 res 发送给后台解码出 unionId
+              this.globalData.userInfo = res.userInfo
+
+              // 由于 getUserInfo 是网络请求，可能会在 Page.onLoad 之后才返回
+              // 所以此处加入 callback 以防止这种情况
+              if (this.userInfoReadyCallback) {
+                this.userInfoReadyCallback(res)
+              }
+            }
+          })
+        }
+      }
+    })
+  },
+  globalData: {
+    userInfo: null
+  }
+})</code></pre>
+<p> 控制器商品购物流程</p>
+<pre><code>&lt;?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Goods;
+use App\Models\Goodspecs;
+use App\Models\Orders;
+use App\Models\User;
+use Illuminate\Http\Request;
+
+class IndexController extends Controller
+{
+    //展示商品列表数据
+    public function index(Request $request){
+//        $keyword = $request-&gt;input('keyword');
+        $data = Goods::paginate(5);
+        return ['status'=&gt;200,'msg'=&gt;'success','data'=&gt;$data];
+    }
+
+    public function detail(Request $request){
+        $id=$request-&gt;get('id');
+        $model=new Goods();
+        $res=$model-&gt;where('gid',$id)-&gt;first();
+        return ['status'=&gt;200,'msg'=&gt;'success','data'=&gt;$res];
+    }
+
+    public function specs(Request $request){
+        $id=$request-&gt;get('id');
+        $model=new Goods();
+        $res=$model-&gt;where('gid',$id)-&gt;with(['specs','goodspecs'])-&gt;get();
+        return ['status'=&gt;200,'msg'=&gt;'success','data'=&gt;$res];
+    }
+
+
+    //添加订单
+    public function orders(Request $request){
+       $param=$request-&gt;post();
+       //商品id
+       $id=$request-&gt;post('g_id');
+       //查询该商品的库存
+        $good=new Goodspecs();
+        $ku=$good-&gt;where('g_id',$id)-&gt;first();
+        $number=$ku['num'];
+//       判断商品库存是否足够
+        if($number&lt;$param['num']){
+            return ['status'=&gt;0,'msg'=&gt;'商品库存不够','data'=&gt;$number];
+        }
+
+        $model=new Orders();
+        $res=$model-&gt;create($param);
+        if(!$res){
+            return ['status'=&gt;0,'msg'=&gt;'error','data'=&gt;$res];
+        }else{
+            return ['status'=&gt;200,'msg'=&gt;'success','data'=&gt;$res];
+        }
+    }
+    //获取订单详情
+    public function order(Request $request){
+        $oid=$request-&gt;get('oid');
+        $model=new Orders();
+        $res=$model-&gt;where('oid',$oid)-&gt;with(['user','goods'])-&gt;get();
+        return ['status'=&gt;200,'msg'=&gt;'success','data'=&gt;$res];
+    }
+//    执行支付
+    public function pay(Request $request){
+        $oid=$request-&gt;post('oid');
+        $uid=$request-&gt;post('uid');
+
+        $model=new Orders();
+        $oldprice=$model-&gt;where('oid',$oid)-&gt;first();
+        $user=new User();
+        $zh=$user-&gt;where('id',$uid)-&gt;first();
+        if($zh['price']&lt;$oldprice['price']){
+            return ['status'=&gt;0,'msg'=&gt;'余额不足','data'=&gt;$zh];
+        }else{
+//            商品属性表
+            $goods=new Goodspecs();
+//            获取原来库存
+            $kc=$goods-&gt;where('g_id',$oldprice['g_id'])-&gt;first();
+            //当前库存=原来库存-购买数量
+            $newnumber=$kc['num']-$oldprice['num'];
+            //支付成功 修改库存
+            $res=$goods-&gt;where('g_id',$oldprice['g_id'])-&gt;update(['num'=&gt;$newnumber]);
+
+        }
+
+    }
+
+}
+</code></pre>
+<p>商品列表 </p>
+<p> .wxml(商品列表)</p>
+<pre><code>&lt;view&gt;
+  &lt;view&gt;
+     &lt;view&gt;
+      &lt;form bindsubmit="dopost"&gt;
+        &lt;view class="weui-search-bar"&gt;
+            &lt;view class="weui-search-bar__form"&gt;
+            &lt;!-- 搜索框 --&gt;
+                &lt;view class="weui-search-bar__box"&gt;
+                    &lt;icon class="weui-icon-search_in-box" type="search" size="14"&gt;&lt;/icon&gt;
+                    &lt;input type="text" name="keyword" value="{<!-- -->{keyword}}" class="weui-search-bar__input" placeholder="请输入搜索内容" /&gt;
+                &lt;/view&gt;
+            &lt;/view&gt;
+            &lt;!-- 搜索按钮,调用搜索查询方法 --&gt;
+            &lt;button size="mini" class="weui-search-bar__cancel-btn" form-type="submit"&gt;搜索&lt;/button&gt;
+        &lt;/view&gt;
+        &lt;/form&gt;
+    &lt;/view&gt;
+  &lt;/view&gt;
+  &lt;view class="page-section-spacing"&gt;
+        &lt;scroll-view scroll-y="true" class="page-scroll-style" bindscrolltolower="scroll"&gt;
+        &lt;block wx:for="{<!-- -->{activity}}" wx:key="activity"&gt;
+          &lt;view class="scroll-view-content"&gt;
+            &lt;image src="{<!-- -->{item.image}}" class="scroll-view-image" bindtap=""&gt;&lt;/image&gt;
+            &lt;view class="scroll-view-text" bindtap="detail" data-id="{<!-- -->{item.gid}}"&gt;
+              {<!-- -->{item.name}}
+            &lt;/view&gt;
+            &lt;view class="scroll-view-name"&gt;
+              {<!-- -->{item.price}}
+            &lt;/view&gt;
+          &lt;/view&gt;
+        &lt;/block&gt;
+        &lt;/scroll-view&gt;
+  &lt;/view&gt;
+&lt;/view&gt;
+</code></pre>
+<p>.wxss</p>
+<pre><code>/**index.wxss**/
+.weui-search-bar {
+    position: relative;
+    padding: 8px 10px;
+    display: -webkit-box;
+    display: -webkit-flex;
+    display: flex;
+    box-sizing: border-box;
+    background-color: #EFEFF4;
+    border-top: 1rpx solid #D7D6DC;
+    border-bottom: 1rpx solid #D7D6DC;
+  }
+  .weui-icon-search_in-box {
+    position: absolute;
+    left: 10px;
+    top: 7px;
+  }
+  .weui-search-bar__form {
+    position: relative;
+    -webkit-box-flex: 1;
+    -webkit-flex: auto;
+            flex: auto;
+    border-radius: 5px;
+    background: #FFFFFF;
+    border: 1rpx solid #E6E6EA;
+  }
+  .weui-search-bar__box {
+    position: relative;
+    padding-left: 30px;
+    padding-right: 30px;
+    width: 100%;
+    box-sizing: border-box;
+    z-index: 1;
+  }
+  .weui-search-bar__input {
+    height: 28px;
+    line-height: 28px;
+    font-size: 14px;
+  }
+  .weui-search-bar__cancel-btn {
+    margin-left: 10px;
+    line-height: 28px;
+    color: #09BB07;
+    white-space: nowrap;
+  }
+  .swp{
+    height: 500rpx;
+  }
+  .page-section-spacing{
+    margin-top: 60rpx;
+  }
+   
+  .page-scroll-style{
+    height: 1000rpx;
+    background: aliceblue;
+  }
+  .scroll-view-content{
+    height: 230rpx;
+    margin: auto 10rpx;
+    background: white;
+    border: 1px solid gray;
+  }
+  .scroll-view-image{
+    width: 200rpx;
+    height: 200rpx;
+    margin-top: 15rpx;
+    margin-left: 20rpx;
+    float: left;
+  }
+  .scroll-view-text{
+    width: 400rpx;
+    float: left;
+    font-weight: 800;
+    margin-top: 15rpx;
+    margin-left: 20rpx;
+  }
+  .scroll-view-name{
+    float: left;
+    font-size: 30rpx;
+    color: gray;
+    margin-top: 20rpx;
+    margin-left: 20rpx;
+  }
+  .scroll-view_H{
+    white-space: nowrap;
+  }
+  .scroll-view-item{
+    height: 300rpx;
+  }
+  .scroll-view-item_H{
+    display: inline-block;
+    width: 100%;
+    height: 300rpx;
+  }
+  </code></pre>
+<p> .js</p>
+<pre><code>Page({
+ 
+    /**
+     * 页面的初始数据
+     */
+    data: {
+      activity:{},
+      page:1,
+      last_page : 0,
+      keyword:''
+    },
+   
+    detail:function(evn){
+   
+      let id=evn.target.dataset.id;
+      wx.reLaunch({
+        url: '/pages/detail/detail?id='+id,
+      })
+    },
+  //加载
+  scroll(e){
+    let that = this;
+    let page = that.data.page+1;
+    let keyword = that.data.keyword
+    that.setData({
+      page:page 
+    })
+    let last_page = that.data.last_page
+    if(page &gt; last_page){
+      wx.showToast({
+        title: '到底了',
+      })
+      return ;
+    }
+    wx.showLoading({
+        title: '加载中',
+    })
+    let token=wx.getStorageSync('token');
+    wx.request({
+      url: 'http://www.yk.com/api/v2/goods',
+      data:{page,keyword},
+      header: {
+       token
+      },
+      success (res) {
+        console.log(res.data)
+        let activity = res.data.data.data
+        that.setData({
+          activity:that.data.activity.concat(activity),
+        })
+        wx.hideLoading()
+      }
+    })
+  },
+    /**
+     * 生命周期函数--监听页面加载
+     */
+    onLoad: function (options) {
+      var that = this;
+      let token=wx.getStorageSync('token');
+      wx.request({
+        url: 'http://www.yk.com/api/v2/goods',
+        header: {
+            token
+        },
+        success (res) {
+          // console.log(res.data)
+          let activity = res.data.data.data
+          that.setData({
+            activity:activity,
+            last_page:res.data.data.last_page,
+            page:res.data.data.current_page
+          })
+        }
+      })
+    },
+ 
+  //搜索
+    dopost:function(e){
+      console.log(e);
+      let formData = e.detail.value;
+      wx.request({
+        url: 'http://www.week2.skill.com/api/activity/index',
+        data:formData,
+        method:"GET",
+        success:res=&gt;{
+          console.log(res);
+          if(res.data.status==200){
+            this.setData({
+              activity:res.data.data.data,
+              keyword:formData.keyword,
+              last_page:res.data.data.last_page,
+              page:res.data.data.current_page
+            })
+          }
+        },
+        fail(e){
+          wx.showToast({
+            title: '请求失败',
+            icon:"error"
+          })
+        }
+      })
+    },
+  })
+  </code></pre>
+<p>商品详情</p>
+<p>.wxml</p>
+<p></p>
+<pre><code>&lt;!-- banner --&gt;
+&lt;swiper indicator-dots="{<!-- -->{indicatorDots}}" autoplay="{<!-- -->{autoplay}}" interval="{<!-- -->{interval}}" duration="{<!-- -->{duration}}"&gt;
+  &lt;block&gt;
+    &lt;swiper-item&gt;
+      &lt;image src="{<!-- -->{activity.image}}" data-src="{<!-- -->{item}}" bindtap="previewImage"&gt;&lt;/image&gt;
+    &lt;/swiper-item&gt;
+  &lt;/block&gt;
+&lt;/swiper&gt;
+&lt;scroll-view scroll-y="true"&gt;
+  &lt;view class="detail"&gt;
+    &lt;text class="title"&gt;{<!-- -->{activity.name}}&lt;/text&gt;
+    &lt;text class="price"&gt;￥{<!-- -->{activity.price}}&lt;/text&gt;
+
+  &lt;/view&gt;
+  &lt;view class="separate"&gt;&lt;/view&gt;
+  &lt;!-- sku选择 --&gt;
+  &lt;text bindtap="toggleDialog"&gt;请选择购买数量&lt;/text&gt;
+  &lt;view class="separate"&gt;&lt;/view&gt;
+  &lt;text&gt;商品评价&lt;/text&gt;
+  &lt;text class="text-remark"&gt;东西还可以，好评~&lt;/text&gt;
+  &lt;view class="separate"&gt;&lt;/view&gt;
+  &lt;text&gt;商品详情&lt;/text&gt;
+  &lt;block wx:for-items="{<!-- -->{detailImg}}" wx:key="name"&gt;
+    &lt;image class="image_detail" src="{<!-- -->{item}}" /&gt;
+  &lt;/block&gt;
+  &lt;view class="temp"&gt;&lt;/view&gt;
+&lt;/scroll-view&gt;
+&lt;!-- 底部悬浮栏
+&lt;view class="detail-nav"&gt;
+  &lt;image bindtap="toCar"/&gt;
+  &lt;view class="line_nav"&gt;&lt;/view&gt;
+  &lt;image bindtap="addLike"/&gt;
+  &lt;button class="button-green" bindtap="addCar" formType="submit"&gt;加入购物车&lt;/button&gt;
+  &lt;button class="button-red" bindtap="immeBuy" formType="submit"&gt;立即购买&lt;/button&gt;
+&lt;/view&gt; --&gt;
+
+
+&lt;!--pages/demo/demo.wxml--&gt;
+&lt;view class="container"&gt;
+  &lt;view class="footer-box" hover-class="btn-hover" bindtap="buy" data-id="{<!-- -->{activity.gid}}"&gt;
+    立即购买
+  &lt;/view&gt;
+
+
+
+  &lt;view class="mark" hidden='{<!-- -->{selHidden}}' bindtap='hiddenSel'&gt;&lt;/view&gt;
+  &lt;view class="detail-box" animation="{<!-- -->{animationDataSel}}" wx:for="{<!-- -->{activ}}"&gt;
+
+    &lt;view class="goods-img-box"&gt;
+      &lt;image src="{<!-- -->{item.image}}" class="goods-img"&gt;&lt;/image&gt;
+      &lt;view class='right-side'&gt;
+        &lt;view class='price'&gt;¥{<!-- -->{item.price}}&lt;/view&gt;
+        &lt;view class='type'&gt;已选：{<!-- -->{selTypeList}}&lt;/view&gt;
+        &lt;view class='inventory'&gt;库存：{<!-- -->{activ.num}}&lt;/view&gt;
+      &lt;/view&gt;
+      &lt;view class="sel-box"&gt;
+      &lt;view class="sel-list" wx:for="{<!-- -->{item.specs}}"&gt;
+          &lt;text class="{<!-- -->{indexArr[childIndex] == index ? 'active':''}}" bindtap="choice" data-fid="{<!-- -->{childIndex}}" data-id="{<!-- -->{index}}"&gt;
+           {<!-- -->{item.name}}
+         &lt;/text&gt;
+      &lt;/view&gt;
+      &lt;view class="sel-list" wx:for="{<!-- -->{item.specs}}"&gt;
+          &lt;text class="{<!-- -->{indexArr[childIndex] == index ? 'active':''}}" bindtap="choice" data-fid="{<!-- -->{childIndex}}" data-id="{<!-- -->{index}}"&gt;
+           {<!-- -->{item.name}}
+         &lt;/text&gt;
+      &lt;/view&gt;
+    &lt;/view&gt;
+    &lt;/view&gt;
+    &lt;view class="number-box" style="margin-top: 200px;"&gt;
+      &lt;view class="control {<!-- -->{plusBan}}" bindtap='plus'&gt;+&lt;/view&gt;
+      &lt;view class="control num"&gt;{<!-- -->{selNum}}&lt;/view&gt;
+      &lt;view class="control {<!-- -->{minusBan}}" bindtap='minus'&gt;-&lt;/view&gt;  
+    &lt;/view&gt;
+    &lt;view class="confirm-btn {<!-- -->{btnType}}"  bindtap='confirm' data-id="{<!-- -->{activity.gid}}" data-price="{<!-- -->{activity.price}}"&gt;确认&lt;/view&gt;
+  &lt;/view&gt;
+&lt;/view&gt;
+</code></pre>
+<p>.wxss</p>
+<pre><code>page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  /* 直接设置swiper属性 */
+  swiper {
+    height: 500rpx;
+  }
+  swiper-item image {
+    width: 100%;
+    height: 100%;
+  }
+  .detail {
+    display: flex;
+    flex-direction: column;
+    margin-top: 15rpx;
+    margin-bottom: 0rpx;
+  }
+  .detail .title {
+    font-size: 40rpx;
+    margin: 10rpx;
+    color: black;
+    text-align: justify;
+  }
+  .detail .price {
+    color: red;
+    font-size: 40rpx;
+    margin: 10rpx;
+  }
+  .line_flag {
+    width: 80rpx;
+    height: 1rpx;
+    display: inline-block;
+    margin: 20rpx auto;
+    background-color: gainsboro;
+    text-align: center;
+  }
+  .line {
+    width: 100%;
+    height: 2rpx;
+    display: inline-block;
+    margin: 20rpx 0rpx;
+    background-color: gainsboro;
+    text-align: center;
+  }
+  .detail-nav {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    float: left;
+    background-color: #fff;
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100rpx;
+  }
+  .button-green {
+    background-color: #4caf50; /* Green */
+  }
+  .button-red {
+    background-color: #f44336; /* 红色 */
+  }
+  .image_detail {
+    width: 100%;
+  }
+  button {
+    color: white;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 30rpx;
+    border-radius: 0rpx;
+    width: 50%;
+    height: 100%;
+    line-height: 100rpx;
+  }
+  .detail-nav image {
+    width: 70rpx;
+    height: 50rpx;
+    margin: 20rpx 40rpx;
+  }
+  .line_nav {
+    width: 5rpx;
+    height: 100%;
+    background-color: gainsboro;
+  }
+  /* 占位 */
+  .temp {
+    height: 100rpx;
+  }
+  text {
+    display: block;
+    height: 60rpx;
+    line-height: 60rpx;
+    font-size: 30rpx;
+    margin: 10rpx;
+  }
+  .text-remark {
+    display: block;
+    font-size: 25rpx;
+    margin: 10rpx;
+  }
+
+  
+  
+  /* pages/demo/demo.wxss */
+.container .footer-box{
+  position: fixed;
+  bottom: 0rpx;
+  margin: auto;
+  height: 100rpx;
+  width:100%;
+  background-color: #E40112;
+  text-align: center;
+  line-height: 100rpx;
+  color: #fff;
+  font-size: 32rpx;
+}
+.container .btn-hover{
+  opacity: 0.8;
+}
+.container .mark{
+  position: fixed;
+  z-index: 10;
+  height: 100%;
+  width: 100%;
+  background-color: rgba(0, 0, 0, 0.75)
+}
+.container .detail-box{
+  position: fixed;
+  z-index: 10;
+  bottom: -980rpx;
+  height: 980rpx;
+  width: 100%;
+  background-color: #fff;
+}
+.container .detail-box .goods-img-box{
+  height: 240rpx;
+  box-sizing: border-box;
+  padding: 24rpx;
+  border-bottom: solid 1rpx #e3e3e3;
+}
+.container .detail-box .goods-img-box .goods-img{
+  height: 192rpx;
+  width: 192rpx;
+  float: left;
+}
+.container .detail-box .goods-img-box .right-side{
+  float: left;
+  padding-top: 10rpx;
+}
+.container .detail-box .goods-img-box .right-side .price{
+  font-size: 32rpx;
+  color: #E40112;
+  font-weight: bold;
+}
+.container .detail-box .goods-img-box .right-side .type{
+  font-size: 24rpx;
+  color: #333;
+  margin-top: 8rpx;
+  margin-bottom: 8rpx;
+  overflow : hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;  
+}
+.container .detail-box .goods-img-box .right-side .inventory{
+  font-size: 24rpx;
+  color: #999;
+}
+
+.container .detail-box .sel-box{
+  height: 560rpx;
+  width: 100%;
+  box-sizing: border-box;
+  padding-bottom: 24rpx;
+  overflow-y: auto;
+}
+
+.container .detail-box .sel-box .sel-list .sel-title{
+  font-size: 28rpx;
+  color: #333;
+  line-height: 60rpx;
+  padding-left: 24rpx;
+}
+.container .detail-box .sel-box .sel-list .type-list{
+  padding-left: 24rpx;
+}
+.container .detail-box .sel-box .sel-list .type-list {
+  overflow: hidden;
+} 
+.container .detail-box .sel-box .sel-list .type-list .type-item{
+  display: inline-block;
+  
+  height: 50rpx;
+  line-height: 48rpx;
+  border: solid 1rpx #999;
+  padding-left: 15rpx;
+  padding-right: 15rpx;
+  font-size: 24rpx;
+  color: #666;
+  border-radius: 5rpx;
+  margin-right: 24rpx;
+  margin-bottom: 24rpx;
+}
+.container .detail-box .sel-box .sel-list .type-list .sel{
+  border: solid 1rpx #f63636;
+  color: #f63636;
+}
+.container .detail-box .sel-box .sel-list .type-list .ban{
+  background-color: #f5f5f5;
+  border: solid 1rpx #f5f5f5;  
+}
+.container .detail-box .confirm-btn{
+  height: 100rpx;
+  background-color: #E40112;
+  text-align: center;
+  line-height: 100rpx;
+  color: #fff;
+  font-size: 30rpx;
+}
+.container .detail-box .buy-ban{
+  background-color: #ddd;
+}
+.container .detail-box .number-box{
+  padding-left: 24rpx;
+  padding-right: 24rpx;
+  height: 80rpx;
+  box-sizing: border-box;
+  border-top: solid 1rpx #e3e3e3;
+}
+.container .detail-box .number-box .control{
+  margin-top: 14rpx;
+  float: right;
+  height: 52rpx;
+  width: 52rpx;
+  background-color: #e3e3e3;
+  text-align: center;
+  line-height: 52rpx;
+  color: #666;
+  font-size: 36rpx;
+  border-radius: 5rpx;
+  margin-left: 4rpx;
+}
+.container .detail-box .number-box .ban{
+  background-color: #F0F0F0;
+}
+.container .detail-box .number-box .num{
+  width: 100rpx;
+  font-size: 26rpx;
+  background-color: #f0f0f0;
+  font-family: Arial, Helvetica, sans-serif; 
+}
+</code></pre>
+<p>.js</p>
+<pre><code>Page({
+    data: {
+        shopping:[],
+        selNum:1,//要购买的数量
+    },
+    minus:function(){
+      //减少购买数量
+      let that=this;
+      if (that.data.minusBan=="ban"){
+        return;
+      }else{
+        that.setData({
+          selNum: that.data.selNum-1
+        })
+        if (that.data.selNum==1){
+          that.setData({
+            minusBan:"ban"
+          })
+        }
+      }
+      if (that.data.selNum == that.data.selStock) {
+        that.setData({
+          plusBan: "ban"
+        })
+      }else{
+        that.setData({
+          plusBan: ""
+        })      
+      }
+    },
+    plus:function(){
+      //增加购买数量
+      let that = this;
+      if (that.data.plusBan == "ban"){
+        return;
+      }else{
+        that.setData({
+          selNum: that.data.selNum + 1
+        })
+        if (that.data.selNum == that.data.selStock) {
+          that.setData({
+            plusBan: "ban"
+          })
+        }
+        if (that.data.selNum == 1) {
+          that.setData({
+            minusBan: "ban"
+          })
+        }else{
+          that.setData({
+            minusBan: ""
+          })        
+        }
+      }
+    },
+    confirm:function(evn){
+      //弹窗确认按钮触发
+        let num=this.data.selNum;
+        let u_id=wx.getStorageSync('userid');
+        let g_id=evn.target.dataset.id;
+        let oldprice=evn.target.dataset.price;
+        //总价格=总数量*单价
+        let price=num*oldprice;
+       
+        let token=wx.getStorageSync('token');
+        wx.request({
+          url: 'http://www.yk.com/api/v2/orders',
+          method:'post',
+          data:{u_id,g_id,num,price},
+          header: {
+              token
+          },
+          success (res) {
+            // 获取订单id
+           let id=res.data.data.id;
+            wx.reLaunch({
+              url: '/pages/order/order?id='+id,
+            })
+           
+          }
+        })
+
+
+      
+    },
+    onLoad: function (options) {
+      //  商品id
+        let id=options.id;
+        var that = this;
+        let token=wx.getStorageSync('token');
+        wx.request({
+          url: 'http://www.yk.com/api/v2/detail',
+          method:'GET',
+          data:{id},
+          header: {
+              token
+          },
+          success (res) {
+            // console.log(res.data)
+            let activity = res.data.data
+            that.setData({
+              activity:activity,
+        
+            })
+          }
+        })
+      },
+
+ 
+      buy:function(evn){
+        // console.log(evn.target.dataset.id);
+        // 商品id
+        let id=evn.target.dataset.id;
+        //立即购买按钮触发
+        this.showSelBox();
+        let that = this;
+        let token=wx.getStorageSync('token');
+        wx.request({
+          url: 'http://www.yk.com/api/v2/specs',
+          method:'GET',
+         data:{id},
+          header: {
+              token
+          },
+          success (res) {
+            console.log(res.data.data)
+            let activ = res.data.data;
+          
+            that.setData({
+              activ:activ,
+            })
+          }
+        })
+      },
+ 
+      onReady: function () {
+        let that = this
+        that.animation = wx.createAnimation({ //动画
+          duration: 300, //动画持续时间
+          timingFunction: 'linear', //动画的效果 动画从头到尾的速度是相同的
+          transformOrigin: "50% 50% 0",
+        })  
+      },
+      showSelBox: function (e) {//显示选项
+        let that = this;
+        let systemInfo = wx.getSystemInfoSync();
+        let px = 980 / 750 * systemInfo.windowWidth;
+    
+        this.animation.translateY(-px).step() //在Y轴偏移tx，单位px
+        this.setData({
+          animationDataSel: that.animation.export(),
+          selHidden: false,
+        })
+      },   
+
+ 
+
+  })
+  </code></pre>
+<p>订单页面</p>
+<p>.wxml</p>
+<pre><code>&lt;view wx:for="{<!-- -->{order}}" wx:key="order"&gt;
+    &lt;view wx:for="{<!-- -->{item.user}}"&gt;
+        &lt;view&gt;{<!-- -->{item.nickName}}&lt;/view&gt;
+        &lt;view&gt;{<!-- -->{item.phone}}&lt;/view&gt;
+    &lt;/view&gt;
+    &lt;view style="margin-top: 100;" wx:for="{<!-- -->{item.goods}}"&gt;
+        &lt;view&gt;{<!-- -->{item.name}}&lt;/view&gt;
+        &lt;image src="{<!-- -->{item.image}}"&gt;&lt;/image&gt;
+        &lt;view&gt;单价{<!-- -->{item.price}}&lt;/view&gt;
+    &lt;/view&gt;
+    &lt;view style="margin-top: 100;"&gt;
+        &lt;view&gt;数量：{<!-- -->{item.num}}&lt;/view&gt;
+        &lt;view&gt;总价：{<!-- -->{item.price}}&lt;/view&gt;
+        &lt;button bindtap="pay" data-id="{<!-- -->{item.oid}}"&gt;去支付&lt;/button&gt;
+    &lt;/view&gt;
+  
+&lt;/view&gt;
+ 
+
+</code></pre>
+<p> .js</p>
+<pre><code>// pages/order/order.js
+Page({
+
+    /**
+     * 页面的初始数据
+     */
+    data: {
+        
+    },
+    pay:function(evn){
+       
+        let oid=evn.target.dataset.id;
+        let uid=wx.getStorageSync('userid');
+        let token=wx.getStorageSync('token');
+        wx.request({
+          url: 'http://www.yk.com/api/v2/pay',
+          method:'post',
+          data:{oid,uid},
+          header: {
+              token
+          },
+          success (res) {
+            // 获取订单id
+        
+            console.log(res)
+
+            // let order=res.data.data;
+            // console.log(order)
+            // that.setData({
+            //     order:order
+            //   })
+            // wx.reLaunch({
+            //   url: '/pages/order/order?id='+id,
+            // })
+           
+          }
+        })
+
+
+    },
+    /**
+     * 生命周期函数--监听页面加载
+     */
+    onLoad: function (options) {
+        let that=this;
+        // console.log(options.id);
+        let oid=options.id;
+              
+        let token=wx.getStorageSync('token');
+        wx.request({
+          url: 'http://www.yk.com/api/v2/order',
+          method:'get',
+          data:{oid},
+          header: {
+              token
+          },
+          success (res) {
+            // 获取订单id
+        
+            // console.log(res)
+            let order=res.data.data;
+            console.log(order)
+            that.setData({
+                order:order
+              })
+            // wx.reLaunch({
+            //   url: '/pages/order/order?id='+id,
+            // })
+           
+          }
+        })
+
+    },
+
+    /**
+     * 生命周期函数--监听页面初次渲染完成
+     */
+    onReady: function () {
+
+    },
+
+    /**
+     * 生命周期函数--监听页面显示
+     */
+    onShow: function () {
+
+    },
+
+    /**
+     * 生命周期函数--监听页面隐藏
+     */
+    onHide: function () {
+
+    },
+
+    /**
+     * 生命周期函数--监听页面卸载
+     */
+    onUnload: function () {
+
+    },
+
+    /**
+     * 页面相关事件处理函数--监听用户下拉动作
+     */
+    onPullDownRefresh: function () {
+
+    },
+
+    /**
+     * 页面上拉触底事件的处理函数
+     */
+    onReachBottom: function () {
+
+    },
+
+    /**
+     * 用户点击右上角分享
+     */
+    onShareAppMessage: function () {
+
+    }
+})</code></pre>
+<p>app.json</p>
+<pre><code>{
+    "pages": [
+        "pages/mine/mine",
+        "pages/index/index",
+        "pages/home/home",
+        "pages/detail/detail",
+        "pages/order/order"
+    ],
+    "window": {
+        "backgroundTextStyle": "light",
+        "navigationBarBackgroundColor": "#f0145a",
+        "navigationBarTitleText": "微商城",
+        "backgroundColor": "#f0145a"
+    },
+    "tabBar": {
+        "color": "#858585",
+        "selectedColor": "#f0145a",
+        "backgroundColor": "#ffffff",
+        "borderStyle": "white",
+        "list": [
+            {
+                "pagePath": "pages/index/index",
+                "iconPath": "images/home.png",
+                "selectedIconPath": "images/home_select.png",
+                "text": "首页"
+            },
+            {
+                "pagePath": "pages/home/home",
+                "iconPath": "images/classify.png",
+                "selectedIconPath": "images/classify_select.png",
+                "text": "分类"
+            },
+            {
+                "pagePath": "pages/detail/detail",
+                "iconPath": "images/classify.png",
+                "selectedIconPath": "images/classify_select.png",
+                "text": "详情"
+            },
+            {
+                "pagePath": "pages/mine/mine",
+                "iconPath": "images/mine.png",
+                "selectedIconPath": "images/mine_select.png",
+                "text": "我的"
+            }
+        ]
+    },
+    "sitemapLocation": "sitemap.json"
+}</code></pre>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

@@ -1,0 +1,544 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2>es的安装:</h2>
+<p>安装:docker pull elasticsearch:7.12.1</p>
+<p>创建目录:</p>
+<p>mkdir /docker/es</p>
+<p>mkdir /docker/es/conf</p>
+<p>mkdir /docker/es/data</p>
+<p>mkdir /docker/es/plugins</p>
+<p>创建文件:</p>
+<p>touch /docker/es/conf/elasticsearch.yml</p>
+<p>配置文件：</p>
+<pre><code>cluster.name: my-application #集群名称
+node.name: node-1 #节点名称
+#是不是有主节点资格
+node.master: true
+
+#是否存储数据
+node.data: true
+# 是否允许跨域REST请求
+http.cors.enabled: true
+ 
+# 允许REST请求来自何处
+http.cors.allow-origin: "*"
+#最大集群节点数
+node.max_local_storage_nodes: 3
+#数据和日志的存储目录 
+path.data: /usr/share/elasticsearch/data
+path.logs: /usr/share/elasticsearch/logs
+
+##设置绑定的ip，设置为0.0.0.0以后就可以让任何计算机节点访问到了 
+network.host: 0.0.0.0
+network.publish_host: 容器ip
+http.port: 9200 #端口
+#内部节点直接沟通端口
+transport.tcp.port: 9300
+##设置在集群中的所有节点名称，这个节点名称就是之前所修改的，当然你也可以采用默认的也行，目前 是单机，放入一个节点即可 
+discovery.zen.ping.unicast.hosts: ["容器ip1:9300","容器ip2:9201","容器ip3:9202"]
+
+#es7.x之后新增配置，初始化一个新的集群时 需要此配置来选举master
+cluster.initial_master_nodes: ["node-1","node-2","node-3"]
+discovery.zen.minimum_master_nodes: 2</code></pre>
+<p>启动镜像:</p>
+<p>docker run -p 9200:9200 -d --name es -e ES_JAVA_OPTS="-Xms512m -Xmx512m" -v /docker/es/conf/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml -v /docker/es/data:/usr/share/elasticsearch/data -v /docker/es/plugins:/usr/share/elasticsearch/plugins --privileged=true elasticsearch:7.12.1</p>
+<p>报错处理:</p>
+<p>出现异常：max virtual memory areas vm.max_map_count [65530] is too low, increase to at least [262144]</p>
+<p>解决：</p>
+<ol><li>修改配置sysctl.conf vi /etc/sysctl.conf</li><li>在尾行添加以下内容 vm.max_map_count=655300</li><li>执行命令 sysctl -p</li></ol>
+<p>配置中文分词：</p>
+<p><a href="https://github.com/medcl/elasticsearch-analysis-ik/releases/tag/v7.12.1" title="Release v7.12.1 · medcl/elasticsearch-analysis-ik · GitHub">Release v7.12.1 · medcl/elasticsearch-analysis-ik · GitHub</a></p>
+<p>解压安装包：放到定义的plugins目录中的ik文件夹中</p>
+<h1><strong>kibana的安装:(管理es的工具)</strong></h1>
+<p>docker pull kibana:7.12.1</p>
+<p>创建文件:</p>
+<p>mkidr /docker/kibana</p>
+<p>mkdir /docker/kibana/conf</p>
+<p>touch /docker/kibana/conf/kibana.yml</p>
+<p>配置文件:</p>
+<pre><code>server.name: kibana 
+server.host: "0.0.0.0" 
+elasticsearch.hosts: ["http://容器ip:9400"] 
+xpack.monitoring.ui.container.elasticsearch.enabled: true</code></pre>
+<p>启动:</p>
+<p>docker run -p 5601:5601 -d --name -v /docker/kibana/conf/kibana.yml:/usr/share/kibana/config/kibana.yml --privileged=true kibana:7.12.1</p>
+<p></p>
+<h1>logstash增量同步mysql到es配置详解</h1>
+<p>docker 镜像安装</p>
+<p>docker pull logstash:7.12.1</p>
+<p></p>
+<pre><code>mkdir /docker/logstash        --创建一个用于存储logstash配置以及插件的目录
+Docker run –p 9900:9900 –d –name logstash –v /docker/logstash:/etc/logstash/pipeline –privileged=true logstash:7.12.1</code></pre>
+<p>进入容器安装插件</p>
+<p>docker exec -it logstash bash</p>
+<p>cd bin目录</p>
+<p>logstash-plugin install logstash-input-jdbc</p>
+<p>logstash-plugin install logstash-output-elasticsearch</p>
+<p>下载与mysql对应的mysql-connector-java-5.1.49.jar</p>
+<p><a href="https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.24/mysql-connector-java-8.0.24.jar" title="https://repo1.maven.org/maven2/mysql/mysql-connector-java">https://repo1.maven.org/maven2/mysql/mysql-connector-java</a></p>
+<p>vi config/logstash.yml 更改logstash.yml文件</p>
+<p>内容如下: http.host: "0.0.0.0" xpack.monitoring.elasticsearch.hosts: [ "<a href="http://172.17.0.7:9200" title='http://172.17.0.7:9200"'>http://172.17.0.7:9200"</a> ]</p>
+<p>vi config/pipelines.yml 更改pipelines.yml文件</p>
+<p>- pipeline.id: main<br/>   path.config: "/etc/logstash/pipeline/logstash.conf"</p>
+<p>- pipeline.id: table2<br/>   path.config: "/etc/logstash/pipeline/update.conf"</p>
+<p>退出容器</p>
+<p>配置映射文件update.conf用于执行更改同步数据并新增updateposts.txt</p>
+<pre><code>input {
+    stdin { }
+    jdbc {
+        #mysql的jdbc连接方式以及mysql地址与端口和数据设置
+        jdbc_connection_string =&gt; "jdbc:mysql://mysql ip地址:3306/库名"
+        jdbc_user =&gt; "账号"
+        jdbc_password =&gt; "密码"
+        #mysql连接驱动的jar地址，这个地址需要写的是容器内部的地址
+        jdbc_driver_library =&gt; "/etc/logstash/pipeline/mysql-connector-java-5.1.49.jar"
+        jdbc_driver_class =&gt; "com.mysql.jdbc.Driver"
+        jdbc_paging_enabled =&gt; true
+        #每次同步的数量
+        jdbc_page_size =&gt; "5000"
+        statement =&gt; "更新sql语句updatetime &gt; :sql_last_value"
+        use_column_value =&gt; true
+        #是否将字段名转为小写，默认为true（如果具备序列化或者反序列化，建议设置为false）
+        lowercase_column_names =&gt; false
+        #需要记录的字段，同于增量同步，需要是数据库字段
+        tracking_column =&gt; updatetime
+        #记录字段的数据类型
+        tracking_column_type =&gt; numeric
+        #上次数据存放位置
+        record_last_run =&gt; true
+        #上一个sql_last_value的存放路径，必须在文件中指定字段的初始值
+        last_run_metadata_path =&gt; "/etc/logstash/pipeline/updateposts.txt"
+        #是否清除last_run_metadata_path的记录，需要增量同步这个字段的值必须为false
+        clean_run =&gt; false
+        #同步的频率（分 时 天 月 年）默认为每分钟同步一次
+        schedule =&gt; "*/1 * * * * *"
+        type =&gt; "_doc"
+        # schedule =&gt; "*/5 * * * * *"
+    }
+}
+
+output {
+    elasticsearch {
+        hosts =&gt; "esip:9400"
+        index =&gt; "posts"
+        document_type =&gt; "_doc"
+        document_id =&gt; "%{id}"
+    }
+
+    stdout {
+        codec =&gt; json_lines
+    }
+}</code></pre>
+<p>配置映射文件logstash.conf用于执行新增同步数据并新增posts.txt</p>
+<pre><code>input {
+    stdin { }
+    jdbc {
+        #mysql的jdbc连接方式以及mysql地址与端口和数据设置
+        jdbc_connection_string =&gt; "jdbc:mysql://mysqlip:3306/库名"
+        jdbc_user =&gt; "账号"
+        jdbc_password =&gt; "密码"
+        #mysql连接驱动的jar地址，这个地址需要写的是容器内部的地址
+        jdbc_driver_library =&gt; "/etc/logstash/pipeline/mysql-connector-java-5.1.49.jar"
+        jdbc_driver_class =&gt; "com.mysql.jdbc.Driver"
+        jdbc_paging_enabled =&gt; true
+        #每次同步的数量
+        jdbc_page_size =&gt; "5000"
+//id &gt; :sql_last_value用于自动更新数据
+        statement =&gt; "执行的sql语句 WHERE id &gt; :sql_last_value"
+        use_column_value =&gt; true
+        #是否将字段名转为小写，默认为true（如果具备序列化或者反序列化，建议设置为false）
+        lowercase_column_names =&gt; false
+        #需要记录的字段，同于增量同步，需要是数据库字段
+        tracking_column =&gt; id
+        #记录字段的数据类型
+        tracking_column_type =&gt; numeric
+        #上次数据存放位置
+        record_last_run =&gt; true
+        #上一个sql_last_value的存放路径，必须在文件中指定字段的初始值
+        last_run_metadata_path =&gt; "/etc/logstash/pipeline/posts.txt"
+        #是否清除last_run_metadata_path的记录，需要增量同步这个字段的值必须为false
+        clean_run =&gt; false
+        #同步的频率（分 时 天 月 年）默认为每分钟同步一次
+        schedule =&gt; "*/1 * * * * *"
+        type =&gt; "_doc"
+        # schedule =&gt; "*/5 * * * * *"
+    }
+}
+
+output {
+    elasticsearch {
+        hosts =&gt; "esip:9400"
+        index =&gt; "posts"
+        document_type =&gt; "_doc"
+        document_id =&gt; "%{id}"
+    }
+
+    stdout {
+        codec =&gt; json_lines
+    }
+}</code></pre>
+<h2> tp5 先引入扩展composer require elasticsearch/elasticsearch</h2>
+<h1></h1>
+<ol><li> <pre><code class="language-php">&lt;?php
+
+namespace app\common\library;
+
+use Elasticsearch\ClientBuilder;
+use think\Config;
+use think\Exception;
+/**
+ * ES专用操作类
+ */
+class ElasticClient
+{
+    private $_host;
+    private $_client = null;
+    private $_index_prefix = '';
+    private $error = '';
+     public function __construct()
+    {
+        $this-&gt;setHost();
+        $this-&gt;_client = ClientBuilder::create()-&gt;setHosts($this-&gt;_host)-&gt;build();
+       
+    }
+    /**
+     * 设置配置
+     */
+    private function setHost()
+    {
+        //实例化一个客户端
+        $cfg = Config::get('eshosts');
+        $this-&gt;_host = [
+            $cfg['scheme'] . '://' . $cfg['user'] . ':' . $cfg['pass'] . '@' . $cfg['host'] . ':' . $cfg['port']
+        ];
+        
+    }
+    /*
+     * 返回结构体
+     */
+    public function getClient()
+    {
+        return $this-&gt;_client;
+    }
+    /**
+     * 删除文档(删除数据记录)
+     */
+    public function delDoc($index, $id)
+    {
+        $chk = $this-&gt;checkParams($index, $id, ['def_key' =&gt; 'only_for_delete_doc']); //参数3无实际意义,仅用过能通过验证而已
+        if ($chk === false) {
+            return false;
+        }
+        try {
+            $data = [
+                'index' =&gt; $index,
+                'id' =&gt; $id,
+                'type'=&gt;'_doc'
+            ];
+            $this-&gt;_client-&gt;delete($data);
+        } catch (Exception $e) {
+            $this-&gt;error = $e-&gt;getMessage();
+            return false;
+        }
+
+        return true;
+    }
+     /**
+     * 参数验证
+     */
+    private function checkParams($index, $id, $body)
+    {
+        $result = true;
+        foreach ($body as $key =&gt; $value) {
+            if (!isset($key) || empty($key)) {
+                $result = false;
+                break;
+            }
+        }
+        if ($result === false) {
+            $this-&gt;error = '索引文档的主体内容输入不正确';
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     *返回异常信息
+     */
+    public function getError()
+    {
+        return $this-&gt;error;
+    }
+
+}</code></pre> <p></p> </li><li> <pre><code class="language-php">&lt;?php
+
+namespace app\common\library;
+
+
+
+/**
+ * ES专用操作类
+ */
+class ElasticSearch
+{
+
+    protected $params = [
+        'index' =&gt; 'posts',//索引
+        'type'  =&gt; '_doc',//类型
+        'body' =&gt; [
+            "query" =&gt; [
+                "bool" =&gt; [
+                    'filter' =&gt; [],
+                    'must'  =&gt; []
+                ]
+            ]
+        ]
+    ];
+    /**
+     * @param $index
+     * 通过构造函数进行索引初始化
+     */
+    public function __construct($index)
+    {
+        $this-&gt;params["index"] = $index;
+        return $this;
+    }
+     /**
+     * @param $fields
+     * @return $this
+     * 过滤字段，查询我们需要的字段
+     */
+    public function source($fields)
+    {
+        $fields = is_array($fields)?$fields:[$fields];
+        $this-&gt;params["body"]["_source"] = $fields;
+        return $this;
+    }
+
+
+    /**
+     * @param $size  数据量
+     * @param $page   索引起始
+     * @return $this
+     * 搜索分页构建
+     */
+    public function paginate($size,$page)
+    {
+        $this-&gt;params['body']['from'] = ($page - 1) * $size;
+        $this-&gt;params['body']['size'] = $size;
+        return $this;
+    }
+
+    /**
+     * @return $this
+     * 判断消息是否经过审核
+     */
+    public function IsStatus()
+    {
+        $this-&gt;params['body']['query']['bool']['filter'][] = ['term' =&gt; ['status' =&gt; true]];
+        return $this;
+    }
+    /**
+     * @return $this
+     * 选择城市数据
+     */
+    public function province($province)
+    {
+        $this-&gt;params['body']['query']['bool']['filter'][] = ['term' =&gt; ['province' =&gt; $province]];
+        return $this;
+    }
+     /**
+     * @return $this
+     * 过滤软删除的数据
+     */
+    public function Isnotnull()
+    {
+        $this-&gt;params['body']['query']['bool']['must_not'][] = ['exists' =&gt; ['field' =&gt; 'deletetime']];
+        return $this;
+    }
+    /**
+     * @return $this
+     * 判断消息是否屏蔽
+     */
+    public function Isshield($ids)
+    {
+        $this-&gt;params['body']['query']['bool']['must_not'][] = ['terms' =&gt; ['user_id' =&gt; $ids]];
+        return $this;
+    }
+    /**
+     * @return $this
+     * 屏蔽列表
+     */
+    public function shield($ids)
+    {
+        $this-&gt;params['body']['query']['bool']['must'][] = ['terms' =&gt; ['user_id' =&gt; $ids]];
+        return $this;
+    }
+    /**
+     * @return $this
+     * 点赞/收藏列表
+     */
+    public function getlists($ids)
+    {
+        $this-&gt;params['body']['query']['bool']['must'][] = ['terms' =&gt; ['id' =&gt; $ids]];
+        return $this;
+    }
+
+    /**
+     * @return $this
+     * 获取关注人的消息
+     */
+    public function follow($ids)
+    {
+        $this-&gt;params['body']['query']['bool']['filter'][] = ['terms' =&gt; ['user_id' =&gt; $ids]];
+        return $this;
+    }
+    /**
+     * @return $this
+     * 获取某圈子的帖子
+     */
+    public function circle($circle_id)
+    {
+        $this-&gt;params['body']['query']['bool']['filter'][] = ['term' =&gt; ['circle_id' =&gt; $circle_id]];
+        return $this;
+    }
+    /**
+     * @param ProductCategory $category 用户传递过来的分类对象或者id
+     * @return $this
+     * 分类筛选
+     */
+    public function category($category)
+    {
+
+        $this-&gt;params['body']['query']['bool']['filter'][] = ['term' =&gt; ['cat_id' =&gt; $category]];
+        return $this;
+    }
+      /**
+     * @return $this
+     * 我的发布筛选
+     */
+    public function myposts($user_id)
+    {
+
+        $this-&gt;params['body']['query']['bool']['filter'][] = ['term' =&gt; ['user_id' =&gt; $user_id]];
+        return $this;
+    }
+    /**
+     * @param $keywords 关键词数组
+     * @return $this
+     * 关键词按照权重进行搜索
+     */
+    public function keywords($keywords)
+    {
+        //如果不是数组需要转为数组
+        $keywords = is_array($keywords) ? $keywords : [$keywords];
+
+        foreach ($keywords as $keyword){
+            $this-&gt;params['body']['query']['bool']['must'][] = [
+                'multi_match' =&gt; [
+                    'query' =&gt; $keyword,
+                    'fields' =&gt; [
+                        'content^3',
+                    ]
+                ]
+            ];
+        }
+
+        return $this;
+    }
+
+    /*
+     * 排序
+     */
+    public function orderBy($filed,$lon,$lat)
+    {
+        if (!isset($this-&gt;params['body']['sort'])){
+            $this-&gt;params['body']['sort'] = [];
+        }
+        $this-&gt;params['body']['sort'][] = ['is_top' =&gt; 'desc','pinglun_num'=&gt;'desc'];
+        if($filed=='location'){
+            $this-&gt;params['body']['sort'][] = ['_geo_distance' =&gt;[$filed=&gt;['lat'=&gt;$lat,'lon'=&gt;$lon],'order'=&gt;'asc','unit'=&gt;'km']];
+        }elseif($filed=='createtime'){
+            $this-&gt;params['body']['sort'][] = [$filed =&gt; 'desc'];
+        }
+        
+        return $this;
+    }
+     /*
+     * 返回结构体
+     */
+    public function getParams()
+    {
+        return $this-&gt;params;
+    }
+    //查询
+    public function search()
+    {
+        $searchParams['index'] = 'posts';
+        $searchParams['type'] = '_doc';
+        $searchParams['from'] = 0;
+        $searchParams['size'] = 100;
+        $searchParams['body']['query']['match']['content'] = 'ces';
+        $retDoc = $this-&gt;_client-&gt;search($searchParams);
+        return $retDoc;
+    }
+
+    /**
+     *返回异常信息
+     */
+    public function getError()
+    {
+        return $this-&gt;error;
+    }
+}
+</code></pre> <p></p> </li><li> <pre><code class="language-php">
+ 
+    /**控制器中使用     
+     * 帖子列表
+     */
+    public function posts_list()
+    {
+        $ElasticClient=new ElasticClient();
+        $page = $this-&gt;request-&gt;get('page',1);
+        $perPage = 10;
+        $builder = (new ElasticSearch("posts"))-&gt;IsStatus()-&gt;Isnotnull()-&gt;Isshield($this-&gt;getshield($this-&gt;userinfo-&gt;id))-&gt;circle($this-&gt;request-&gt;get('circle'))-&gt;paginate($perPage,$page);
+        //分类搜索
+        if ($category=$this-&gt;request-&gt;get('category_id')){
+            $builder-&gt;category($category);
+        }
+        //城市选择搜搜
+        if ($province=$this-&gt;request-&gt;get('province')){
+            $builder-&gt;province($province);
+        }
+        //关键词搜索
+        if ($search = $this-&gt;request-&gt;get('search','')){
+            $keywords = array_filter(explode(' ',$search));
+            $builder-&gt;keywords($keywords);
+        }
+        //关注数据搜索
+        if ($follow= $this-&gt;request-&gt;get('follow')){
+            $builder-&gt;follow($this-&gt;getfollow($this-&gt;userinfo-&gt;id));
+        }
+        //最新、离我最近的数据搜索
+        if ($order = $this-&gt;request-&gt;get('order','pinglun_num')){
+                if (in_array($order,['createtime','location','is_top','pinglun_num'])){
+                    $builder-&gt;orderBy($order,$this-&gt;request-&gt;get('lon'),$this-&gt;request-&gt;get('lat'));
+                }
+        }
+        $data['list']=$ElasticClient-&gt;getClient()-&gt;search($builder-&gt;getParams())['hits']['hits'];
+        $data['followids']=$this-&gt;getfollow($this-&gt;userinfo-&gt;id);
+        $data['zanids']=\app\admin\model\posts\Zan::where(['user_id'=&gt;$this-&gt;userinfo-&gt;id])-&gt;column('posts_id');
+        $data['collectionids']=\app\admin\model\posts\Collection::where(['user_id'=&gt;$this-&gt;userinfo-&gt;id])-&gt;column('posts_id');
+        $this-&gt;success($data);
+    }
+    /**</code></pre> <p> </p> <pre><code>  //放在config文件中
+'eshosts'=&gt;[
+        'scheme'=&gt;'http',
+        'user'=&gt; '',
+        'pass'=&gt;'',
+        'host'=&gt;'',
+        'port'=&gt;''
+    ]</code></pre> <p></p> </li></ol>
+</div>
+</div>

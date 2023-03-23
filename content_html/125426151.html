@@ -1,0 +1,64 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>原理初步了解：</p>
+<p id="ub13a3673">FastCGI 是一个类似HTTP的通信协议，是数据交换的通道</p>
+<p id="u24b2b870">而FPM就是FastCGI的解析器，服务器中间件将用户的请求按照FastCGI的规则格式化后给FPM，之后呢FPM再对用户的请求解析对应文件</p>
+<p id="uaf6dab72"></p>
+<p id="u5cfbbdcb">PS：这里是通过TCP协议传输的</p>
+<p id="uc2565e59"></p>
+<p id="u9aceade3">那么格式化的规则是什么样的呢？借用文章的一个例子：</p>
+<p id="ud6357bab">用户请求<a href="http://127.0.0.1/index.php?a=1&amp;b=2" title="http://127.0.0.1/index.php?a=1&amp;b=2">http://127.0.0.1/index.php?a=1&amp;b=2</a>，如果web目录是/var/www/html，那么Nginx会将这个请求变成如下key-value对：</p>
+<blockquote>
+<pre id="w4q4Z">{
+    'GATEWAY_INTERFACE': 'FastCGI/1.0',
+    'REQUEST_METHOD': 'GET',
+    'SCRIPT_FILENAME': '/var/www/html/index.php',
+    'SCRIPT_NAME': '/index.php',
+    'QUERY_STRING': '?a=1&amp;b=2',
+    'REQUEST_URI': '/index.php?a=1&amp;b=2',
+    'DOCUMENT_ROOT': '/var/www/html',
+    'SERVER_SOFTWARE': 'php/fcgiclient',
+    'REMOTE_ADDR': '127.0.0.1',
+    'REMOTE_PORT': '12345',
+    'SERVER_ADDR': '127.0.0.1',
+    'SERVER_PORT': '80',
+    'SERVER_NAME': "localhost",
+    'SERVER_PROTOCOL': 'HTTP/1.1'
+}
+</pre>
+</blockquote>
+<p id="ufb3c6337">是不是第一眼就感觉很像php的环境变量。这个数组其实就是PHP中$_SERVER数组的一部分。其实环境变量还有一个功能：告诉FPM我要执行什么php文件。在这里就是执行/var/www/html/index.php</p>
+<p>攻击原理：</p>
+<p id="u7a60cffa">PHP-FPM默认监听9000端口，正常情况只接受127.0.0.1的请求，配置不当也会暴露在公网中，如果没有暴露在公网，只能采取用SSRF去和PHP-FPM通信了。比较新版的FPM设置了默认的一个配置选项security.limit_extensions，只允许后缀为.php的文件，因此要执行服务器上现有的php文件</p>
+<p id="uaea020a7"></p>
+<p>实现任意代码执行：</p>
+<p id="u6e471c53">先了解一下php的配置项，auto_prepend_file和auto_append_file，这两配置在文件上传中也有，而且是关于.user.ini的配置文件 当然了相对的就是.htaccess文件</p>
+<p id="u2705218b">要知道nginx的配置文件是.user.ini</p>
+<p id="u125cf4f4">apache的配置文件是.htaccess</p>
+<p id="u06a4b320">做文件上传的时候可以通过报错来知道服务器是哪个server</p>
+<p id="u4d2a6a8c">auto_append_file #在执行php文件后自动包含一个指定文件</p>
+<p id="u33415f9d">auto_prepend_file #在执行php文件前自动包含一个指定文件</p>
+<p class="img-center"><img alt="" src="image\27c57c36a1ad53a83beffd8b69b053d2.png"/></p>
+<p id="u26d2fc55">假如设置了auto_prepend_file 为php://input,（注意要配置远程文件包含选项 allow_url_include ），那么就可以实现文件包含前POST的数据任意执行了。所以要把要执行的代码放在body中。</p>
+<p id="ud16a3056">想要详细了解协议的body以及头部信息，标志什么的可以参考这篇文章 <a href="https://blog.csdn.net/mysteryflower/article/details/94386461" title="FsatCGI协议分析">FsatCGI协议分析</a></p>
+<p id="u9c0940fd">将PHP_FPM中的两个环境变量来设置php的配置。配置 PHP_VALUE 为 auto_prepend_file = php://input ， PHP_ADMIN_VALUE 为 allow_url_include = On就可以实现任意代码执行了</p>
+<p id="ub1c40f68">这边采用gopherus这个工具来实现这一题</p>
+<h3 id="Qo8D1">解题：</h3>
+<p id="u4c16fbf6">1.<a href="https://github.com/tarunkant/Gopherus" title="下载gohperus">下载gohperus</a></p>
+<p id="u019f2896">2.最好在Linux的环境下执行这个脚本</p>
+<p id="u9075c597">3.输入命令 python gopherus.py --exploit fastcgi</p>
+<p class="img-center"><img alt="" src="image\06ff9b0be6e630237acd2ae929338162.png"/></p>
+<p id="u36fc5a72">4.之后输入第一行要求输入路径：/var/www/html/index.php</p>
+<p id="u3785da19">第二行输入要执行的命令：ls</p>
+<p class="img-center"><img alt="" src="image\af78961ee081b721d7d3b05d89de5e7f.png"/></p>
+<p id="u4c562bb2">5.抓一个url包含的包，把_后面的内容全部再url编码一遍再进行传输</p>
+<p class="img-center"><img alt="" src="image\d993111eeb0f887a93f809590595abe3.png"/></p>
+<p id="uaeb13e90">6.没有我们要的数据，可以看看根目录 <strong>"ls /"</strong>，也可以使用这条命令 "<strong>find / -name flag*"</strong></p>
+<p class="img-center"><img alt="" src="image\d6112d7be66639c6ea84353748da78f3.png"/></p>
+<p id="ueaf3fbf3">可以看到flag的名字</p>
+<p id="u39fbdeb6">7.接下来就是cat flag了</p>
+<p id="uc31f265c">这里有一个注意点就是 cat /flag_73e........... 这个 / 千万不要漏掉</p>
+<p class="img-center"><img alt="" src="image\8d695ff0f2d2093c260ec13a54a7370d.png"/></p>
+</div>
+</div>

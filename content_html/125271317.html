@@ -1,0 +1,139 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p><strong>1.創建Oracle數據庫</strong><br/> 开始-程序-Oracle-配置和移置工具-Database Configuration Assistant...（根据需要进行配置直到完成创建）<br/> 如遇到“...要求在当前oracle主目录中配置监听程序”問題，在打开windows任务管理器——服务——找到OracleListener（OracleOraDb11g_home1TNSListener）右击点击重新启动，要是没有该服务，则以管理员身份运行cmd，然后输入“lsnrctl start”开启；</p>
+<p>更多创建数据库的问题：http://sz.togogo.net/news/3339.html<br/><strong>2.PL/SQL连接oracle数据库（这一步仅仅是为了测试数据库是否能正常连接）</strong><br/> 开始-程序-Oracle-配置和移置工具-網絡組態輔助工具<br/> 本地Net服务名配置——添加（服务名一般是刚刚创建的全局数据库名）——主机名（localhost）——测试登录：登录用户（sys,system,dbsnmp,sysman），口令（刚刚创建数据库的口令）<br/><strong>账号被锁(lock)</strong>：https://www.cnblogs.com/qilin20/p/12400773.html</p>
+<p><strong>3.创建winform程序，添加引用</strong></p>
+<p>NuGet程序包：SqlSugar，Newtonsoft.Json，Oracle.ManagedDataAccess</p>
+<p><strong>4.Sqlhelp类</strong></p>
+<pre><code>        public SqlSugarClient db;
+        public Sqlhelp()
+        {
+            //ManagedDataAccess.dll 未安装或者版本冲突， 按下面步骤操作即可 1、从Nuget卸载所有项目的ManagedDataAccess.dll和SqlSugar，用Nuget重新安装即可,如果还报错在最上层 WBE层 用NUGET安装
+            db = new SqlSugarClient(new ConnectionConfig()
+            {
+                ConnectionString = "Data Source=localhost:1521/test;User ID=lmttlw;Password=lmttlw",//也可用127.0.0.1替换localhost
+                DbType = DbType.Oracle,//设置数据库类型
+                IsAutoCloseConnection = true,//自动释放数据务，如果存在事务，在事务结束后释放
+                InitKeyType = InitKeyType.Attribute //从实体特性中读取主键自增列信息
+            });
+        }</code></pre>
+<p><strong>5.增刪改查</strong></p>
+<pre><code>        #region 查询
+        /// &lt;summary&gt;
+        /// 查询所有
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public List&lt;STUDENT&gt; QueryAll()
+        {
+            var list = db.Queryable&lt;STUDENT&gt;().OrderBy(t =&gt; t.ID).ToList();
+            return (List&lt;STUDENT&gt;)list;
+        }
+        /// &lt;summary&gt;
+        /// 根据主键查询
+        /// &lt;/summary&gt;
+        /// &lt;param name="pkvalue"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public STUDENT QueryFromPkvalue(decimal pkvalue)
+        {
+            var student = db.Queryable&lt;STUDENT&gt;().InSingle(pkvalue);
+            return student;
+        }
+        /// &lt;summary&gt;
+        /// 根据条件查询
+        /// &lt;/summary&gt;
+        /// &lt;param name="Model"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public List&lt;STUDENT&gt; QueryInSingle(STUDENT Model)
+        {
+            var getByWhere = db.Queryable&lt;STUDENT&gt;().Where(
+                o =&gt; o.ID == Model.ID &amp;&amp;
+                o.NAME == Model.NAME &amp;&amp;
+                o.SEX == Model.SEX &amp;&amp;
+                o.AGE == Model.AGE
+                ).ToList();
+            return getByWhere;
+        }
+        /// &lt;summary&gt;
+        /// 分页查询
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public List&lt;STUDENT&gt; QueryToPageList(STUDENT Model, ref int total)
+        {
+
+            var getPage = db.Queryable&lt;STUDENT&gt;().Where(o =&gt; o.ID == Model.ID).ToPageList(1, 2, ref total);
+            return getPage;
+        }
+        #endregion
+
+        #region 新增
+        /// &lt;summary&gt;
+        /// 新增
+        /// &lt;/summary&gt;
+        /// &lt;param name="studentModel"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool Insert(STUDENT studentModel)
+        {
+            /*插入*/
+            //连接数据库过程中发生错误，检查服务器是否正常连接字符串是否正确，实在找不到原因请先Google错误信息：'server' 是无效的连接字符串属性.
+            return db.Insertable(studentModel).ExecuteCommand() &gt; 0;
+            //更多插入用法 http://www.codeisbug.com/Doc/8/1130
+        }
+        #endregion
+
+        #region 删除
+        /// &lt;summary&gt;
+        /// 删除
+        /// &lt;/summary&gt;
+        /// &lt;param name="pkvalue"&gt;主键&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool Delete(decimal pkvalue)
+        {
+            return db.Deleteable&lt;STUDENT&gt;(pkvalue).ExecuteCommand() &gt; 0;
+        }
+        #endregion
+
+        #region 修改
+        /// &lt;summary&gt;
+        /// 修改
+        /// &lt;/summary&gt;
+        /// &lt;param name="pkvalue"&gt;主键&lt;/param&gt;
+        /// &lt;param name="studentModel"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool Update(STUDENT studentModel)
+        {
+            return db.Updateable(studentModel).ExecuteCommand() &gt; 0;
+        }
+        #endregion
+
+        #region Model
+        /// &lt;summary&gt;
+        /// 生成Model
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public string CreateModel()
+        {
+            try
+            {
+                string path = FuncHelper.GetPath("Model");
+                //path:存放的路径，Common：命名空间
+                db.DbFirst.IsCreateDefaultValue().CreateClassFile(path, "Common");
+                return "生成Model成功";
+            }
+            catch (Exception ex)
+            {
+                return ex.Message;
+            }
+        }
+        #endregion
+</code></pre>
+<pre><code>        public static string GetPath(string FolderName)
+        {
+            string uploadPath = Environment.CurrentDirectory;
+            uploadPath = uploadPath.Substring(0, uploadPath.IndexOf("DemoSqlSugar_Form")) + "Common\\" + FolderName;//控制台程序和Windows應用程序
+            return uploadPath;
+        }</code></pre>
+<p> </p>
+<p>个人感觉挺方便的，那个生成Model直接把所有表都产生了Model实体类，非常的Nice~</p>
+</div>
+</div>

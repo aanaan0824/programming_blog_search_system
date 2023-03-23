@@ -1,0 +1,521 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1>前言</h1>
+<p></p>
+<p>问题的背景大概是这样的，有下面这样一个excel表，原始数据结构如下：</p>
+<p></p>
+<p><img alt="" height="249" src="image\30c6f407d3994352950eef419dbdd10c.png" width="773"/></p>
+<p></p>
+<p><strong>需求点：</strong></p>
+<ul><li>导入excel的机构层级数据到mysql的机构表（这里假设为 depart）;</li><li>导入的机构数据以层级进行保存和区分；</li><li>界面展示时需要以完整的树形层级进行展示；</li></ul>
+<p></p>
+<h1>处理过程</h1>
+<p></p>
+<p>按照上面已知的信息，设计一个简单的机构表</p>
+<p></p>
+<pre><code class="language-sql">CREATE TABLE `depart` (
+  `depart_id` varchar(64) DEFAULT NULL,
+  `pid` varchar(64) DEFAULT NULL,
+  `name` varchar(255) DEFAULT NULL,
+  `path` varchar(255) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+</code></pre>
+<p></p>
+<p>接下来分析下具体的实现；</p>
+<p></p>
+<p><strong>1、导入的时候以层级保存数据 </strong></p>
+<p></p>
+<p>有做过树形结构处理业务的小伙伴们对树形结构的处理并不陌生，主要就是在机构表中合理运用 id 和 pid 构建数据层级关系，期间可能涉及到递归的操作（不建议在数据库层面递归）；</p>
+<p></p>
+<p>但我们说具体问题具体分析，比如按照上面的exce表的数据结构，以 “/产品研发中心/业务一部” 这个机构为例做简单说明</p>
+<p></p>
+<ul><li>以 “/” 区分，这条数据涉及到2个部门，“产品研发中心” 为一级部门，而 “业务一部” 为其子部门，即二级部门；</li><li>按照第一步的分析，需要将这条数据拆开来做处理，通过部门名称以及其所在层级（业务中可能还存在其他字段），即在查库过程中作为查询条件；</li><li>需要考虑excel中的数据存在性，比如 “产品研发中心” 这条数据在数据库中可能存在，也可能不存在，“业务一部” 也可能存在或不存在；</li><li>在第三步的基础上，需要按照程序的逻辑设置一定的规则，大概如下：1、顶级部门不存在，可以认为这条数据在数据库中不存在，处理的时候直接按照正常的规则；2、顶级部门存在，直接处理最后一级数据；</li><li>不考虑中间部门层级，像 “/A/B/C” 中的B是否存在问题；</li></ul>
+<p></p>
+<p><strong>2、返回树形层级结构数据</strong></p>
+<p></p>
+<p>相比导入来说，返回树形层级结构相对来说，已经有相对成熟的处理方式，大致思路如下：</p>
+<ul><li>查询所有数据（如果考虑动态加载另说）；</li><li>构建返回数据的树形结构（可根据 id 和 pid 的关系）；</li></ul>
+<p>树形结构的返回对象结构大致如下</p>
+<pre><code class="language-java">public class DepartDTO {
+
+    private String departId;
+
+    private String pid;
+
+    private String name;
+
+    private String path;
+
+    private String pname;
+
+    private List&lt;DepartDTO&gt; children;
+
+}</code></pre>
+<p></p>
+<h1>返回树形层级数据</h1>
+<p></p>
+<p>先来做第二个需求，由于解决思路已经给出，只需要按照思路进行即可，下面贴出主要的逻辑代码</p>
+<p></p>
+<pre><code class="language-java">    public static String random() {
+        return UUID.randomUUID().toString().replaceAll("-", "");
+    }
+
+
+    public static List&lt;DepartDTO&gt; getDepartTree(List&lt;DepartDTO&gt; allDepart) {
+        //查询到的所有的部门数据
+        //List&lt;DepartDTO&gt; allDepart = getAllDepart();
+        //最高级别用户集合
+        List&lt;DepartDTO&gt; roots = new ArrayList&lt;&gt;();
+        List&lt;DepartDTO&gt; res = new ArrayList&lt;&gt;();
+        for (DepartDTO departDto : allDepart) {
+            //-1表示最高级别的用户
+            if (departDto.getPid().equals("0")) {
+                roots.add(departDto);
+            }
+        }
+        //从最高级别用户开始遍历，递归找到该用户的下级用户，将带有下级的最高级用户放入返回结果中
+        for (DepartDTO userDto : roots) {
+            userDto = buildUserTree(allDepart, userDto);
+            res.add(userDto);
+        }
+        return res;
+    }
+
+    public static DepartDTO buildUserTree(List&lt;DepartDTO&gt; allDeparts, DepartDTO departDTO) {
+        List&lt;DepartDTO&gt; children = new ArrayList&lt;&gt;();
+        //遍历查到的所有用户
+        for (DepartDTO departDTO1 : allDeparts) {
+            //-1代表根节点，无需重复比较
+            if (departDTO1.getPid().equals("0") || departDTO1.getPname().equals("") || departDTO1.getPname() == null)
+                continue;
+            //当前用户的上级编号和传入的用户编号相等，表示该用户是传入用户的下级用户
+            if (departDTO1.getPname().equals(departDTO.getName())) {
+                //递归调用，再去寻找该用户的下级用户
+                departDTO1 = buildUserTree(allDeparts, departDTO1);
+                //当前用户是该用户的一个下级用户，放入children集合内
+                children.add(departDTO1);
+            }
+        }
+        //给该用户的children属性赋值，并返回该用户
+        departDTO.setChildren(children);
+        return departDTO;
+    }</code></pre>
+<p></p>
+<p>这里先直接模拟一部分的数据，通过这部分的数据做处理</p>
+<pre><code class="language-java">static List&lt;String&gt; departLists = new ArrayList&lt;&gt;();
+
+    static {
+
+        departLists.add("/产品研发中心/业务中台部");
+        departLists.add("/产品研发中心/技术中台部");
+        departLists.add("/产品研发中心/技术中台部/产品A组");
+        departLists.add("/总裁办");
+        departLists.add("/总裁办/品牌管理部");
+    }
+
+
+    public static void main(String[] args) {
+        List&lt;DepartDTO&gt; allDepart = getAllDepart();
+        List&lt;DepartDTO&gt; departTree = getDepartTree(allDepart);
+        System.out.println(departTree);
+    }</code></pre>
+<p></p>
+<p>上面程序用到的两个工具类</p>
+<pre><code class="language-java">public class PathUtils {
+
+    public static List&lt;String&gt; getPaths(String path) {
+        List&lt;String&gt; parentPaths = getParentPaths(path);
+        parentPaths.add(path);
+        return parentPaths;
+    }
+
+    public static String getParentPath(String path) {
+        return StringUtils.substringBeforeLast(StringUtils.removeEnd(path, "/"), "/");
+    }
+
+    public static List&lt;String&gt; getParentPaths(String path) {
+        List&lt;String&gt; paths = new ArrayList&lt;&gt;();
+        while (true) {
+            path = getParentPath(path);
+            if (StringUtils.isBlank(path)) {
+                break;
+            }
+            paths.add(path);
+        }
+
+        paths.sort(String::compareTo);
+        return paths;
+    }
+
+    /**
+     * 拼接部门名称完整路径，如 湖北省，襄阳市，谷城县，最终组装成 : 湖北省/襄阳市/谷城县
+     *
+     * @param paths
+     * @return
+     */
+    public static String merge(List&lt;String&gt; paths) {
+        return merge(paths, null);
+    }
+
+    public static String merge(List&lt;String&gt; paths, Function&lt;String, String&gt; function) {
+        if (CollectionUtils.isEmpty(paths)) {
+            return null;
+        }
+
+        Stream&lt;String&gt; stream = paths.stream();
+        if (Objects.nonNull(function)) {
+            stream = stream.map(function);
+        }
+
+        return stream.filter(Objects::nonNull).collect(joining("/", "/", ""));
+    }
+
+    public static String getNextPath(String path) {
+        path = StringUtils.removeEnd(path, "/");
+        String parentPath = StringUtils.substringBeforeLast(path, "/");
+        int val = NumberUtils.toInt(StringUtils.substringAfterLast(path, "/")) + 1;
+        return parentPath + "/" + StringUtils.leftPad(String.valueOf(val), 4, "0");
+    }
+
+    public static String getNextPath(String parentPath, List&lt;String&gt; childPaths) {
+        if (CollectionUtils.isEmpty(childPaths)) {
+            return parentPath + "/001";
+        }
+        if (childPaths.size() + 1 &gt;= 1000) {
+            throw new RuntimeException("同级机构最多支持9999个");
+        }
+        //获取同级最大值路径
+        Collections.sort(childPaths, Comparator.reverseOrder());
+        String maxPath = childPaths.get(0);
+        if (StringUtils.isNotBlank(maxPath)) {
+            return PathUtils.getNextPath(maxPath);
+        }
+        return parentPath + "/001";
+    }
+
+    public static void main(String[] args) {
+        /*System.out.println(getParentPaths("/001/002/003/004/"));
+        List&lt;String&gt; childPaths = new ArrayList&lt;&gt;();
+        childPaths.add("/001");
+        childPaths.add("/007");
+        childPaths.add("/1000");
+        childPaths.add("/001");
+        childPaths.add("/901");
+        childPaths.add("/766");
+        List&lt;Integer&gt; result = new ArrayList&lt;&gt;();
+        childPaths.forEach(item -&gt;{
+            result.add(Integer.valueOf(item.substring(1)));;
+        });
+        Integer max = Collections.max(result);
+        System.out.println(max);*/
+        String pathNames = "/产品研发中心/业务中台部";
+        String substring = pathNames.substring(pathNames.lastIndexOf("/") + 1);
+        System.out.println(substring);
+
+        //String paths = "/001/002/003/004/";
+        String paths = "/001/001";
+        List&lt;String&gt; parentPaths = getParentPaths(paths);
+
+        System.out.println(parentPaths);
+
+    }
+
+    public static String getMaxPath(List&lt;String&gt; pathList) {
+        List&lt;Integer&gt; result = new ArrayList&lt;&gt;();
+        pathList.forEach(item -&gt; {
+            result.add(Integer.valueOf(item.substring(1)));
+            ;
+        });
+        Integer max = Collections.max(result);
+        return String.valueOf("/" + max);
+    }
+
+}
+</code></pre>
+<p></p>
+<p>最后写个接口模拟下</p>
+<pre><code class="language-java">     //localhost:8087/getAllDepart
+    @GetMapping("/getAllDepart")
+    public Object getAllDepart() {
+       
+        return departService.importDepart();
+    }</code></pre>
+<p></p>
+<p>运行上面的main程序，观察控制台输出结果</p>
+<p><img alt="" height="251" src="image\bb39108757e54f98b6bfdec4344f8bff.png" width="1200"/></p>
+<p></p>
+<p>用格式化工具处理下再看，这即为我们期待的结果，实际业务中，只需要在 getAllDepart 这个方法中，将获取数据从数据库查询即可；</p>
+<pre><code class="language-java">[
+    {
+        "departId":"e1c6d8ba4a504b7da85472ca713be107",
+        "pid":"0",
+        "name":"产品研发中心",
+        "path":null,
+        "pname":"",
+        "children":[
+            {
+                "departId":"8e39b272531449ca96c0668ae60d2c2f",
+                "pid":"e1c6d8ba4a504b7da85472ca713be107",
+                "name":"业务中台部",
+                "path":null,
+                "pname":"产品研发中心",
+                "children":[
+
+                ]
+            },
+            {
+                "departId":"ecfe24e1769248df885287c7e153f9e6",
+                "pid":"e1c6d8ba4a504b7da85472ca713be107",
+                "name":"技术中台部",
+                "path":null,
+                "pname":"产品研发中心",
+                "children":[
+                    {
+                        "departId":"0218c648abdf4867ad5ea1e99098d526",
+                        "pid":"ecfe24e1769248df885287c7e153f9e6",
+                        "name":"产品A组",
+                        "path":null,
+                        "pname":"技术中台部",
+                        "children":[
+
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "departId":"843bfa6b371e4d7d8d44894d939ca0a5",
+        "pid":"0",
+        "name":"总裁办",
+        "path":null,
+        "pname":"",
+        "children":[
+            {
+                "departId":"12dc458b6996484394e2026d5b0f547e",
+                "pid":"843bfa6b371e4d7d8d44894d939ca0a5",
+                "name":"品牌管理部",
+                "path":null,
+                "pname":"总裁办",
+                "children":[
+
+                ]
+            }
+        ]
+    }
+]</code></pre>
+<p></p>
+<h1>数据导入</h1>
+<p></p>
+<p>其实，只要按照上文的处理思路做即可，但是这里提一个在逻辑编写过程中遇到的一个比较难处理的问题，即机构的 path 上；</p>
+<p></p>
+<p>这里必须要说一下这个 path 的事情，path 在真实的业务场景中，是一个非常重要，并且在众多的使用场景中高频使用的字段，因为对一个机构来说，通过业务的区分，这个path一定是唯一的存在； </p>
+<p></p>
+<p>仍然使用文章开头的那些数据，最终将 “/产品研发中心/业务一部” 这样的数据入库时，需要将数据组装成一个个对象插入到数据库，同时，插入数据之前，层级也需要组装好，那么对于 “/产品研发中心/业务一部” 这样一条数据，可以想象到，将会产生两个 depart 对象，这里我们考虑下面两个简单的场景；</p>
+<ol><li>如果顶级部门不存在，全量导入，比如 “/产品研发中心/业务一部” 这样一条数据，当 “/产品研发中心” 不存在时，完整导入；</li><li>“/产品研发中心/业务一部” ，当  “产品研发中心” 存在时，只需导入 “业务一部” ；</li></ol>
+<p></p>
+<p>下面来看核心代码</p>
+<p></p>
+<pre><code class="language-java">@Service
+public class DepartTest {
+
+    @Autowired
+    private DepartDao departDao;
+
+    @Autowired
+    private TransactionUtils transactionUtils;
+
+    @Autowired
+    private DataSourceTransactionManager dataSourceTransactionManager;
+
+    static List&lt;String&gt; departLists = new ArrayList&lt;&gt;();
+
+    private static final String tenantId = "e10adc3949ba59abbe56e057f20f88dd";
+
+    static {
+        departLists.add("/top1");
+        departLists.add("/top1/ch1");
+        departLists.add("/top1/ch1/ch2");
+
+    }
+
+    public static List&lt;String&gt; getFullNames(String departName) {
+        List&lt;String&gt; result = new ArrayList&lt;&gt;();
+        String[] splitNames = departName.split("/");
+        for (int i = 0; i &lt; splitNames.length; i++) {
+            if (!StringUtils.isEmpty(splitNames[i])) {
+                result.add(splitNames[i]);
+            }
+        }
+        return result;
+    }
+
+
+    public List&lt;DepartDTO&gt; getAllDepart() {
+
+        List&lt;DepartDTO&gt; departDTOS = new ArrayList&lt;&gt;();
+        //保存 部门名称和部门ID的映射关系
+        Map&lt;String, String&gt; nameDepartIdMap = new HashMap&lt;&gt;();
+        List&lt;Depart&gt; dbExistDepart = new ArrayList&lt;&gt;();
+        List&lt;Depart&gt; newDeparts = new ArrayList&lt;&gt;();
+
+        for (String single : departLists) {
+            //全部的部门名称
+            List&lt;String&gt; fullNames = getFullNames(single);
+            //直接父级
+            String parentPath = PathUtils.getParentPath(single);
+            //处理顶级的部门数据【只有自己本身，比如 "/总裁办"】
+            if (StringUtils.isEmpty(parentPath)) {
+                //1、说明当前只有一级，即顶级数据
+                //2、如果是顶级数据，则需要判断数据库是否存在，如果已经存在，不用管，如果不存在，生成新的相关数据
+                Depart depart = departDao.getTopDepartByName(fullNames.get(0));
+                if (depart != null) {
+                    nameDepartIdMap.put(fullNames.get(0), depart.getDepartId());
+                    //确认数据库已经存在过的，后面只需要新建部门与用户的关系即可
+                    dbExistDepart.add(depart);
+                    continue;
+                }
+                //如果数据不存在，新生成
+                String departId = random();
+                Depart newDepart = new Depart();
+                newDepart.setDepartId(departId);
+                newDepart.setName(fullNames.get(0));
+                newDepart.setPid("0");
+                newDepart.setPath(DepartUtils.getNextPath(tenantId, "0"));
+                TransactionStatus transaction = transactionUtils.getTransaction();
+                try {
+                    departDao.insert(newDepart);
+                    //设置手动提交事务
+                    dataSourceTransactionManager.commit(transaction);
+                } catch (Exception e) {
+                    dataSourceTransactionManager.rollback(transaction);
+                }
+                newDeparts.add(newDepart);
+                nameDepartIdMap.put(fullNames.get(0), departId);
+                continue;
+            }
+
+            //如果是非顶级的，则需要拆开  /产品研发中心/技术中台部/产品A组
+            for (int i = 0; i &lt; fullNames.size(); i++) {
+                String currentDepart = fullNames.get(i);
+                //遍历的时候从顶级开始
+                if (nameDepartIdMap.containsKey(currentDepart))
+                    continue;
+
+                if (i == 0) {
+                    TransactionStatus transaction = transactionUtils.getTransaction();
+                    //仍然是顶级，需要先查数据库
+                    Depart topDepart = departDao.getTopDepartByName(currentDepart);
+                    if (topDepart != null) {
+                        nameDepartIdMap.put(fullNames.get(0), topDepart.getDepartId());
+                        dbExistDepart.add(topDepart);
+                    } else {
+                        //如果数据不存在，新生成
+                        String departId = random();
+                        Depart _depart = new Depart();
+                        _depart.setDepartId(departId);
+                        _depart.setName(fullNames.get(0));
+                        _depart.setTenantId(tenantId);
+                        _depart.setPid("0");
+                        _depart.setPath(DepartUtils.getNextPath(tenantId, "0"));
+                        try {
+                            departDao.insert(_depart);
+                            //设置手动提交事务
+                            dataSourceTransactionManager.commit(transaction);
+                        } catch (Exception e) {
+                            dataSourceTransactionManager.rollback(transaction);
+                        }
+                        if (fullNames.size() == 1) {
+                            newDeparts.add(_depart);
+                        }
+                    }
+                    continue;
+                }
+                //处理其他层级数据
+                String parentName = parentPath.substring(parentPath.lastIndexOf("/") + 1);
+                //开启一个新的事务
+                TransactionStatus transaction = transactionUtils.getTransaction();
+                //判断自身是否已经存在了
+                Depart dbCurrentDepart = departDao.getDepartByNameAndPid(currentDepart, nameDepartIdMap.get(parentName));
+                if (dbCurrentDepart != null) {
+                    //如果已经存在了，直接跳过
+                    dbExistDepart.add(dbCurrentDepart);
+                    nameDepartIdMap.put(currentDepart, dbCurrentDepart.getDepartId());
+                    dataSourceTransactionManager.commit(transaction);
+                    continue;
+                }
+
+                Depart _depart = new Depart();
+                _depart.setTenantId(tenantId);
+                String departId = random();
+                _depart.setDepartId(departId);
+                _depart.setName(currentDepart);
+                String pid = nameDepartIdMap.get(parentName);
+
+                //判断上级部门在数据库是否真的存在
+                Depart directParent = departDao.getDepartById(nameDepartIdMap.get(parentName));
+
+                boolean isCurrentDepartDbExist = false;
+                if (directParent != null) {
+                    _depart.setPid(pid);
+                    String nextPath = DepartUtils.getNextPath(tenantId, pid);
+                    _depart.setPath(nextPath);
+                    departDao.insert(_depart);
+                    dataSourceTransactionManager.commit(transaction);
+                    //父级存在时
+                    nameDepartIdMap.put(currentDepart, departId);
+                }
+
+                //如果是最后的那一个，才是本次实际要关联的部门数据
+                if (i == fullNames.size() - 1) {
+                    if (isCurrentDepartDbExist) {
+                        dbExistDepart.add(_depart);
+                        nameDepartIdMap.put(currentDepart, departId);
+                        continue;
+                    }
+                    newDeparts.add(_depart);
+                    nameDepartIdMap.put(currentDepart, departId);
+                }
+            }
+        }
+        return departDTOS;
+    }
+
+
+    public static String random() {
+        return UUID.randomUUID().toString().replaceAll("-", "");
+    }
+}
+</code></pre>
+<p></p>
+<p>在代码编写过程中，有一个比较难处理的问题，就是在读取外部数据，组装depart 的path的时候，为什么这么讲呢？</p>
+<p>要知道，根据上面描述的两种实现情况，path 可能需要动态组装而成，很多同学可能会说，可以先把depart对象全部组装完成，最后再通过层级关系构建出 path 的完整路径；</p>
+<p>事实上，一开始我也是这么想的，但是最终发现这样走不通，原因就在于 顶级部门 “/产品研发中心”在数据库中可能存在，也可能不存在，而 path的生成一定是需要结合数据库的某些业务字段动态查询而构造出来的；</p>
+<p>所以如果先组装完成数据再构建path，这样带来的问题复杂性将会大大增加；</p>
+<p>那么比较可行的而且可以实现的方式就是，在组装数据的过程中，动态查库进行组装数据；</p>
+<p>但是小编在编码的时候发现，如果使用springboot工程自身的事务管理器的话，无论是哪种事务隔离级别，都将无法满足这样一个需求，即 “前一步将父级部门数据插入，子部门能够查到父级的数据”这样一个问题；</p>
+<p>所以为了达到这个目的，这里采用了 jdbc 手动管理事务的方式进行；</p>
+<p></p>
+<p>那么通过上面的方式，就可以实现层级数据的导入效果了，具体逻辑可以参考注释说明进行理解；</p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

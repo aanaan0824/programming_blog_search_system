@@ -1,0 +1,393 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="c_0"></a>c#界面中实现点云动态显示</h1>
+<p>我在之前的文章中介绍了关于C#界面中实现点云显示的解决方案，整个过程是基于c++开发的动态库实现的。<br/> 如果对本文即将介绍的C#实现点云实时显示感兴趣的可以先前往<a href="https://blog.csdn.net/qq_43627520/article/details/123265738?spm=1001.2014.3001.5501">c#系统界面中可视化PCL点云数据</a>简单了解一下实现的流程。</p>
+<h2><a id="PCL_C_C_3"></a>开发工具：PCL C# C++</h2>
+<p>在使用本文提供的方法前，需要掌握的知识点有：<br/> 1、C++ dll动态库的开发<br/> 2、PCL点云读取和点云显示<br/> 3、C#与C++动态库之间的调用<br/> 4、安装好可使用的PCL工具包</p>
+<p><strong>需要说明的是本文介绍的内容是将pcl实时显示的功能嵌入c#开发的软件中，相当于是上一篇文章的升级版。</strong></p>
+<h2><a id="_12"></a>开发流程（思路与上一篇类似）</h2>
+<p>0、首先系统启动时采用委托自动实例化dll中用于点云显示的模块（将显示位置的句柄传递给pcl显示窗口）<br/> 1、c#端选择提前准备好的点云文件（对于实时显示部分，本文是模拟激光雷达的数据。从指定的文件夹中读取提前采集好的数据然后存储起来，使用的时候读取的点云中一次输出）<br/> 2、数据读取完后返回存储数据位置的地址，这个地方是方便我们后期可以从C#端直接读取点云<br/> 3、实时显示：将数据的地址再次发送到dll中</p>
+<h2><a id="_18"></a>代码实现</h2>
+<p>本文同样提供全套的可执行代码<br/> 源码地址：<a href="https://download.csdn.net/download/qq_43627520/85024460">https://download.csdn.net/download/qq_43627520/85024460</a><br/> 有咨询方面的需求可通过邮箱与我联系：1499961892@qq.com<br/> 效果展示：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b8f19c504a3f42bb9101db779f5361d3.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQCAg6Zu254K544CB6Zu25LiA,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<h2><a id="c_25"></a>c#端</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/991e0cdec355425090907c8a4037e7e5.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQCAg6Zu254K544CB6Zu25LiA,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 该部分与上一篇文章的差异：<br/> 1、增加了实时显示的功能区<br/> 2、在文件读取阶段增加了点云文件夹地址提取<br/> 委托部分结构没有变化，只是新增了一个句柄</p>
+<pre><code class="prism language-csharp"> 				<span class="token class-name">IntPtr</span> m_hwnd1 <span class="token operator">=</span> <span class="token punctuation">(</span>IntPtr<span class="token punctuation">)</span><span class="token number">0</span><span class="token punctuation">;</span>
+                <span class="token class-name">IntPtr</span> m_hwnd2 <span class="token operator">=</span> <span class="token punctuation">(</span>IntPtr<span class="token punctuation">)</span><span class="token number">0</span><span class="token punctuation">;</span>
+                <span class="token comment">// 点云界面初始化</span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token number">0</span> <span class="token operator">==</span> type<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">if</span> <span class="token punctuation">(</span>pictureBox1<span class="token punctuation">.</span>IsHandleCreated <span class="token operator">==</span> <span class="token boolean">true</span> <span class="token operator">&amp;&amp;</span> pictureBox1<span class="token punctuation">.</span>IsHandleCreated <span class="token operator">==</span> <span class="token boolean">true</span><span class="token punctuation">)</span>
+                    <span class="token punctuation">{<!-- --></span>
+                        m_hwnd1 <span class="token operator">=</span> pictureBox1<span class="token punctuation">.</span>Handle<span class="token punctuation">;</span>
+                        m_hwnd2 <span class="token operator">=</span> pictureBox2<span class="token punctuation">.</span>Handle<span class="token punctuation">;</span>
+                        dll_ShowPointCloud<span class="token punctuation">.</span><span class="token function">EX_SysInit</span><span class="token punctuation">(</span>m_hwnd1<span class="token punctuation">,</span> m_hwnd2<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//界面点云显示初始化</span>
+                    <span class="token punctuation">}</span>
+                <span class="token punctuation">}</span>
+</code></pre>
+<p>其中文件读取部分的代码如下：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">button1_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">try</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token class-name">OpenFileDialog</span> file <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">OpenFileDialog</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                file<span class="token punctuation">.</span>InitialDirectory <span class="token operator">=</span> <span class="token string">"."</span><span class="token punctuation">;</span>
+                file<span class="token punctuation">.</span>Filter <span class="token operator">=</span> <span class="token string">"所有文件(*.*)|*.*"</span><span class="token punctuation">;</span>
+                file<span class="token punctuation">.</span><span class="token function">ShowDialog</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>file<span class="token punctuation">.</span>FileName <span class="token operator">!=</span> <span class="token keyword">string</span><span class="token punctuation">.</span>Empty<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    pcdFile <span class="token operator">=</span> file<span class="token punctuation">.</span>FileName<span class="token punctuation">;</span>   <span class="token comment">//获得文件的绝对路径 pcdFile为选定的pcd文件路 也可以是ply文件</span>
+                    pcdPath <span class="token operator">=</span> Path<span class="token punctuation">.</span><span class="token function">GetDirectoryName</span><span class="token punctuation">(</span>file<span class="token punctuation">.</span>FileName<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//获取文件夹的路径 pcdPath是存储点云的文件夹路径</span>
+                    Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"Path:"</span> <span class="token operator">+</span> pcdPath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    label1<span class="token punctuation">.</span>Text <span class="token operator">=</span> pcdFile<span class="token punctuation">;</span>
+                    <span class="token class-name"><span class="token keyword">int</span></span> res <span class="token operator">=</span> dll_ShowPointCloud<span class="token punctuation">.</span><span class="token function">EX_PointCloud_Init</span><span class="token punctuation">(</span>pcdFile<span class="token punctuation">,</span>pcdPath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"returnPath:"</span><span class="token operator">+</span> DLL_ShowPointCloud<span class="token punctuation">.</span>readFilePtrPath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">if</span> <span class="token punctuation">(</span>res <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+                    <span class="token punctuation">{<!-- --></span>
+                        label2<span class="token punctuation">.</span>Text <span class="token operator">=</span> <span class="token string">"点云读取完毕"</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> ex<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span>ex<span class="token punctuation">.</span>Message<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="_79"></a>点云显示动态库开发</h2>
+<p>在动态库这块相比于之前发生了一个较大的变化，因为涉及到实时显示，所以对整体实现的过程进行了调整。</p>
+<h3><a id="_81"></a>动态库的调用接口</h3>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">DLL_API</span> <span class="token expression"><span class="token keyword">extern</span> </span><span class="token string">"C"</span> <span class="token expression"><span class="token function">_declspec</span><span class="token punctuation">(</span>dllexport<span class="token punctuation">)</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"FlowPCLshow.hpp"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"pointProcess.hpp"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;boost/thread/thread.hpp&gt;</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span> <span class="token directive keyword">define</span> <span class="token macro-name">POINTTYPE</span> <span class="token expression">pcl<span class="token double-colon punctuation">::</span>PointXYZI</span></span>
+
+PointCloudProcess<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;</span><span class="token operator">*</span> pointCloudProcess <span class="token operator">=</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+
+PointCloudShowWindows<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;</span><span class="token operator">*</span> pointCloudShowWindows <span class="token operator">=</span> <span class="token constant">NULL</span><span class="token punctuation">;</span>
+
+<span class="token comment">// 定义点云结构体</span>
+<span class="token keyword">struct</span> <span class="token class-name">DataPointXYZI</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">float</span> x<span class="token punctuation">,</span> y<span class="token punctuation">,</span> z<span class="token punctuation">,</span> i<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>dataPointXYZI<span class="token punctuation">;</span>
+
+<span class="token keyword">typedef</span>  <span class="token keyword">struct</span> <span class="token class-name">DataPointCloud</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">int</span> size <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>DataPointXYZI<span class="token operator">&gt;</span> data<span class="token punctuation">;</span>
+
+<span class="token punctuation">}</span>dataPointCloud<span class="token punctuation">;</span>
+
+<span class="token comment">//设置钩子函数</span>
+DLL_API <span class="token keyword">int</span> __stdcall <span class="token function">EX_PCLSHOW_SetCallback</span><span class="token punctuation">(</span>PCLSHOW_PResHook callback<span class="token punctuation">,</span> <span class="token keyword">int</span> imode<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">try</span>
+	<span class="token punctuation">{<!-- --></span>
+		pointCloudShowWindows<span class="token operator">-&gt;</span>pCLSHOW_PResHook <span class="token operator">=</span> callback<span class="token punctuation">;</span>
+		<span class="token keyword">return</span> <span class="token number">1</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+
+<span class="token comment">//文件读取</span>
+<span class="token keyword">void</span> <span class="token function">loadFile</span><span class="token punctuation">(</span>std<span class="token double-colon punctuation">::</span>string path<span class="token punctuation">,</span> pcl<span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span>Ptr cloud<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	std<span class="token double-colon punctuation">::</span>string fileType <span class="token operator">=</span> path<span class="token punctuation">.</span><span class="token function">substr</span><span class="token punctuation">(</span>path<span class="token punctuation">.</span><span class="token function">find_last_of</span><span class="token punctuation">(</span><span class="token char">'.'</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//获取文件后缀</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>fileType <span class="token operator">==</span> <span class="token string">"ply"</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>pcl<span class="token double-colon punctuation">::</span>io<span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">loadPLYFile</span> <span class="token generic class-name"><span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>path<span class="token punctuation">,</span> <span class="token operator">*</span>cloud<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"Cloud reading .ply failed."</span> <span class="token operator">&lt;&lt;</span> std<span class="token double-colon punctuation">::</span>endl<span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>fileType <span class="token operator">==</span> <span class="token string">"pcd"</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>pcl<span class="token double-colon punctuation">::</span>io<span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">loadPCDFile</span> <span class="token generic class-name"><span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>path<span class="token punctuation">,</span> <span class="token operator">*</span>cloud<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"Cloud reading .pcd failed."</span> <span class="token operator">&lt;&lt;</span> std<span class="token double-colon punctuation">::</span>endl<span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+	<span class="token comment">//cout &lt;&lt; "point cloud size:" &lt;&lt; cloud-&gt;size() &lt;&lt; endl;</span>
+<span class="token punctuation">}</span>
+<span class="token comment">//界面初始化</span>
+DLL_API <span class="token keyword">int</span> <span class="token function">Sys_Init</span><span class="token punctuation">(</span>HWND InitWindow<span class="token punctuation">,</span> HWND INPUTWindow<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+		cout <span class="token operator">&lt;&lt;</span> <span class="token string">"Sys_Init start"</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+		pointCloudShowWindows <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token generic-function"><span class="token function">PointCloudShowWindows</span><span class="token generic class-name"><span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">int</span> ShowSR <span class="token operator">=</span> pointCloudShowWindows<span class="token operator">-&gt;</span><span class="token function">PCL_SHOW_Init</span><span class="token punctuation">(</span><span class="token punctuation">(</span>HWND<span class="token punctuation">)</span>InitWindow<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//初始化结果</span>
+		<span class="token keyword">int</span> input <span class="token operator">=</span> pointCloudShowWindows<span class="token operator">-&gt;</span><span class="token function">PCL_SHOW_INPUT</span><span class="token punctuation">(</span><span class="token punctuation">(</span>HWND<span class="token punctuation">)</span>INPUTWindow<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//初始化结果</span>
+		cout <span class="token operator">&lt;&lt;</span> <span class="token string">"input end"</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+		<span class="token keyword">return</span> input<span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+<span class="token comment">// 点云显示动态库</span>
+DLL_API <span class="token keyword">int</span> <span class="token function">PointCloud_Show</span><span class="token punctuation">(</span><span class="token keyword">int</span> itype<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token number">1</span> <span class="token operator">==</span> itype<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+			<span class="token comment">// 显示输入点云</span>
+			pointCloudShowWindows<span class="token operator">-&gt;</span><span class="token function">PCL_Show_InitCloud</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+		<span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+			<span class="token comment">//显示彩色点云</span>
+			pointCloudShowWindows<span class="token operator">-&gt;</span><span class="token function">PCL_Show_PointCloud</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+		<span class="token keyword">return</span> <span class="token number">1</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+<span class="token comment">// 设置的全局变量</span>
+std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>pcl<span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;&gt;</span><span class="token operator">*</span> p<span class="token punctuation">;</span>
+pcl<span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span>Ptr <span class="token function">inputCloud</span><span class="token punctuation">(</span><span class="token keyword">new</span> pcl<span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>pcl<span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;&gt;</span> data_cloud<span class="token punctuation">;</span>
+std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>pcl<span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;&gt;</span> cloud_list<span class="token punctuation">;</span>
+<span class="token keyword">int</span> threadPclShowStop <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+
+DLL_API std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>pcl<span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;&gt;</span><span class="token operator">*</span> <span class="token function">PointCloud_Init</span><span class="token punctuation">(</span><span class="token keyword">char</span><span class="token operator">*</span> filePathName<span class="token punctuation">,</span> <span class="token keyword">char</span><span class="token operator">*</span> PathName<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	<span class="token comment">//pcl::PointCloud&lt;pcl::PointXYZ&gt;::Ptr inputCloud(new pcl::PointCloud&lt;pcl::PointXYZ&gt;);</span>
+	cout <span class="token operator">&lt;&lt;</span> <span class="token string">"filePathName:"</span> <span class="token operator">&lt;&lt;</span> filePathName <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+	<span class="token function">loadFile</span><span class="token punctuation">(</span>filePathName<span class="token punctuation">,</span> inputCloud<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	pointCloudShowWindows<span class="token operator">-&gt;</span><span class="token function">PCL_SHOW_WinTypeSet</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	pointCloudShowWindows<span class="token operator">-&gt;</span><span class="token function">PCL_Updata_InitCloud</span><span class="token punctuation">(</span>inputCloud<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	data_cloud<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span><span class="token operator">*</span>inputCloud<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	cout <span class="token operator">&lt;&lt;</span> <span class="token string">"filePathName:"</span> <span class="token operator">&lt;&lt;</span> filePathName <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+	pointCloudProcess <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token generic-function"><span class="token function">PointCloudProcess</span><span class="token generic class-name"><span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>PathName <span class="token operator">!=</span> <span class="token string">""</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		pointCloudProcess<span class="token operator">-&gt;</span><span class="token function">PointCloudList</span><span class="token punctuation">(</span>PathName<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		cloud_list <span class="token operator">=</span> pointCloudProcess<span class="token operator">-&gt;</span>pointCloudList<span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	pointCloudProcess<span class="token operator">-&gt;</span><span class="token operator">~</span><span class="token function">PointCloudProcess</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	p <span class="token operator">=</span> <span class="token operator">&amp;</span>cloud_list<span class="token punctuation">;</span>
+	cout <span class="token operator">&lt;&lt;</span> <span class="token string">"ptr path:"</span> <span class="token operator">&lt;&lt;</span> p <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+	<span class="token keyword">return</span> p<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token comment">//用于控制点云实时显示的中断过程</span>
+DLL_API <span class="token keyword">int</span> <span class="token function">Thread_PclShow</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	threadPclShowStop <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> threadPclShowStop<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token comment">//读取指定地址中的点云文件进行实时显示</span>
+DLL_API <span class="token keyword">int</span> <span class="token function">LoadDataFromPtr</span><span class="token punctuation">(</span>std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>pcl<span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;&gt;</span><span class="token operator">*</span> Path<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	cout <span class="token operator">&lt;&lt;</span> <span class="token string">"LoadDataFromPtr:"</span> <span class="token operator">&lt;&lt;</span> Path <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+	pcl<span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;</span> input<span class="token punctuation">;</span>
+	std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>pcl<span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>POINTTYPE<span class="token operator">&gt;&gt;</span> data<span class="token punctuation">;</span>
+	data <span class="token operator">=</span> <span class="token operator">*</span>Path<span class="token punctuation">;</span>
+	std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"data size:"</span> <span class="token operator">&lt;&lt;</span> data<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+	threadPclShowStop <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+	<span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>threadPclShowStop <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+			std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"LoadDataFromPtr-&gt;input stop!"</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+			<span class="token keyword">break</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+		input <span class="token operator">=</span> data<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		pointCloudShowWindows<span class="token operator">-&gt;</span><span class="token function">PCL_Updata_InputCloud</span><span class="token punctuation">(</span>input<span class="token punctuation">.</span><span class="token function">makeShared</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		pointCloudShowWindows<span class="token operator">-&gt;</span>input_viewer<span class="token operator">-&gt;</span><span class="token function">spinOnce</span><span class="token punctuation">(</span><span class="token number">100</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		i<span class="token operator">++</span><span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>i <span class="token operator">==</span> data<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+			<span class="token comment">//break;</span>
+			i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+	threadPclShowStop <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> threadPclShowStop<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token comment">// 结束时释放点云显示空间</span>
+DLL_API <span class="token keyword">int</span> <span class="token function">StopAllClass</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	pointCloudShowWindows<span class="token operator">-&gt;</span><span class="token operator">~</span><span class="token function">PointCloudShowWindows</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> <span class="token number">1</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p>上述代码中涉及到的点云读取类 pointCloudProcess 的实现过程如下：</p>
+<pre><code class="prism language-cpp">
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">typename</span> <span class="token class-name">PointT</span><span class="token operator">&gt;</span>
+<span class="token class-name">PointCloudProcess</span><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">PointCloudProcess</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">typename</span> <span class="token class-name">PointT</span><span class="token operator">&gt;</span>
+PointCloudProcess<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token operator">~</span><span class="token function">PointCloudProcess</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+<span class="token punctuation">}</span>
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">typename</span> <span class="token class-name">PointT</span><span class="token operator">&gt;</span>
+<span class="token keyword">typename</span> <span class="token class-name">pcl</span><span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span>Ptr <span class="token class-name">PointCloudProcess</span><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">load_File</span><span class="token punctuation">(</span>std<span class="token double-colon punctuation">::</span>string filePath<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">typename</span> <span class="token class-name">pcl</span><span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span>Ptr <span class="token function">cloud</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">typename</span> <span class="token class-name">pcl</span><span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	std<span class="token double-colon punctuation">::</span>string fileType <span class="token operator">=</span> filePath<span class="token punctuation">.</span><span class="token function">substr</span><span class="token punctuation">(</span>filePath<span class="token punctuation">.</span><span class="token function">find_last_of</span><span class="token punctuation">(</span><span class="token char">'.'</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//获取文件后缀</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>fileType <span class="token operator">==</span> <span class="token string">"ply"</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>pcl<span class="token double-colon punctuation">::</span>io<span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">loadPLYFile</span> <span class="token generic class-name"><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>filePath<span class="token punctuation">,</span> <span class="token operator">*</span>cloud<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"Cloud reading .ply failed."</span> <span class="token operator">&lt;&lt;</span> std<span class="token double-colon punctuation">::</span>endl<span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>fileType <span class="token operator">==</span> <span class="token string">"pcd"</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>pcl<span class="token double-colon punctuation">::</span>io<span class="token double-colon punctuation">::</span><span class="token generic-function"><span class="token function">loadPCDFile</span> <span class="token generic class-name"><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>filePath<span class="token punctuation">,</span> <span class="token operator">*</span>cloud<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"Cloud reading .pcd failed."</span> <span class="token operator">&lt;&lt;</span> std<span class="token double-colon punctuation">::</span>endl<span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+	cout <span class="token operator">&lt;&lt;</span> <span class="token string">"point cloud size:"</span> <span class="token operator">&lt;&lt;</span> cloud<span class="token operator">-&gt;</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+	<span class="token keyword">return</span> cloud<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token comment">//获取所有的数据</span>
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">typename</span> <span class="token class-name">PointT</span><span class="token operator">&gt;</span>
+std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span><span class="token keyword">typename</span> <span class="token class-name">pcl</span><span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;&gt;</span> <span class="token class-name">PointCloudProcess</span><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">PointCloudList</span><span class="token punctuation">(</span>std<span class="token double-colon punctuation">::</span>string dataPath<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>std<span class="token double-colon punctuation">::</span>string<span class="token operator">&gt;</span> pathList <span class="token operator">=</span> <span class="token function">getFilesList</span><span class="token punctuation">(</span>dataPath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">typename</span> <span class="token class-name">pcl</span><span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span>Ptr <span class="token function">loadCloud</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">typename</span> <span class="token class-name">pcl</span><span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> pathList<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		std <span class="token double-colon punctuation">::</span>string file <span class="token operator">=</span> pathList<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+		loadCloud <span class="token operator">=</span> <span class="token function">load_File</span><span class="token punctuation">(</span>file<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		pointCloudList<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span><span class="token operator">*</span>loadCloud<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">return</span> pointCloudList<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token comment">/** 读取文件夹数据*/</span>
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">typename</span> <span class="token class-name">PointT</span><span class="token operator">&gt;</span>
+std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>std<span class="token double-colon punctuation">::</span>string<span class="token operator">&gt;</span> <span class="token class-name">PointCloudProcess</span><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">getFilesList</span><span class="token punctuation">(</span>std<span class="token double-colon punctuation">::</span>string Path<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	std<span class="token double-colon punctuation">::</span>string PathList <span class="token operator">=</span> Path <span class="token operator">+</span> <span class="token string">"/*.*"</span><span class="token punctuation">;</span>
+	std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>std<span class="token double-colon punctuation">::</span>string<span class="token operator">&gt;</span> allFilePath<span class="token punctuation">;</span>
+	intptr_t handle<span class="token punctuation">;</span>
+	_finddata_t findData<span class="token punctuation">;</span>
+	handle <span class="token operator">=</span> <span class="token function">_findfirst</span><span class="token punctuation">(</span>PathList<span class="token punctuation">.</span><span class="token function">c_str</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>findData<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//检测是否成功</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>handle <span class="token operator">==</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		cout <span class="token operator">&lt;&lt;</span> <span class="token string">"can not found the file ... "</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+		<span class="token keyword">return</span> allFilePath<span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">do</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>findData<span class="token punctuation">.</span>attrib <span class="token operator">&amp;</span> _A_SUBDIR<span class="token punctuation">)</span> <span class="token comment">//是否含有子目录</span>
+		<span class="token punctuation">{<!-- --></span>
+			<span class="token comment">//若该子目录为"."或".."，则进行下一次循环，否则输出子目录名，并进入下一次搜索</span>
+			<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">strcmp</span><span class="token punctuation">(</span>findData<span class="token punctuation">.</span>name<span class="token punctuation">,</span> <span class="token string">"."</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span> <span class="token operator">||</span> <span class="token function">strcmp</span><span class="token punctuation">(</span>findData<span class="token punctuation">.</span>name<span class="token punctuation">,</span> <span class="token string">".."</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+				<span class="token keyword">continue</span><span class="token punctuation">;</span>
+
+			<span class="token comment">// 在目录后面加上"\\"和搜索到的目录名进行下一次搜索</span>
+			std<span class="token double-colon punctuation">::</span>string dirNew <span class="token operator">=</span> Path <span class="token operator">+</span> <span class="token string">"/"</span> <span class="token operator">+</span> findData<span class="token punctuation">.</span>name<span class="token punctuation">;</span>
+			std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>std<span class="token double-colon punctuation">::</span>string<span class="token operator">&gt;</span> tempPath <span class="token operator">=</span> <span class="token function">getFilesList</span><span class="token punctuation">(</span>dirNew<span class="token punctuation">)</span><span class="token punctuation">;</span>
+			allFilePath<span class="token punctuation">.</span><span class="token function">insert</span><span class="token punctuation">(</span>allFilePath<span class="token punctuation">.</span><span class="token function">end</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> tempPath<span class="token punctuation">.</span><span class="token function">begin</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> tempPath<span class="token punctuation">.</span><span class="token function">end</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+		<span class="token punctuation">}</span>
+		<span class="token keyword">else</span> <span class="token comment">//不是子目录，即是文件，则输出文件名和文件的大小</span>
+		<span class="token punctuation">{<!-- --></span>
+			std<span class="token double-colon punctuation">::</span>string filePath <span class="token operator">=</span> Path <span class="token operator">+</span> <span class="token string">"/"</span> <span class="token operator">+</span> findData<span class="token punctuation">.</span>name<span class="token punctuation">;</span>
+			allFilePath<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>filePath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+			cout <span class="token operator">&lt;&lt;</span> filePath <span class="token operator">&lt;&lt;</span> <span class="token string">"\t"</span> <span class="token operator">&lt;&lt;</span> findData<span class="token punctuation">.</span>size <span class="token operator">&lt;&lt;</span> <span class="token string">" bytes.\n"</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span> <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token function">_findnext</span><span class="token punctuation">(</span>handle<span class="token punctuation">,</span> <span class="token operator">&amp;</span>findData<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> allFilePath<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>为了使我们写的函数可以适用于不同数据类型的点云（xyz，xyzi,xyzrgb），我们使用了<code>template&lt;typename PointT&gt;</code>来定义类中点云的数据类型</p>
+<h2><a id="_317"></a>点云显示</h2>
+<p>在上一篇文章的基础上新增了一个点云初始化的窗口</p>
+<pre><code class="prism language-cpp"><span class="token comment">// 用于更新实时显示的点云</span>
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">typename</span> <span class="token class-name">PointT</span><span class="token operator">&gt;</span>
+<span class="token keyword">int</span> <span class="token class-name">PointCloudShowWindows</span><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">PCL_Updata_InputCloud</span><span class="token punctuation">(</span><span class="token keyword">typename</span> <span class="token class-name">pcl</span><span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span>Ptr Cloud<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	Input_cloud<span class="token punctuation">.</span><span class="token function">reset</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token keyword">typename</span> <span class="token class-name">pcl</span><span class="token double-colon punctuation">::</span>PointCloud<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	Input_cloud<span class="token operator">-&gt;</span><span class="token function">resize</span><span class="token punctuation">(</span>Cloud<span class="token operator">-&gt;</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	Input_cloud <span class="token operator">=</span> Cloud<span class="token punctuation">;</span>
+
+	pcl<span class="token double-colon punctuation">::</span>visualization<span class="token double-colon punctuation">::</span>PointCloudColorHandlerGenericField<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span> <span class="token function">fildColor</span><span class="token punctuation">(</span>Input_cloud<span class="token punctuation">,</span> <span class="token string">"z"</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 按照x字段进行渲染</span>
+	input_viewer<span class="token operator">-&gt;</span><span class="token function">removeAllPointClouds</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	input_viewer<span class="token operator">-&gt;</span><span class="token generic-function"><span class="token function">addPointCloud</span><span class="token generic class-name"><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>Input_cloud<span class="token punctuation">,</span> fildColor<span class="token punctuation">,</span> <span class="token string">"sample"</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 显示点云，其中fildColor为颜色显示</span>
+	<span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token comment">//初始化实时显示点云的窗口</span>
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">typename</span> <span class="token class-name">PointT</span><span class="token operator">&gt;</span>
+<span class="token keyword">int</span> <span class="token class-name">PointCloudShowWindows</span><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">PCL_SHOW_INPUT</span><span class="token punctuation">(</span>HWND InputCloudDispWindow<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">try</span>
+	<span class="token punctuation">{<!-- --></span>
+		input_viewer<span class="token punctuation">.</span><span class="token function">reset</span><span class="token punctuation">(</span><span class="token keyword">new</span> pcl<span class="token double-colon punctuation">::</span>visualization<span class="token double-colon punctuation">::</span><span class="token function">PCLVisualizer</span><span class="token punctuation">(</span><span class="token string">"Input_Viewer"</span><span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//初始化viewer对象</span>
+
+		<span class="token comment">//m_viewer-&gt;setShowFPS(false);</span>
+
+		input_viewer<span class="token operator">-&gt;</span><span class="token function">addCoordinateSystem</span><span class="token punctuation">(</span><span class="token number">1.0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+		input_viewer<span class="token operator">-&gt;</span><span class="token function">setBackgroundColor</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置背景颜色</span>
+
+		input_viewer<span class="token operator">-&gt;</span><span class="token function">initCameraParameters</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//初始化相机的参数</span>
+
+		input_viewer_win <span class="token operator">=</span> input_viewer<span class="token operator">-&gt;</span><span class="token function">getRenderWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//将view中的渲染窗口的句柄传递给vtk window</span>
+		input_viewer_iren <span class="token operator">=</span> vtkRenderWindowInteractor<span class="token double-colon punctuation">::</span><span class="token function">New</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//初始化vtkwindow交互的对象 </span>
+		input_viewer<span class="token operator">-&gt;</span><span class="token function">resetCamera</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//使点云显示在屏幕中间，并绕中心操作</span>
+		RECT Input_Window<span class="token punctuation">;</span>
+
+		<span class="token double-colon punctuation">::</span><span class="token function">GetClientRect</span><span class="token punctuation">(</span>InputCloudDispWindow<span class="token punctuation">,</span> <span class="token operator">&amp;</span>Input_Window<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+		input_viewer_i_ui_w <span class="token operator">=</span> Input_Window<span class="token punctuation">.</span>right <span class="token operator">-</span> Input_Window<span class="token punctuation">.</span>left<span class="token punctuation">;</span>
+		input_viewer_i_ui_h <span class="token operator">=</span> Input_Window<span class="token punctuation">.</span>bottom <span class="token operator">-</span> Input_Window<span class="token punctuation">.</span>top<span class="token punctuation">;</span>
+
+		input_viewer_win<span class="token operator">-&gt;</span><span class="token function">SetSize</span><span class="token punctuation">(</span>input_viewer_i_ui_w<span class="token punctuation">,</span> input_viewer_i_ui_h<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//根据当前窗口的大小设置vtk 窗口的大小</span>
+		<span class="token comment">//m_win-&gt;SetSize(300, 300);//根据当前窗口的大小设置vtk 窗口的大小</span>
+
+		input_viewer_win<span class="token operator">-&gt;</span><span class="token function">SetParentId</span><span class="token punctuation">(</span>InputCloudDispWindow<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置vtk窗口的句柄</span>
+		<span class="token comment">//input_viewer_iren-&gt;SetRenderWindow(input_viewer_win);//将vtk交互对象与vtk window绑定 </span>
+		input_viewer<span class="token operator">-&gt;</span><span class="token function">createInteractor</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		input_viewer_win<span class="token operator">-&gt;</span><span class="token function">Render</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//开始渲染</span>
+		<span class="token keyword">return</span> <span class="token number">1</span><span class="token punctuation">;</span>
+
+	<span class="token punctuation">}</span>
+	<span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+<span class="token punctuation">}</span>
+
+
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">typename</span> <span class="token class-name">PointT</span><span class="token operator">&gt;</span>
+<span class="token keyword">int</span> <span class="token class-name">PointCloudShowWindows</span><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">PCL_SHOW_WinTypeSet</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	Init_viewer<span class="token operator">-&gt;</span><span class="token function">setCameraPosition</span><span class="token punctuation">(</span><span class="token number">11.6749</span><span class="token punctuation">,</span> <span class="token number">17.4117</span><span class="token punctuation">,</span> <span class="token number">27.2977</span><span class="token punctuation">,</span> <span class="token operator">-</span><span class="token number">0.404992</span><span class="token punctuation">,</span> <span class="token operator">-</span><span class="token number">0.6874</span><span class="token punctuation">,</span> <span class="token number">0.602879</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	Init_viewer<span class="token operator">-&gt;</span><span class="token function">setCameraClipDistances</span><span class="token punctuation">(</span><span class="token number">0.160147</span><span class="token punctuation">,</span> <span class="token number">160.147</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	input_viewer<span class="token operator">-&gt;</span><span class="token function">setCameraPosition</span><span class="token punctuation">(</span><span class="token number">11.6749</span><span class="token punctuation">,</span> <span class="token number">17.4117</span><span class="token punctuation">,</span> <span class="token number">27.2977</span><span class="token punctuation">,</span> <span class="token operator">-</span><span class="token number">0.404992</span><span class="token punctuation">,</span> <span class="token operator">-</span><span class="token number">0.6874</span><span class="token punctuation">,</span> <span class="token number">0.602879</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	input_viewer<span class="token operator">-&gt;</span><span class="token function">setCameraClipDistances</span><span class="token punctuation">(</span><span class="token number">0.160147</span><span class="token punctuation">,</span> <span class="token number">160.147</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">typename</span> <span class="token class-name">PointT</span><span class="token operator">&gt;</span>
+<span class="token keyword">int</span> <span class="token class-name">PointCloudShowWindows</span><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">PCL_Show_InitCloud</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">try</span>
+	<span class="token punctuation">{<!-- --></span>
+		Init_viewer<span class="token operator">-&gt;</span><span class="token function">removeAllPointClouds</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//将前一次点云移除  </span>
+		pcl<span class="token double-colon punctuation">::</span>visualization<span class="token double-colon punctuation">::</span>PointCloudColorHandlerGenericField<span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span> <span class="token function">fildColor</span><span class="token punctuation">(</span>Init_cloud<span class="token punctuation">,</span> <span class="token string">"z"</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 按照x字段进行渲染</span>
+		Init_viewer<span class="token operator">-&gt;</span><span class="token function">setPointCloudRenderingProperties</span><span class="token punctuation">(</span>pcl<span class="token double-colon punctuation">::</span>visualization<span class="token double-colon punctuation">::</span>PCL_VISUALIZER_POINT_SIZE<span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">,</span> <span class="token string">"sample"</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 用于改变显示点云的尺寸。用户可以利用该方法控制点云在视窗中的显示方式。</span>
+		Init_viewer<span class="token operator">-&gt;</span><span class="token generic-function"><span class="token function">addPointCloud</span><span class="token generic class-name"><span class="token operator">&lt;</span>PointT<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>Init_cloud<span class="token punctuation">,</span> fildColor<span class="token punctuation">,</span> <span class="token string">"sample"</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 显示点云，其中fildColor为颜色显示</span>
+
+		Init_viewer<span class="token operator">-&gt;</span><span class="token function">spinOnce</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+		<span class="token keyword">return</span> <span class="token number">1</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<h1><a id="_408"></a>最终效果</h1>
+<p></p>
+<div class="csdn-video-box">
+<iframe allowfullscreen="true" data-mediaembed="csdn" id="XHMrOSGL-1648019838993" src="https://live.csdn.net/v/embed/191733"></iframe>
+<p>C#窗体实时显示点云</p>
+</div>
+<p></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,256 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<blockquote>
+<p>本文实现的功能有：</p>
+<p>1、播放音乐</p>
+<p>2、自定义流星数量、飞行速度、光晕大小、流星大小</p>
+<p>3、自定义表白话语 </p>
+</blockquote>
+<blockquote>
+<p>运用到的知识点有：</p>
+<p>GUI：java实现窗体、Swing。其实JAVA Swing的GUI目前企业中已经不用了，主要是一些学校和培训机构用来教导学生写一些游戏、小项目，练练手的。 </p>
+<p>多线程：让cpu同一时间处理多个任务（本文中涉及到音乐、文字缓慢出现、流星线条移动）</p>
+</blockquote>
+<p>效果图：</p>
+<p><img alt="3331e5f1fc544e4eb37b6b25ab040283.gif" src="https://img-blog.csdnimg.cn/3331e5f1fc544e4eb37b6b25ab040283.gif"/></p>
+<blockquote>
+<p>音乐类（其实也可以不用音乐，有些人并不喜欢）： </p>
+</blockquote>
+<pre><code class="language-java">import javazoom.jl.decoder.JavaLayerException;
+import javazoom.jl.player.Player;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+
+public class MusicThread extends Thread{
+    @Override
+    public void run() {
+        //播放音乐
+        System.out.println("开始播放");
+        //表示音乐文件
+        File f = new File("nv.mp3");
+        //第三方jar包  Player类
+
+        try {
+            Player p = new Player(new FileInputStream(f));//参数：文件输入流对象
+            // p.play();
+        } catch (FileNotFoundException | JavaLayerException e) {
+            e.printStackTrace();
+        }
+
+    }
+}</code></pre>
+<blockquote>
+<p>实现类： </p>
+</blockquote>
+<pre><code class="language-java">import javazoom.jl.decoder.JavaLayerException;
+import javazoom.jl.player.Player;
+
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.*;
+import java.util.Random;
+import javax.swing.*;
+
+public class MeteorFly extends JFrame {
+    int AppletWidth, AppletHeight;
+    final int MAX = 6; // (~)流星的个数
+    final int SLEEP = 2; // 流星飞行的速度（数值越大，速度越慢）
+    final int COLORLV = 1; // (~)色阶（可改变光晕大小）
+    final int SIZE = 3 ; // (~)流星大小
+    private MyPanel panel;
+    public MeteorFly() {
+        panel = new MyPanel();
+        this.setTitle("LOVE");
+        this.getContentPane().add(panel);
+        this.setSize(AppletWidth, AppletHeight); // 创建窗体
+        this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        this.setVisible(true);
+    }
+    public static void main(String[] args) {
+        new Thread(){
+            @Override
+            public void run() {
+                //声明一个File对象
+                File mp3 = new File("nv.mp3");
+                //创建一个输入流
+                FileInputStream fileInputStream = null;
+
+                try {
+                    fileInputStream = new FileInputStream(mp3);
+                    //创建一个缓冲流
+                    BufferedInputStream bufferedInputStream = new BufferedInputStream(fileInputStream);
+                    //创建播放器对象，把文件的缓冲流传入进去
+                    Player player = new Player(fileInputStream);
+                    //调用播放方法进行播放
+                    player.play();
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                } catch (JavaLayerException e) {
+                    e.printStackTrace();
+                }
+            }
+        }.start();
+        new MeteorFly();
+    }
+
+    class MyPanel extends JPanel implements Runnable {
+        Meteor p[];
+        BufferedImage OffScreen;
+        Graphics drawOffScreen;
+        Thread pThread;
+        Font drawFont = new Font("Arial",0,28);
+        public MyPanel() {
+            //setBackground(Color.black); //窗体初始化
+            AppletWidth = Toolkit.getDefaultToolkit().getScreenSize().width;
+            AppletHeight = Toolkit.getDefaultToolkit().getScreenSize().height-200;
+            p = new Meteor[MAX];
+            for (int i = 0; i &lt; MAX; i++) {
+                p[i] = new Meteor();
+            }
+            OffScreen = new BufferedImage(AppletWidth, AppletHeight,
+                    BufferedImage.TYPE_INT_BGR);
+            drawOffScreen = OffScreen.getGraphics();
+            pThread = new Thread(this);
+            pThread.start();
+
+            new Thread(){
+                @Override
+                public void run() {
+                    try {
+                        sleep(2000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    str1 = "流星雨是世间宝藏，而你是我的人间理想";
+                    while(true){
+                            try {
+                                sleep(150);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            pos++;
+                            if (pos &gt; str1.length() - 1) {
+                                pos = str1.length() - 1;
+                                break;
+                            }
+                    }
+                }
+            }.start();
+
+        }
+        int pos = 0;
+        String str1 = "                                                                   ";
+        @Override
+        public void paintComponent(Graphics g) {
+            super.paintComponents(g);
+            g.drawImage(OffScreen, 0, 0, this);
+            g.setColor(Color.pink);
+            g.setFont(new Font("宋体", Font.BOLD, 50));
+            g.drawString(str1.substring(0,pos+1),260,700);
+        }
+        @Override
+         public void run() {
+            while (true) {
+                for (int i = 0; i &lt; MAX; i++) {
+                    drawOffScreen.setColor(p[i].color); // RGB颜色
+                    drawOffScreen.fillOval(p[i].x, p[i].y, SIZE, SIZE);
+                    p[i].x += p[i].mx;
+                    p[i].y += p[i].my;
+                    int x = p[i].x;
+                    int y = p[i].y;
+                    int R = p[i].color.getRed(); // 提取颜色
+                    int G = p[i].color.getGreen();
+                    int B = p[i].color.getBlue();
+                    while (true) {
+                        if (R ==0 &amp;&amp; G ==0 &amp;&amp; B ==0 ) {
+                            break;
+                        }
+                        R -= COLORLV; // 尾部颜色淡化
+                        if (R &lt;0 ) {
+                            R =0 ;
+                        }
+                        G -= COLORLV;
+                        if (G &lt;0 ) {
+                            G =0 ;
+                        }
+                        B -= COLORLV;
+                        if (B &lt; 0) {
+                            B =0 ;
+                        }
+                        Color color = new Color(R, G, B);
+                        x -= p[i].mx; // 覆盖尾部
+                        y -= p[i].my;
+                        drawOffScreen.setColor(color);
+                        drawOffScreen.fillOval(x, y, SIZE, SIZE);
+                    }
+                    if (x &gt; AppletWidth || y &gt; AppletHeight) { // 流星飞出窗口，重置流星
+                        p[i].reset();
+                    }
+                }
+                repaint();
+                try {
+                    Thread.sleep(SLEEP);
+                } catch (InterruptedException e) {
+                }
+            }
+        }
+    }
+    class Meteor { // 流星类
+        int x, y; // 流星的位置
+        int mx, my; // 下落速度
+        Color color; // 流星颜色
+        Random r = new Random();
+        public Meteor() {
+            reset();
+        }
+        public void reset() {
+            int rand = (int) (Math.random() *100 ); //随机生成流星出现位置
+            if (rand &gt;35 ) {
+                x = (int) (Math.random() *600 );
+                y = 0;
+            } else {
+                y = (int) (Math.random() * 150);
+                x =0 ;
+            }
+            mx = r.nextInt(2)+2; //随机生成下落速度和角度
+            my = 1;
+            color = new Color(
+                        // 随机颜色
+                    (new Double(Math.random() *128 )).intValue() +128 ,
+                        (new Double(Math.random() *128 )).intValue() +128 ,
+                        (new Double(Math.random() * 128)).intValue() + 128);
+        }
+    }
+}</code></pre>
+<blockquote>
+<p>代码来源：顿开教育</p>
+<p>这里的Player类需要自己导包，包我放在这个链接里了：</p>
+</blockquote>
+<p>链接：https://pan.baidu.com/s/1zg4gqz69qptiVoRRN7dFWQ <br/> 提取码：a0rg</p>
+<blockquote>
+<p> 导包过程中可能有些人会出现这种问题：</p>
+</blockquote>
+<p><img alt="29e6073eaf9e41e3b41ed34e71424ed2.png" src="https://img-blog.csdnimg.cn/29e6073eaf9e41e3b41ed34e71424ed2.png"/></p>
+<blockquote>
+<p>实际应该是可以打开的： </p>
+</blockquote>
+<p> <img alt="404c38bec2e44a0780509d5bd17b1412.png" src="https://img-blog.csdnimg.cn/404c38bec2e44a0780509d5bd17b1412.png"/></p>
+<blockquote>
+<p>如何导包：</p>
+<p>先要将包复制粘贴到项目包下</p>
+<p>然后进入：File –&gt; Project Structure</p>
+</blockquote>
+<p><img alt="c53e589d0fb7449da966ad7a56bf4925.png" src="https://img-blog.csdnimg.cn/c53e589d0fb7449da966ad7a56bf4925.png"/></p>
+<blockquote>
+<p> 然后依次点击Libraries、+号、Java</p>
+</blockquote>
+<p> <img alt="05b18688479540768cbf28581182b0e3.png" src="https://img-blog.csdnimg.cn/05b18688479540768cbf28581182b0e3.png"/></p>
+<blockquote>
+<p> 找到你要导的文件的位置，然后一直点OK就行了。</p>
+</blockquote>
+<p> </p>
+</div>
+</div>

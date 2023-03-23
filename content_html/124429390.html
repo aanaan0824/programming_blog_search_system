@@ -1,0 +1,263 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<blockquote>
+<p>std::shared_ptr 是一种智能指针，它能够记录多少个 shared_ptr 共同指向一个对象，从而消除显示的调用 delete，当引用计数变为零的时候就会将对象自动删除。</p>
+</blockquote>
+<p><strong>std::shared_ptr 可以通过 get() 方法来获取原始指针，通过 reset() 来减少一个引用计数， 并通过use_count()来查看一个对象的引用计数。例如:</strong></p>
+<p></p>
+<pre><code>auto pointer = std::make_shared&lt;int&gt;(10);
+auto pointer2 = pointer; // 引用计数+1
+auto pointer3 = pointer; // 引用计数+1
+int *p = pointer.get(); // 这样不会增加引用计数
+std::cout &lt;&lt; "pointer.use_count() = " &lt;&lt; pointer.use_count() &lt;&lt; std::endl; // 3
+std::cout &lt;&lt; "pointer2.use_count() = " &lt;&lt; pointer2.use_count() &lt;&lt; std::endl; // 3
+std::cout &lt;&lt; "pointer3.use_count() = " &lt;&lt; pointer3.use_count() &lt;&lt; std::endl; // 3
+
+pointer2.reset();
+std::cout &lt;&lt; "reset pointer2:" &lt;&lt; std::endl;
+std::cout &lt;&lt; "pointer.use_count() = " &lt;&lt; pointer.use_count() &lt;&lt; std::endl; // 2
+std::cout &lt;&lt; "pointer2.use_count() = " &lt;&lt; pointer2.use_count() &lt;&lt; std::endl; // 0, pointer2 已 reset
+std::cout &lt;&lt; "pointer3.use_count() = " &lt;&lt; pointer3.use_count() &lt;&lt; std::endl; // 2
+pointer3.reset();
+std::cout &lt;&lt; "reset pointer3:" &lt;&lt; std::endl;
+std::cout &lt;&lt; "pointer.use_count() = " &lt;&lt; pointer.use_count() &lt;&lt; std::endl; // 1
+std::cout &lt;&lt; "pointer2.use_count() = " &lt;&lt; pointer2.use_count() &lt;&lt; std::endl; // 0
+std::cout &lt;&lt; "pointer3.use_count() = " &lt;&lt; pointer3.use_count() &lt;&lt; std::endl; // 0, pointer3 已 reset
+
+</code></pre>
+<h2>创建</h2>
+<p></p>
+<pre><code>方式一：shared_ptr&lt;string&gt; pTom{new string("tom")};
+方式二：shared_ptr&lt;string&gt; pTom;
+               pTom.reset(new string("tom"));
+方式三：shared_ptr&lt;string&gt; pTom = make_shared&lt;string&gt;("tom");
+推荐：使用方式三，更快（一次复制），更安全
+</code></pre>
+<h2>使用</h2>
+<p></p>
+<pre><code>shared_ptr&lt;string&gt; pTom = make_shared&lt;string&gt;("tom");
+shared_ptr&lt;string&gt; pJerry = make_shared&lt;string&gt;("jerry");
+(*pTom)[0] = ’T’;  //tom -&gt; Tom
+pJerry-&gt;replace(0, 1, "i"); //jerry -&gt; Jerry
+
+vector&lt;shared_ptr&lt;string&gt;&gt; vtWhoCleanRoom;   
+vtWhoCleanRoom.push_back(pTom);   
+vtWhoCleanRoom.push_back(pJerry);    
+vtWhoCleanRoom.push_back(pTom);
+
+//此时vtWhoCleanRoom的内容为Tom Jerry Tom
+*pTom = "Tomy"; 
+//此时vtWhoCleanRoom的内容为Tomy Jerry Tomy
+</code></pre>
+<h2>比较运算符</h2>
+<p><strong>所有比较运算符都会调用共享指针，内部封装的原始指针的比较运算符；支持==、!=、&lt;、&lt;=、&gt;、&gt;=；同类型的共享指针才能使用比较运算符。</strong></p>
+<p></p>
+<pre><code>shared_ptr&lt;int&gt; sp_n1 = make_shared&lt;int&gt;(1);
+shared_ptr&lt;int&gt; sp_n2 = make_shared&lt;int&gt;(2);
+shared_ptr&lt;int&gt; sp_nu;
+shared_ptr&lt;double&gt; sp_d1 = 
+    make_shared&lt;double&gt;(1);
+
+bool bN1LtN2 = sp_n1 &lt; sp_n2;  //true
+bool bN1GtNu = sp_n1 &gt; sp_nu;  //true
+bool bNuEqNu = sp_nu == sp_nu; //true
+bool bN2GtD1 = sp_d1 &lt; sp_n2;  //编译错误
+</code></pre>
+<h2>线程安全接口</h2>
+<p><strong>①共享指针不是线程安全的<br/> ②标准库提供了共享指针的原子接口<br/> ③只并发访问指针，而不是对它们所引用的值。</strong></p>
+<p></p>
+<pre><code>std::shared_ptr&lt;X&gt; global; //创建空的共享指针
+void foo()
+{
+    std::shared_ptr&lt;X&gt; local{new X};
+    ...
+    std::atomic_store(&amp;global, local);
+}
+</code></pre>
+<table><thead><tr><th>操作</th><th>结果</th></tr></thead><tbody><tr><td>atomic_is_lock_free(&amp;sp)</td><td>如果sp的原子接口是无锁的，则返回true</td></tr><tr><td>atomic_load(&amp;sp)</td><td>返回sp</td></tr><tr><td>atomic_store(&amp;sp,sp2)</td><td>使用sp2对sp进行赋值</td></tr><tr><td>atomic_exchange(&amp;sp,sp2)</td><td>交换sp与sp2的值</td></tr></tbody></table>
+<h2>错误使用</h2>
+<p><strong>①多个共享指针不能拥有同一个对象<br/> ②可以使用enable_shared_from_this<br/> 和shared_from_this生成共享指针</strong></p>
+<p></p>
+<pre><code>#include &lt;iostream&gt;
+#include &lt;memory&gt;
+
+using namespace std;
+
+class CTest{
+public:
+    CTest(const string &amp; sName) : m_sName(sName) {}
+    ~CTest() {
+        cout &lt;&lt; m_sName &lt;&lt; " destroy" &lt;&lt; endl; }
+
+private:
+    string m_sName;
+};
+
+
+int main()
+{
+    CTest* p = new CTest("test");
+    shared_ptr&lt;CTest&gt; sp1(p);
+    shared_ptr&lt;CTest&gt; sp2(p); //错误
+
+    return 0;
+}
+</code></pre>
+<p>运行输出：</p>
+<p></p>
+<pre><code>test destroy
+Segmentation fault      (core dumped)
+</code></pre>
+<p></p>
+<pre><code>#include &lt;iostream&gt;
+#include &lt;memory&gt;
+
+using namespace std;
+
+class CTest : public enable_shared_from_this&lt;CTest&gt;
+{
+public:
+    CTest(const string &amp; sName) : m_sName(sName) {}
+    ~CTest() {
+        cout &lt;&lt; m_sName &lt;&lt; " destroy" &lt;&lt; endl; }
+
+    shared_ptr&lt;CTest&gt; getSharePtr() {
+        return shared_from_this();
+    }
+
+private:
+    string m_sName;
+};
+
+int main()
+{
+    CTest* p = new CTest("test");
+    shared_ptr&lt;CTest&gt; sp1(p);
+    shared_ptr&lt;CTest&gt; sp2 = p-&gt;getSharePtr(); //正确
+
+    return 0;
+}
+
+</code></pre>
+<h2>销毁</h2>
+<p><strong>①定义删除器sp(…, D)<br/> ②删除器可以定义为普通函数、匿名函数、函数指针等符合签名要求的可调用对象<br/> ③只有最后引用对象的sp销毁时才会销毁对象</strong></p>
+<p></p>
+<pre><code>#include &lt;iostream&gt;
+#include &lt;memory&gt;
+
+using namespace std;
+
+void delFun(string *p)
+{
+    cout &lt;&lt; "Fun delete " &lt;&lt; *p &lt;&lt; endl;
+    delete p;
+}
+
+int main()
+{
+    cout &lt;&lt; "begin" &lt;&lt; endl;
+    shared_ptr&lt;string&gt; pTom;
+    {
+        shared_ptr&lt;string&gt; pTom1(new string("tom"),
+                                 [](string* p) {
+            cout &lt;&lt; "Lamda delete " &lt;&lt; *p &lt;&lt; endl;
+            delete p;
+        });
+        pTom = pTom1;
+        shared_ptr&lt;string&gt; pJerry(new string("jerry"), delFun);
+    }
+    cout &lt;&lt; "end" &lt;&lt; endl;
+
+    return 0;
+}
+
+</code></pre>
+<p><strong>①可以为数组创建一个共享指针，但这样做是错误的。<br/> ②共享指针提供的默认删除程序,将调用delete，而不是delete []<br/> ③可以使用自定义的删除器，删除器中使用delete[]<br/> ④也可以使用default_delete作删除器, 因为它使用delete []</strong></p>
+<p></p>
+<pre><code>#include &lt;iostream&gt;
+#include &lt;memory&gt;
+
+using namespace std;
+
+int main()
+{
+    std::shared_ptr&lt;char&gt; sp1(new char[20]); //错误但能编译通过
+
+    std::shared_ptr&lt;char&gt; sp2(new char[20],
+                             [](char* p) {
+                                 delete[] p;
+                             }
+                            );
+
+    std::shared_ptr&lt;char&gt; sp3(new char[20],
+                              std::default_delete&lt;char[]&gt;());
+
+    return 0;
+}
+
+</code></pre>
+<p><strong>①除了释放内存，也可以释放其他资源<br/> ②要释放其他资源，就必须使用自定义的删除器</strong></p>
+<p></p>
+<pre><code>#include &lt;iostream&gt;
+#include &lt;fstream&gt;
+#include &lt;memory&gt;
+#include &lt;cstdio&gt;
+
+using namespace std;
+
+class FileDeleter
+{
+  public:
+    FileDeleter (const string&amp; sFileName)
+     : m_sFileName(sFileName) {
+    }
+
+    void operator () (ofstream* pOfs) {
+        delete pOfs;  //关闭文件
+        remove(m_sFileName.c_str()); //删除文件
+        cout &lt;&lt; "Delete file -- " &lt;&lt; m_sFileName &lt;&lt; endl;
+    }
+
+  private:
+    string m_sFileName;
+};
+
+int main()
+{
+    const string sFileName = "TempFile.txt";
+    std::shared_ptr&lt;ofstream&gt;
+            fp(new ofstream(sFileName),
+               FileDeleter(sFileName));
+    cout &lt;&lt; "Program exit" &lt;&lt; endl;
+
+    return 0;
+}
+
+</code></pre>
+<h2>强制类型转换</h2>
+<p><strong>①共享指针强制转换运算符允许将其中包裹的指针强制转换为其他类型。<br/> ②不能使用普通的强制转换运算符，因为它会导致未定义的行为。<br/> ③共享指针的强制类型转换运算符包括<br/> static_pointer_cast、<br/> dynamic_pointer_cast、<br/> const_pointer_cast</strong></p>
+<p></p>
+<pre><code>#include &lt;iostream&gt;
+#include &lt;memory&gt;
+
+using namespace std;
+
+int main()
+{
+    shared_ptr&lt;void&gt; spv(new int(1));
+    shared_ptr&lt;int&gt; spe(static_cast&lt;int*&gt;(spv.get()));
+    shared_ptr&lt;int&gt; spn = static_pointer_cast&lt;int&gt;(spv);
+
+    cout &lt;&lt; *spe &lt;&lt; endl;
+    cout &lt;&lt; *spn &lt;&lt; endl;
+
+    return 0;
+}
+
+</code></pre>
+<h2>共享指针存在的问题</h2>
+<p><strong>①循环引用<br/> ②明确想要共享但不拥有对象</strong></p>
+<p></p>
+</div>
+</div>

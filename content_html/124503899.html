@@ -1,0 +1,554 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="_0"></a>消息队列介绍以及消息队列应用场景</h2>
+<h3><a id="RabbitMQ_1"></a>RabbitMQ</h3>
+<p><strong>说明</strong><br/> MQ(Message Queue) 即消息队列，是应用间的通信方式，消息发送后可立即返回，由消息系统来确保消息的可靠传递。”消息队列“是在消息的传输过程中保存消息的容器。它是典型的：生产者、消费者模型。生产者不断向消息队列中生产消息，消费者不断的从队列中获取消息。因为消息的生产和消费都是异步的，而且只关心消息的发送和接收，没有业务逻辑的侵入，这样就实现生产者和消费者的解耦。</p>
+<p><strong>为什么使用消息中间件？</strong><br/> 消息队列是分布式系统中重要的组件，解决应用解耦，异步消息，流量削峰等问题，实现高并发，高可用，可伸缩和最终一致性架构</p>
+<p><strong>异步处理</strong><br/> 用户注册信息后需要发送邮件和注册短信<br/> 1、用户注册信息写入数据库后即使返回注册成功的信息<br/> 2、发送邮件和注册短信通过消息队列异步执行，用户不需要等待这两个操作<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a5ce5da9252045b0bedeb992faa7143f.png"/></p>
+<p><strong>应用解耦</strong><br/> 用户下单后，订单系统需要通知库存系统。传统的做法是，订单系统调用库存系统的接口，进行增减库存<br/> 1、用户下单入列生产，返回成功提示<br/> 2、队列消费库存系统，进行库存增减<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/70ee20f893b240a587e3f0a71edb7d59.png"/></p>
+<p><strong>流量削峰</strong><br/> 流量削峰也是消息队列中的常见场景，一般在秒杀或团抢活动中使用广泛<br/> 1、当一批用户请求过来进入列队，控制入列数量，超出一定数量返回秒杀结束<br/> 2、然后队列一个个按照先进先出进行队列消费<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c0f5612b272244edbf3f1c3f95f24c1c.png"/></p>
+<p><strong>Rabbitmq特性</strong></p>
+<p><strong>可靠性（Reliability）</strong> RabbitMQ 使用一些机制来保证可靠性，如持久化、传输确认、发布确认。<br/> <strong>灵活的路由（Flexible Routing）</strong> 在消息进入队列之前，通过 Exchange 来路由消息的。对于典型的路由功能，RabbitMQ 已经提供了一些内置的 Exchange 来实现。针对更复杂的路由功能，可以将多个 Exchange 绑定在一起，也通过插件机制实现自己的 Exchange 。<br/> <strong>消息集群（Clustering）</strong> 多个 RabbitMQ 服务器可以组成一个集群，形成一个逻辑 Broker 。<br/> <strong>高可用（Highly Available Queues）</strong> 队列可以在集群中的机器上进行镜像，使得在部分节点出问题的情况下队列仍然可用。<br/> <strong>多种协议（Multi-protocol）</strong> RabbitMQ 支持多种消息队列协议，比如 STOMP、MQTT 等等。<br/> <strong>多语言客户端（Many Clients）</strong> RabbitMQ 几乎支持所有常用语言，比如PHP Java、.NET、Ruby 等等。<br/> <strong>管理界面（Management UI）</strong> RabbitMQ 提供了一个易用的用户界面，使得用户可以监控和管理消息 Broker 的许多方面。<br/> <strong>跟踪机制（Tracing）</strong> 如果消息异常，RabbitMQ 提供了消息跟踪机制，使用者可以找出发生了什么。<br/> <strong>插件机制（Plugin System）</strong> RabbitMQ 提供了许多插件，来从多方面进行扩展，也可以编写自己的插件。</p>
+<p><strong>RabbitMQ的工作原理</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c84ee6c155e64410bb675304cc9a6c44.png"/></p>
+<p><strong>Broker</strong>: 接收和分发消息的应用，RabbitMQ Server就是Message Broker。</p>
+<p><strong>Virtual host</strong>: 类似于mysql的数据库，当多个不同的用户使用同一个RabbitMQ server提供的服务时，可以划分出多个vhost，每个用户在自己的vhost创建exchange／queue等。</p>
+<p>Connection: publisher／consumer和broker之间的TCP连接。</p>
+<p><strong>Channel</strong>: 如果每一次访问RabbitMQ都建立一个Connection，在消息量大的时候建立TCP Connection的开销将是巨大的，效率也较低。Channel是在connection内部建立的逻辑连接Channel作为轻量级的Connection极大减少了操作系统建立TCP connection的开销。</p>
+<p><strong>Exchange</strong>: message到达broker的第一站，根据分发规则，匹配查询表中的routing key，分发消息到queue中去。常用的类型有：direct (point-to-point), topic (publish-subscribe) and fanout (multicast)。</p>
+<p><strong>Queue</strong>: 消息最终被送到这里等待consumer取走。一个message可以被同时拷贝到多个queue中。</p>
+<h2><a id="rabbitmq_55"></a>rabbitmq安装启动</h2>
+<p>RabbitMQ官方地址：http://www.rabbitmq.com<br/> 安装rabbitmq需要先安装erlang</p>
+<p><strong>第一步：erlang 安装</strong><br/> 安装rabbitmq需要先安装erlang，centos7不支持erlang 24版本的安装<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/99767c081acf43bdb4e6877894f859ff.png"/><br/> 下载：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2c43b220385a4e638ba59d795a995430.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/8d7ee342268847138ca62a5c77ff714b.png"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/dcdbe35e14f94728b7352f10ea28e4d1.png"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c19cf4c55ecd488e96cbf5766f53bae9.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5e7c6999a64e45d1acc352d4fae0fa30.png"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9d03090d2de0474caa5876d936778df9.png"/></p>
+<pre><code class="prism language-go"># 系统  centos <span class="token number">7</span>
+# 下载erlang包，手动下载后上传至服务器，我在使用wget下载后无法安装，这里没明白
+
+
+# 安装
+yum install erlang<span class="token operator">-</span><span class="token number">23.3</span><span class="token number">.4</span><span class="token number">.4</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">.</span>el7<span class="token punctuation">.</span>x86_64<span class="token punctuation">.</span>rpm
+
+# 验证安装是否成功
+erl
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b500b2e120494445be18852759fbb7ec.png"/></p>
+<p><strong>第二步：安装rabbitmq</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/11540a1f3312474ca4c11a7a4cf5eb5d.png"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e959133a17c044f0bc0bea6201c8f671.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b77f05a912b3429e8bb8321651ea0b51.png"/></p>
+<pre><code class="prism language-go"># 系统  centos <span class="token number">7</span>
+# 下载rabbitmq包，手动下载后上传至服务器，我在使用wget下载后无法安装，这里没明白
+
+
+# 安装
+yum install rabbitmq<span class="token operator">-</span>server<span class="token operator">-</span><span class="token number">3.8</span><span class="token number">.19</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">.</span>el7<span class="token punctuation">.</span>noarch<span class="token punctuation">.</span>rpm 
+
+# 启动
+systemctl start rabbitmq<span class="token operator">-</span>server
+
+# 关闭
+systemctl stop rabbitmq<span class="token operator">-</span>server
+
+# 查看默认端口服务是否启动
+netstat <span class="token operator">-</span>tunlp
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a235edadf93c48c8bfc09a981f469961.png"/></p>
+<h2><a id="phprabbitmq_111"></a>php消息队列rabbitmq各种模式使用</h2>
+<h3><a id="rabbitmq_112"></a>rabbitmq管理界面及命令行使用</h3>
+<p>4369：epmd(Erlang Port Mapper Daemon)，erlang服务端口</p>
+<p>5672 ：client端通信口</p>
+<p>15672：HTTP API客户端，管理UI（仅在启用了管理插件的情况下）不一定会启动</p>
+<p>25672：用于节点间通信（Erlang分发服务器端口）</p>
+<p><strong>rabbitmq 管理命令</strong><br/> 启动15672：HTTP API客户端，管理UI（仅在启用了管理插件的情况下）</p>
+<pre><code class="prism language-go"># 启动rabbitmq_management插件
+rabbitmq<span class="token operator">-</span>plugins  enable  rabbitmq_management
+
+# 查看所有插件
+rabbitmq<span class="token operator">-</span>plugins  list
+</code></pre>
+<p>测试访问UI界面：（此时非localhost地址是无法登录）<br/> http://192.168.10.105:15672/</p>
+<p><strong>rabbitmq 配置管理界面</strong></p>
+<pre><code class="prism language-go"># 新增一个用户  
+rabbitmqctl add_user 【用户名Username】 【密码Password】
+rabbitmqctl add_user root root
+# 删除一个用户  
+rabbitmqctl delete_user Username
+
+# 修改用户的密码 
+rabbitmqctl change_password Username Newpassword 
+
+# 查看当前用户列表    
+rabbitmqctl list_users
+
+# 设置用户角色的命令为： 
+rabbitmqctl set_user_tags User Tag  
+rabbitmqctl set_user_tags root administrator
+# User为用户名， Tag为角色名<span class="token punctuation">(</span>对应于上面的administrator，monitoring，policymaker，management，或其他自定义名称<span class="token punctuation">)</span>。
+</code></pre>
+<p><strong>命令行创建vhost以及php扩展安装</strong><br/> 类似于mysql的数据库，当多个不同的用户使用同一个RabbitMQ server提供的服务时，可以划分出多个vhost，每个用户在自己的vhost创建exchange／queue等。</p>
+<p>1）查看不同用户的vhost<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5db150b7007d401bbe18452df84b48c7.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/453b3242f418473da9512e4ec373c0d8.png"/></p>
+<p>创建vhost，以及分配权限</p>
+<pre><code class="prism language-go"># 新增vhost
+rabbitmqctl add_vhost   vhostname
+rabbitmqctl add_vhost order
+
+# 查看vhost列表
+rabbitmqctl  list_vhosts
+
+#为vhost添加用户
+rabbitmqctl set_permissions <span class="token operator">-</span>p vhostname username <span class="token string">".*"</span> <span class="token string">".*"</span> <span class="token string">".*"</span>
+rabbitmqctl set_permissions <span class="token operator">-</span>p order root <span class="token string">".*"</span> <span class="token string">".*"</span> <span class="token string">".*"</span>
+ 
+<span class="token string">".*"</span> <span class="token string">".*"</span> <span class="token string">".*"</span>后边三个<span class="token punctuation">.</span><span class="token operator">*</span>分别代表：配置权限、写权限、读权限
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1b9f46db9e234c0d9baf48a987502ca4.png"/></p>
+<p>2）为php安装rabbitmq扩展安装<br/> https://github.com/php-amqplib/php-amqplib 扩展安装</p>
+<p>修改阿里云镜像</p>
+<pre><code class="prism language-go">composer config <span class="token operator">-</span>g repo<span class="token punctuation">.</span>packagist composer https<span class="token punctuation">:</span><span class="token operator">/</span><span class="token operator">/</span>mirrors<span class="token punctuation">.</span>aliyun<span class="token punctuation">.</span>com<span class="token operator">/</span>composer<span class="token operator">/</span>
+</code></pre>
+<p>开始下载–这里有时候会下载成2.8低版本的，需要指定版本<br/> ，下载不成功则升级composer、php.ini 打开 sockets 扩展和切换国内镜像</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/eda1061f08a6490d9b654be59689bd4f.png"/></p>
+<pre><code class="prism language-go"># 升级composer
+composer self<span class="token operator">-</span>update
+
+#php<span class="token punctuation">.</span>ini 打开 sockets 扩展
+
+#下载指定版本
+composer require php<span class="token operator">-</span>amqplib<span class="token operator">/</span>php<span class="token operator">-</span>amqplib<span class="token operator">=</span><span class="token operator">^</span><span class="token number">3.0</span>
+</code></pre>
+<p><strong>simple模式生产者消息推送到消息队列</strong><br/> 文档：<br/> https://www.rabbitmq.com/tutorials/tutorial-one-php.html</p>
+<p>简单的生产者与消息者<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7e8278c0050a4b71829c8867712ce3de.png"/><br/> 生产者代码<br/> http://localhost/rabbitmq/simple/pro.php</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Message<span class="token punctuation">\</span>AMQPMessage</span><span class="token punctuation">;</span>
+
+<span class="token comment">//生产者</span>
+<span class="token comment">//Connection: publisher／consumer和broker之间的TCP连接</span>
+<span class="token comment">//Channel: 如果每一次访问RabbitMQ都建立一个Connection，在消息量大的时候建立TCP Connection的开销将是巨大的，效率也较低。Channel是在connection内部建立的逻辑连接Channel作为轻量级的Connection极大减少了操作系统建立TCP connection的开销。</span>
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//声明队列名为：goods</span>
+<span class="token variable">$queue_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'goods'</span><span class="token punctuation">;</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_declare</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//生产数据</span>
+<span class="token variable">$data</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'this is messge'</span><span class="token punctuation">;</span>
+<span class="token comment">//创建消息</span>
+<span class="token variable">$msg</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPMessage</span><span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">,</span> <span class="token punctuation">[</span><span class="token string single-quoted-string">'delivery_mode'</span> <span class="token operator">=&gt;</span> <span class="token class-name static-context">AMQPMessage</span><span class="token operator">::</span><span class="token constant">DELIVERY_MODE_NON_PERSISTENT</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//发布消息</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_publish</span><span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">,</span> <span class="token variable">$exchange</span> <span class="token operator">=</span> <span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token variable">$queue_name</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>运行生产者脚本：<br/> http://localhost/rabbitmq/simple/pro.php<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d6c0daa490bd46e9ba8d5f39541059c4.png"/><br/> 点击goods队列可以进入到消息详情<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e8dda29c977f4de39a938637e1177ca4.png"/></p>
+<h4><a id="simple_246"></a>simple模式消费者接受消息</h4>
+<p>http://localhost/rabbitmq/simple/con.php</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//声明队列名为：goods</span>
+<span class="token variable">$queue_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'goods'</span><span class="token punctuation">;</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_declare</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">echo</span> <span class="token string double-quoted-string">" [*] Waiting for messages. To exit press CTRL+C\n"</span><span class="token punctuation">;</span>
+
+<span class="token variable">$callback</span> <span class="token operator">=</span> <span class="token keyword">function</span> <span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">echo</span> <span class="token string single-quoted-string">'received = '</span><span class="token punctuation">,</span> <span class="token variable">$msg</span><span class="token operator">-&gt;</span><span class="token property">body</span> <span class="token operator">.</span> <span class="token string double-quoted-string">"\n"</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token comment">//开启消费</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_consume</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token variable">$callback</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//不断的循环进行消费</span>
+<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">is_open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">wait</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h4><a id="worker_280"></a>worker模式生产消费消息</h4>
+<p>rabbitmq Work Queues<br/> 一个生产者对应多个消费者，消费特别慢时增加几个消费分发<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ac5e25dd12f648a4b7d9ad28e10ae2b7.png"/><br/> 生产者，和上文生产者不变</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Message<span class="token punctuation">\</span>AMQPMessage</span><span class="token punctuation">;</span>
+
+<span class="token comment">//生产者</span>
+<span class="token comment">//Connection: publisher／consumer和broker之间的TCP连接</span>
+<span class="token comment">//Channel: 如果每一次访问RabbitMQ都建立一个Connection，在消息量大的时候建立TCP Connection的开销将是巨大的，效率也较低。Channel是在connection内部建立的逻辑连接Channel作为轻量级的Connection极大减少了操作系统建立TCP connection的开销。</span>
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//声明队列名为：task_queue</span>
+<span class="token variable">$queue_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'task_queue'</span><span class="token punctuation">;</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_declare</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token variable">$i</span> <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> <span class="token variable">$i</span> <span class="token operator">&lt;</span> <span class="token number">10</span><span class="token punctuation">;</span> <span class="token variable">$i</span><span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//生产数据</span>
+    <span class="token variable">$data</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'this is messge'</span> <span class="token operator">.</span> <span class="token variable">$i</span><span class="token punctuation">;</span>
+<span class="token comment">//创建消息</span>
+    <span class="token variable">$msg</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPMessage</span><span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">,</span> <span class="token punctuation">[</span><span class="token string single-quoted-string">'delivery_mode'</span> <span class="token operator">=&gt;</span> <span class="token class-name static-context">AMQPMessage</span><span class="token operator">::</span><span class="token constant">DELIVERY_MODE_NON_PERSISTENT</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//发布消息</span>
+    <span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_publish</span><span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">,</span> <span class="token variable">$exchange</span> <span class="token operator">=</span> <span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token variable">$queue_name</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>消费者worker1<br/> D:\phpstudy_pro\WWW\rabbitmq\worker\worker1.php</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//声明队列名为：task_queue</span>
+<span class="token variable">$queue_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'task_queue'</span><span class="token punctuation">;</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_declare</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">echo</span> <span class="token string double-quoted-string">" [*] Waiting for messages. To exit press CTRL+C\n"</span><span class="token punctuation">;</span>
+
+<span class="token variable">$callback</span> <span class="token operator">=</span> <span class="token keyword">function</span> <span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">echo</span> <span class="token string single-quoted-string">'received = '</span><span class="token punctuation">,</span> <span class="token variable">$msg</span><span class="token operator">-&gt;</span><span class="token property">body</span> <span class="token operator">.</span> <span class="token string double-quoted-string">"\n"</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token comment">//开启消费</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_consume</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token variable">$callback</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//不断的循环进行消费</span>
+<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">is_open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">wait</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>消费者worker2，代码和worker1一样，同时运行开启后会一起消费<br/> D:\phpstudy_pro\WWW\rabbitmq\worker\worker2.php</p>
+<p><strong>消费者消费消息ack确认</strong></p>
+<p>用以确认不会丢失消息</p>
+<p>消费消息<br/> basic_consume($queue = ‘’, $consumer_tag = ‘’, $no_local = false, $no_ack = false, $exclusive = false, $nowait = false, $callback = null, $ticket = null, $arguments = array())<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/829dae856a8b4e539dcd353978d327c0.png"/><br/> no_ack=false,设置为手动应答<br/> 开启后需要进行消息的消费确认后才会进行移除，否者该消息会一直存在消息队列中<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/dd4cde94fc594b36bcc29dd9d1a6eb5a.png"/></p>
+<p>消费端代码<br/> D:\phpstudy_pro\WWW\rabbitmq\worker\worker1.php</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//声明队列名为：task_queue</span>
+<span class="token variable">$queue_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'task_queue'</span><span class="token punctuation">;</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_declare</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">echo</span> <span class="token string double-quoted-string">" [*] Waiting for messages. To exit press CTRL+C\n"</span><span class="token punctuation">;</span>
+
+<span class="token variable">$callback</span> <span class="token operator">=</span> <span class="token keyword">function</span> <span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">echo</span> <span class="token string single-quoted-string">'received = '</span><span class="token punctuation">,</span> <span class="token variable">$msg</span><span class="token operator">-&gt;</span><span class="token property">body</span> <span class="token operator">.</span> <span class="token string double-quoted-string">"\n"</span><span class="token punctuation">;</span>
+    <span class="token comment">//确认消息已被消费，从生产队列中移除</span>
+    <span class="token variable">$msg</span><span class="token operator">-&gt;</span><span class="token function">ack</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">//设置消费成功后才能继续进行下一个消费</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_qos</span><span class="token punctuation">(</span><span class="token constant">null</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token constant">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//开启消费no_ack=false,设置为手动应答</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_consume</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token variable">$callback</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+<span class="token comment">//不断的循环进行消费</span>
+<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">is_open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">wait</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h4><a id="fanout_412"></a>fanout模式生产者推送到交换器</h4>
+<p>发布/订阅模式<br/> 是要是公用一个交换机的消费端都能收到同样的消息，类似广播的功能</p>
+<p>文档：rabbitmq Publish/Subscribe<br/> https://www.rabbitmq.com/tutorials/tutorial-three-php.html<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/12bb02f8bf534eaaa6ed195c8da56601.png"/></p>
+<p>rabbitmq Exchange类型</p>
+<pre><code class="prism language-go">交换器、路由键、绑定
+
+    Exchange：交换器。发送消息的AMQP实体。交换器拿到一个消息之后将它路由给一个或几个队列。它使用哪种路由算法是由交换机类型和被称作绑定（Binding）的规则所决定的。RabbitMQ有四种类型。
+
+    RoutingKey：路由键。生产者将消息发送给交换器。一般会指定一个RoutingKey<span class="token punctuation">,</span>用来指定这个消息的路由规则，而这个RoutingKey需要与交换器类型和绑定键（BindingKey）联合使用才能最终失效。
+
+    Binding：绑定。绑定（Binding）是交换机（Exchange）将消息（Message）路由给队列（Queue）所需遵循的规则。
+
+# 四种模式
+Direct  定向 消息与一个特定的路由键完全匹配
+
+Topic  通配符 路由键和某模式进行匹配
+
+Fanout  广播 发送到该类型交换机的消息都会被广播到与该交换机绑定的所有队列
+Headers 不处理路由键，而是根据发送的消息内容中的headers属性进行匹配
+</code></pre>
+<p>exchange_declare($exchange, $type, $passive = false, $durable = false, $auto_delete = true, $internal = false, $nowait = false, $arguments = array(), $ticket = null) 。试探性申请一个交换器，若该交换器不存在，则创建；若存在，则跳过。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c88edcabfc7e422fa7cf9d8b9cc39378.png"/><br/> 生产者代码<br/> D:\phpstudy_pro\WWW\rabbitmq\ps\pro.php</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Message<span class="token punctuation">\</span>AMQPMessage</span><span class="token punctuation">;</span>
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//声明交换器</span>
+<span class="token variable">$exc_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'exch'</span><span class="token punctuation">;</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">exchange_declare</span><span class="token punctuation">(</span><span class="token variable">$exc_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'fanout'</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//声明数据</span>
+<span class="token variable">$data</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'this is fanout message'</span><span class="token punctuation">;</span>
+<span class="token comment">//创建消息</span>
+<span class="token variable">$msg</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPMessage</span><span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">,</span> <span class="token punctuation">[</span><span class="token string single-quoted-string">'delivery_mode'</span> <span class="token operator">=&gt;</span> <span class="token class-name static-context">AMQPMessage</span><span class="token operator">::</span><span class="token constant">DELIVERY_MODE_NON_PERSISTENT</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//发布消息</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_publish</span><span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">,</span> <span class="token variable">$exc_name</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9eb7e6500905428ca2a2b3480d525786.png"/></p>
+<p><strong>fanout模式消费者消费消息</strong><br/> 是要是公用一个交换机的消费端都能收到同样的消息，类似广播的功能</p>
+<p>当消费端运行时才会显示该队列<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/fef65e2d37f34ae797a4ea518a3403ee.png"/><br/> 消费端：<br/> D:\phpstudy_pro\WWW\rabbitmq\ps\worker1.php</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//声明交换器</span>
+<span class="token variable">$exc_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'exch'</span><span class="token punctuation">;</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">exchange_declare</span><span class="token punctuation">(</span><span class="token variable">$exc_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'fanout'</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//获取系统生成的消息队列名称</span>
+<span class="token keyword">list</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token punctuation">,</span><span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_declare</span><span class="token punctuation">(</span><span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//将队列名与交换器名进行绑定</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_bind</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span><span class="token variable">$exc_name</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token variable">$callback</span> <span class="token operator">=</span> <span class="token keyword">function</span> <span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">echo</span> <span class="token string single-quoted-string">'received = '</span><span class="token punctuation">,</span> <span class="token variable">$msg</span><span class="token operator">-&gt;</span><span class="token property">body</span> <span class="token operator">.</span> <span class="token string double-quoted-string">"\n"</span><span class="token punctuation">;</span>
+    <span class="token comment">//确认消息已被消费，从生产队列中移除</span>
+    <span class="token variable">$msg</span><span class="token operator">-&gt;</span><span class="token function">ack</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">//设置消费成功后才能继续进行下一个消费</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_qos</span><span class="token punctuation">(</span><span class="token constant">null</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token constant">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//开启消费no_ack=false,设置为手动应答</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_consume</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token variable">$callback</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//不断的循环进行消费</span>
+<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">is_open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">wait</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h4><a id="direct_527"></a>direct模式消息队列使用</h4>
+<p>文档：<br/> https://www.rabbitmq.com/tutorials/tutorial-four-php.html</p>
+<p>用来指定不同的交换机和指定routing_key，在消费端进行消费<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b7b530d8f9d24dc686b0e16931177659.png"/><br/> 生产者代码：<br/> D:\phpstudy_pro\WWW\rabbitmq\routing\pro.php</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Message<span class="token punctuation">\</span>AMQPMessage</span><span class="token punctuation">;</span>
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//声明交换器</span>
+<span class="token variable">$exc_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'direct_log'</span><span class="token punctuation">;</span>
+<span class="token comment">//指定routing_key</span>
+<span class="token variable">$routing_key</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'info'</span><span class="token punctuation">;</span>
+
+<span class="token comment">//指定交换机类型为direct</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">exchange_declare</span><span class="token punctuation">(</span><span class="token variable">$exc_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'direct'</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//声明数据</span>
+<span class="token variable">$data</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'this is '</span> <span class="token operator">.</span> <span class="token variable">$routing_key</span> <span class="token operator">.</span> <span class="token string single-quoted-string">' message'</span><span class="token punctuation">;</span>
+<span class="token comment">//创建消息</span>
+<span class="token variable">$msg</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPMessage</span><span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">,</span> <span class="token punctuation">[</span><span class="token string single-quoted-string">'delivery_mode'</span> <span class="token operator">=&gt;</span> <span class="token class-name static-context">AMQPMessage</span><span class="token operator">::</span><span class="token constant">DELIVERY_MODE_NON_PERSISTENT</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//发布消息</span>
+<span class="token comment">//指定使用的routing_key</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_publish</span><span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">,</span> <span class="token variable">$exc_name</span><span class="token punctuation">,</span> <span class="token variable">$routing_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>消费者代码<br/> D:\phpstudy_pro\WWW\rabbitmq\routing\info.php</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//声明交换器</span>
+<span class="token variable">$exc_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'direct_log'</span><span class="token punctuation">;</span>
+<span class="token comment">//指定routing_key</span>
+<span class="token variable">$routing_key</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'info'</span><span class="token punctuation">;</span>
+
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">exchange_declare</span><span class="token punctuation">(</span><span class="token variable">$exc_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'direct'</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//获取系统生成的消息队列名称</span>
+<span class="token keyword">list</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token punctuation">,</span><span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_declare</span><span class="token punctuation">(</span><span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//将队列名与交换器名进行绑定，并指定routing_key</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_bind</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span><span class="token variable">$exc_name</span><span class="token punctuation">,</span><span class="token variable">$routing_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token variable">$callback</span> <span class="token operator">=</span> <span class="token keyword">function</span> <span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">echo</span> <span class="token string single-quoted-string">'received = '</span><span class="token punctuation">,</span> <span class="token variable">$msg</span><span class="token operator">-&gt;</span><span class="token property">body</span> <span class="token operator">.</span> <span class="token string double-quoted-string">"\n"</span><span class="token punctuation">;</span>
+    <span class="token comment">//确认消息已被消费，从生产队列中移除</span>
+    <span class="token variable">$msg</span><span class="token operator">-&gt;</span><span class="token function">ack</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">//设置消费成功后才能继续进行下一个消费</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_qos</span><span class="token punctuation">(</span><span class="token constant">null</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token constant">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//开启消费no_ack=false,设置为手动应答</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_consume</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token variable">$callback</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//不断的循环进行消费</span>
+<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">is_open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">wait</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+</code></pre>
+<h4><a id="topic_618"></a>topic模式消息队列使用</h4>
+<p>通配符的匹配模式</p>
+<p>如消费端中routing_key = ‘user.*’;<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1ba8dd537cc44c2ba0512b49ec671ce7.png"/></p>
+<p>生产者：<br/> 指定routing_key= ‘user.top’</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Message<span class="token punctuation">\</span>AMQPMessage</span><span class="token punctuation">;</span>
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//声明交换器</span>
+<span class="token variable">$exc_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'topic_log'</span><span class="token punctuation">;</span>
+<span class="token comment">//指定routing_key</span>
+<span class="token variable">$routing_key</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'user.top'</span><span class="token punctuation">;</span>
+
+<span class="token comment">//指定交换机类型为direct</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">exchange_declare</span><span class="token punctuation">(</span><span class="token variable">$exc_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'topic'</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//声明数据</span>
+<span class="token variable">$data</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'this is '</span> <span class="token operator">.</span> <span class="token variable">$routing_key</span> <span class="token operator">.</span> <span class="token string single-quoted-string">' message'</span><span class="token punctuation">;</span>
+<span class="token comment">//创建消息</span>
+<span class="token variable">$msg</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPMessage</span><span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">,</span> <span class="token punctuation">[</span><span class="token string single-quoted-string">'delivery_mode'</span> <span class="token operator">=&gt;</span> <span class="token class-name static-context">AMQPMessage</span><span class="token operator">::</span><span class="token constant">DELIVERY_MODE_NON_PERSISTENT</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//发布消息</span>
+<span class="token comment">//指定使用的routing_key</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_publish</span><span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">,</span> <span class="token variable">$exc_name</span><span class="token punctuation">,</span> <span class="token variable">$routing_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>消费者<br/> 消费端中routing_key = ‘user.*’;</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">require_once</span> <span class="token string double-quoted-string">"../vendor/autoload.php"</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">PhpAmqpLib<span class="token punctuation">\</span>Connection<span class="token punctuation">\</span>AMQPStreamConnection</span><span class="token punctuation">;</span>
+
+<span class="token comment">//建立connction</span>
+<span class="token variable">$connection</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AMQPStreamConnection</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'192.168.10.105'</span><span class="token punctuation">,</span> <span class="token number">5672</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'root'</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'order'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//Channel</span>
+<span class="token variable">$channel</span> <span class="token operator">=</span> <span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">channel</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//声明交换器</span>
+<span class="token variable">$exc_name</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'direct_log'</span><span class="token punctuation">;</span>
+<span class="token comment">//指定routing_key</span>
+<span class="token variable">$routing_key</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'user.*'</span><span class="token punctuation">;</span>
+
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">exchange_declare</span><span class="token punctuation">(</span><span class="token variable">$exc_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'topic'</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//获取系统生成的消息队列名称</span>
+<span class="token keyword">list</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token punctuation">,</span><span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_declare</span><span class="token punctuation">(</span><span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//将队列名与交换器名进行绑定，并指定routing_key</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">queue_bind</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span><span class="token variable">$exc_name</span><span class="token punctuation">,</span><span class="token variable">$routing_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token variable">$callback</span> <span class="token operator">=</span> <span class="token keyword">function</span> <span class="token punctuation">(</span><span class="token variable">$msg</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">echo</span> <span class="token string single-quoted-string">'received = '</span><span class="token punctuation">,</span> <span class="token variable">$msg</span><span class="token operator">-&gt;</span><span class="token property">body</span> <span class="token operator">.</span> <span class="token string double-quoted-string">"\n"</span><span class="token punctuation">;</span>
+    <span class="token comment">//确认消息已被消费，从生产队列中移除</span>
+    <span class="token variable">$msg</span><span class="token operator">-&gt;</span><span class="token function">ack</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">//设置消费成功后才能继续进行下一个消费</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_qos</span><span class="token punctuation">(</span><span class="token constant">null</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token constant">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//开启消费no_ack=false,设置为手动应答</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">basic_consume</span><span class="token punctuation">(</span><span class="token variable">$queue_name</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">''</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span> <span class="token variable">$callback</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">//不断的循环进行消费</span>
+<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">is_open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">wait</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">//关闭连接</span>
+<span class="token variable">$channel</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$connection</span><span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

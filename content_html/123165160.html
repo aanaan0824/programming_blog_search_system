@@ -1,0 +1,83 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>Mirror是一个简单高效的开源的Unity多人游戏网络框架。<br/> 在这里按照油管dalao的教学流程，与官方文档学习常用的API及操作。</p>
+<p>https://mirror-networking.gitbook.io/docs</p>
+<h2><a id="API_5"></a>API</h2>
+<p>Mirror提供了一个特性<code>SyncVar</code>来进行数据同步，<br/> 它的核心逻辑就是，当<code>服务器</code>的场景中的一个<code>SyncVar</code>的值发生变化时，就同步给其它所有<code>客户端</code>。</p>
+<p>基本的用法是在需要进行同步的变量前编辑特性标签：</p>
+<pre><code class="prism language-c#">[SyncVar]
+Color colorNeededToSynchronize;
+</code></pre>
+<p>其中经常定义<code>hook</code>参数，<br/> 当数据发生变化时，就自动调用一个自定义的函数<code>MySetColor</code>函数，<br/> <strong>注意这个函数只会在客户端调用（当然主机也运行了一个客户端）</strong><br/> 而<code>MySetColor</code>的声明如下，提供了新旧值的访问，<br/> 注意新旧值的类型与监听的数值的类型一致：</p>
+<pre><code class="prism language-c#">[SyncVar(hook = nameof(MySetColor))]
+void MySetColor(Color oldColor, Color newColor)
+</code></pre>
+<p><strong>在编写代码的时候要注意，使用此特性标注的变量，只应该在服务器上对此变量进行更改</strong><br/> <strong>而通过hook在客户端作用此更改</strong></p>
+<h2><a id="_29"></a>使用</h2>
+<p>接下来用一个例子展示此API：<br/> 为上一节写的Cube添加一个控制脚本。<br/> 注意脚本继承自<code>NetworkBehaviour</code>，命名空间<code>using Mirror;</code><br/> 以便获取到Mirror的API：</p>
+<pre><code class="prism language-c#">using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using Mirror;
+
+public class PlayerController : NetworkBehaviour
+{
+    [SyncVar(hook = nameof(ColorChanged))]
+    Color PlayerColor = Color.white;
+
+    Rigidbody rb;
+    MaterialPropertyBlock prop;
+
+    void ColorChanged(Color oldColor, Color newColor){
+        Debug.Log("Color Changed");
+        prop.SetColor("_Color" ,newColor);
+        GetComponent&lt;Renderer&gt;().SetPropertyBlock(prop);
+    }
+
+    private void Start() {
+        rb = GetComponent&lt;Rigidbody&gt;();
+        prop = new MaterialPropertyBlock();
+        GetComponent&lt;Renderer&gt;().GetPropertyBlock(prop);
+    }
+
+    float duringTimer = 0f;
+    private void Update() {
+        rb.velocity = new Vector3(0,0,0);
+        if(isServer){
+            if(duringTimer &lt; 2f){
+                duringTimer+=Time.deltaTime;
+            }else{
+                duringTimer = 0f;
+                PlayerColor = PlayerColor==Color.white?Color.black:Color.white;
+            }
+        }
+    }
+}
+
+</code></pre>
+<p>这一段代码的功能就是，每隔2秒改变一次玩家的颜色。<br/> 尤其注意代码中一个API <code>isServer</code>，<br/> 这说明下面这段代码只会在服务器上运行，而客户端是不会运行的，</p>
+<pre><code class="prism language-c#">    if(isServer){
+        if(duringTimer &lt; 2f){
+            duringTimer+=Time.deltaTime;
+        }else{
+            duringTimer = 0f;
+            PlayerColor = PlayerColor==Color.white?Color.black:Color.white;
+        }
+    }
+</code></pre>
+<p>整体的逻辑就是：</p>
+<p>服务器上的每一个主角物体，<br/> 每两秒改变一次<code>PlayerColor</code>的值，<br/> 然后服务器通过<code>SyncVar</code>将改变前后的值发送给每一个客户端，<br/> 接下来每一个客户端对应的物体调用<code>hook</code>函数也就是<code>ColorChanged(Color oldColor, Color newColor)</code>函数，<br/> 将值改变带来的效果作用到自己的场景中。</p>
+<h2><a id="_97"></a>测试</h2>
+<p>打开两个游戏，其中一个做客户端，一个做主机（服务器+客户端）<br/> <img alt="20220227152844" src="https://img-blog.csdnimg.cn/img_convert/d4856980f4fe25486d2f9fe2dd333587.png"/></p>
+<p>可以看到各自的主角颜色随着时间进行变化。<br/> <img alt="20220227152919" src="https://img-blog.csdnimg.cn/img_convert/6193084fe54ef1220f807a1935023a51.png"/><br/> <img alt="20220227152929" src="https://img-blog.csdnimg.cn/img_convert/387fd66613ac2be5c4324d591ba2b27c.png"/></p>
+<h4><a id="hook_105"></a>注意hook函数不会在服务器上调用</h4>
+<p>打开两个游戏，其中一个做客户端，一个只做服务器<br/> <img alt="20220227153049" src="https://img-blog.csdnimg.cn/img_convert/68abd3e361cfad2a0c8a263d197dcec3.png"/></p>
+<p>可以看到，虽然我们清楚服务器中的<code>PlayerColor</code>的值肯定变化了，<br/> 但是由于服务器没有执行hook函数，因此服务器上看到的这个实体颜色没有变化。<br/> （上一个测试能看到都有变化，是因为上一个测试服务器上也有一个客户端，所有看到的本质上还是客户端而不是服务器）<br/> <img alt="20220227153118" src="https://img-blog.csdnimg.cn/img_convert/8292635db8697180cf8823fd2192e331.png"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,96 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p><span style="color:#fe2c24;"><strong>一、EF Core 批量添加数据 问题详解 AddRange()</strong></span></p>
+<p>问题整理：</p>
+<p>1.对于批量写入数据，每次几万条情况 使用 Add() 方法不合理</p>
+<p>2.使用AddRange() 每次批量写入数据也要有个数限制，不然也会异常报错</p>
+<p>3.批量写入数据，如果Sqlserver 日志文件或者磁盘空间占满也会抛出异常。</p>
+<p>4.批量写入需要控制对象的字符数量，字符数量大的写入慢没太多优化空间，看你的磁盘和硬件情况了。</p>
+<p></p>
+<p>批量数据写入解决方案：</p>
+<p>1.写入每条数据字符量尽可能小</p>
+<p>2.分段写入，避免内存不足异常</p>
+<p>3.使用第三方库，协助增速写入：Z.EntityFramework.Extensions.EFCore</p>
+<p>更多参考：</p>
+<p></p>
+<p><span style="color:#fe2c24;"><strong>二、批量数据分段写入富文本字符数量较大， 使用AddRange()</strong></span></p>
+<p><span style="color:#fe2c24;"><strong>如果不分段写入，内存不足会抛出异常</strong></span></p>
+<pre><code class="language-cs">static void Test3()
+{
+    // EF Core 批量添加数据 问题详解 AddRange()
+    try
+    {
+        QLSingleContext _context = new QLSingleContext();
+        ArtileNews news = _context.ArtileNews.Find(6);
+        DateTime start = DateTime.Now;
+        List&lt;ArticleInfo&gt; artList = new List&lt;ArticleInfo&gt;();
+        for (int i = 0; i &lt; 50000; i++)
+        {
+            ArticleInfo model = new ArticleInfo();
+            model.Title = news.Title;
+            // model.Content = news.Content;
+            model.Content = "内容稍的测试数据";
+            model.ViewCount = 0;
+            model.LastEditTime = DateTime.Now;
+            model.EmpId = 4;
+            artList.Add(model);
+        }
+        Console.WriteLine($"内存组建完成使用{(DateTime.Now - start).TotalSeconds}秒");
+
+
+        //1.批量添加的个数是有上限的，根据自己电脑内存而定
+        //2.单条数据字符空间大慢
+        //3.数据太多一次添加太慢
+        _context.ArticleInfos.AddRange(artList);
+        _context.SaveChanges();
+        
+
+        DateTime end = DateTime.Now;
+        Console.WriteLine($"添加成功了{artList.Count}条数据");
+        Console.WriteLine($"总共使用{(end - start).TotalSeconds}秒");
+    }
+    catch (Exception ex)
+    {
+        throw ex;
+    }
+}</code></pre>
+<p style="text-align:center;"><img alt="" src="image\4eb53883f34f4270931a04199c5ef186.png"/></p>
+<p> </p>
+<p>分段写入代码处理：</p>
+<pre><code class="language-cs">//分段插入----此方法不奏效，但可以解决内存不足的bug
+static void MyAddRange(QLSingleContext _context, List&lt;ArticleInfo&gt; artList)
+{
+    //每次插入2000 条
+    int num = 0;
+    while (true)
+    {
+        var temp = artList.Skip(num).Take(10000).ToList();
+        if (temp.Count == 0)
+            break;
+        //使用默认
+        _context.ArticleInfos.AddRange(temp);
+        _context.SaveChanges();
+
+        num += temp.Count;
+    }
+}
+</code></pre>
+<p style="text-align:center;"><img alt="" src="image\415df31705114ec589c2f7828640489f.png"/></p>
+<p> 插入非富文本，字符量小的数据 5万条：</p>
+<p style="text-align:center;"><img alt="" src="image\59bce755903b41f1b3bf67fffb44bbb4.png"/></p>
+<p> </p>
+<p> </p>
+<p> </p>
+<p></p>
+<p><span style="color:#fe2c24;"><strong>三、批量查询想增加查询速度，可以取消上下文监听</strong></span></p>
+<p>        //查询禁用跟踪<br/>         //_context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;<br/>         // _context.ChangeTracker.AutoDetectChangesEnabled = false;</p>
+<p></p>
+<p></p>
+<p>更多：</p>
+<h2><a href="https://blog.csdn.net/u011127019/article/details/123595207" title="EFCore 关联表查询_多表使用整理">EFCore 关联表查询_多表使用整理</a></h2>
+<h2><a href="https://blog.csdn.net/u011127019/article/details/123528237" title="Ef Core 使用Entity方式配置外键">Ef Core 使用Entity方式配置外键</a></h2>
+<h2><a href="https://blog.csdn.net/u011127019/article/details/74011508" title="SqlServer 大量数据热汇总优化整理">SqlServer 大量数据热汇总优化整理</a></h2>
+<p></p>
+</div>
+</div>

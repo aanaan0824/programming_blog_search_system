@@ -1,0 +1,87 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>在之前nginx， php ,mariadb 的基础上配置反向代理<br/> 之前的配置链接<br/> https://blog.csdn.net/weixin_38232096/article/details/124557082</p>
+<p>克隆快照，创建两个新系统<br/> web 代理服务器 222.111.106.11；<br/> server1 222.111.106.12;<br/> server2 222.111.106.13;</p>
+<ol><li>Nginx反向代理后端http网站<br/> 分别重新安装httpd, php<br/> yum -y install httpd php<br/> [root@sunny2 ~]# vim /etc/httpd/conf/httpd.conf</li></ol>
+<pre><code>DocumentRoot "/var/www/webhtml"
+
+#
+# Relax access to content within /var/www.
+#
+&lt;Directory "/var/www"&gt;
+    AllowOverride None
+    # Allow open access:
+    Require all granted
+&lt;/Directory&gt;
+
+# Further relax access to the default document root:
+&lt;Directory "/var/www/webhtml"&gt;
+
+</code></pre>
+<p>[root@sunny2 ~]# cat /var/www/webhtml/index.php<br/> This is www2<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/236b35ac0c824a93ba340a2aac033c5b.png"/><br/> [root@sunny2 ~]# vim /var/www/webhtml/index.php<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/76e9fb58b09742acb7c1e2a376ad4e25.png"/></p>
+<p>下面在主服务器配置代理<br/> [root@sunny ~]# vim /usr/local/nginx/conf/nginx.conf</p>
+<pre><code>    upstream cluster1 {
+         server 222.111.106.12;
+         server 222.111.106.13;
+    }
+
+
+</code></pre>
+<pre><code>    location / {
+        root   html;
+        index  index.php index.html;
+        **proxy_pass http://cluster1;**
+     }
+</code></pre>
+<p>重启nginx<br/> #ngx-reload</p>
+<p>Ctrl+F5 刷新页面<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/cf51c9b214174c5eb76fb6fdfa340b75.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/13b0254ecfdf44f28c1f022f8cd61dfd.png"/><br/> 2. Nginx 反向代理后端ssh服务器<br/> 配置nginx.conf<br/> [root@sunny ~]# vim /usr/local/nginx/conf/nginx.conf</p>
+<pre><code>stream {
+    upstream ssh_node2{
+      server 222.111.106.17:22 max_fails=3 fail_timeout=30s;
+}
+
+    server {
+     listen 2222;
+     proxy_connect_timeout 60s;
+     proxy_timeout 10m;
+     proxy_pass ssh_node2;
+
+  }
+
+}
+
+</code></pre>
+<p>测试：</p>
+<pre><code>[root@sunny ~]# netstat -tnl|grep 2222
+tcp        0      0 0.0.0.0:2222            0.0.0.0:*               LISTEN  
+</code></pre>
+<p>在另外一台电脑测试，通过代理服务器访问</p>
+<pre><code>Connection to 222.111.106.18 closed.
+[root@sunny2 ~]# ssh -p 2222  root@222.111.106.18
+root@222.111.106.18's password: 
+Last login: Thu May  5 15:45:36 2022 from 222.111.106.18
+[root@sunny2 ~]# 
+
+在这里插入代码片
+</code></pre>
+<pre><code>[root@sunny2 ~]# ifconfig
+ens33: flags=4163&lt;UP,BROADCAST,RUNNING,MULTICAST&gt;  mtu 1500
+        inet 222.111.106.17  netmask 255.255.0.0  broadcast 222.111.255.255
+        inet6 fe80::a143:dcb9:e70f:b133  prefixlen 64  scopeid 0x20&lt;link&gt;
+        inet6 fe80::80e1:a1cc:ff67:ab7c  prefixlen 64  scopeid 0x20&lt;link&gt;
+        inet6 fe80::eaa:1060:4b26:40f6  prefixlen 64  scopeid 0x20&lt;link&gt;
+        ether 00:0c:29:ec:58:39  txqueuelen 1000  (Ethernet)
+        RX packets 490525  bytes 37520797 (35.7 MiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 4145  bytes 837842 (818.2 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,78 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="_0"></a></h1>
+<h1><a id="composer_updateINT_RSA_VERIFYbad_signature_1"></a>composer update报错——INT_RSA_VERIFY:bad signature</h1>
+<blockquote>
+<p>curl error 35 while downloading https://getcomposer.org/versions: error:04091068:rsa routines:INT_RSA_VERIFY:bad signature</p>
+</blockquote>
+<h2><a id="1_4"></a>解决1：</h2>
+<p>可能是因为composer.json部分依赖和本地php版本不匹配，<br/> <strong>切换到高版本php即可！</strong><br/> 起初环境是<code>php7.1.9</code>，切换到<code>php7.4.3</code>就没有报这个错了！</p>
+<h2><a id="2_8"></a>解决2：</h2>
+<p>一开始以为是证书的原因，去下载了最新的<a href="https://curl.se/docs/caextract.html">证书</a>，并在php.ini中添加了如下配置：</p>
+<blockquote>
+<p>curl.cafile=D:/phpstudy_pro/Extensions/php/php7.1.9nts/cacert.pem<br/> openssl.cafile=D:/phpstudy_pro/Extensions/php/php7.1.9nts/cacert.pem</p>
+</blockquote>
+<p>但是并没有效果<br/> 后面偶然看到，说是先<code>composer install</code>一下，结果如下：</p>
+<h1><a id="composer_intallUndefined_index_name_15"></a>composer intall报错——Undefined index: name</h1>
+<blockquote>
+<p>In PackageManifest.php line 122:<br/> Undefined index: name<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b429eb5fe057498998c0c5459591ee97.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQWxleC1ubg==,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+</blockquote>
+<h2><a id="_20"></a>解决</h2>
+<p>参考：https://blog.csdn.net/u012368971/article/details/115999493<br/> 找到错误位置：</p>
+<blockquote>
+<p>/vendor/laravel/framework/src/Illuminate/Foundation/PackageManifest.php<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/81d0d52450a945359fef095609e6687e.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQWxleC1ubg==,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+</blockquote>
+<p>错误就是这里报出来的，就是package没有name这个key导致的，我们打印一下package的值，这个时候我们发现package的值是一个索引数组，它没有name下标，反而它的每一个子元素很符合执行接下来的代码的要求。package是通过闭包传递的，我们查看一下mapWithKeys函数的实现：</p>
+<pre><code class="prism language-php"><span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function">mapWithKeys</span><span class="token punctuation">(</span><span class="token keyword type-hint">callable</span> <span class="token variable">$callback</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+     <span class="token variable">$result</span> <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+
+     <span class="token keyword">foreach</span> <span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">items</span> <span class="token keyword">as</span> <span class="token variable">$key</span> <span class="token operator">=&gt;</span> <span class="token variable">$value</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+         <span class="token variable">$assoc</span> <span class="token operator">=</span> <span class="token variable">$callback</span><span class="token punctuation">(</span><span class="token variable">$value</span><span class="token punctuation">,</span> <span class="token variable">$key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+         <span class="token keyword">foreach</span> <span class="token punctuation">(</span><span class="token variable">$assoc</span> <span class="token keyword">as</span> <span class="token variable">$mapKey</span> <span class="token operator">=&gt;</span> <span class="token variable">$mapValue</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+             <span class="token variable">$result</span><span class="token punctuation">[</span><span class="token variable">$mapKey</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token variable">$mapValue</span><span class="token punctuation">;</span>
+         <span class="token punctuation">}</span>
+     <span class="token punctuation">}</span>
+
+     <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token keyword">static</span><span class="token punctuation">(</span><span class="token variable">$result</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>这里，使用循环迭代执行callback函数，也就是上边的mapWithKeys中的匿名函数 ，value就对应上面的package，我们打印一下$this-&gt;item 的值。发现它不是一个索引数组:</p>
+<pre><code>[
+    'package' =&gt; [
+        [],[].....
+    ]
+]
+</code></pre>
+<p>到这里问题就很明了了，callback的参数本来应该是子元素，结果这里因为$this-&gt;item的数据结构外面包了一层package，所导致便利的时候吧整个数组传递过去了，所以出现的undefind index : name的提示，我们直接修改源码<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1fa5239cc1384c25966412f057c29127.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQWxleC1ubg==,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<pre><code class="prism language-php"> <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function">mapWithKeys</span><span class="token punctuation">(</span><span class="token keyword type-hint">callable</span> <span class="token variable">$callback</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// begin</span>
+        <span class="token variable">$result</span> <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+        <span class="token variable">$item</span> <span class="token operator">=</span> <span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">items</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token keyword">isset</span><span class="token punctuation">(</span><span class="token variable">$item</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'packages'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token variable">$item</span> <span class="token operator">=</span> <span class="token variable">$item</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'packages'</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">foreach</span> <span class="token punctuation">(</span><span class="token variable">$item</span> <span class="token keyword">as</span> <span class="token variable">$key</span> <span class="token operator">=&gt;</span> <span class="token variable">$value</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// end</span>
+            <span class="token variable">$assoc</span> <span class="token operator">=</span> <span class="token variable">$callback</span><span class="token punctuation">(</span><span class="token variable">$value</span><span class="token punctuation">,</span> <span class="token variable">$key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">foreach</span> <span class="token punctuation">(</span><span class="token variable">$assoc</span> <span class="token keyword">as</span> <span class="token variable">$mapKey</span> <span class="token operator">=&gt;</span> <span class="token variable">$mapValue</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token variable">$result</span><span class="token punctuation">[</span><span class="token variable">$mapKey</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token variable">$mapValue</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token keyword">static</span><span class="token punctuation">(</span><span class="token variable">$result</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<h1><a id="composer_update_76"></a>composer update成功！</h1>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c05510df72a041a982016eb292c0242f.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQWxleC1ubg==,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

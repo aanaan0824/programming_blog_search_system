@@ -1,0 +1,231 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="CVE202140438_Apache_mod_proxy_SSRF_0"></a>CVE-2021-40438 Apache mod_proxy SSRF</h1>
+<h2><a id="0x01___2"></a>0x01 漏洞概述</h2>
+<p>2021年9月16日，Apache官方发布了Apache httpd mod_proxy SSRF漏洞CVE-2021-40438，影响v2.4.48及以下版本。该版本中mod_proxy模块存在一处逻辑错误，导致攻击者可以控制反向代理服务器的地址，进而导致SSRF漏洞。该漏洞影响范围较广，危害较大，利用简单，目前已在vulhub上有靶场，在审计代码并分析原理后我会直接用docker创建一个环境。</p>
+<h2><a id="0x02___8"></a>0x02 漏洞背景</h2>
+<h4><a id="_10"></a>Ⅰ.正向代理与反向代理</h4>
+<p><em>正向代理</em> 是客户端与正向代理服务器在同一局域网，客户端发出请求，正向代理服务器替代客户端向服务器发出请求。服务器不知道谁是真正的客户端，即向服务器隐藏了真实的请求客户端，如的校园网、科学VPN等</p>
+<p><em>反向代理</em> 是服务器与反向代理服务器在同一局域网，客户端发出请求，反向代理接收请求 ，反向代理服务器会把我们的请求分转发到真实提供服务的各台服务器，即向客户端隐藏了真实的服务器，如CDN技术等</p>
+<p>Vulhub可以为我们自动配置好基于Tomcat的反向代理服务器，只需知道原理即可。</p>
+<h4><a id="mod_proxy_18"></a>Ⅱ.关于mod_proxy</h4>
+<p>如果我们要部署一个PHP运行环境，且将Apache作为Web应用服务器，那么常用的有三种方法：</p>
+<ol><li>Apache以CGI的形式运行PHP脚本</li><li>PHP以mod_php的方式作为Apache的一个模块运行</li><li>PHP以FPM的方式运行为独立服务，Apache使用mod_proxy_fcgi模块作为反代服务器将请求代理给PHP-FPM</li></ol>
+<p>[CGI是公共网关接口，描述的是服务器和请求处理程序之间传输数据的一种标准，它会根据客户端输入(环境变量，命令行，标准输入)作出响应，把响应结果传送给 Web 服务器]</p>
+<p>第一种方式比较古老，性能较差，支持的交互很有限，有点像10多年前的盗版小说网站，基本已经淘汰；</p>
+<p>第二种方式不存在外部的PHP进程，而是由mod_php模块进程解释执行PHP脚本，意味着PHP与Apache通信更方便快捷，在Apache环境下使用较广，配置最为简单，也是目前最常用的一种；</p>
+<p>[FPM是FastCGI进程管理器，相当于CGI的升级版，传统的CGI进程是用完即销，每次都需要解析配置，初始化环境和分析请求等，而FastCGI会用一个持久的main进程负责以上，同时每次会fork出子进程用以针对处理用户实际的请求]</p>
+<p>第三种方法也有较大用户体量，不过Apache仅作为一个中间的反代服务器，更多新的用户会选择使用性能更好的Nginx替代。</p>
+<p>这其中，第三种方法使用的mod_proxy_fcgi就是mod_proxy模块的一个子模块。mod_proxy是Apache服务器中用于反代后端服务的一个模块，而它拥有数个不同功能的子模块，分别用于支持不同通信协议的后端，比如常见的有：</p>
+<ul><li>mod_proxy_fcgi 用于反代后端是fastcgi协议的服务，比如php-fpm</li><li>mod_proxy_http 用于反代后端是http、https协议的服务</li><li>mod_proxy_uwsgi 用于反代后端是uwsgi协议的服务，主要针对uWSGI</li><li>mod_proxy_ajp 用于反代后端是ajp协议的服务，主要针对Tomcat</li><li>mod_proxy_ftp 用于反代后端是ftp协议的服务</li></ul>
+<p>进行复现的时候会对物理机服务器上的一个页面伪造访问请求，故以分析mod_proxy_http为例</p>
+<h4><a id="Apache_hook_46"></a>Ⅲ.Apache hook机制</h4>
+<p>Apache对HTTP的请求可以分为连接、处理和断开连接三个阶段；从小的方面而言，每个阶段又可以分为更多的子阶段。比如对HTTP的请求，我们可以进一步划分为客户身份验证、客户权限认证、请求校验等阶段，每一个阶段调用相应的函数进行处理。在Apache中，这些子阶段可以用术语hook来描述。因此你只需要创建一个hook，挂于请求处理程序上：“告诉服务器它要么服务用户发起的请求，要么只是瞥一眼该请求。”</p>
+<p>Apache所有的模块（包括mod_rewrite, mod_authn_*, mod_proxy等）均是将钩子挂于请求程序的各个部分来实现。这样一来，Apache服务器本身无需知道每个模块具体负责处理哪个部分以及处理什么，它只需要在客户端请求达到的时候询问下哪个模块对这个请求『感兴趣』即可，而每个模块只需选择要还是不要，如果要，那就按照hook定义的内容处理然后返回接口。 通过Hook机制，PHP模块可以在Apache请求处理流程中负责处理那些关于php脚本的请求（即负责解释、执行php脚本）。</p>
+<h2><a id="0x03___52"></a>0x03 漏洞原理分析</h2>
+<p>《<a href="https://firzen.de/building-a-poc-for-cve-2021-40438">Building a POC for CVE-2021-40438</a>》这篇文章中提到了这个漏洞的复现方法：当目标环境使用了mod_proxy做反向代理，比如<code>ProxyPass / "http://localhost:8000/"</code>，此时通过请求<code>http://target/?unix:{'A'*5000}|http://example.com/</code>即可向<code>http://example.com</code>发送请求，造成一个SSRF攻击。</p>
+<p>这里面，Apache源码中出现逻辑错误是在modules/proxy/proxy_util.c的fix_uds_filename函数：</p>
+<pre><code class="prism language-c"><span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">fix_uds_filename</span><span class="token punctuation">(</span>request_rec <span class="token operator">*</span>r<span class="token punctuation">,</span> <span class="token keyword">char</span> <span class="token operator">*</span><span class="token operator">*</span>url<span class="token punctuation">)</span> 
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">char</span> <span class="token operator">*</span>ptr<span class="token punctuation">,</span> <span class="token operator">*</span>ptr2<span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>r <span class="token operator">||</span> <span class="token operator">!</span>r<span class="token operator">-&gt;</span>filename<span class="token punctuation">)</span> <span class="token keyword">return</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token function">strncmp</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>filename<span class="token punctuation">,</span> <span class="token string">"proxy:"</span><span class="token punctuation">,</span> <span class="token number">6</span><span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span>
+            <span class="token punctuation">(</span>ptr2 <span class="token operator">=</span> <span class="token function">ap_strcasestr</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>filename<span class="token punctuation">,</span> <span class="token string">"unix:"</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span>
+            <span class="token punctuation">(</span>ptr <span class="token operator">=</span> <span class="token function">ap_strchr</span><span class="token punctuation">(</span>ptr2<span class="token punctuation">,</span> <span class="token char">'|'</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span><span class="token comment">//判断r-&gt;filename中是否包含proxy:、unix:以及|</span>
+        <span class="token class-name">apr_uri_t</span> urisock<span class="token punctuation">;</span>
+        <span class="token class-name">apr_status_t</span> rv<span class="token punctuation">;</span>
+        <span class="token operator">*</span>ptr <span class="token operator">=</span> <span class="token char">'\0'</span><span class="token punctuation">;</span><span class="token comment">//用来分割unix domain socket 和 http协议</span>
+        rv <span class="token operator">=</span> <span class="token function">apr_uri_parse</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>pool<span class="token punctuation">,</span> ptr2<span class="token punctuation">,</span> <span class="token operator">&amp;</span>urisock<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>rv <span class="token operator">==</span> APR_SUCCESS<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">char</span> <span class="token operator">*</span>rurl <span class="token operator">=</span> ptr<span class="token operator">+</span><span class="token number">1</span><span class="token punctuation">;</span><span class="token comment">//获取代理的http路径</span>
+            <span class="token keyword">char</span> <span class="token operator">*</span>sockpath <span class="token operator">=</span> <span class="token function">ap_runtime_dir_relative</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>pool<span class="token punctuation">,</span> urisock<span class="token punctuation">.</span>path<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token function">apr_table_setn</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>notes<span class="token punctuation">,</span> <span class="token string">"uds_path"</span><span class="token punctuation">,</span> sockpath<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置表中键的函数，apr_table是Apache中提供数据结构的模块，负责提供表和数组</span>
+            <span class="token operator">*</span>url <span class="token operator">=</span> <span class="token function">apr_pstrdup</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>pool<span class="token punctuation">,</span> rurl<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">/* so we get the scheme for the uds */</span>
+            <span class="token comment">/* r-&gt;filename starts w/ "proxy:", so add after that */</span>
+            <span class="token function">memmove</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>filename<span class="token operator">+</span><span class="token number">6</span><span class="token punctuation">,</span> rurl<span class="token punctuation">,</span> <span class="token function">strlen</span><span class="token punctuation">(</span>rurl<span class="token punctuation">)</span><span class="token operator">+</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//覆盖原有代理路径为新的http路径</span>
+            <span class="token function">ap_log_rerror</span><span class="token punctuation">(</span>APLOG_MARK<span class="token punctuation">,</span> APLOG_TRACE2<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> r<span class="token punctuation">,</span>
+                    <span class="token string">"*: rewrite of url due to UDS(%s): %s (%s)"</span><span class="token punctuation">,</span>
+                    sockpath<span class="token punctuation">,</span> <span class="token operator">*</span>url<span class="token punctuation">,</span> r<span class="token operator">-&gt;</span>filename<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token operator">*</span>ptr <span class="token operator">=</span> <span class="token char">'|'</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>Apache在配置反代的后端服务器时，有两种情况：</p>
+<ul><li>直接使用某个协议反代到某个IP和端口，比如<code>ProxyPass / "http://localhost:8080"</code></li><li>使用某个协议反代到unix套接字，比如<code>ProxyPass / "unix:/var/run/www.sock|http://localhost:8080/"</code></li></ul>
+<p>第一种情况比较好理解，第二种情况相当于让用户可以使用一个Apache自创的写法来配置后端地址。那么这时候就会涉及到分析语句的过程，需要将这种自创的语法转换成能兼容正常socket连接的结构，而fix_uds_filename函数就是做这个事情的。</p>
+<p>使用字符串文法来表示多种含义的方式通常暗藏一些漏洞，比如这里，进入这个if语句需要满足三个条件：</p>
+<ul><li><code>r-&gt;filename</code>的前6个字符等于<code>proxy:</code></li><li><code>r-&gt;filename</code>的字符串中含有关键字<code>unix:</code></li><li><code>unix:</code>关键字后的部分含有字符<code>|</code></li></ul>
+<p>当满足这三个条件后，将<code>unix:</code>后面的内容进行解析，设置成<code>uds_path</code>的值；将字符<code>|</code>后面的内容，设置成<code>rurl</code>的值。</p>
+<p>举个例子，前面介绍中的<code>ProxyPass / "unix:/var/run/www.sock|http://localhost:8080/"</code>，在解析完成后，<code>uds_path</code>的值等于<code>/var/run/www.sock</code>，<code>rurl</code>的值等于<code>http://localhost:8080/</code>。</p>
+<p>看到这里其实都没有什么问题，那么我们肯定会思考，<code>r-&gt;filename</code>是从哪来的，用户可控吗，为什么？</p>
+<p>这时就要说到另一个函数，<code>proxy_hook_canon_handler</code>，这个函数用于注册canon handler，比如：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/61feb11ff49048f19d13c7c8386248b4.png"/></p>
+<p>可以看到，每一个<code>mod_proxy_xxx</code>都会注册一个自己的canon handler，canon handler会在反代的时候被调用，用于告诉Apache主程序它应该把这个请求交给哪个处理方法来处理。</p>
+<p>比如，我们看到<code>mod_proxy_http</code>的<code>proxy_http_canon</code>函数：</p>
+<pre><code class="prism language-c"><span class="token keyword">static</span> <span class="token keyword">int</span> <span class="token function">proxy_http_canon</span><span class="token punctuation">(</span>request_rec <span class="token operator">*</span>r<span class="token punctuation">,</span> <span class="token keyword">char</span> <span class="token operator">*</span>url<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// ...</span>
+    <span class="token comment">// first part</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">strncasecmp</span><span class="token punctuation">(</span>url<span class="token punctuation">,</span> <span class="token string">"http:"</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        url <span class="token operator">+=</span> <span class="token number">5</span><span class="token punctuation">;</span>
+        scheme <span class="token operator">=</span> <span class="token string">"http"</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">strncasecmp</span><span class="token punctuation">(</span>url<span class="token punctuation">,</span> <span class="token string">"https:"</span><span class="token punctuation">,</span> <span class="token number">6</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        url <span class="token operator">+=</span> <span class="token number">6</span><span class="token punctuation">;</span>
+        scheme <span class="token operator">=</span> <span class="token string">"https"</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> DECLINED<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    port <span class="token operator">=</span> def_port <span class="token operator">=</span> <span class="token function">ap_proxy_port_of_scheme</span><span class="token punctuation">(</span>scheme<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">// second part</span>
+    <span class="token function">ap_proxy_canon_netloc</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>pool<span class="token punctuation">,</span> <span class="token operator">&amp;</span>url<span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>host<span class="token punctuation">,</span> <span class="token operator">&amp;</span>port<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//根据配置文件来设置</span>
+    <span class="token keyword">switch</span> <span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>proxyreq<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">default</span><span class="token operator">:</span> 
+    <span class="token keyword">case</span> PROXYREQ_REVERSE<span class="token operator">:</span><span class="token comment">//反向代理配置</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">apr_table_get</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>notes<span class="token punctuation">,</span> <span class="token string">"proxy-nocanon"</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            path <span class="token operator">=</span> url<span class="token punctuation">;</span>   <span class="token comment">/* this is the raw path */</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            path <span class="token operator">=</span> <span class="token function">ap_proxy_canonenc</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>pool<span class="token punctuation">,</span> url<span class="token punctuation">,</span> <span class="token function">strlen</span><span class="token punctuation">(</span>url<span class="token punctuation">)</span><span class="token punctuation">,</span>
+                                     enc_path<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> r<span class="token operator">-&gt;</span>proxyreq<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            search <span class="token operator">=</span> r<span class="token operator">-&gt;</span>args<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token keyword">case</span> PROXYREQ_PROXY<span class="token operator">:</span>
+        path <span class="token operator">=</span> url<span class="token punctuation">;</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>path <span class="token operator">==</span> <span class="token constant">NULL</span><span class="token punctuation">)</span>
+        <span class="token keyword">return</span> HTTP_BAD_REQUEST<span class="token punctuation">;</span>
+
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>port <span class="token operator">!=</span> def_port<span class="token punctuation">)</span>
+        <span class="token function">apr_snprintf</span><span class="token punctuation">(</span>sport<span class="token punctuation">,</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span>sport<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token string">":%d"</span><span class="token punctuation">,</span> port<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">else</span>
+        sport<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token char">'\0'</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">ap_strchr_c</span><span class="token punctuation">(</span>host<span class="token punctuation">,</span> <span class="token char">':'</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> <span class="token comment">/* if literal IPv6 address */</span>
+        host <span class="token operator">=</span> <span class="token function">apr_pstrcat</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>pool<span class="token punctuation">,</span> <span class="token string">"["</span><span class="token punctuation">,</span> host<span class="token punctuation">,</span> <span class="token string">"]"</span><span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// third part</span>
+    r<span class="token operator">-&gt;</span>filename <span class="token operator">=</span> <span class="token function">apr_pstrcat</span><span class="token punctuation">(</span>r<span class="token operator">-&gt;</span>pool<span class="token punctuation">,</span> <span class="token string">"proxy:"</span><span class="token punctuation">,</span> scheme<span class="token punctuation">,</span> <span class="token string">"://"</span><span class="token punctuation">,</span> host<span class="token punctuation">,</span> sport<span class="token punctuation">,</span>
+            <span class="token string">"/"</span><span class="token punctuation">,</span> path<span class="token punctuation">,</span> <span class="token punctuation">(</span>search<span class="token punctuation">)</span> <span class="token operator">?</span> <span class="token string">"?"</span> <span class="token operator">:</span> <span class="token string">""</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>search<span class="token punctuation">)</span> <span class="token operator">?</span> search <span class="token operator">:</span> <span class="token string">""</span><span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> OK<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>这个函数中有三个主要的部分，第一部分检查了配置中的url的开头是不是<code>http:</code>或<code>https:</code>，如果不是，说明这个请求不该由<code>mod_proxy_http</code>模块处理，后续的过程跳过；第二部分，用各种方式获取到scheme、host、port、path、search等几个URL的组成变量；第三部分，拼接<code>proxy:</code>、scheme、<code>://</code>、host、sport、<code>/</code>、path、search，成为一个字符串，赋值给<code>r-&gt;filename</code>。</p>
+<p>这里面，scheme、host、port来自于配置文件中配置的ProxyPass，而path、search来自于用户发送的数据包。也就是说，<code>r-&gt;filename</code>中的后半部分是用户可控的。</p>
+<p>那我们回看前面的<code>fix_uds_filename</code>函数，它在<code>r-&gt;filename</code>中查找关键字<code>unix:</code>，并将这个关键字后面直到<code>|</code>的部分作为unix套接字地址，而将<code>|</code>后面的部分作为反代的后端地址。</p>
+<p>比如发送如下数据包</p>
+<pre><code class="prism language-java">GET <span class="token operator">/</span>proxy<span class="token operator">/</span>xxxx<span class="token operator">?</span>unix<span class="token operator">:</span><span class="token operator">/</span><span class="token comment">//tmp/xxxx|http://127.0.0.1:8888/ HTTP/1.1</span>
+<span class="token class-name">Host</span><span class="token operator">:</span> <span class="token number">127.0</span><span class="token number">.0</span><span class="token number">.1</span><span class="token operator">:</span><span class="token number">8080</span>
+<span class="token class-name">User</span><span class="token operator">-</span><span class="token class-name">Agent</span><span class="token operator">:</span> curl<span class="token operator">/</span><span class="token number">7.64</span><span class="token number">.1</span>
+<span class="token class-name">Accept</span><span class="token operator">:</span> <span class="token operator">*</span><span class="token comment">/*
+</span></code></pre>
+<p>在后端查看log日志显示内容如下，attempt to connect to Unix domain socket /tmp/xxxx，这说明已经把之前配置文件里代理到http://127.0.0.1:8888 链接的配置修改为了访问Unix domain socket套接字。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d1b845df240946229aaba8659a90390b.png"/></p>
+<p>我们可以通过请求的path或者search来控制这两个部分，控制了反代的后端地址，这也就是为什么这里会出现SSRF的原因。</p>
+<p>我们在构造请求包的时候有一个问题，那就是Apache在正常情况下，因为识别到了unix套接字，所以会把用户请求发送给这个本地文件套接字，而不是后端URL</p>
+<p>可以来做个测试，我们向物理机上搭建的一个php页面发送这一个请求：</p>
+<pre><code>GET /?unix:/var/run/test.sock|http://192.168.0.104:8080/ HTTP/1.1
+Host: localhost:8080
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36
+Connection: close
+Content-Length: 4
+</code></pre>
+<p>此时会得到一个503错误：</p>
+<p><img alt="[外链图片转存失败,源站可能有防盗链机制,建议将图片保存下来直接上传(img-ho3e97gy-1652344808725)(C:\Users\hp\Desktop\微信图片_20220415110656.png)]" src="https://img-blog.csdnimg.cn/6659887d14964470b1c1f061c5fa6f3b.png"/></p>
+<p>我们根本就没有创建unix套接字<code>/var/run/test.sock</code>，当然是访问不了的。</p>
+<p>然而我们不能让他把请求发送到unix套接字上，而是发送给我们需要的<code>|</code>后面的地址，这样才能构成SSRF攻击</p>
+<p>国外那位作者给出了一个非常巧妙的方法，在<code>fix_uds_filename</code>函数中，unix套接字的地址来自于下面这两行代码：</p>
+<pre><code>char *sockpath = ap_runtime_dir_relative(r-&gt;pool, urisock.path);
+apr_table_setn(r-&gt;notes, "uds_path", sockpath);
+</code></pre>
+<p>如果这里<code>ap_runtime_dir_relative</code>函数返回值是null，则后面获取<code>uds_path</code>时将不会使用unix套接字地址，而变成普通的TCP连接：</p>
+<pre><code>uds_path = (*worker-&gt;s-&gt;uds_path ? worker-&gt;s-&gt;uds_path : apr_table_get(r-&gt;notes, "uds_path"));
+if (uds_path) {
+    if (conn-&gt;uds_path == NULL) {
+        /* use (*conn)-&gt;pool instead of worker-&gt;cp-&gt;pool to match lifetime */
+        conn-&gt;uds_path = apr_pstrdup(conn-&gt;pool, uds_path);
+    }
+    // ...
+    conn-&gt;hostname = "httpd-UDS";
+    conn-&gt;port = 0;
+}
+else {
+    // TCP
+    conn-&gt;hostname = apr_pstrdup(conn-&gt;pool, uri-&gt;hostname);
+    conn-&gt;port = uri-&gt;port;
+    // ...
+}
+</code></pre>
+<p>那么如何让<code>ap_runtime_dir_relative</code>的返回值是null呢？</p>
+<pre><code>AP_DECLARE(char *) ap_runtime_dir_relative(apr_pool_t *p, const char *file)
+{
+    char *newpath = NULL;
+    apr_status_t rv;
+    const char *runtime_dir = ap_runtime_dir ? ap_runtime_dir : ap_server_root_relative(p, DEFAULT_REL_RUNTIMEDIR);
+
+    rv = apr_filepath_merge(&amp;newpath, runtime_dir, file,
+                            APR_FILEPATH_TRUENAME, p);
+    if (newpath &amp;&amp; (rv == APR_SUCCESS || APR_STATUS_IS_EPATHWILD(rv)
+                                      || APR_STATUS_IS_ENOENT(rv)
+                                      || APR_STATUS_IS_ENOTDIR(rv))) {
+        return newpath;
+    }
+    else {
+        return NULL;
+    }
+}
+
+</code></pre>
+<p>可以看到，<code>ap_runtime_dir_relative</code>函数最后引用了apr库中的<code>apr_filepath_merge</code>函数，它的主要作用就是路径的join，用于处理相对路径、绝对路径、<code>../</code>连接。</p>
+<pre><code>APR_DECLARE(apr_status_t) apr_filepath_merge(char **newpath,
+                                             const char *rootpath,
+                                             const char *addpath,
+                                             apr_int32_t flags,
+                                             apr_pool_t *p)
+{
+    ...
+
+    rootlen = strlen(rootpath);
+    maxlen = rootlen + strlen(addpath) + 4; /* 4 for slashes at start, after
+                                             * root, and at end, plus trailing
+                                             * null */
+    if (maxlen &gt; APR_PATH_MAX) {
+        return APR_ENAMETOOLONG;
+    }
+
+    ...
+
+}
+
+</code></pre>
+<p>这个函数中，当待join的两段路径长度+4大于<code>APR_PATH_MAX</code>，也就是4096的时候，则函数会返回一个路径过长的状态码，导致最后unix套接字的值是null</p>
+<p>也就是说，我们只需要在<code>unix:</code>与<code>|</code>之间传入内容长度大概超过4092的字符串，就能构造出<code>uds_path</code>为null的结果，让Apache不再发送请求给unix套接字。</p>
+<h2><a id="0x04___297"></a>0x04 漏洞复现</h2>
+<p>最后，这样构造出的请求成功触发SSRF漏洞：</p>
+<img alt="微信图片_20220415104956"/>
+<p>Apache官方对这个漏洞的修复也比较简单，因为用户只能控制<code>r-&gt;filename</code>的后半部分，而前半部分<code>proxy:{scheme}://{host}{port}/</code>来自于配置文件，所以最新版改成检查其开头是不是<code>proxy:unix:</code>这一用户无法控制的部分。</p>
+<p>不再发送请求给unix套接字。</p>
+<h2><a id="0x04___307"></a>0x04 漏洞复现</h2>
+<p>最后，这样构造出的请求成功触发SSRF漏洞：</p>
+<p><img alt="" src="image\59c1b66a6bab4dd384266bddc5c00adf.png"/></p>
+<p>Apache官方对这个漏洞的修复也比较简单，因为用户只能控制<code>r-&gt;filename</code>的后半部分，而前半部分<code>proxy:{scheme}://{host}{port}/</code>来自于配置文件，所以最新版改成检查其开头是不是<code>proxy:unix:</code>这一用户无法控制的部分。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

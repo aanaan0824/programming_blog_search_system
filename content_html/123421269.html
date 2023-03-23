@@ -1,0 +1,355 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>权限思路：</p>
+<p>1.菜单的添加/修改。<br/> 2.组织结构的添加/修改。<br/> 3.岗位/角色的添加/修改，添加岗位/角色时，将菜单和按钮权限绑定到岗位/角色中（功能权限），再绑定菜单的同时，把每个菜单包含的组织机构关联到菜单中（数据权限）。</p>
+<p><img alt="" height="203" src="image\85f9b970367f4519ae258c932c3ffb08.png" width="391"/></p>
+<p> </p>
+<p></p>
+<pre><code class="language-php">//id代表菜单id            
+//rangeType=1 代表自己id  2代表二级部门直属部门id  3代表组织机构id           
+            $params['permission'] = "[{"id":1,"dataRange":{"rangeId":"#","rangeType":1}},{"id":2,"dataRange":{"rangeId":"@","rangeType":2}},{"id":3,"dataRange":{"rangeId":"1,2,4","rangeType":3}}]";
+
+            $permission = json_decode(html_entity_decode($params['permission']), true);
+            //提取菜单id
+            $menuItemIds = array_column($permission,'id');
+                //转为字符串
+            $params['menu_item_ids'] = implode(',',$menuItemIds);
+
+            //添加角色/岗位
+            $result[] = M('t_role')-&gt;add($params);
+            $roleId = M('t_role')-&gt;getLastInsID();
+
+            $roleMenuItem = [];
+            foreach ($params['permission'] as $k =&gt; $v) {
+                $roleMenuItem[$k]['role_id'] = $roleId;
+                $roleMenuItem[$k]['menu_item_id'] = $v['id'];
+
+                //本部门数据权限
+                if ($v['dataRange']['rangeType'] == 2) {
+                    $roleMenuItem[$k]['org_ids'] = $v['dataRange']['rangeId'];
+                    $roleMenuItem[$k]['org_department_ids'] = $newDepartId;
+                } elseif ($v['dataRange']['rangeType'] == 3) {
+                    //查询所有二级部门
+                    $departmentList = [];
+                    $where = [];
+                    $where['id'] = ['in', $v['dataRange']['rangeId']];
+                    $orgList = M('t_org')-&gt;field('id,org_level')-&gt;where($where)-&gt;select();
+                    foreach ($orgList as $item) {
+                        if ($item['org_level'] != 4) {
+                            $orgId = $item['id'];
+                            $childrenOrgList = M('t_org')-&gt;field('id')-&gt;where("FIND_IN_SET($orgId,path)")-&gt;where(['org_level' =&gt; 4])-&gt;select();
+                            //所有二级部门id组
+                            $childrenOrgIds = array_column($childrenOrgList,'id');
+                            //合并
+                            if ($childrenOrgIds !== null) {
+                                $departmentList = array_merge($departmentList,$childrenOrgIds);
+                            }
+                        } else {
+                            $departmentList[] = $item['id'];
+                        }
+                    }
+
+                    //去重
+                    $departmentList = array_unique($departmentList);
+                    //转为字符串
+                    $departmentStr = implode(',', $departmentList);
+
+                    $roleMenuItem[$k]['org_ids'] = $v['dataRange']['rangeId'];
+                    $roleMenuItem[$k]['org_department_ids'] = $departmentStr;
+                } else {
+                    //本人数据权限
+                    $roleMenuItem[$k]['org_ids'] = $v['dataRange']['rangeId'];
+                    $roleMenuItem[$k]['org_department_ids'] = $userId;
+                }
+            }
+
+            if ($roleMenuItem) {
+                $result[] = M('t_role_menu_item')-&gt;addAll($roleMenuItem);
+            }</code></pre>
+<p></p>
+<p>4.菜单权限：当用户绑定岗位/角色时，根据岗位/角色中的拥有的菜单来展示当前登录用户的菜单列表和列表中所拥有的按钮（添加，编辑，删除，导出等）权限。</p>
+<p>5.数据域权限：根据用户岗位/角色获取到所有的菜单，然后根据每个列表菜单获取拥有的组织结构，此处有三种情况：</p>
+<p>    5-1.当用户菜单的组织机构为#时，代表自己，也就是这个列表只显示自己的数据。<br/>     5-2.当用户菜单的组织机构为@时，代表自己的二级部门，也就是这个列表显示自己部门所有的数据。<br/>     5-3.当用户菜单的组织机构为所选的二级部门id时，也就是这个列表显示选择部门所有的数据。</p>
+<p>6.所有用到数据权限的表都需要加上create_uid(添加人id) 和 org_id(添加人二级部门id，直属部门id)，例如：订单表，客户表等。</p>
+<p>使用的表：</p>
+<pre><code class="language-sql">CREATE TABLE `t_user` (
+  `id` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL,
+  `login_name` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '用户登录名',
+  `name` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '用户名称',
+  `org_id` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '二级部门id',
+  `new_post_id` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '岗位id',
+  `role_id` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '角色id',
+  `password` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '登录密码',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `index_org_id` (`org_id`) USING BTREE,
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 ROW_FORMAT=DYNAMIC COMMENT='系统用户表';</code></pre>
+<pre><code class="language-sql">CREATE TABLE `t_role` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '角色/岗位名称',
+  `type` char(5) NOT NULL COMMENT '权限类型:post岗位,role角色',
+  `menu_item_ids` longtext CHARACTER SET utf8 COLLATE utf8_general_ci COMMENT '菜单id',
+  `memo` text COMMENT '备注',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb3 ROW_FORMAT=DYNAMIC COMMENT='角色/岗位表';</code></pre>
+<pre><code class="language-sql">CREATE TABLE `t_menu_item` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `caption` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT '' COMMENT '菜单标题',
+  `router` char(30) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT '' COMMENT '菜单路由',
+  `full_router` char(100) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT '' COMMENT '菜单全路由',
+  `fid` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT '' COMMENT '功能id',
+  `parent_id` int DEFAULT '0' COMMENT '上级菜单的id',
+  `is_has_sub_menu` tinyint DEFAULT '1' COMMENT '是否有下级菜单  0=否 1=是',
+  `is_button` tinyint DEFAULT '0' COMMENT '是否是按钮  0=否 1=是',
+  `show_order` int DEFAULT '0' COMMENT '菜单显示次序',
+  `show_status` tinyint(1) DEFAULT '1' COMMENT '显示:1是 0否',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=10008 DEFAULT CHARSET=utf8mb3 ROW_FORMAT=DYNAMIC COMMENT='主菜单';</code></pre>
+<p> t_role_menu_item：角色下包含多少菜单，每个菜单包含那些组织机构</p>
+<pre><code class="language-sql">CREATE TABLE `t_role_menu_item` (
+  `role_id` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '角色/岗位id',
+  `menu_item_id` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '菜单id',
+  `org_ids` longtext COMMENT '组织机构id组 #代表自己  @代表自己部门 其他情况代表组织机构id',
+  `org_department_ids` longtext COMMENT '组织机构二级部门id组或自己用户id'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 ROW_FORMAT=DYNAMIC COMMENT='角色拥有的菜单';</code></pre>
+<pre><code class="language-sql">CREATE TABLE `t_org` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `full_name` varchar(1000) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '组织机构全路径名称',
+  `name` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '组织机构名称',
+  `parent_id` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci DEFAULT NULL COMMENT '上级组织机构的id',
+  `org_level` tinyint NOT NULL DEFAULT '1' COMMENT '组织机构等级 1=集团 2=公司 3=部门 4=二级部门',
+  `path` longtext COMMENT '所有上级id',
+  `show_status` tinyint DEFAULT '1' COMMENT '展示状态 1=展示 0=隐藏',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `index_org_code` (`org_code`),
+  KEY `index_parent_id` (`parent_id`),
+  KEY `org_level` (`org_level`)
+) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb3 ROW_FORMAT=DYNAMIC COMMENT='组织机构';</code></pre>
+<p> t_org_post：组织机构下包含那些岗位：</p>
+<pre><code class="language-sql">CREATE TABLE `t_org_post` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `org_id` varchar(255) NOT NULL COMMENT '组织机构id',
+  `role_id` varchar(255) NOT NULL COMMENT '岗位权限id',
+  PRIMARY KEY (`id`),
+  KEY `index_ids` (`org_id`,`role_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=48 DEFAULT CHARSET=utf8mb3 COMMENT='组织机构岗位关联表';</code></pre>
+<p>根据用户岗位/角色权限获取菜单列表（功能权限）：</p>
+<pre><code class="language-php">/**
+     * 登录后获取用户菜单列表
+     */
+    public function getUserMenuItem($params)
+    {
+
+        $userId = $params['userId'];
+
+        //系统管理员拥有所有菜单权限
+//        if ($userId == DemoConst::ADMIN_USER_ID) {
+//            //根据菜单id获取菜单列表
+//            $menuItemList = $this-&gt;_getMenuItem('');
+//            return $menuItemList;
+//        }
+
+        //根据用户id查询 用户拥有的角色/岗位
+        $roleList = M('t_role_user')-&gt;field('role_id')-&gt;where(['user_id' =&gt; $userId])-&gt;select();
+        if (!$roleList) {
+            return [];
+        }
+
+        //提取所有角色/岗位id
+        $roleIds = array_column($roleList, 'role_id');
+
+        //根据角色获取 角色拥有的菜单
+        $where = [];
+        $where['role_id'] = ['in', $roleIds];
+        $roleMenuItem = M('t_role_menu_item')-&gt;field('menu_item_id')-&gt;where($where)-&gt;select();
+        if (!$roleMenuItem) {
+            return [];
+        }
+
+        //提取所有菜单id
+        $roleMenuItemIds = array_column($roleMenuItem, 'menu_item_id');
+
+        //菜单去重
+        $roleMenuItemIds = array_unique($roleMenuItemIds);
+
+        //根据菜单id获取菜单列表
+        $menuItemList = $this-&gt;_getMenuItem($roleMenuItemIds);
+
+        return $menuItemList;
+    }
+
+
+    /**
+     * 根据菜单id获取菜单列表
+     */
+    public function _getMenuItem($menuItemIds)
+    {
+        //获取一级菜单
+        $where = [];
+        $where['parent_id'] = 0;
+        $where['show_status'] = 1;
+        if ($menuItemIds) {
+            $where['id'] = ['in', $menuItemIds];
+        }
+        $menu = M('t_menu_item')-&gt;where($where)-&gt;order('show_order asc')-&gt;select();
+
+        $index = 0;
+        $data = [];
+        foreach ($menu as $item) {
+            $children = $this-&gt;_mainMenuItemsInternal($item['id'], $menuItemIds);
+            if (!empty($children)) {
+                $data[$index]['id'] = $item['id'];
+                $data[$index]['caption'] = $item['caption'];
+                $data[$index]['router'] = $item['router'];
+                $data[$index]['full_router'] = $item['full_router'];
+                $data[$index]['is_has_sub_menu'] = $item['is_has_sub_menu'];
+                $data[$index]['is_button'] = $item['is_button'];
+                $data[$index]['fid'] = trim($item['fid']);
+                $data[$index]['parentId'] = $item['parent_id'];
+                $data[$index]['createUid'] = $item['create_uid'];
+                $data[$index]['createTime'] = $item['create_time'];
+                $data[$index]["children"] = $children;
+                $index++;
+            } else {
+                $data[$index]['id'] = $item['id'];
+                $data[$index]['caption'] = $item['caption'];
+                $data[$index]['router'] = $item['router'];
+                $data[$index]['full_router'] = $item['full_router'];
+                $data[$index]['is_has_sub_menu'] = $item['is_has_sub_menu'];
+                $data[$index]['is_button'] = $item['is_button'];
+                $data[$index]['fid'] = trim($item['fid']);
+                $data[$index]['parentId'] = $item['parent_id'];
+                $data[$index]['createUid'] = $item['create_uid'];
+                $data[$index]['createTime'] = $item['create_time'];
+                $index++;
+            }
+        }
+        return $data;
+    }
+
+
+    /**
+     * 获取子菜单
+     * @param $parentId
+     * @param $db
+     * @return array
+     */
+    private function _mainMenuItemsInternal($parentId, $menuItemIds)
+    {
+        $result = array();
+        $where = [];
+        $where['parent_id'] = $parentId;
+        $where['show_status'] = 1;
+        //$where['is_button'] = 0;
+        if ($menuItemIds) {
+            $where['id'] = ['in', $menuItemIds];
+        }
+        $menu = M('t_menu_item')-&gt;where($where)-&gt;order('show_order asc')-&gt;select();
+        // 第二级菜单
+        $index = 0;
+        foreach ($menu as $item) {
+            //递归调用获取子菜单
+            $children = $this-&gt;_mainMenuItemsInternal($item['id'], $menuItemIds);
+            $result[$index]["id"] = $item["id"];
+            $result[$index]["caption"] = $item["caption"];
+            $result[$index]["router"] = $item["router"];
+            $result[$index]['full_router'] = $item['full_router'];
+            $result[$index]['is_has_sub_menu'] = $item['is_has_sub_menu'];
+            $result[$index]['is_button'] = $item['is_button'];
+            $result[$index]["fid"] = trim($item["fid"]);
+            $result[$index]["parentId"] = $item["parent_id"];
+            $result[$index]["createUid"] = $item["create_uid"];
+            $result[$index]["createTime"] = $item["create_time"];
+            $result[$index]["children"] = $children;
+            $index++;
+        }
+        return $result;
+    }</code></pre>
+<p> 根据用户岗位/角色权限获取列表数据（数据权限）：</p>
+<pre><code class="language-php">/**
+     * 获取用户当前菜单数据域
+     * @param string $userId 用户id
+     * @param string $fid 菜单id
+     */
+    public static function getUserDataRange($userId, $fid)
+    {
+        //当同时存在部门数据域和个人数据域时 使用 or 连接sql语句
+        /*
+         *
+            $dataOrg = DataOrgDAO::getUserDataRange('0E33BBD6-A024-11EC-B8B1-00163E184054',601);
+            TP中写法：
+
+            数据域条件
+            $whereA = [];
+            $whereA['create_uid'] = $dataOrg['create_uid'];
+            $whereA['org_id'] = ['in',$dataOrg['org_id']];
+            $whereA['_logic'] = 'or';
+
+            列表原有条件
+            $where = [];
+            $where['ref'] = '1';
+            $where['customer_id'] = '2';
+            $where['_complex'] = $whereA;
+
+            M('t_offer_bill')-&gt;where($where)-&gt;select();
+
+
+            原生sql中写法：
+            $sql .= " and (create_uid = '%s' or org_id in ({$dataOrg['org_id_1']})) ";
+            $queryParam[] = "{$dataOrg['create_uid']}";
+
+         * */
+
+        //所有列表都有个人数据域条件
+        $result['create_uid'] = $userId;
+        $result['org_id'] = '';
+
+        //根据用户id查询 用户拥有的角色/岗位
+        $roleList = M('t_role_user')-&gt;field('role_id')-&gt;where(['user_id' =&gt; $userId])-&gt;select();
+        if (!$roleList) {
+            return $result;
+        }
+
+        //提取所有角色/岗位id
+        $roleIds = array_column($roleList, 'role_id');
+
+        //根据角色获取 角色拥有的数据域
+        $where = [];
+        $where['menu_item_id'] = $fid;
+        $where['org_ids'] = ['neq', '#'];
+        $where['role_id'] = ['in', $roleIds];
+        $roleMenuItem = M('t_role_menu_item')-&gt;field('org_department_ids')-&gt;where($where)-&gt;select();
+        if (!$roleMenuItem) {
+            return $result;
+        }
+
+        //提取所有二级部门id
+        $orgIds = array_column($roleMenuItem,'org_department_ids');
+
+        //去重
+        $orgIds = array_unique($orgIds);
+
+        //转为字符串
+        $orgIdsStr = implode(',',$orgIds);
+
+        //转为数组
+        $orgIdsArr = explode(',',$orgIdsStr);
+
+        $orgIds_1 = '';
+        //拼接字符串
+        foreach ($orgIdsArr as $v) {
+            $orgIds_1 .= ",'".$v."'";
+        }
+
+        $orgIds_1 = trim($orgIds_1,',');
+
+        //TP框架使用  格式为：1,2,3,4,5,6,7  例如：  $where['org_id'] = ['in',$orgIdsStr]
+        $result['org_id'] = $orgIdsStr;
+        //原生sql语句使用  格式为：'1','2','3','4','5','6','7' 例如：  $sql .= " and org_id in ({$orgIds_1}) ";
+        $result['org_id_1'] = $orgIds_1;
+
+        return $result;
+    }</code></pre>
+<p></p>
+</div>
+</div>

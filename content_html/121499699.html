@@ -1,0 +1,138 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>ORACLE Explain 详解</h3>
+<ul><li><a href="#_2">前言</a></li><li><a href="#1_6">1.什么是执行计划？</a></li><li><a href="#2_10">2.怎么查看执行计划？</a></li><li><a href="#3Oracle_101">3.怎么看懂Oracle执行计划</a></li><li><ul><li><a href="#31explain_104">3.1explain执行顺序</a></li><li><a href="#32_110">3.2访问数据的方法</a></li><li><ul><li><a href="#321TABLE_ACCESS_FULL_115">3.2.1全表扫描（TABLE ACCESS FULL）</a></li><li><a href="#322ROWIDTABLE_ACCESS_BY_ROWID_122">3.2.2ROWID扫描（TABLE ACCESS BY ROWID）</a></li><li><a href="#323TABLE_ACCESS_BY_INDEX_SCAN_131">3.2.3访问索引（TABLE ACCESS BY INDEX SCAN）</a></li><li><ul><li><a href="#INDEX_UNIQUE_SCAN_139">索引唯一扫描（INDEX UNIQUE SCAN）</a></li><li><a href="#INDEX_RANGE_SCAN_141">索引范围扫描（INDEX RANGE SCAN）</a></li><li><a href="#INDEX_FULL_SCAN_144">索引全扫描（INDEX FULL SCAN）</a></li><li><a href="#INDEX_FAST_FULL_SCAN_149">索引快速全扫描（INDEX FAST FULL SCAN）</a></li><li><a href="#INDEX_SKIP_SCAN_157">索引跳跃式扫描（INDEX SKIP SCAN）</a></li></ul>
+</li></ul>
+</li></ul>
+</li><li><a href="#4_159">4.表连接方法</a></li></ul>
+</div>
+<p></p>
+<h1><a id="_2"></a>前言</h1>
+<p>刚好最近有一次sql调优培训会，去参加后，重新复习Oracle执行计划，感触良多,所以整理资料，做成笔记分享出来</p>
+<h1><a id="1_6"></a>1.什么是执行计划？</h1>
+<p>执行计划是一条查询语句在Oracle中的执行过程或访问路径的描述。</p>
+<p>执行计划描述了SQL引擎为执行SQL语句进行的操作；分析SQL语句相关的性能问题或仅仅质疑查询优化器的决定时，必须知道执行计划；所以执行计划常用于sql调优。</p>
+<h1><a id="2_10"></a>2.怎么查看执行计划？</h1>
+<p>oracle要使用执行计划一般在sqlplus执行sql：</p>
+<pre><code class="prism language-sql"><span class="token keyword">explain</span> <span class="token keyword">plan</span> <span class="token keyword">for</span> <span class="token keyword">select</span> <span class="token operator">*</span> <span class="token keyword">from</span> w<span class="token punctuation">;</span>
+<span class="token comment">--查看索引使用明细</span>
+<span class="token keyword">select</span> <span class="token operator">*</span> <span class="token keyword">from</span> <span class="token keyword">table</span><span class="token punctuation">(</span>dbms_xplan<span class="token punctuation">.</span>display<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>如果是使用PLSQL的话，那就可以使用PLSQL提供的查询执行计划了,也就是按F5<br/> 打开PLSQL工具 -&gt; 首选项 -&gt; 窗口类型 -&gt; 计划窗口 ，在这里加入执行计划需要的参数</p>
+<pre><code class="prism language-xml">-----------------------------------------------------------------------------------------------------------------------
+| Id   | Operation                                 | Name                     | Rows    | Bytes     | Cost | Time     |
+-----------------------------------------------------------------------------------------------------------------------
+|    0 | SELECT STATEMENT                          |                          |       2 |       446 |  667 | 00:00:09 |
+|  * 1 |   COUNT STOPKEY                           |                          |         |           |      |          |
+|    2 |    VIEW                                   |                          |       2 |       446 |  667 | 00:00:09 |
+|  * 3 |     SORT ORDER BY STOPKEY                 |                          |       2 |       446 |  667 | 00:00:09 |
+|    4 |      VIEW                                 |                          |       2 |       446 |  666 | 00:00:08 |
+|    5 |       UNION-ALL                           |                          |         |           |      |          |
+|    6 |        NESTED LOOPS OUTER                 |                          |       1 |       160 |  646 | 00:00:08 |
+|    7 |         NESTED LOOPS OUTER                |                          |       1 |       128 |  637 | 00:00:08 |
+|    8 |          NESTED LOOPS OUTER               |                          |       1 |        96 |  628 | 00:00:08 |
+|    9 |           NESTED LOOPS OUTER              |                          |       1 |        75 |  624 | 00:00:08 |
+|   10 |            VIEW                           |                          |       1 |        54 |  620 | 00:00:08 |
+| * 11 |             FILTER                        |                          |         |           |      |          |
+|   12 |              HASH GROUP BY                |                          |       1 |        74 |  620 | 00:00:08 |
+| * 13 |               TABLE ACCESS BY INDEX ROWID | BGT_JOURNAL_RESOURCE     |       4 |       296 |  619 | 00:00:08 |
+| * 14 |                INDEX RANGE SCAN           | BGT_JOURNAL_RESOURCE_N2  |   13026 |           |   44 | 00:00:01 |
+|   15 |            VIEW PUSHED PREDICATE          |                          |       1 |        21 |    4 | 00:00:01 |
+|   16 |             SORT GROUP BY                 |                          |       1 |        76 |    4 | 00:00:01 |
+| * 17 |              FILTER                       |                          |         |           |      |          |
+| * 18 |               TABLE ACCESS BY INDEX ROWID | BGT_EXECUTION_DETAIL     |       1 |        76 |    4 | 00:00:01 |
+| * 19 |                INDEX RANGE SCAN           | BGT_EXECUTION_DETAIL_N10 |       1 |           |    3 | 00:00:01 |
+|   20 |           VIEW PUSHED PREDICATE           |                          |       1 |        21 |    4 | 00:00:01 |
+|   21 |            SORT GROUP BY                  |                          |       1 |        76 |    4 | 00:00:01 |
+| * 22 |             FILTER                        |                          |         |           |      |          |
+| * 23 |              TABLE ACCESS BY INDEX ROWID  | BGT_EXECUTION_DETAIL     |       1 |        76 |    4 | 00:00:01 |
+| * 24 |               INDEX RANGE SCAN            | BGT_EXECUTION_DETAIL_N10 |       1 |           |    3 | 00:00:01 |
+| * 25 |          VIEW PUSHED PREDICATE            |                          |       1 |        32 |    9 | 00:00:01 |
+|   26 |           SORT GROUP BY                   |                          |       1 |       115 |    9 | 00:00:01 |
+| * 27 |            FILTER                         |                          |         |           |      |          |
+|   28 |             NESTED LOOPS                  |                          |       1 |       115 |    8 | 00:00:01 |
+|   29 |              NESTED LOOPS                 |                          |       1 |       115 |    8 | 00:00:01 |
+| * 30 |               TABLE ACCESS BY INDEX ROWID | BGT_JOURNAL_RESOURCE     |       1 |        76 |    7 | 00:00:01 |
+| * 31 |                INDEX RANGE SCAN           | BGT_JOURNAL_RESOURCE_N1  |       4 |           |    3 | 00:00:01 |
+| * 32 |               INDEX UNIQUE SCAN           | SYS_C0016726             |       1 |           |    0 | 00:00:01 |
+| * 33 |              TABLE ACCESS BY INDEX ROWID  | BUDGET_CODE_COMBINATUONS |       1 |        39 |    1 | 00:00:01 |
+| * 34 |         VIEW PUSHED PREDICATE             |                          |       1 |        32 |    9 | 00:00:01 |
+|   35 |          SORT GROUP BY                    |                          |       1 |       115 |    9 | 00:00:01 |
+| * 36 |           FILTER                          |                          |         |           |      |          |
+|   37 |            NESTED LOOPS                   |                          |       1 |       115 |    8 | 00:00:01 |
+|   38 |             NESTED LOOPS                  |                          |       1 |       115 |    8 | 00:00:01 |
+| * 39 |              TABLE ACCESS BY INDEX ROWID  | BGT_JOURNAL_RESOURCE     |       1 |        76 |    7 | 00:00:01 |
+| * 40 |               INDEX RANGE SCAN            | BGT_JOURNAL_RESOURCE_N1  |       4 |           |    3 | 00:00:01 |
+| * 41 |              INDEX UNIQUE SCAN            | SYS_C0016726             |       1 |           |    0 | 00:00:01 |
+| * 42 |             TABLE ACCESS BY INDEX ROWID   | BUDGET_CODE_COMBINATUONS |       1 |        39 |    1 | 00:00:01 |
+|   43 |        NESTED LOOPS ANTI                  |                          |       1 |       448 |   20 | 00:00:01 |
+|   44 |         NESTED LOOPS ANTI                 |                          |       1 |       416 |   14 | 00:00:01 |
+|   45 |          NESTED LOOPS OUTER               |                          |       1 |       384 |    8 | 00:00:01 |
+|   46 |           NESTED LOOPS OUTER              |                          |       1 |       213 |    4 | 00:00:01 |
+|   47 |            VIEW                           |                          |       1 |        42 |    5 | 00:00:01 |
+|   48 |             HASH GROUP BY                 |                          |       1 |        66 |      |          |
+| * 49 |              FILTER                       |                          |         |           |      |          |
+|   50 |               TABLE ACCESS BY INDEX ROWID | BGT_EXECUTION_DETAIL     |       1 |        66 |    4 | 00:00:01 |
+| * 51 |                INDEX RANGE SCAN           | BGT_EXECUTION_DETAIL_N10 |       1 |           |    3 | 00:00:01 |
+|   52 |            VIEW PUSHED PREDICATE          |                          |       1 |       171 |    4 | 00:00:01 |
+|   53 |             SORT GROUP BY                 |                          |       1 |        76 |    4 | 00:00:01 |
+| * 54 |              FILTER                       |                          |         |           |      |          |
+| * 55 |               TABLE ACCESS BY INDEX ROWID | BGT_EXECUTION_DETAIL     |       1 |        76 |    4 | 00:00:01 |
+| * 56 |                INDEX RANGE SCAN           | BGT_EXECUTION_DETAIL_N10 |       1 |           |    3 | 00:00:01 |
+|   57 |           VIEW PUSHED PREDICATE           |                          |       1 |       171 |    4 | 00:00:01 |
+|   58 |            SORT GROUP BY                  |                          |       1 |        76 |    4 | 00:00:01 |
+| * 59 |             FILTER                        |                          |         |           |      |          |
+| * 60 |              TABLE ACCESS BY INDEX ROWID  | BGT_EXECUTION_DETAIL     |       1 |        76 |    4 | 00:00:01 |
+| * 61 |               INDEX RANGE SCAN            | BGT_EXECUTION_DETAIL_N10 |       1 |           |    3 | 00:00:01 |
+| * 62 |          TABLE ACCESS BY INDEX ROWID      | BGT_JOURNAL_RESOURCE     | 4611587 | 147570784 |    6 | 00:00:01 |
+| * 63 |           INDEX RANGE SCAN                | BGT_JOURNAL_RESOURCE_N1  |       4 |           |    2 | 00:00:01 |
+| * 64 |         TABLE ACCESS BY INDEX ROWID       | BGT_JOURNAL_RESOURCE     | 4611587 | 147570784 |    6 | 00:00:01 |
+| * 65 |          INDEX RANGE SCAN                 | BGT_JOURNAL_RESOURCE_N1  |       4 |           |    2 | 00:00:01 |
+-----------------------------------------------------------------------------------------------------------------------
+</code></pre>
+<p>参数的意思:<br/> 基数(Rows)：Oracle估计的当前步骤的返回结果集行数<br/> 字节(Bytes)：执行SQL对应步骤返回的字节数<br/> 耗费(COST)、CPU耗费：Oracle估计的该步骤的执行耗费和CPU耗费<br/> 时间(Time)：Oracle估计的执行sql对于步骤需要的时间</p>
+<h1><a id="3Oracle_101"></a>3.怎么看懂Oracle执行计划</h1>
+<p>上面已经介绍了如何查看执行计划，现在简单介绍一下一些基本方法和相关理论知识</p>
+<h2><a id="31explain_104"></a>3.1explain执行顺序</h2>
+<p>关键在于Operation参数，Operation表示sql执行过程，查看怎么执行的，有两个核心规则：</p>
+<ul><li>根据Operation缩进判断，缩进最多的最先执行；</li><li>Operation缩进相同时，最上面的是最先执行的；</li></ul>
+<h2><a id="32_110"></a>3.2访问数据的方法</h2>
+<p>Oracle访问表中数据的方法有两种，一种是直接表中访问数据，另外一种是先访问索引，如果索引数据不符合目标SQL，就回表，符合就不回表，直接访问索引就可以。</p>
+<p>Oracle直接访问表中数据的方法又分为两种：一种是全表扫描；另一种是ROWID扫描</p>
+<h3><a id="321TABLE_ACCESS_FULL_115"></a>3.2.1全表扫描（TABLE ACCESS FULL）</h3>
+<p>全表扫描是Oracle直接访问数据的一种方法，全表扫描时从第一个区(EXTENT)的第一个块(BLOCK)开始扫描，一直扫描的到表的高水位线(High Water Mark)，这个范围内的数据块都会扫描到</p>
+<p>全表扫描是采用多数据块一起扫的，并不是一个个数据库扫的，然后我们经常说全表扫描慢是针对数据量很多的情况，数据量少的话，全表扫描并不慢的，不过随着数据量越多，高水位线也就越高，也就是说需要扫描的数据库越多，自然扫描所需要的IO越多，时间也越多</p>
+<p>注意：数据量越多，全表扫描所需要的时间就越多，然后直接删了表数据呢？查询速度会变快？其实并不会的，因为即使我们删了数据，高位水线并不会改变，也就是同样需要扫描那么多数据块</p>
+<h3><a id="322ROWIDTABLE_ACCESS_BY_ROWID_122"></a>3.2.2ROWID扫描（TABLE ACCESS BY ROWID）</h3>
+<p>ROWID也就是表数据行所在的物理存储地址，所谓的ROWID扫描是通过ROWID所在的数据行记录去定位。ROWID是一个伪列，数据库里并没有这个列，它是数据库查询过程中获取的一个物理地址，用于表示数据对应的行数。 用sql查询：</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> t<span class="token punctuation">.</span><span class="token operator">*</span> <span class="token punctuation">,</span> t<span class="token punctuation">.</span>rowid <span class="token keyword">from</span> 表 t
+</code></pre>
+<p>举一个ROWID序列：AAAWSJAAFAAAWwUAAA，前6位表示对象编号(Data Object number)，其后3位文件编号(Relative file number)，接着其后6位表示块编号(Block number)， 再其后3位表示行编号(Row number)<br/> <strong>ROWID编码方法是：A ~ Z表示0到25；a ~ z表示26到51；0~9表示52到61；+表示62；/表示63；刚好64个字符。</strong></p>
+<h3><a id="323TABLE_ACCESS_BY_INDEX_SCAN_131"></a>3.2.3访问索引（TABLE ACCESS BY INDEX SCAN）</h3>
+<p>访问索引（TABLE ACCESS BY INDEX SCAN）的情况就比较多了，可以分为：</p>
+<ul><li>索引唯一扫描（INDEX UNIQUE SCAN）</li><li>索引全扫描（INDEX FULL SCAN）</li><li>索引范围扫描（INDEX RANGE SCAN）</li><li>索引快速全扫描（INDEX FAST FULL SCAN）</li><li>索引跳跃式扫描（INDEX SKIP SCAN）</li></ul>
+<h4><a id="INDEX_UNIQUE_SCAN_139"></a>索引唯一扫描（INDEX UNIQUE SCAN）</h4>
+<p>索引唯一性扫描(INDEX UNIQUE SCAN)是针对唯一性索引(UNIQUE INDEX)来说的，也就是建立唯一性索引才能索引唯一性扫描，唯一性扫描，其结果集只会返回一条记录。</p>
+<h4><a id="INDEX_RANGE_SCAN_141"></a>索引范围扫描（INDEX RANGE SCAN）</h4>
+<p>索引范围扫描（INDEX RANGE SCAN）索引范围扫描(INDEX RANGE SCAN)适用于所有类型的B树索引，一般不包括唯一性索引，因为唯一性索引走索引唯一性扫描。 当扫描的对象是非唯一性索引的情况，where谓词条件为Between、=、&lt;、&gt;等等的情况就是索引范围扫描，注意，可以是等值查询，也可以是范围查询。如果where条件里有一个索引键值列没限定为非空的，那就可以走索引范围扫描，如果改索引列是非空的，<em>那就走索引全扫描</em><br/> 前面说了，同样的SQL建的索引不同，就可能是走索引唯一性扫描，也有可能走索引范围扫描。在同等的条件下，索引范围扫描所需要的逻辑读和索引唯一性扫描对比，逻辑读如何？索引范围扫描可能返回多条记录，所以优化器为了确认，肯定会多扫描，所以在同等条件，索引范围扫描所需要的逻辑读至少会比相应的唯一性扫描的逻辑读多1</p>
+<h4><a id="INDEX_FULL_SCAN_144"></a>索引全扫描（INDEX FULL SCAN）</h4>
+<p>索引全扫描(INDEX FULL SCAN)适用于所有类型的B树索引(包括唯一性索引和非唯一性索引)。</p>
+<p>索引全扫描过程简述：索引全扫描是指扫描目标索引所有叶子块的索引行，但不意思着需要扫描所有的分支块，索引全扫描时只需要访问必要的分支块，然后定位到位于改索引最左边的叶子块的第一行索引行，就可以利用改索引叶子块之间的双向指针链表，从左往右依次顺序扫描所有的叶子块的索引行</p>
+<h4><a id="INDEX_FAST_FULL_SCAN_149"></a>索引快速全扫描（INDEX FAST FULL SCAN）</h4>
+<p>索引快速全扫描和索引全扫描很类似，也适用于所有类型的B树索引(包括唯一性索引和非唯一性索引)。和索引全扫描类似，也是扫描所有叶子块的索引行，这些都是索引快速全扫描和索引全扫描的相同点<br/> 索引快速全扫描和索引全扫描区别：</p>
+<ul><li>索引快速全扫描只适应于CBO(基于成本的优化器)</li><li>索引快速全扫描可以使用多块读，也可以并行执行</li><li>索引全扫描会按照叶子块排序返回，而索引快速全扫描则是按照索引段内存储块顺序返回</li><li>索引快速全扫描的执行结果不一定是有序的，而索引全扫描的执行结果是有序的，因为索引快速全扫描是根据索引行在磁盘的物理存储顺序来扫描的，不是根据索引行的逻辑顺序来扫描的</li></ul>
+<h4><a id="INDEX_SKIP_SCAN_157"></a>索引跳跃式扫描（INDEX SKIP SCAN）</h4>
+<p>索引跳跃式扫描(INDEX SKIP SCAN)适用于所有类型的复合B树索引(包括唯一性索引和非唯一性索引)，索引跳跃式扫描可以使那些在where条件中没有目标索引的前导列指定查询条件但是有索引的非前导列指定查询条件的目标SQL依然可以使用跳跃索引</p>
+<h1><a id="4_159"></a>4.表连接方法</h1>
+<p>执行计划中常有下NESTED LOOPS等等这些，是什么？这种其实就是Oracle中表连接的方法<br/> 两个表之间的表连接方法有排序合并连接、嵌套循环连接、哈希连接、笛卡尔连接</p>
+<ul><li> <p>排序合并连接（merge sort join） merge sort join是先将关联表的关联列各自做排序，然后从各自的排序表中抽取数据，到另一个排序表中做匹配</p> </li><li> <p>嵌套循环连接（Nested loop join） Nested loops 工作方式是循环从一张表中读取数据(驱动表outer table)，然后访问另一张表（被查找表 inner table,通常有索引）。驱动表中的每一行与inner表中的相应记录JOIN。类似一个嵌套的循环。对于被连接的数据子集较小的情况，nested loop连接是个较好的选择</p> </li><li> <p>哈希连接（Hash join） 散列连接是CBO 做大数据集连接时的常用方式，优化器使用两个表中较小的表（或数据源）利用连接键在内存中建立散列表，然后扫描较大的表并探测散列表，找出与散列表匹配的行。</p> </li><li> <p>笛卡尔连接（Cross join） 如果两个表做表连接而没有连接条件，而会产生笛卡尔积，在实际工作中应该尽可能避免笛卡尔积</p> </li></ul>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

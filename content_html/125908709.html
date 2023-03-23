@@ -1,0 +1,566 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="flink_sql_0"></a>flink sql表查询详解</h1>
+<h2><a id="1_2"></a>1、高阶聚合</h2>
+<pre><code class="prism language-sql"><span class="token keyword">group</span> <span class="token keyword">by</span> cube<span class="token punctuation">(</span>维度<span class="token number">1</span><span class="token punctuation">,</span> 维度<span class="token number">2</span><span class="token punctuation">,</span> 维度<span class="token number">3</span><span class="token punctuation">)</span>
+
+<span class="token keyword">group</span> <span class="token keyword">by</span> grouping sets<span class="token punctuation">(</span> <span class="token punctuation">(</span>维度<span class="token number">1</span><span class="token punctuation">,</span>维度<span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token punctuation">(</span>维度<span class="token number">1</span><span class="token punctuation">,</span>维度<span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">)</span>
+
+<span class="token keyword">group</span> <span class="token keyword">by</span> rollup<span class="token punctuation">(</span>省<span class="token punctuation">,</span>市<span class="token punctuation">,</span>区<span class="token punctuation">)</span>
+</code></pre>
+<p>语法示例：</p>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> 
+  privince<span class="token punctuation">,</span>
+  city<span class="token punctuation">,</span>
+  region<span class="token punctuation">,</span>
+  <span class="token function">count</span><span class="token punctuation">(</span><span class="token keyword">distinct</span> uid<span class="token punctuation">)</span> <span class="token keyword">as</span> u_cnt
+<span class="token keyword">from</span> t 
+<span class="token keyword">group</span> <span class="token keyword">by</span> cube<span class="token punctuation">(</span>province<span class="token punctuation">,</span>city<span class="token punctuation">,</span>region<span class="token punctuation">)</span>
+
+
+<span class="token keyword">select</span> 
+  privince<span class="token punctuation">,</span>
+  city<span class="token punctuation">,</span>
+  region<span class="token punctuation">,</span>
+  <span class="token function">count</span><span class="token punctuation">(</span><span class="token keyword">distinct</span> uid<span class="token punctuation">)</span> <span class="token keyword">as</span> u_cnt
+<span class="token keyword">from</span> t 
+<span class="token keyword">group</span> <span class="token keyword">by</span> rollup<span class="token punctuation">(</span>province<span class="token punctuation">,</span>city<span class="token punctuation">,</span>region<span class="token punctuation">)</span>
+
+
+
+<span class="token keyword">select</span> 
+  privince<span class="token punctuation">,</span>
+  city<span class="token punctuation">,</span>
+  region<span class="token punctuation">,</span>
+  <span class="token function">count</span><span class="token punctuation">(</span><span class="token keyword">distinct</span> uid<span class="token punctuation">)</span> <span class="token keyword">as</span> u_cnt
+<span class="token keyword">from</span> t 
+<span class="token keyword">group</span> <span class="token keyword">by</span> grouping sets<span class="token punctuation">(</span> <span class="token punctuation">(</span>province<span class="token punctuation">,</span>city<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>province<span class="token punctuation">,</span>city<span class="token punctuation">,</span>region<span class="token punctuation">)</span> <span class="token punctuation">)</span>
+</code></pre>
+<h2><a id="2_TVF_39"></a>2、时间窗口 TVF(表值函数)</h2>
+<p>flink从1.13开始，提供了时间窗口聚合计算的TVF语法。</p>
+<p>表值函数的使用约束：</p>
+<ul><li>（1）在窗口上做<strong>分组聚合</strong>，必须带上window_start 和 window_end 作为分组的key；</li><li>（2）在窗口上做<strong>topn计算</strong>，必须带上window_start 和 window_end 作为partition的key；</li><li>（3）带条件的<strong>join</strong>，必须包含2个输入表的window_start 和 window_end 等值条件。</li></ul>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> 
+  <span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+<span class="token keyword">from</span> <span class="token keyword">table</span><span class="token punctuation">(</span>
+  tumble <span class="token punctuation">(</span><span class="token keyword">table</span> t <span class="token punctuation">,</span>descriptor<span class="token punctuation">(</span>rt<span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token keyword">interval</span> <span class="token string">'10'</span> minutes<span class="token punctuation">)</span> 
+<span class="token punctuation">)</span>
+</code></pre>
+<h3><a id="1__56"></a>(1) 支持的时间窗口类型</h3>
+<p>1、滚动窗口（Tumble Windows）</p>
+<pre><code class="prism language-sql">TUMBLE <span class="token punctuation">(</span><span class="token keyword">TABLE</span> t_action<span class="token punctuation">,</span>descriptor<span class="token punctuation">(</span>时间属性字段<span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token keyword">INTERVAL</span> <span class="token string">'10'</span> <span class="token keyword">SECOND</span><span class="token punctuation">[</span> 窗口长度 <span class="token punctuation">]</span> <span class="token punctuation">)</span>
+</code></pre>
+<p>2、滑动窗口（Hop Windows）</p>
+<pre><code class="prism language-sql">HOP <span class="token punctuation">(</span><span class="token keyword">TABLE</span> t_action<span class="token punctuation">,</span>descriptor<span class="token punctuation">(</span>时间属性字段<span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token keyword">INTERVAL</span> <span class="token string">'5'</span> SECONDS<span class="token punctuation">[</span> 滑动步长 <span class="token punctuation">]</span> <span class="token punctuation">,</span> <span class="token keyword">INTERVAL</span> <span class="token string">'10'</span> <span class="token keyword">SECOND</span><span class="token punctuation">[</span> 窗口长度 <span class="token punctuation">]</span> <span class="token punctuation">)</span>
+</code></pre>
+<p>3、累计窗口(Cumulate Windows)</p>
+<pre><code class="prism language-sql">CUMULATE <span class="token punctuation">(</span><span class="token keyword">TABLE</span> t_action<span class="token punctuation">,</span>descriptor<span class="token punctuation">(</span>时间属性字段<span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token keyword">INTERVAL</span> <span class="token string">'5'</span> SECONDS<span class="token punctuation">[</span> 更新最大步长 <span class="token punctuation">]</span> <span class="token punctuation">,</span> <span class="token keyword">INTERVAL</span> <span class="token string">'10'</span> <span class="token keyword">SECOND</span><span class="token punctuation">[</span> 窗口最大长度 <span class="token punctuation">]</span> <span class="token punctuation">)</span>
+</code></pre>
+<p>4、会话窗口(Session Windows)<br/> 暂不支持!</p>
+<h3><a id="2__74"></a>(2) 语法示例</h3>
+<pre><code class="prism language-sql"><span class="token keyword">select</span> 
+  window_start<span class="token punctuation">,</span>
+  window_end<span class="token punctuation">,</span>
+  channel<span class="token punctuation">,</span>
+  <span class="token function">count</span><span class="token punctuation">(</span><span class="token keyword">distinct</span> guid<span class="token punctuation">)</span> <span class="token keyword">as</span> uv
+<span class="token keyword">from</span> <span class="token keyword">table</span> <span class="token punctuation">(</span>
+  tumble<span class="token punctuation">(</span><span class="token keyword">table</span> t_applog<span class="token punctuation">,</span>descriptor<span class="token punctuation">(</span>rt<span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token keyword">interval</span> <span class="token string">'5'</span> <span class="token keyword">minute</span> <span class="token punctuation">)</span> <span class="token comment">--滚动窗口 </span>
+<span class="token punctuation">)</span>
+<span class="token keyword">group</span> <span class="token keyword">by</span> window_start<span class="token punctuation">,</span>window_end<span class="token punctuation">,</span>channel
+</code></pre>
+<h2><a id="3topn_86"></a>3、窗口topn</h2>
+<pre><code class="prism language-shell">-- bidtime,price,item,supplier_id
+<span class="token number">2020</span>-04-15 08:05:00.000,4.00,C,supplier1
+<span class="token number">2020</span>-04-15 08:07:00.000,2.00,A,supplier1
+<span class="token number">2020</span>-04-15 08:09:00.000,5.00,D,supplier2
+<span class="token number">2020</span>-04-15 08:11:00.000,3.00,B,supplier2
+<span class="token number">2020</span>-04-15 08:09:00.000,5.00,D,supplier3
+<span class="token number">2020</span>-04-15 08:11:00.000,6.00,B,supplier3
+<span class="token number">2020</span>-04-15 08:11:00.000,6.00,B,supplier3
+</code></pre>
+<pre><code class="prism language-java"><span class="token comment">/**
+ * 10分钟滚动窗口中的交易金额最大的前2笔订单
+ */</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> _02_Window_Topn_V2 <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span>  <span class="token punctuation">{<!-- --></span>
+
+        <span class="token comment">// 创建表的执行环境</span>
+        <span class="token class-name">StreamExecutionEnvironment</span> env <span class="token operator">=</span> <span class="token class-name">StreamExecutionEnvironment</span><span class="token punctuation">.</span><span class="token function">getExecutionEnvironment</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        env<span class="token punctuation">.</span><span class="token function">setParallelism</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">StreamTableEnvironment</span> tenv <span class="token operator">=</span> <span class="token class-name">StreamTableEnvironment</span><span class="token punctuation">.</span><span class="token function">create</span><span class="token punctuation">(</span>env<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 从kafka中读取数据</span>
+        <span class="token class-name">String</span> sourceTable <span class="token operator">=</span> <span class="token string">"CREATE TABLE source_table (\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  bidtime string ,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  `price` double,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  `item` STRING,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  `supplier_id` STRING,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  `rt` as cast( bidtime as timestamp(3) ),\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   watermark for rt as rt - interval '5' second\n"</span> <span class="token operator">+</span>
+                <span class="token string">") WITH (\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'connector' = 'kafka',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'topic' = 'topn1',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'properties.bootstrap.servers' = 'hadoop01:9092',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'properties.group.id' = 'testGroup',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'scan.startup.mode' = 'earliest-offset',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'format' = 'csv'\n"</span> <span class="token operator">+</span>
+                <span class="token string">")"</span><span class="token punctuation">;</span>
+
+
+        tenv<span class="token punctuation">.</span><span class="token function">executeSql</span><span class="token punctuation">(</span>sourceTable<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">// 10分钟滚动窗口中的交易金额最大的前2笔订单</span>
+        tenv<span class="token punctuation">.</span><span class="token function">executeSql</span><span class="token punctuation">(</span><span class="token string">"select\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  *\n"</span> <span class="token operator">+</span>
+                <span class="token string">"from(\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  select window_start,window_end, \n"</span> <span class="token operator">+</span>
+                <span class="token string">"    bidtime,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"    price,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"    item,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"    supplier_id,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"    row_number() over(partition by window_start,window_end order by price desc ) as rn\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  from table(\n"</span> <span class="token operator">+</span>
+                <span class="token string">"    tumble(table source_table,descriptor(rt),interval '10' minute)\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  ) \n"</span> <span class="token operator">+</span>
+                <span class="token string">") t1 where rn &lt;= 2 "</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">print</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+## 结果如下
+<span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span>
+<span class="token operator">|</span> op <span class="token operator">|</span>            window_start <span class="token operator">|</span>              window_end <span class="token operator">|</span>                 bidtime <span class="token operator">|</span> price <span class="token operator">|</span>    item <span class="token operator">|</span>  supplier_id <span class="token operator">|</span>    rn <span class="token operator">|</span>
+<span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">+</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">--</span><span class="token operator">-</span><span class="token operator">+</span>
+<span class="token operator">|</span> <span class="token operator">+</span><span class="token class-name">I</span> <span class="token operator">|</span> <span class="token number">2020</span><span class="token operator">-</span><span class="token number">04</span><span class="token operator">-</span><span class="token number">15</span> <span class="token number">08</span><span class="token operator">:</span><span class="token number">00</span><span class="token operator">:</span><span class="token number">00.000</span> <span class="token operator">|</span> <span class="token number">2020</span><span class="token operator">-</span><span class="token number">04</span><span class="token operator">-</span><span class="token number">15</span> <span class="token number">08</span><span class="token operator">:</span><span class="token number">10</span><span class="token operator">:</span><span class="token number">00.000</span> <span class="token operator">|</span> <span class="token number">2020</span><span class="token operator">-</span><span class="token number">04</span><span class="token operator">-</span><span class="token number">15</span> <span class="token number">08</span><span class="token operator">:</span><span class="token number">09</span><span class="token operator">:</span><span class="token number">00.000</span> <span class="token operator">|</span>   <span class="token number">5.0</span> <span class="token operator">|</span>       <span class="token class-name">D</span> <span class="token operator">|</span>    supplier3 <span class="token operator">|</span>     <span class="token number">1</span> <span class="token operator">|</span>
+<span class="token operator">|</span> <span class="token operator">+</span><span class="token class-name">I</span> <span class="token operator">|</span> <span class="token number">2020</span><span class="token operator">-</span><span class="token number">04</span><span class="token operator">-</span><span class="token number">15</span> <span class="token number">08</span><span class="token operator">:</span><span class="token number">00</span><span class="token operator">:</span><span class="token number">00.000</span> <span class="token operator">|</span> <span class="token number">2020</span><span class="token operator">-</span><span class="token number">04</span><span class="token operator">-</span><span class="token number">15</span> <span class="token number">08</span><span class="token operator">:</span><span class="token number">10</span><span class="token operator">:</span><span class="token number">00.000</span> <span class="token operator">|</span> <span class="token number">2020</span><span class="token operator">-</span><span class="token number">04</span><span class="token operator">-</span><span class="token number">15</span> <span class="token number">08</span><span class="token operator">:</span><span class="token number">09</span><span class="token operator">:</span><span class="token number">00.000</span> <span class="token operator">|</span>   <span class="token number">5.0</span> <span class="token operator">|</span>       <span class="token class-name">D</span> <span class="token operator">|</span>    supplier2 <span class="token operator">|</span>     <span class="token number">2</span> <span class="token operator">|</span>
+</code></pre>
+<pre><code class="prism language-java"><span class="token comment">/**
+ *
+ * 10分钟滚动窗口内交易总额最高的前两家供应商，及其交易总额和交易单数
+ */</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> _02_Window_Topn_V3 <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span>  <span class="token punctuation">{<!-- --></span>
+
+        <span class="token comment">// 创建表的执行环境</span>
+        <span class="token class-name">StreamExecutionEnvironment</span> env <span class="token operator">=</span> <span class="token class-name">StreamExecutionEnvironment</span><span class="token punctuation">.</span><span class="token function">getExecutionEnvironment</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        env<span class="token punctuation">.</span><span class="token function">setParallelism</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">StreamTableEnvironment</span> tenv <span class="token operator">=</span> <span class="token class-name">StreamTableEnvironment</span><span class="token punctuation">.</span><span class="token function">create</span><span class="token punctuation">(</span>env<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 从kafka中读取数据</span>
+        <span class="token class-name">String</span> sourceTable <span class="token operator">=</span> <span class="token string">"CREATE TABLE source_table (\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  bidtime string ,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  `price` double,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  `item` STRING,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  `supplier_id` STRING,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  `rt` as cast( bidtime as timestamp(3) ),\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   watermark for rt as rt - interval '5' second\n"</span> <span class="token operator">+</span>
+                <span class="token string">") WITH (\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'connector' = 'kafka',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'topic' = 'topn1',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'properties.bootstrap.servers' = 'hadoop01:9092',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'properties.group.id' = 'testGroup',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'scan.startup.mode' = 'earliest-offset',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  'format' = 'csv'\n"</span> <span class="token operator">+</span>
+                <span class="token string">")"</span><span class="token punctuation">;</span>
+        
+        tenv<span class="token punctuation">.</span><span class="token function">executeSql</span><span class="token punctuation">(</span>sourceTable<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">// 10分钟滚动窗口内交易总额最高的前两家供应商，及其交易总额和交易单数</span>
+        <span class="token class-name">String</span> executeSql <span class="token operator">=</span> <span class="token string">"select\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  *\n"</span> <span class="token operator">+</span>
+                <span class="token string">"from(\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  select\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   window_start,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   window_end,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   supplier_id,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   sum_price,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   cnt,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   row_number() over(partition by window_start,window_end order by sum_price desc ) as rn \n"</span> <span class="token operator">+</span>
+                <span class="token string">"   from(\n"</span> <span class="token operator">+</span>
+                <span class="token string">"      select\n"</span> <span class="token operator">+</span>
+                <span class="token string">"        window_start,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"        window_end,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"        supplier_id,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"        sum(price) as sum_price,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"        count(1) as cnt\n"</span> <span class="token operator">+</span>
+                <span class="token string">"      from table(\n"</span> <span class="token operator">+</span>
+                <span class="token string">"        tumble(table source_table,descriptor(rt),interval '10' minute)\n"</span> <span class="token operator">+</span>
+                <span class="token string">"      ) group by window_start,window_end,supplier_id\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  ) t1\n"</span> <span class="token operator">+</span>
+                <span class="token string">") t1 where rn &lt;= 2"</span><span class="token punctuation">;</span>
+
+        tenv<span class="token punctuation">.</span><span class="token function">executeSql</span><span class="token punctuation">(</span>executeSql<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">print</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="4window_join_214"></a>4、window join查询</h2>
+<p><strong>语法：</strong></p>
+<ul><li>在TVF上使用join</li><li>参与join 的两个表都需要定义时间窗口</li><li>join 的条件中必须包含两表的window_start和 window_end的等值条件</li></ul>
+<p><strong>支持join的方式：</strong></p>
+<ul><li>inner/left/right/full</li><li>semi(where id in …)</li><li>anti(where id not in …)</li></ul>
+<p><strong>代码示例：</strong></p>
+<pre><code class="prism language-java"><span class="token comment">/**
+ * 各种窗口的join代码示例
+ */</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> _03_Join <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 创建表的执行环境</span>
+        <span class="token class-name">StreamExecutionEnvironment</span> env <span class="token operator">=</span> <span class="token class-name">StreamExecutionEnvironment</span><span class="token punctuation">.</span><span class="token function">getExecutionEnvironment</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        env<span class="token punctuation">.</span><span class="token function">setParallelism</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">StreamTableEnvironment</span> tenv <span class="token operator">=</span> <span class="token class-name">StreamTableEnvironment</span><span class="token punctuation">.</span><span class="token function">create</span><span class="token punctuation">(</span>env<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">/**
+         * 1,a,1000
+         * 2,b,2000
+         * 3,c,2500
+         * 4,d,3000
+         * 5,e,12000
+         */</span>
+        <span class="token comment">// 从socket流中读取数据</span>
+        <span class="token class-name">DataStreamSource</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> s1 <span class="token operator">=</span> env<span class="token punctuation">.</span><span class="token function">socketTextStream</span><span class="token punctuation">(</span><span class="token string">"hadoop01"</span><span class="token punctuation">,</span> <span class="token number">9999</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">SingleOutputStreamOperator</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">Tuple3</span><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">Long</span><span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span> ss1 <span class="token operator">=</span> s1<span class="token punctuation">.</span><span class="token function">map</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">MapFunction</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">Tuple3</span><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">Long</span><span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token annotation punctuation">@Override</span>
+            <span class="token keyword">public</span> <span class="token class-name">Tuple3</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">Long</span><span class="token punctuation">&gt;</span></span> <span class="token function">map</span><span class="token punctuation">(</span><span class="token class-name">String</span> line<span class="token punctuation">)</span> <span class="token keyword">throws</span> <span class="token class-name">Exception</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> arr <span class="token operator">=</span> line<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">","</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> <span class="token class-name">Tuple3</span><span class="token punctuation">.</span><span class="token function">of</span><span class="token punctuation">(</span>arr<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span> arr<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span> <span class="token class-name">Long</span><span class="token punctuation">.</span><span class="token function">parseLong</span><span class="token punctuation">(</span>arr<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">/**
+         * 1,bj,1000
+         * 2,sh,2000
+         * 4,xa,2600
+         * 5,yn,12000
+         */</span>
+        <span class="token class-name">DataStreamSource</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> s2 <span class="token operator">=</span> env<span class="token punctuation">.</span><span class="token function">socketTextStream</span><span class="token punctuation">(</span><span class="token string">"hadoop01"</span><span class="token punctuation">,</span> <span class="token number">9998</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">SingleOutputStreamOperator</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">Tuple3</span><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">Long</span><span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span> ss2 <span class="token operator">=</span> s2<span class="token punctuation">.</span><span class="token function">map</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">MapFunction</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">Tuple3</span><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">Long</span><span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token annotation punctuation">@Override</span>
+            <span class="token keyword">public</span> <span class="token class-name">Tuple3</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">Long</span><span class="token punctuation">&gt;</span></span> <span class="token function">map</span><span class="token punctuation">(</span><span class="token class-name">String</span> line<span class="token punctuation">)</span> <span class="token keyword">throws</span> <span class="token class-name">Exception</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> arr <span class="token operator">=</span> line<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">","</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> <span class="token class-name">Tuple3</span><span class="token punctuation">.</span><span class="token function">of</span><span class="token punctuation">(</span>arr<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span> arr<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span> <span class="token class-name">Long</span><span class="token punctuation">.</span><span class="token function">parseLong</span><span class="token punctuation">(</span>arr<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 创建两个表</span>
+        tenv<span class="token punctuation">.</span><span class="token function">createTemporaryView</span><span class="token punctuation">(</span><span class="token string">"t_left"</span><span class="token punctuation">,</span>ss1<span class="token punctuation">,</span>
+                <span class="token class-name">Schema</span><span class="token punctuation">.</span><span class="token function">newBuilder</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">column</span><span class="token punctuation">(</span><span class="token string">"f0"</span><span class="token punctuation">,</span> <span class="token class-name">DataTypes</span><span class="token punctuation">.</span><span class="token function">STRING</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">column</span><span class="token punctuation">(</span><span class="token string">"f1"</span><span class="token punctuation">,</span> <span class="token class-name">DataTypes</span><span class="token punctuation">.</span><span class="token function">STRING</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">column</span><span class="token punctuation">(</span><span class="token string">"f2"</span><span class="token punctuation">,</span> <span class="token class-name">DataTypes</span><span class="token punctuation">.</span><span class="token function">BIGINT</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">columnByExpression</span><span class="token punctuation">(</span><span class="token string">"rt"</span><span class="token punctuation">,</span><span class="token string">" to_timestamp_ltz(f2,3) "</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">watermark</span><span class="token punctuation">(</span><span class="token string">"rt"</span><span class="token punctuation">,</span><span class="token string">"rt - interval '0' second "</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">build</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        tenv<span class="token punctuation">.</span><span class="token function">createTemporaryView</span><span class="token punctuation">(</span><span class="token string">"t_right"</span><span class="token punctuation">,</span>ss2<span class="token punctuation">,</span>
+                <span class="token class-name">Schema</span><span class="token punctuation">.</span><span class="token function">newBuilder</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">.</span><span class="token function">column</span><span class="token punctuation">(</span><span class="token string">"f0"</span><span class="token punctuation">,</span> <span class="token class-name">DataTypes</span><span class="token punctuation">.</span><span class="token function">STRING</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">.</span><span class="token function">column</span><span class="token punctuation">(</span><span class="token string">"f1"</span><span class="token punctuation">,</span> <span class="token class-name">DataTypes</span><span class="token punctuation">.</span><span class="token function">STRING</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">.</span><span class="token function">column</span><span class="token punctuation">(</span><span class="token string">"f2"</span><span class="token punctuation">,</span> <span class="token class-name">DataTypes</span><span class="token punctuation">.</span><span class="token function">BIGINT</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">.</span><span class="token function">columnByExpression</span><span class="token punctuation">(</span><span class="token string">"rt"</span><span class="token punctuation">,</span><span class="token string">" to_timestamp_ltz(f2,3) "</span><span class="token punctuation">)</span> <span class="token comment">// 指定事件时间</span>
+                        <span class="token punctuation">.</span><span class="token function">watermark</span><span class="token punctuation">(</span><span class="token string">"rt"</span><span class="token punctuation">,</span><span class="token string">"rt - interval '0' second "</span><span class="token punctuation">)</span> <span class="token comment">// 指定水位线</span>
+                        <span class="token punctuation">.</span><span class="token function">build</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 各种窗口join的示例</span>
+        <span class="token comment">// INNER JOIN</span>
+        <span class="token class-name">String</span> innerJoinSql <span class="token operator">=</span> <span class="token string">"select\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a.f0,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a.f1,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a.f2,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  b.f0,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  b.f1\n"</span> <span class="token operator">+</span>
+                <span class="token string">"from\n"</span> <span class="token operator">+</span>
+                <span class="token string">"( select * from table( tumble(table t_left,descriptor(rt), interval '10' second) )  ) a\n"</span> <span class="token operator">+</span>
+                <span class="token string">"join\n"</span> <span class="token operator">+</span>
+                <span class="token string">"( select * from table( tumble(table t_right,descriptor(rt), interval '10' second) )  ) b\n"</span> <span class="token operator">+</span>
+                <span class="token comment">// 带条件的join，必须包含2个输入表的window_start 和 window_end 等值条件</span>
+                <span class="token string">"on a.window_start = b.window_start and a.window_end = b.window_end and a.f0 = b.f0"</span><span class="token punctuation">;</span>
+
+<span class="token comment">//        tenv.executeSql(innerJoinSql).print();</span>
+        <span class="token comment">// left / right / full outer</span>
+        <span class="token class-name">String</span> fullJoinSql <span class="token operator">=</span> <span class="token string">"select\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a.f0,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a.f1,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a.f2,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  b.f0,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  b.f1\n"</span> <span class="token operator">+</span>
+                <span class="token string">"from\n"</span> <span class="token operator">+</span>
+                <span class="token string">"( select * from table( tumble(table t_left,descriptor(rt), interval '10' second) )  ) a\n"</span> <span class="token operator">+</span>
+                <span class="token string">"full join\n"</span> <span class="token operator">+</span>
+                <span class="token string">"( select * from table( tumble(table t_right,descriptor(rt), interval '10' second) )  ) b\n"</span> <span class="token operator">+</span>
+                <span class="token comment">// 带条件的join，必须包含2个输入表的window_start 和 window_end 等值条件</span>
+                <span class="token string">"on a.window_start = b.window_start and a.window_end = b.window_end and a.f0 = b.f0"</span><span class="token punctuation">;</span>
+
+<span class="token comment">//        tenv.executeSql(fullJoinSql).print();</span>
+
+        <span class="token comment">// semi ==&gt; where ... in ...</span>
+        <span class="token class-name">String</span> semiJoinSql <span class="token operator">=</span> <span class="token string">"select\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a.f0,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a.f1,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a.f2,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"from\n"</span> <span class="token operator">+</span>
+                <span class="token string">"-- 1、在TVF上使用join\n"</span> <span class="token operator">+</span>
+                <span class="token string">"-- 2、参与join 的两个表都需要定义时间窗口\n"</span> <span class="token operator">+</span>
+                <span class="token string">"( select * from table( tumble(table t_left,decriptor(rt), interval '10' second) ) ) a\n"</span> <span class="token operator">+</span>
+                <span class="token string">"where f0 in\n"</span> <span class="token operator">+</span>
+                <span class="token string">"(\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  select\n"</span> <span class="token operator">+</span>
+                <span class="token string">"    f0\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  from\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  ( select * from table( tumble(table t_right,decriptor(rt), interval '10' second) ) ) b\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  -- 3、join 的条件中必须包含两表的window_start和 window_end的等值条件\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  where a.window_start = b.window_start and a.window_end = b.window_end\n"</span> <span class="token operator">+</span>
+                <span class="token string">")"</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//        tenv.executeSql(semiJoinSql).print();</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="5flink_sqljoin_348"></a>5、flink sql中的join分类</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5c453437bc934296ab7db844ace95427.png#pic_center"/></p>
+<h3><a id="1regular_join_352"></a>（1）regular join</h3>
+<p>常规join，flink底层是会对两个参与join的输入流中的数据进行状态存储的；所以，随着时间的推进，状态中的数据量会持续膨胀，可能会导致过于庞大，从而降低系统的整体效率;<br/> 可以如何去缓解:</p>
+<p>自己根据自己业务系统数据特性（估算能产生关联的左表数据和右表数据到达的最大时间差），根据这个最大时间差，去设置ttl 时长;</p>
+<pre><code class="prism language-java"><span class="token class-name">StreamTableEnvironment</span> tenv <span class="token operator">=</span> <span class="token class-name">StreamTableEnvironmentcreate</span><span class="token punctuation">(</span>env<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">// 设置table环境中的状态tt时长</span>
+tenv<span class="token punctuation">.</span><span class="token function">getConfig</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">getConfiguration</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">setLong</span><span class="token punctuation">(</span><span class="token string">"table.exec.state.ttl"</span><span class="token punctuation">,</span><span class="token number">60</span><span class="token operator">*</span><span class="token number">60</span><span class="token operator">*</span><span class="token number">1000L</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h3><a id="2Lookup_joinjoin_364"></a>（2）Lookup join(维表join)</h3>
+<p>Lookup join跟其它的join有较大的不同，在 flinksql 中，所有的 source connector都实现自DynamicTableSource。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e2815d207234455ba0c95d69ff410e46.png#pic_center"/></p>
+<ul><li> <p><code>ScanTableSource</code>是用的最多的常规TableSource，它会持续、完整读取源表，形成flink中的核心数据抽象—“数据流";</p> </li><li> <p><code>LookupTableSource</code>，则并不对源表持续、完整读取，而是在需要的时候，才根据一个(或多个)查询key，去临时性地查询源表得到一条（或多条）数据;</p> </li></ul>
+<p>lookup join为了提高性能，lookup的连接器会将查询过的维表数据进行缓存（<strong>默认未开启此机制</strong>)，可以通过参数开启，比如 jdbc-connector 的 lookup模式下，有如下参数:</p>
+<ul><li>lookup.cache.max-rows= (none） 未开启</li><li>lookup.cache.ttl = (none） ttl缓存清除的时长</li></ul>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">JdbcDynamicTableSource</span> 
+                    <span class="token keyword">implements</span> <span class="token class-name">ScanTableSource</span><span class="token punctuation">,</span>
+                               <span class="token class-name">LookupTableSource</span><span class="token punctuation">,</span> 
+                               <span class="token class-name">SupportsProjectionPushDown</span><span class="token punctuation">,</span> 
+                               <span class="token class-name">SupportsLimitPushDown</span> <span class="token punctuation">{<!-- --></span>
+</code></pre>
+<p>它实现了上述两种接口，因而它是两种读取模式的混合封装体因而，它也实现了上述两个接口中各自的一个重要方法:</p>
+<ul><li>getLookupRuntimeProvider</li><li>getScanRuntimeProvider</li></ul>
+<p><strong>对于lookupRuntimeProvider 来说，最重要的是其中的: JdbcRowDataLookupFunction</strong></p>
+<pre><code class="prism language-java"><span class="token comment">// lookup Function中最重要的就是eval方法    </span>
+<span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">eval</span><span class="token punctuation">(</span><span class="token class-name">Object</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span> keys<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">RowData</span> keyRow <span class="token operator">=</span> <span class="token class-name">GenericRowData</span><span class="token punctuation">.</span><span class="token function">of</span><span class="token punctuation">(</span>keys<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">.</span>cache <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">RowData</span><span class="token punctuation">&gt;</span></span> cachedRows <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token class-name">List</span><span class="token punctuation">)</span><span class="token keyword">this</span><span class="token punctuation">.</span>cache<span class="token punctuation">.</span><span class="token function">getIfPresent</span><span class="token punctuation">(</span>keyRow<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token comment">// 对于传入的keys，先从缓存中获取要查询的数据</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>cachedRows <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token class-name">Iterator</span> var24 <span class="token operator">=</span> cachedRows<span class="token punctuation">.</span><span class="token function">iterator</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">while</span><span class="token punctuation">(</span>var24<span class="token punctuation">.</span><span class="token function">hasNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    <span class="token class-name">RowData</span> cachedRow <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token class-name">RowData</span><span class="token punctuation">)</span>var24<span class="token punctuation">.</span><span class="token function">next</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token comment">// 如果缓存中拿到了数据，就直接输出</span>
+                    <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token function">collect</span><span class="token punctuation">(</span>cachedRow<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token keyword">return</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">int</span> retry <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token comment">// 否则，用jdbc去进行查询</span>
+        <span class="token keyword">while</span><span class="token punctuation">(</span>retry <span class="token operator">&lt;=</span> <span class="token keyword">this</span><span class="token punctuation">.</span>maxRetryTimes<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token comment">// 构建jdbc查询语句statement</span>
+                <span class="token keyword">this</span><span class="token punctuation">.</span>statement<span class="token punctuation">.</span><span class="token function">clearParameters</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">this</span><span class="token punctuation">.</span>statement <span class="token operator">=</span> <span class="token keyword">this</span><span class="token punctuation">.</span>lookupKeyRowConverter<span class="token punctuation">.</span><span class="token function">toExternal</span><span class="token punctuation">(</span>keyRow<span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">.</span>statement<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token comment">// 执行查询语句，并获取resultSet</span>
+                <span class="token class-name">ResultSet</span> resultSet <span class="token operator">=</span> <span class="token keyword">this</span><span class="token punctuation">.</span>statement<span class="token punctuation">.</span><span class="token function">executeQuery</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name">Throwable</span> var5 <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+
+                <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">.</span>cache <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                        <span class="token keyword">while</span><span class="token punctuation">(</span>resultSet<span class="token punctuation">.</span><span class="token function">next</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                            <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token function">collect</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">.</span>jdbcRowConverter<span class="token punctuation">.</span><span class="token function">toInternal</span><span class="token punctuation">(</span>resultSet<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span>
+
+                        <span class="token keyword">return</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+
+                    <span class="token class-name">ArrayList</span> rows <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">ArrayList</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token comment">// 迭代resultSet</span>
+                    <span class="token keyword">while</span><span class="token punctuation">(</span>resultSet<span class="token punctuation">.</span><span class="token function">next</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                        <span class="token comment">// 转成内部数据类型RowData</span>
+                        <span class="token class-name">RowData</span> row <span class="token operator">=</span> <span class="token keyword">this</span><span class="token punctuation">.</span>jdbcRowConverter<span class="token punctuation">.</span><span class="token function">toInternal</span><span class="token punctuation">(</span>resultSet<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token comment">// 将数据装入到一个list后一次性输出</span>
+                        rows<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>row<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token function">collect</span><span class="token punctuation">(</span>row<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                    <span class="token comment">// 将查询到的数据，放入到缓存中</span>
+                    rows<span class="token punctuation">.</span><span class="token function">trimToSize</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">this</span><span class="token punctuation">.</span>cache<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span>keyRow<span class="token punctuation">,</span> rows<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">break</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Throwable</span> var20<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    var5 <span class="token operator">=</span> var20<span class="token punctuation">;</span>
+                    <span class="token keyword">throw</span> var20<span class="token punctuation">;</span>
+                <span class="token punctuation">}</span> <span class="token keyword">finally</span> <span class="token punctuation">{<!-- --></span>
+                  <span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">SQLException</span> var22<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+               <span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>look up join的实例：</p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">class</span> _04_LookUpJoin <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span> <span class="token keyword">throws</span> <span class="token class-name">Exception</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 创建flink sql的执行环境</span>
+        <span class="token class-name">StreamExecutionEnvironment</span> env <span class="token operator">=</span> <span class="token class-name">StreamExecutionEnvironment</span><span class="token punctuation">.</span><span class="token function">getExecutionEnvironment</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        env<span class="token punctuation">.</span><span class="token function">setParallelism</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token class-name">StreamTableEnvironment</span> tenv <span class="token operator">=</span> <span class="token class-name">StreamTableEnvironment</span><span class="token punctuation">.</span><span class="token function">create</span><span class="token punctuation">(</span>env<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">// 设置table环境中的状态时长ttl</span>
+        tenv<span class="token punctuation">.</span><span class="token function">getConfig</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">getConfiguration</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">setLong</span><span class="token punctuation">(</span><span class="token string">"table.exec.state.ttl"</span><span class="token punctuation">,</span><span class="token number">60</span> <span class="token operator">*</span> <span class="token number">60</span> <span class="token operator">*</span> <span class="token number">1000L</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">/**
+         * 1,a
+         * 2,b
+         * 3,c
+         * 4,d
+         * 5,e
+         */</span>
+        <span class="token class-name">SingleOutputStreamOperator</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">Tuple2</span><span class="token punctuation">&lt;</span><span class="token class-name">Integer</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span> ss1 <span class="token operator">=</span> env<span class="token punctuation">.</span><span class="token function">socketTextStream</span><span class="token punctuation">(</span><span class="token string">"hadoop01"</span><span class="token punctuation">,</span> <span class="token number">9999</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">map</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">MapFunction</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">Tuple2</span><span class="token punctuation">&lt;</span><span class="token class-name">Integer</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    <span class="token annotation punctuation">@Override</span>
+                    <span class="token keyword">public</span> <span class="token class-name">Tuple2</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">Integer</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> <span class="token function">map</span><span class="token punctuation">(</span><span class="token class-name">String</span> line<span class="token punctuation">)</span> <span class="token keyword">throws</span> <span class="token class-name">Exception</span> <span class="token punctuation">{<!-- --></span>
+                        <span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> arr <span class="token operator">=</span> line<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">","</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">return</span> <span class="token class-name">Tuple2</span><span class="token punctuation">.</span><span class="token function">of</span><span class="token punctuation">(</span><span class="token class-name">Integer</span><span class="token punctuation">.</span><span class="token function">parseInt</span><span class="token punctuation">(</span>arr<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">,</span> arr<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        <span class="token comment">// 创建主表（需要声明处理时间属性字段）</span>
+        tenv<span class="token punctuation">.</span><span class="token function">createTemporaryView</span><span class="token punctuation">(</span><span class="token string">"a"</span><span class="token punctuation">,</span>ss1<span class="token punctuation">,</span> <span class="token class-name">Schema</span><span class="token punctuation">.</span><span class="token function">newBuilder</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">column</span><span class="token punctuation">(</span><span class="token string">"f0"</span><span class="token punctuation">,</span> <span class="token class-name">DataTypes</span><span class="token punctuation">.</span><span class="token function">INT</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">column</span><span class="token punctuation">(</span><span class="token string">"f1"</span><span class="token punctuation">,</span> <span class="token class-name">DataTypes</span><span class="token punctuation">.</span><span class="token function">STRING</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">columnByExpression</span><span class="token punctuation">(</span><span class="token string">"pt"</span><span class="token punctuation">,</span><span class="token string">"proctime()"</span><span class="token punctuation">)</span> <span class="token comment">// 定义处理时间属性字段</span>
+                <span class="token punctuation">.</span><span class="token function">build</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 创建lookup 维表（jdbc connector表）</span>
+        <span class="token class-name">String</span> lookUpSql <span class="token operator">=</span> <span class="token string">"-- register a MySQL table 'users' in Flink SQL\n"</span> <span class="token operator">+</span>
+                <span class="token string">"CREATE TABLE b (\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  id int,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  name STRING,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  gender STRING,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  PRIMARY KEY (id) NOT ENFORCED\n"</span> <span class="token operator">+</span>
+                <span class="token string">") WITH (\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   'connector' = 'jdbc',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   'url' = 'jdbc:mysql://localhost:3306/ycak',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   'table-name' = 'users',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   'username' = 'root',\n"</span> <span class="token operator">+</span>
+                <span class="token string">"   'password' = 'zsd123456'\n"</span> <span class="token operator">+</span>
+                <span class="token string">")"</span><span class="token punctuation">;</span>
+
+        tenv<span class="token punctuation">.</span><span class="token function">executeSql</span><span class="token punctuation">(</span>lookUpSql<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// lookup join查询</span>
+        <span class="token class-name">String</span> lookupSelectSql <span class="token operator">=</span> <span class="token string">"select\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a.*,\n"</span> <span class="token operator">+</span>
+                <span class="token string">"  c.*\n"</span> <span class="token operator">+</span>
+                <span class="token string">"from \n"</span> <span class="token operator">+</span>
+                <span class="token string">"  a join b FOR SYSTEM_TIME AS OF a.pt as c\n"</span> <span class="token operator">+</span>
+                <span class="token string">"on a.f0 = c.id"</span><span class="token punctuation">;</span>
+        tenv<span class="token punctuation">.</span><span class="token function">executeSql</span><span class="token punctuation">(</span>lookupSelectSql<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">print</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        env<span class="token punctuation">.</span><span class="token function">execute</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="3Interval_join_526"></a>（3）Interval join</h3>
+<p>nterval Join：流与流的 Join，两条流一段时间区间内的 Join。Interval Join 可以让一条流去 Join 另一条流中前后一段时间内的数据</p>
+<p>Regular Join 会产生回撤流，但是在实时数仓中一般写入的 sink 都是类似于 Kafka 这样的消息队列，然后后面接 clickhouse 等引擎，这些引擎又不具备处理回撤流的能力。 Interval Join 就是用于消灭回撤流的。</p>
+<p>实际案例：曝光日志关联点击日志筛选既有曝光又有点击的数据，条件是曝光之后发生 4 小时之内的点击，并且补充点击的扩展参数（show inner interval click）</p>
+<pre><code class="prism language-sql"><span class="token keyword">INSERT</span> <span class="token keyword">INTO</span> sink_table
+<span class="token keyword">SELECT</span>
+    show_log_table<span class="token punctuation">.</span>log_id <span class="token keyword">as</span> s_id<span class="token punctuation">,</span>
+    show_log_table<span class="token punctuation">.</span>show_params <span class="token keyword">as</span> s_params<span class="token punctuation">,</span>
+    click_log_table<span class="token punctuation">.</span>log_id <span class="token keyword">as</span> c_id<span class="token punctuation">,</span>
+    click_log_table<span class="token punctuation">.</span>click_params <span class="token keyword">as</span> c_params
+<span class="token keyword">FROM</span> show_log_table 
+<span class="token keyword">INNER</span> <span class="token keyword">JOIN</span> click_log_table <span class="token keyword">ON</span> show_log_table<span class="token punctuation">.</span>log_id <span class="token operator">=</span> click_log_table<span class="token punctuation">.</span>log_id
+<span class="token operator">AND</span> show_log_table<span class="token punctuation">.</span>row_time <span class="token operator">BETWEEN</span> click_log_table<span class="token punctuation">.</span>row_time <span class="token operator">-</span> <span class="token keyword">INTERVAL</span> <span class="token string">'4'</span> <span class="token keyword">HOUR</span> <span class="token operator">AND</span> click_log_table<span class="token punctuation">.</span>row_time<span class="token punctuation">;</span>
+
+</code></pre>
+<p><strong>时间区间条件的可用语法：</strong></p>
+<ul><li><code>l_time = r_time</code></li><li><code>l_time &gt;= r_time AND l_time &lt; + INTERVAL '10' MINUTE</code></li><li><code>l_time BETWEEN r_time - INTERVAL '10' SECOND AND r_time + INTERVAL '5' SECOND</code></li></ul>
+<h3><a id="4temporal_joinjoinjoin_550"></a>（4）temporal join(时态join/版本join)</h3>
+<p>左表的数据永远去关联右表数据的对应时间上的最新版本</p>
+<pre><code class="prism language-sql"><span class="token comment">-- 有如下交易订单表（订单id，金额，货币，时间）</span>
+<span class="token number">1</span><span class="token punctuation">,</span><span class="token number">88</span><span class="token punctuation">,</span>e<span class="token punctuation">,</span><span class="token number">1000</span>
+<span class="token number">2</span><span class="token punctuation">,</span><span class="token number">88</span><span class="token punctuation">,</span>e<span class="token punctuation">,</span><span class="token number">2000</span>
+<span class="token number">3</span><span class="token punctuation">,</span><span class="token number">68</span><span class="token punctuation">,</span>e<span class="token punctuation">,</span><span class="token number">3000</span>
+
+<span class="token comment">-- 有如下汇率表(货币，汇率，更新时间)</span>
+e<span class="token punctuation">,</span><span class="token number">1.0</span><span class="token punctuation">,</span><span class="token number">1000</span>
+e<span class="token punctuation">,</span><span class="token number">2.0</span><span class="token punctuation">,</span><span class="token number">3000</span>
+
+
+<span class="token comment">-- temporal join的结果如下</span>
+<span class="token number">1</span><span class="token punctuation">,</span><span class="token number">88</span><span class="token punctuation">,</span>e<span class="token punctuation">,</span><span class="token number">1000</span><span class="token punctuation">,</span><span class="token number">1.0</span>
+<span class="token number">2</span><span class="token punctuation">,</span><span class="token number">88</span><span class="token punctuation">,</span>e<span class="token punctuation">,</span><span class="token number">2000</span><span class="token punctuation">,</span><span class="token number">1.0</span>
+<span class="token number">3</span><span class="token punctuation">,</span><span class="token number">68</span><span class="token punctuation">,</span>e<span class="token punctuation">,</span><span class="token number">3000</span><span class="token punctuation">,</span><span class="token number">2.0</span>
+</code></pre>
+<pre><code class="prism language-sql"><span class="token comment">-- 创建表orders</span>
+<span class="token comment">-- append-only表</span>
+<span class="token keyword">create</span> <span class="token keyword">table</span> orders<span class="token punctuation">(</span>
+  order_id STRING<span class="token punctuation">,</span>
+  price <span class="token keyword">decimal</span><span class="token punctuation">(</span><span class="token number">32</span><span class="token punctuation">,</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+  currency STRING<span class="token punctuation">,</span>
+  order_time <span class="token keyword">TIMESTAMP</span><span class="token punctuation">(</span><span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+  watermark <span class="token keyword">for</span> order_time <span class="token keyword">as</span>  order_time
+<span class="token punctuation">)</span><span class="token keyword">with</span> <span class="token punctuation">(</span><span class="token comment">/*...*/</span><span class="token punctuation">)</span>
+
+<span class="token comment">-- 创建汇率表，比如从cdc过来的表</span>
+<span class="token keyword">create</span> <span class="token keyword">table</span> currency_rates<span class="token punctuation">(</span>
+  currency STRING<span class="token punctuation">,</span>
+  conversion_rate <span class="token keyword">decimal</span><span class="token punctuation">(</span><span class="token number">32</span><span class="token punctuation">,</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+  update_time <span class="token keyword">TIMESTAMP</span><span class="token punctuation">(</span><span class="token number">3</span><span class="token punctuation">)</span> METADATA <span class="token keyword">from</span> <span class="token string">'values.source.timestamp'</span> VIRTUAL<span class="token punctuation">,</span>
+  watermark <span class="token keyword">for</span> update_time <span class="token keyword">as</span>  update_time<span class="token punctuation">,</span>
+  <span class="token keyword">PRIMARY</span> <span class="token keyword">KEY</span> <span class="token punctuation">(</span>currency<span class="token punctuation">)</span> <span class="token operator">NOT</span> ENFORCED
+<span class="token punctuation">)</span><span class="token keyword">with</span> <span class="token punctuation">(</span>
+<span class="token string">'connector'</span> <span class="token operator">=</span> <span class="token string">'kafka'</span><span class="token punctuation">,</span>
+<span class="token string">'value.format'</span> <span class="token operator">=</span> <span class="token string">'debezium-json'</span><span class="token punctuation">,</span>
+<span class="token comment">/*...*/</span>
+<span class="token punctuation">)</span>
+
+
+<span class="token keyword">SELECT</span>
+    order_id<span class="token punctuation">,</span>
+    price<span class="token punctuation">,</span>
+    currency<span class="token punctuation">,</span>
+    conversion_rate<span class="token punctuation">,</span>
+    order_time
+<span class="token keyword">FROM</span> orders
+<span class="token keyword">LEFT</span> <span class="token keyword">JOIN</span> currency_rates <span class="token keyword">FOR</span> SYSTEM_TIMEAS <span class="token keyword">OF</span> orders<span class="token punctuation">.</span>order_time 
+<span class="token keyword">ON</span> orders<span class="token punctuation">.</span>currency <span class="token operator">=</span> currency_rates<span class="token punctuation">.</span>currency<span class="token punctuation">;</span>
+
+</code></pre>
+<h3><a id="5_608"></a>（5）窗口聚合</h3>
+<p>row_number() over ()</p>
+<p>flinksql中，over聚合时，指定聚合数据区间有两种方式<br/> <strong>方式1，带时间设定区间</strong><br/> <code>RANGE BETWEEN INTERVAL '30'MINUTE PRECEDING AND CURRENT ROW</code><br/> <strong>方式2，按行设定区间</strong><br/> <code>ROWS BETWEEN 10 PRECEDING AND CURRENT ROW</code></p>
+<pre><code class="prism language-sql"><span class="token keyword">SELECT</span> 
+  order_id<span class="token punctuation">,</span> 
+  order_time<span class="token punctuation">,</span> 
+  amount<span class="token punctuation">,</span>
+  <span class="token function">SUM</span><span class="token punctuation">(</span>amount<span class="token punctuation">)</span> <span class="token keyword">OVER</span><span class="token punctuation">(</span> <span class="token keyword">PARTITION</span> <span class="token keyword">BY</span> productORDER <span class="token keyword">BY</span> order_time RANGE <span class="token operator">BETWEEN</span> <span class="token keyword">INTERVAL</span> <span class="token string">'1'</span> <span class="token keyword">HOUR</span> <span class="token keyword">PRECEDING</span> <span class="token operator">AND</span> <span class="token keyword">CURRENT</span> <span class="token keyword">ROW</span> <span class="token punctuation">)</span> <span class="token keyword">AS</span> one_hour_prod_amount_sum
+<span class="token keyword">FROM</span> Orders
+</code></pre>
+<p><strong>over window可以单独定义并重复使用，从而简化代码</strong></p>
+<pre><code class="prism language-sql">
+<span class="token keyword">SELECT</span> 
+  order_id<span class="token punctuation">,</span> 
+  order_time<span class="token punctuation">,</span> 
+  amount<span class="token punctuation">,</span>
+  <span class="token function">SUM</span><span class="token punctuation">(</span>amount<span class="token punctuation">)</span> <span class="token keyword">OVER</span> w <span class="token keyword">AS</span> sum_amount<span class="token punctuation">,</span>
+  <span class="token function">AVG</span><span class="token punctuation">(</span>amount<span class="token punctuation">)</span> <span class="token keyword">OVER</span> w <span class="token keyword">AS</span> avg_amount 
+  <span class="token keyword">FROM</span> Orders
+
+WINDOW w <span class="token keyword">AS</span> <span class="token punctuation">(</span>
+<span class="token keyword">PARTITION</span> <span class="token keyword">BY</span> product <span class="token keyword">ORDER</span> <span class="token keyword">BY</span> order_time RANGE <span class="token operator">BETWEEN</span> <span class="token keyword">INTERVAL</span> <span class="token string">'1'</span> <span class="token keyword">HOUR</span> <span class="token keyword">PRECEDING</span> <span class="token operator">AND</span> <span class="token keyword">CURRENT</span> <span class="token keyword">ROW</span> <span class="token punctuation">)</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

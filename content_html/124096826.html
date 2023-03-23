@@ -1,0 +1,154 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="PicoXR_0"></a>PicoXR中的手柄射线</h2>
+<h3><a id="_2"></a>前言</h3>
+<p>​ 本文是继PicoXR中的输入事件博客的进一步补充，针对手柄的射线相关API进行解析，并以VR水果忍者为例子封装手柄射线的事件。</p>
+<h3><a id="_8"></a>手柄射线的获取</h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b6227a01f80f409581fe33c367795b18.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA56qX5aSW5ZCs6L2p6Zuo,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<ul><li> <p><strong>XRRayInteractor 关键脚本，由Unity XR提供的射线交互器脚本</strong></p> </li><li> <p>有关此脚本详细的API请参考官方UnityXR的手册<a href="https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@1.0/api/UnityEngine.XR.Interaction.Toolkit.XRRayInteractor.html">Class XRRayInteractor | XR Interaction Toolkit | 1.0.0-pre.8 (unity3d.com)</a></p> </li><li> <p>下面介绍一些较为常用的获取射线和获取击中点的方式</p> </li><li> <pre><code class="prism language-csharp"><span class="token class-name">XRRayInteractor</span> leftInteractor<span class="token punctuation">;</span> <span class="token comment">//以左手的射线交互器为例</span>
+<span class="token comment">//省略获取脚本的方法，根据名称标签等根据项目而定</span>
+<span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">RayTest</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//接收out输出</span>
+	<span class="token class-name">RaycastHit</span> rayInfo<span class="token punctuation">;</span>
+    <span class="token comment">//获取左手当前的射线结果RaycastHit</span>
+    leftInteractor<span class="token punctuation">.</span><span class="token function">GetCurrentRaycastHit</span><span class="token punctuation">(</span><span class="token keyword">out</span> rayInfo<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//后续就可以通过rayInfo获取射线击中的碰撞体等等操作</span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span>rayInfo<span class="token punctuation">.</span>collider <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span><span class="token punctuation">}</span>
+    
+    
+    <span class="token comment">//还有一个方法，直接尝试获取各个射线击中的信息，不如上述方法方便</span>
+    <span class="token class-name">Vector3</span> position <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Vector3</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>  <span class="token comment">//击中点的坐标</span>
+    <span class="token class-name">Vector3</span> normal <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Vector3</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>    <span class="token comment">//击中点的法线向量</span>
+    <span class="token class-name"><span class="token keyword">int</span></span> positionInLine <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token class-name"><span class="token keyword">bool</span></span> isValidTarget <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span> <span class="token comment">//是否是有效的目标 击中目标是否是可交互的</span>
+    <span class="token comment">//尝试获取击中点的若干信息，若击中返回true 若未击中发回false</span>
+    leftInteractor<span class="token punctuation">.</span><span class="token function">TryGetHitInfo</span><span class="token punctuation">(</span><span class="token keyword">ref</span> position<span class="token punctuation">,</span><span class="token keyword">ref</span> normal<span class="token punctuation">,</span><span class="token keyword">ref</span> positionInLine<span class="token punctuation">,</span><span class="token keyword">ref</span> isValidTarget<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//注：新版Unity XR 的API中ref的形式已经由out代替</span>
+<span class="token punctuation">}</span>
+</code></pre> </li></ul>
+<h3><a id="_44"></a>射线使用举例</h3>
+<p>​ 在VR水果忍者中，非常重要的一点就是判断水果的切割方向，然后根据切割方向播放相应的特效和水果裂开的模型。可以考虑使用射线检测，碰到水果时产生切割。<strong>仅仅靠射线肯定无法知道切割的方向，所以我们还需知道手柄在切割时的挥动方向</strong>。</p>
+<p>​ 下面以Pico neo3的Unity XR SDK为例，介绍其PXR_Input的相关方法，有关更具体的脚本用法，可以参考Pico的官方文档。<a href="https://developer.pico-interactive.com/document/doc">Documentation - Pico开发者平台 (pico-interactive.com)</a></p>
+<pre><code class="prism language-csharp"><span class="token comment">//预测控制器在0.1秒后的位置</span>
+<span class="token class-name">Vector3</span> targetPos <span class="token operator">=</span> PXR_Input<span class="token punctuation">.</span>GetControllerPredictPosition
+                    <span class="token punctuation">(</span>Controller<span class="token punctuation">.</span>LeftController<span class="token punctuation">,</span> <span class="token number">0.1f</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//知道此位置后 和当前位置做差就可以得到切割方向的方向向量了</span>
+<span class="token comment">//获取手柄挥动方向向量</span>
+<span class="token class-name">Vector3</span> predictDir <span class="token operator">=</span> targetPos <span class="token operator">-</span> leftInteractor<span class="token punctuation">.</span>transform<span class="token punctuation">.</span>position<span class="token punctuation">;</span>
+</code></pre>
+<p>​ 根据上面的挥动向量配合射线检测，就能实现切割的输入事件了，但是如果直接使用此逻辑去判断，势必会造成输入和逻辑的紧耦合，所以这里也应该将射线检测封装成事件，供外部注册，采用观察者模式进行。</p>
+<p>​ 由于射线检测传递的数据一般不只一项，这里采用C#提供的EventHandler委托配合事件参数类来封装左右手柄控制器的射线切割事件，详细源码如下：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">namespace</span> <span class="token namespace">VRFruit<span class="token punctuation">.</span>InputSystem</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//事件数据类</span>
+	<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">RayEventArgs</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">EventArgs</span></span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token comment">/// &lt;summary&gt;</span>
+		<span class="token comment">/// 射线信息</span>
+		<span class="token comment">/// &lt;/summary&gt;</span>
+		<span class="token keyword">public</span> <span class="token class-name">RaycastHit</span> rayInfo<span class="token punctuation">;</span>
+
+		<span class="token comment">/// &lt;summary&gt;</span>
+		<span class="token comment">/// 预测挥动方向向量</span>
+		<span class="token comment">/// &lt;/summary&gt;</span>
+		<span class="token keyword">public</span> <span class="token class-name">Vector3</span> predictDir<span class="token punctuation">;</span>
+
+		<span class="token keyword">public</span> <span class="token function">RayEventArgs</span><span class="token punctuation">(</span><span class="token class-name">RaycastHit</span> rayInfo<span class="token punctuation">,</span><span class="token class-name">Vector3</span> predictDir<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+			<span class="token keyword">this</span><span class="token punctuation">.</span>rayInfo <span class="token operator">=</span> rayInfo<span class="token punctuation">;</span>
+			<span class="token keyword">this</span><span class="token punctuation">.</span>predictDir <span class="token operator">=</span> predictDir<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+
+<span class="token keyword">namespace</span> <span class="token namespace">VRFruit<span class="token punctuation">.</span>InputSystem</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token comment">/// &lt;summary&gt;</span>
+	<span class="token comment">/// 提供输入事件 事件源</span>
+	<span class="token comment">/// &lt;/summary&gt;</span>
+	<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">InputEventCenter</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+	<span class="token punctuation">{<!-- --></span>
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 公开事件</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 左手柄射线击中到Interactive物体事件</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token keyword">public</span> <span class="token keyword">event</span> <span class="token class-name">EventHandler<span class="token punctuation">&lt;</span>RayEventArgs<span class="token punctuation">&gt;</span></span> onCutInteractionObjectL<span class="token punctuation">;</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 右手柄射线击中到Interactive物体事件</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token keyword">public</span> <span class="token keyword">event</span> <span class="token class-name">EventHandler<span class="token punctuation">&lt;</span>RayEventArgs<span class="token punctuation">&gt;</span></span> onCutInteractionObjectR<span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+
+        <span class="token comment">/*      属性      */</span>
+        <span class="token class-name">XRRayInteractor</span> leftInteractor<span class="token punctuation">;</span>
+        <span class="token class-name">XRRayInteractor</span> rightInteractor<span class="token punctuation">;</span>
+
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Awake</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            leftInteractor <span class="token operator">=</span> transform<span class="token punctuation">.</span>
+                <span class="token function">FindChildByName</span><span class="token punctuation">(</span>InputVariables<span class="token punctuation">.</span>LEFTHAND_CONTROLLER_NAME<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token generic-method"><span class="token function">GetComponent</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>XRRayInteractor<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            rightInteractor <span class="token operator">=</span> transform<span class="token punctuation">.</span>
+                <span class="token function">FindChildByName</span><span class="token punctuation">(</span>InputVariables<span class="token punctuation">.</span>RIGHTHAND_CONTROLLER_NAME<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token generic-method"><span class="token function">GetComponent</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>XRRayInteractor<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Update</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token function">CutInteractionObjectL</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token function">CutInteractionObjectR</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">CutInteractionObjectL</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">RaycastHit</span> rayInfo<span class="token punctuation">;</span>
+            leftInteractor<span class="token punctuation">.</span><span class="token function">GetCurrentRaycastHit</span><span class="token punctuation">(</span><span class="token keyword">out</span> rayInfo<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>rayInfo<span class="token punctuation">.</span>collider <span class="token operator">!=</span> <span class="token keyword">null</span> <span class="token operator">&amp;&amp;</span> rayInfo<span class="token punctuation">.</span>collider<span class="token punctuation">.</span>tag <span class="token operator">==</span> InputVariables<span class="token punctuation">.</span>INTERACTION_TAG<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token comment">//预测手柄固定时间后的位置</span>
+                <span class="token class-name">Vector3</span> targetPos <span class="token operator">=</span> PXR_Input<span class="token punctuation">.</span>GetControllerPredictPosition
+                    <span class="token punctuation">(</span>Controller<span class="token punctuation">.</span>LeftController<span class="token punctuation">,</span> InputVariables<span class="token punctuation">.</span>PREDICT_TIME<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token comment">//获取手柄挥动方向向量</span>
+                <span class="token class-name">Vector3</span> predictDir <span class="token operator">=</span> targetPos <span class="token operator">-</span> leftInteractor<span class="token punctuation">.</span>transform<span class="token punctuation">.</span>position<span class="token punctuation">;</span>
+                <span class="token comment">//封装事件参数</span>
+                <span class="token class-name">RayEventArgs</span> args <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">RayEventArgs</span><span class="token punctuation">(</span>rayInfo<span class="token punctuation">,</span> predictDir<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                <span class="token keyword">if</span><span class="token punctuation">(</span>onCutInteractionObjectL<span class="token operator">!=</span><span class="token keyword">null</span><span class="token punctuation">)</span>
+                    <span class="token function">onCutInteractionObjectL</span><span class="token punctuation">(</span><span class="token keyword">null</span><span class="token punctuation">,</span>args<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">CutInteractionObjectR</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">RaycastHit</span> rayInfo<span class="token punctuation">;</span>
+            rightInteractor<span class="token punctuation">.</span><span class="token function">GetCurrentRaycastHit</span><span class="token punctuation">(</span><span class="token keyword">out</span> rayInfo<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>rayInfo<span class="token punctuation">.</span>collider <span class="token operator">!=</span> <span class="token keyword">null</span> <span class="token operator">&amp;&amp;</span> rayInfo<span class="token punctuation">.</span>collider<span class="token punctuation">.</span>tag <span class="token operator">==</span> InputVariables<span class="token punctuation">.</span>INTERACTION_TAG<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token comment">//预测手柄固定时间后的位置</span>
+                <span class="token class-name">Vector3</span> targetPos <span class="token operator">=</span> PXR_Input<span class="token punctuation">.</span>GetControllerPredictPosition
+                    <span class="token punctuation">(</span>Controller<span class="token punctuation">.</span>RightController<span class="token punctuation">,</span> InputVariables<span class="token punctuation">.</span>PREDICT_TIME<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token comment">//获取手柄挥动方向向量</span>
+                <span class="token class-name">Vector3</span> predictDir <span class="token operator">=</span> targetPos <span class="token operator">-</span> rightInteractor<span class="token punctuation">.</span>transform<span class="token punctuation">.</span>position<span class="token punctuation">;</span>
+                <span class="token comment">//封装事件参数</span>
+                <span class="token class-name">RayEventArgs</span> args <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">RayEventArgs</span><span class="token punctuation">(</span>rayInfo<span class="token punctuation">,</span> predictDir<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                <span class="token keyword">if</span><span class="token punctuation">(</span>onCutInteractionObjectR<span class="token operator">!=</span><span class="token keyword">null</span><span class="token punctuation">)</span>
+                    <span class="token function">onCutInteractionObjectR</span><span class="token punctuation">(</span><span class="token keyword">null</span><span class="token punctuation">,</span> args<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

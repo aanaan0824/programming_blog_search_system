@@ -1,0 +1,436 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>一直对于QT的理解和使用都停留在主窗口程序和控制台程序，虽然QT的新东西QML听过也接触过，但是基本上没梳理过调用流程。趁着旧项目要使用QML技术，现在就将C++和QML交互进行总结。</p>
+<p>在C++和QML中均可以定义信号和槽，并且均可以完成信号和槽的绑定</p>
+<h1>一. QML中使用C++业务类</h1>
+<p>基本流程如下：</p>
+<p>1.将C++注册进入QML引擎，C++类型在qml中当成一个子组件使用</p>
+<p>2.在qml中完成信号与槽的绑定</p>
+<p>测试代码：</p>
+<p>1.QML定义</p>
+<p>main.qml</p>
+<pre><code class="language-javascript">import QtQuick 2.7
+import QtQuick.Window 2.2
+
+import WorkClass 1.0
+
+Window {
+    id: root
+    visible: true
+    width: 640
+    height: 480
+    title: qsTr("Hello World")
+
+    signal qmlSignal1
+    signal qmlSignal2(string strValue, int iValue)
+
+    MainForm {
+        anchors.fill: parent
+        mouseArea.onClicked: {
+            Qt.quit();
+        }
+    }
+
+    MouseArea{
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onClicked: {
+            if(mouse.button === Qt.LeftButton){
+                console.log(' Qt.LeftButton')
+                bussiness.strValue = "HelloCpp"
+                bussiness.intValue = 2022
+                bussiness.sendSignal()
+            }else{
+                console.log(' Qt.RightButton')
+                root.qmlSignal1()
+                root.qmlSignal2('hesy', 2000)
+            }
+        }
+    }
+
+    CBusiness{
+        id: bussiness
+        property int addpro: 0
+
+        onIntValueChanged: {
+            console.log('qml onIntValueChanged', "begin change addpro ", addpro)
+            addpro++
+            console.log('qml onIntValueChanged', addpro)
+        }
+
+        onAddproChanged: {
+            console.log('qml onAddFun', addpro)
+        }
+    }
+
+    Component.onCompleted: {
+        bussiness.onSignal1.connect(function(){console.log('no name qml function')})
+        bussiness.onSignal2.connect(qmlProcess1)
+        root.qmlSignal1.connect(bussiness.slot1)
+        root.qmlSignal2.connect(bussiness.slot2)
+        console.log('Component.onCompleted')
+    }
+
+    function qmlProcess1(str, value){
+        console.log('qmlProcess1', str, value)
+    }
+}
+</code></pre>
+<p>2.C++业务类定义和实现</p>
+<p>cbusiness.h</p>
+<pre><code class="language-cpp">#ifndef CBUSINESS_H
+#define CBUSINESS_H
+
+#include &lt;QObject&gt;
+
+class CBusiness : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString strValue READ getStrValue WRITE setStrValue NOTIFY strValueChanged)
+    Q_PROPERTY(int intValue READ getIntValue WRITE setIntValue NOTIFY intValueChanged)
+
+public:
+    explicit CBusiness(QObject *parent = 0);
+    Q_INVOKABLE void sendSignal();
+
+    void setStrValue(QString strValue);
+    QString getStrValue() const;
+    void setIntValue(int intValue);
+    int getIntValue() const;
+
+signals:
+    void signal1();
+    void signal2(QString strValue, int intValue);
+    void strValueChanged(QString strValue);
+    void intValueChanged(int intValue);
+
+public slots:
+    void slot1();
+    void slot2(QString strValue, int intValue);
+
+private:
+    //类的属性
+    QString m_strValue;
+    int m_intValue;
+};
+
+#endif // CBUSINESS_H
+</code></pre>
+<p>cbusiness.cpp</p>
+<pre><code class="language-cpp">#include "cbusiness.h"
+#include &lt;QDebug&gt;
+
+CBusiness::CBusiness(QObject *parent) : QObject(parent), m_strValue(""), m_intValue(0)
+{
+}
+
+
+void CBusiness::sendSignal()
+{
+    qDebug() &lt;&lt; "CBusiness::" &lt;&lt; __FUNCTION__;
+    emit signal1();
+    emit signal2(m_strValue, m_intValue);
+}
+
+void CBusiness::setStrValue(QString strValue)
+{
+    qDebug() &lt;&lt; "CBusiness::" &lt;&lt; __FUNCTION__ &lt;&lt; strValue;
+    m_strValue = strValue;
+    emit strValueChanged(strValue);
+    qDebug()&lt;&lt; "CBusiness::" &lt;&lt; "emit strValueChanged" &lt;&lt; endl;
+}
+
+QString CBusiness::getStrValue() const
+{
+    qDebug() &lt;&lt; "CBusiness::" &lt;&lt; __FUNCTION__;
+    return m_strValue;
+}
+
+void CBusiness::setIntValue(int intValue)
+{
+    qDebug() &lt;&lt; "CBusiness::" &lt;&lt; __FUNCTION__;
+    m_intValue = intValue;
+    emit intValueChanged(intValue);
+    qDebug()&lt;&lt; "CBusiness::" &lt;&lt; "emit intValueChanged";
+}
+
+
+int CBusiness::getIntValue() const
+{
+    qDebug() &lt;&lt; "CBusiness::" &lt;&lt; __FUNCTION__;
+    return m_intValue;
+}
+
+void CBusiness::slot1()
+{
+    qDebug() &lt;&lt; "CBusiness::" &lt;&lt; __FUNCTION__;
+}
+
+void CBusiness::slot2(QString strValue, int intValue)
+{
+    qDebug() &lt;&lt; "CBusiness::" &lt;&lt; __FUNCTION__;
+    qDebug() &lt;&lt; "CBusiness:: " &lt;&lt; strValue &lt;&lt; "  " &lt;&lt; intValue;
+}
+</code></pre>
+<p>3.主调函数</p>
+<p>main.cpp</p>
+<pre><code class="language-cpp">#include &lt;QGuiApplication&gt;
+#include &lt;QQmlApplicationEngine&gt;
+
+#include "cbusiness.h"
+
+int main(int argc, char *argv[])
+{
+    QGuiApplication app(argc, argv);
+
+    //qmlRegisterType注册C++类型至QML
+    //arg1:import时模块名
+    //arg2:主版本号
+    //arg3:次版本号
+    //arg4:QML类型名
+    qmlRegisterType&lt;CBusiness&gt;("WorkClass", 1, 0, "CBusiness");
+
+    QQmlApplicationEngine engine;
+    engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
+    if (engine.rootObjects().isEmpty())
+        return -1;
+
+    return app.exec();
+}
+</code></pre>
+<p>4.测试结果</p>
+<p>鼠标左键点击：</p>
+<p><img alt="" height="396" src="image\80ed9feb7919444d8229a475485ca525.png" width="1092"/></p>
+<p> 说明：</p>
+<p>信号和槽的绑定在qml中完成，鼠标左键按下，首先打印：qml: Qt.LeftButton</p>
+<p>bussiness.strValue = "HelloCpp" 触发 CBusiness::setStrValue（</p>
+<p>因为如下：</p>
+<pre>Q_PROPERTY(QString strValue READ getStrValue WRITE setStrValue NOTIFY strValueChanged)</pre>
+<p>此处= "HelloCpp" 其实是调用的setStrValue</p>
+<p>）调用</p>
+<p>bussiness.intValue = 2022触发CBusiness::setIntValue（</p>
+<pre>因为如下：
+Q_PROPERTY(int intValue READ getIntValue WRITE setIntValue NOTIFY intValueChanged)</pre>
+<p>此处= 2022其实是调用的setIntValue</p>
+<p>）调用， 然后调用emit strValueChanged(strValue);，触发qml中 onIntValueChanged调用，接着addpro++触发onAddproChanged调用</p>
+<p>最后调用CBusiness::sendSignal()，触发emit signal1(); emit signal2(m_strValue, m_intValue);信号，调用qml的槽 </p>
+<pre>function(){console.log('no name qml function')</pre>
+<p>和</p>
+<pre>function qmlProcess1(str, value)
+</pre>
+<p>鼠标右键点击：</p>
+<p><img alt="" height="144" src="image\5b19b450d27b4f4cbf6f2c315db25c0b.png" width="840"/></p>
+<p> 说明：</p>
+<p>鼠标右键，通过qml信号调用到c++的槽函数，并且还传递参数给c++</p>
+<h1>二.C++使用QML</h1>
+<p>基本流程如下：</p>
+<p>1.在C++中获得qml对象指针</p>
+<p>2.在C++中完成信号和槽的绑定</p>
+<p>测试代码：</p>
+<p>1.QML定义</p>
+<p>main.qml</p>
+<pre><code class="language-javascript">import QtQuick 2.7
+import QtQuick.Window 2.2
+
+Item {
+    id: root
+    visible: true
+    width: 640
+    height: 480
+    //title: qsTr("Hello World")
+
+    property string msg: "I am QML Item"
+    signal callCpp(string arg1, string arg2)
+
+    MainForm {
+        anchors.fill: parent
+        mouseArea.onClicked: {
+            Qt.quit();
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: "blue"
+        objectName: "rect"
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: {
+            console.log("onClicked, callCpp")
+            root.callCpp(root.msg, "notify cpp")
+        }
+    }
+
+    onHeightChanged: {
+        console.log("onHeightChanged execute")
+    }
+    onWidthChanged: {
+        console.log("onWidthChanged execute")
+    }
+
+
+    //QML中的方法可以被cpp调用，也可以作为槽函数
+    function qmlFun(val_arg) {
+        console.log("qmlFun execute", val_arg, "return qmlFun_return_result")
+        return "qmlFun_return_result"
+    }
+    //注意槽函数参数为var类型
+    function invokeFromCpp(arg1, arg2) {
+        console.log("invokeFromCpp execute ", arg1, arg2)
+    }
+}
+</code></pre>
+<p>2.C++业务类定义和实现</p>
+<p>cbusiness.h</p>
+<pre><code class="language-cpp">#ifndef CBUSINESS_H
+#define CBUSINESS_H
+
+#include &lt;QObject&gt;
+
+class CBusiness : public QObject
+{
+    Q_OBJECT
+public:
+    explicit CBusiness(QObject *parent = 0);
+
+signals:
+    void callQml(const QVariant &amp;arg1,const QVariant &amp;arg2);
+
+public slots:
+    void invokeFromQml(const QString &amp;arg1,const QString &amp;arg2);
+};
+
+#endif // CBUSINESS_H
+</code></pre>
+<p>cbusiness.cpp</p>
+<pre><code class="language-cpp">#include "cbusiness.h"
+
+#include &lt;QDebug&gt;
+
+CBusiness::CBusiness(QObject *parent) : QObject(parent)
+{
+
+}
+
+void CBusiness::invokeFromQml(const QString &amp;arg1,const QString &amp;arg2)
+{
+    qDebug() &lt;&lt; "CBusiness::" &lt;&lt; __FUNCTION__ &lt;&lt; arg1 &lt;&lt; arg2;
+    qDebug() &lt;&lt; "CBusiness::" &lt;&lt; __FUNCTION__ &lt;&lt; " emit callQml";
+    emit callQml("I am cpp", "notify qml");
+}
+</code></pre>
+<p>3.主调函数</p>
+<p>main.cpp</p>
+<pre><code class="language-cpp">#include &lt;QGuiApplication&gt;
+#include &lt;QQmlApplicationEngine&gt;
+#include &lt;QQmlProperty&gt;
+#include &lt;QQuickView&gt;
+#include &lt;QQuickItem&gt;
+#include &lt;QMetaObject&gt;
+#include &lt;QDebug&gt;
+
+#include "cbusiness.h"
+
+int main(int argc, char *argv[])
+{
+    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+
+    QGuiApplication app(argc, argv);
+
+    /*
+    可以用QQmlComponent\QQuickView\QQuickWidget的C++代码加载QML文档
+    当使用QQuickView时，qml的根不能是Window
+    */
+    QQuickView view(QUrl("qrc:/main.qml"));
+    view.show();
+
+    // 获取到qml根对象的指针
+    QObject *qmlObj = view.rootObject();
+
+
+        /*
+        修改qml属性值的方法
+        QObject::setProperty()  QQmlProperty  QMetaProperty::write()
+        */
+
+    // 通过QObject设置属性值
+    qDebug() &lt;&lt; "cpp: " &lt;&lt; "set qml property height";
+    QQmlProperty(qmlObj, "height").write(500);  //qmlObj-&gt;setProperty("height",500);
+    // 通过QObject获取属性值
+    qDebug() &lt;&lt; "cpp: " &lt;&lt; "get qml property height" &lt;&lt; qmlObj-&gt;property("height").toDouble();
+    // C++访问qml的其它属性
+    qDebug() &lt;&lt; "cpp: " &lt;&lt; "get qml property msg" &lt;&lt; qmlObj-&gt;property("msg").toString();
+
+
+    // 获取QQuickItem
+    QQuickItem *item = qobject_cast&lt;QQuickItem*&gt;(qmlObj);
+    // 通过QQuickItem设置属性值
+    qDebug() &lt;&lt; "cpp: " &lt;&lt; "set qml property width";
+    item-&gt;setWidth(300);
+    // 通过QQuickItem获取属性值
+    qDebug() &lt;&lt; "cpp: " &lt;&lt; "get qml property width" &lt;&lt; item-&gt;width();
+
+
+    // 通过object name访问加载的QML对象
+    // QObject::findChildren()可用于查找具有匹配object name属性的子项
+    QObject *qmlRect = qmlObj-&gt;findChild&lt;QObject*&gt;("rect");
+    if(qmlRect)
+    {
+        qDebug() &lt;&lt; "cpp: " &lt;&lt; "get rect color" &lt;&lt; qmlRect-&gt;property("color");
+    }
+
+
+    // C++调用QML方法
+    QVariant valReturn;
+    QVariant valArg = "I am cpp";
+    //Q_RETURN_ARG()和Q_Arg()参数必须制定为QVariant类型
+    QMetaObject::invokeMethod(qmlObj, "qmlFun",
+                              Q_RETURN_ARG(QVariant,valReturn),
+                              Q_ARG(QVariant,valArg));
+    qDebug() &lt;&lt; "cpp: " &lt;&lt; "QMetaObject::invokeMethod result" &lt;&lt; valReturn.toString(); //qml函数中返回“ok”
+
+
+    CBusiness cppObj;
+    // cpp和qml信号与槽关联
+    // qml信号绑订cpp的槽，用QString类型
+    QObject::connect(qmlObj, SIGNAL(callCpp(QString, QString)), &amp;cppObj, SLOT(invokeFromQml(QString, QString)));
+
+    //关联cpp信号与qml槽
+    // cpp的信号绑定qml槽，用QVariant类型
+    QObject::connect(&amp;cppObj, SIGNAL(callQml(QVariant, QVariant)), qmlObj, SLOT(invokeFromCpp(QVariant, QVariant)));
+
+    return app.exec();
+}
+</code></pre>
+<p>4.测试结果</p>
+<p><img alt="" height="300" src="image\09adda0802224044b7e6fb6e476886f3.png" width="1198"/></p>
+<p>信号和槽的绑定在c++代码中完成，在c++中可以修改qml的属性，获取qml的属性，调用qml的方法，传递和获取参数均可以</p>
+<p> 鼠标点击</p>
+<p><img alt="" height="162" src="image\2779f9cd19674dcd915dcaa23d50eb92.png" width="934"/></p>
+<p> 鼠标点击后，通过qml的信号callCpp调用c++的槽函数invokeFromQml，然后再通过c++的信号函数callQml调用qml的槽函数invokeFromCpp</p>
+<h1>三.QVariant中方法canConvert和convert使用总结</h1>
+<p>1.canConvert只是报告QVariant进行两个类型之间转换的能力，例如QString和Int类型之间的转换，关注类型<br/> 2.convert判断的是QVariant进行两个类型的数据之间转换的能力，例如“123”和123之间的转换，关注数据</p>
+<p>举例：</p>
+<pre><code class="language-cpp">QString str1 = "Qt5.7.0";
+QVariant var1 = str1;
+
+qDebug() &lt;&lt; var1.canConvert(QVariant::Int); // true
+qDebug() &lt;&lt; var1.convert(QVariant::Int); // false
+qDebug() &lt;&lt; var1.toString(); // "0"
+
+var1 = str1;
+qDebug() &lt;&lt; var1.convert(QVariant::String); // true
+qDebug() &lt;&lt; var1.toString(); // "Qt5.7.0"
+
+QString str2 = "789";
+QVariant var2 = str2;
+
+qDebug() &lt;&lt; var2.canConvert(QVariant::Int); // true
+qDebug() &lt;&lt; var2.convert(QVariant::Int); // true
+qDebug() &lt;&lt; var2.toString(); // "789"</code></pre>
+<p></p>
+</div>
+</div>

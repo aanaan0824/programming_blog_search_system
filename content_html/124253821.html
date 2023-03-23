@@ -1,0 +1,550 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>一、新建项目，定义GRPC服务接口</p>
+<p>vs新建dll项目，项目中NuGet程序包添加Grpc相关引用</p>
+<p><img alt="" height="202" src="image\5ff1847366c24ae6bf7cdd052e4579a0.png" width="314"/></p>
+<p>定义服务，创建.proto文件</p>
+<p>创建文件CorrespondService.proto</p>
+<pre><code>syntax = "proto3";
+package My.Public;
+service CorrespondGrpcService {
+  rpc SendMsg(GrpcData) returns (GrpcResult);
+  rpc ReceiveDataFromServer(GrpcData) returns (stream GrpcData);
+}
+
+message GrpcData {
+  string Ip = 1;
+  int32 Port = 2;
+  string DataId = 3;
+  int32 DataPriority = 4;
+  string DataType = 5;
+  string Conntent = 6;
+  string NodeName = 7;
+}
+
+message GrpcResult{
+	bool result = 1;
+}
+
+</code></pre>
+<p>定义两个服务方法：</p>
+<p>客户端发送数据到服务端：SendMsg</p>
+<p>服务端发送数据到客户端(从服务端接收数据)：ReceiveDataFromServer，因为是服务端主动触发，所以从服务端的返回数据定义成stream形式，流式传输，客户端启动一次该方法，即可等待服务端流式数据发送到客户端。</p>
+<p>二、生成代码，添加到项目中</p>
+<p>在添加的引用package下找到Grpc.Tool下的文件\tools\windows_x64</p>
+<p><img alt="" height="71" src="image\840ba59053ef4e259d446d4f1db4bfa3.png" width="249"/></p>
+<p>使用文件夹中的工具生成文件，到packages的上一层目录框输入cmd回车打开命令提示符窗口</p>
+<p>运行命令：packages\Grpc.Tools.2.24.0\tools\windows_x64\protoc.exe -ISystemPublic --csharp_out SystemPublic SystemPublic\PublicClass\Grpc\GrpcService\CorrespondService.proto --grpc_out SystemPublic --plugin=protoc-gen-grpc=packages\Grpc.Tools.2.24.0\tools\windows_x64\grpc_csharp_plugin.exe</p>
+<p><img alt="" height="224" src="image\16ce48f0009b4e5e9849af5de275b2d8.png" width="1131"/></p>
+<p> 注意自己引用包的版本号和目录路径。 </p>
+<p>生成文件后拷贝到相应的目录下，添加到项目中。</p>
+<p><img alt="" height="96" src="image\98f3c21f41f94f07ba4ca81e6aaa81f3.png" width="307"/></p>
+<p>三、 服务接口实现：</p>
+<p>创建通信服务类CorrespondServiceServer.cs继承CorrespondGrpcService.CorrespondGrpcServiceBase，并实现定义的方法：</p>
+<pre><code>    /// &lt;summary&gt;
+    /// Grpc服务
+    /// &lt;/summary&gt;
+    public class CorrespondServiceServer : CorrespondGrpcService.CorrespondGrpcServiceBase
+    {
+        public ConcurrentDictionary&lt;string, TaskInfo&gt; _receiveDataTaskId = new ConcurrentDictionary&lt;string, TaskInfo&gt;();
+        public Func&lt;GrpcData, GrpcResult&gt; MessageHandler { get; set; } = null;
+
+        public override Task&lt;GrpcResult&gt; SendMsg(GrpcData request, ServerCallContext context)
+        {
+            if (MessageHandler == null)
+            {
+                return Task.FromResult&lt;GrpcResult&gt;(new GrpcResult() { Result = false });
+            }
+            Tuple&lt;string, int&gt; clientIP = SplitKeyStrGrpcContextPeer(context.Peer);
+
+            if (string.IsNullOrEmpty(request.Ip))
+            {
+                request.Ip = clientIP.Item1;
+                request.Port = clientIP.Item2;
+            }
+            GrpcResult result = MessageHandler(request);
+            return Task.FromResult&lt;GrpcResult&gt;(result);
+        }
+
+        public override Task ReceiveDataFromServer(GrpcData request, IServerStreamWriter&lt;GrpcData&gt; responseStream, ServerCallContext context)
+        {
+            Tuple&lt;string, int&gt; clientIP = SplitKeyStrGrpcContextPeer(context.Peer);
+            string IPkeyStr = GetKeyStr(clientIP.Item1, clientIP.Item2);
+            if (_receiveDataTaskId.ContainsKey(IPkeyStr))
+            {
+                // 线程未完成
+                if (_receiveDataTaskId[IPkeyStr].IsStarted)
+                {
+                    bool res = _receiveDataTaskId[IPkeyStr].Stop();
+                }
+
+                TaskInfo tmp;
+                _receiveDataTaskId.TryRemove(IPkeyStr, out tmp);
+            }
+
+            if (!DataQueues.SendDataQueue.ContainsKey(IPkeyStr))
+            {
+                DataQueues.SendDataQueue[IPkeyStr] = new QueueInfo&lt;GrpcData&gt;();
+            }
+            DataQueues.SendDataQueue[IPkeyStr].Clear();
+            if (string.IsNullOrEmpty(request.Ip))
+            {
+                request.Ip = clientIP.Item1;
+                request.Port = clientIP.Item2;
+            }
+            TaskInfo tInfo = new TaskInfo(request, responseStream, context, DataQueues.SendDataQueue[IPkeyStr]);
+            bool result = tInfo.Start();
+            _receiveDataTaskId[IPkeyStr] = tInfo;
+            return tInfo.GetTask();
+        }
+        private string GetKeyStr(string ip, int port)
+        {
+            return string.Format("{0}:{1}", ip, port.ToString());
+        }
+        private Tuple&lt;string, int&gt; SplitKeyStr(string strKey)
+        {
+            Tuple&lt;string, int&gt; tuple = new Tuple&lt;string, int&gt;("", 0);
+            string[] res = strKey.Split(':');
+            if (res.Length != 2)
+            {
+                return tuple;
+            }
+            int port;
+            if (!int.TryParse(res[1], out port))
+            {
+                return tuple;
+            }
+
+            tuple = new Tuple&lt;string, int&gt;(res[0], port);
+
+            return tuple;
+        }
+        private Tuple&lt;string, int&gt; SplitKeyStrGrpcContextPeer(string strKey)
+        {
+            Tuple&lt;string, int&gt; tuple = new Tuple&lt;string, int&gt;("", 0);
+            string[] res = strKey.Split(':');
+            if (res.Length &lt; 2)
+            {
+                return tuple;
+            }
+            int lenth = res.Length;
+            int port;
+            if (!int.TryParse(res[lenth - 1], out port))
+            {
+                return tuple;
+            }
+
+            tuple = new Tuple&lt;string, int&gt;(res[lenth - 2], port);
+
+            return tuple;
+        }
+
+    }</code></pre>
+<p>ReceiveDataFromServer方法只需要被客户端启动一次。</p>
+<p>队列DataQueues：</p>
+<pre><code>    public class DataQueues
+    {
+        public static ConcurrentDictionary&lt;string, QueueInfo&lt;GrpcData&gt;&gt; SendDataQueue = new ConcurrentDictionary&lt;string, QueueInfo&lt;GrpcData&gt;&gt;();
+        public static ConcurrentDictionary&lt;int, string&gt; ServerDatas = new ConcurrentDictionary&lt;int, string&gt;();
+    }</code></pre>
+<p>数据任务异步处理TaskInfo：</p>
+<pre><code>    public class TaskInfo
+    {
+
+        private Task _tk = null;
+        private bool _isStarted = false;
+
+        private GrpcData _request = null;
+        private IServerStreamWriter&lt;GrpcData&gt; _writerStream = null;
+        private ServerCallContext _context = null;
+        private QueueInfo&lt;GrpcData&gt; _resDataQueue = null;
+        private CancellationTokenSource _cacelTokenSource = new CancellationTokenSource();
+
+        public TaskInfo(GrpcData request, IServerStreamWriter&lt;GrpcData&gt; responseStream, ServerCallContext context, QueueInfo&lt;GrpcData&gt; resDataQueue)
+        {
+            _request = request;
+            _writerStream = responseStream;
+            _context = context;
+            _resDataQueue = resDataQueue;
+        }
+
+        public bool IsStarted
+        {
+            get
+            {
+                if (_tk == null)
+                {
+                    _isStarted = false;
+                }
+                else if (_tk.IsCompleted)
+                {
+                    _isStarted = false;
+                    _tk.Dispose();
+                    _tk = null;
+                }
+                else
+                {
+                    _isStarted = true;
+                }
+                return _isStarted;
+            }
+        }
+
+        public Task GetTask()
+        {
+            return _tk;
+        }
+        public bool Start()
+        {
+            try
+            {
+                if (IsStarted)
+                {
+                    return true;
+                }
+                _isStarted = true;
+                _tk = Task.Factory.StartNew(DataWriteThead);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+        }
+
+        public bool Stop()
+        {
+            try
+            {
+                if (IsStarted)
+                {
+                    _isStarted = false;
+                    if (_resDataQueue == null)
+                    {
+                        return false;
+                    }
+                    _resDataQueue.QueueResetEvent.Set();
+                }
+                _isStarted = false;
+                _cacelTokenSource.Cancel();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+        }
+
+        private void DataWriteThead()
+        {
+            if (_writerStream == null || _request == null || _context == null || _resDataQueue == null)
+            {
+                return;
+            }
+            while (_isStarted &amp;&amp; !_context.CancellationToken.IsCancellationRequested &amp;&amp; !_cacelTokenSource.IsCancellationRequested)
+            {
+                try
+                {
+                    if (_resDataQueue.IsEmpty)
+                    {
+                        _resDataQueue.QueueResetEvent.WaitOne();
+                    }
+                    GrpcData data;
+                    if (_resDataQueue.TryPeek(out data))
+                    {
+                        // 向客户端发送数据
+                        Task wTask = _writerStream.WriteAsync(data);
+                        wTask.Wait(5000, _cacelTokenSource.Token);
+                        if (!wTask.IsCanceled &amp;&amp; !wTask.IsFaulted)
+                        {
+                            _resDataQueue.TryDequeue(out data);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+
+                }
+            }
+        }
+    }</code></pre>
+<p>四、服务端启动</p>
+<pre><code>        private Grpc.Core.Server _pServer = null;
+        CorrespondServiceServer csServer = null;
+        public bool Start()
+        {
+            try
+            {
+                if (_pServer == null)
+                {
+                    csServer = new CorrespondServiceServer();
+                    csServer.MessageHandler = ServerReceiveData;
+                    _pServer = new Grpc.Core.Server
+                    {
+                        Services = { CorrespondGrpcService.BindService(csServer) },
+                        Ports = { new ServerPort(IP, Port, ServerCredentials.Insecure) }
+                    };
+                    _pServer.Start();
+                }
+
+                IsStarted = true;
+                return IsStarted;
+
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+        }
+        public bool Stop()
+        {
+            try
+            {
+                if (!IsStarted)
+                {
+                    return true;
+                }
+                if (_pServer != null)
+                {
+                    _pServer.ShutdownAsync();
+                    _pServer = null;
+                }
+                IsStarted = false;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+        }
+        //服务端向客户端发送消息，把消息加入队列进行处理
+        public bool SendMsg(string ip, int port, GrpcData msg)
+        {
+            string strKey = GetKeyStr(ip.Trim(), port);
+            TaskInfo tk = null;
+            if (csServer._receiveDataTaskId.ContainsKey(strKey))
+            {
+                tk = csServer._receiveDataTaskId[strKey];
+                if (tk == null || !tk.IsStarted)
+                {
+                    return false;
+                }
+            DataQueues.SendDataQueue[IpPortStrKey].Enqueue(msg);
+                return true;
+            }
+            else
+            {
+                return false;
+            }            
+        }
+        /// &lt;summary&gt;
+        /// 收到client调用SendMsg传来的数据，Grpc的Server可以直接响应返回，不需要再给指定Ip端口发送返回数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="data"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private GrpcResult ServerReceiveData(GrpcData data)
+        {
+            Task tk = new Task(() =&gt; { ProcessData(data, data.Ip, data.Port); });
+            tk.Start();
+            return new GrpcResult() { Result = true };
+        }
+</code></pre>
+<p>五、客户端连接</p>
+<pre><code>Channel channel = null;
+        CorrespondGrpcService.CorrespondGrpcServiceClient csClient = null;
+        private CancellationTokenSource _receiveCancelSource = new CancellationTokenSource();
+
+        public bool Connect(string ip, int port)
+        {
+            try
+            {
+                if (IsStarted)
+                {
+                    return true;
+                }
+                IsStarted = true;
+                RemoteIp = ip;
+                RemotePort = port;
+                if (channel == null)
+                {
+                    channel = new Channel(ip, port, ChannelCredentials.Insecure);
+                    csClient = new CorrespondGrpcService.CorrespondGrpcServiceClient(channel);
+                }
+                if (_guardThread == null)
+                {
+                    _guardThread = new Thread(new ThreadStart(GuardThread));
+                    _guardThread.IsBackground = true;
+                    _guardThread.Name = "CorrespondServiceClientGuard";
+                    _guardThread.Start();
+                }
+                _guardThreadEvent.Set();
+            }
+            catch (Exception ex)
+            {
+                IsStarted = false;
+            }
+            return IsStarted;
+        }
+
+        public bool DisConnect()
+        {
+            if (!IsStarted)
+            {
+                return true;
+            }
+            IsStarted = false;
+            _guardThreadEvent.Set();
+            try
+            {
+                _sendCancelSource.Cancel();
+                _receiveCancelSource.Cancel();
+                if (channel != null)
+                {
+                    channel.ShutdownAsync();
+                    channel = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+            return true;
+        }
+
+        private void GuardThread()
+        {
+            while (true)
+            {
+                if (!IsStarted)
+                {
+                    _guardThreadEvent.WaitOne();
+                }
+                try
+                {
+                    // 检查接收数据通道
+                    CheckReceiveChn();
+                }
+                catch (Exception ex)
+                {
+                }
+                Thread.Sleep(6 * 1000);
+            }
+        }
+        #region 客户端接收数据处理
+        private Task receiveTask = null;
+        private void CheckReceiveChn()
+        {
+            if (channel == null || csClient == null)
+            {
+                return;
+            }
+            if (channel.State == ChannelState.Ready)
+            {
+                if (receiveTask == null || receiveTask.IsCompleted)
+                {
+             GrpcData cdata = new GrpcData();
+                    AsyncServerStreamingCall&lt;GrpcData&gt; callback = csClient.ReceiveDataFromServer(cdata,
+                        cancellationToken: _receiveCancelSource.Token);
+                    receiveTask = Task.Factory.StartNew(() =&gt; { ReceivedData(callback, _receiveCancelSource.Token); });
+                }
+                return;
+            }
+            if (channel.State == ChannelState.Connecting)
+            {
+                return;
+            }
+            try
+            {
+                _receiveCancelSource.Cancel();
+                if (channel.State == ChannelState.TransientFailure)
+                {
+                    channel.ShutdownAsync().Wait();
+                    channel = new Channel(RemoteIp, RemotePort, ChannelCredentials.Insecure);
+                    csClient = new CorrespondGrpcService.CorrespondGrpcServiceClient(channel);
+                }
+                _receiveCancelSource = new CancellationTokenSource();
+                bool res = channel.ConnectAsync().Wait(3000);
+            }
+            catch (TaskCanceledException)
+            {
+                // 取消线程，不需要记录日志
+                return;
+            }
+            catch (Exception ex)
+            {
+                return;
+            }
+        }
+
+        private void ReceivedData(AsyncServerStreamingCall&lt;GrpcData&gt; callback, CancellationToken token)
+        {
+            try
+            {
+                while (!token.IsCancellationRequested &amp;&amp; channel != null &amp;&amp; channel.State == ChannelState.Ready
+                    &amp;&amp; callback.ResponseStream.MoveNext().Result)
+                {
+                    Task tk = new Task(() =&gt; { HandleData(callback.ResponseStream.Current); }, _receiveCancelSource.Token);
+                    tk.Start();
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void HandleData(GrpcData Data)
+        {
+            Task tk = new Task(() =&gt; { ProcessData(Data); });
+            tk.Start();
+        }
+
+        #endregion
+        //客户端向服务端发送数据
+        public bool SendMsg(GrpcData Data)
+        {
+            if (channel == null || csClient == null)
+            {
+                return false;
+            }
+            // 消息发送加锁， 避免消息粘包
+            lock (_msgSendLock)
+            {
+                if (channel.State != ChannelState.Ready)
+                {
+                    return false;
+                }
+                try
+                {
+                    GrpcResult resData = csClient.SendMsg(Data);
+                    if (!resData.Result)
+                    {
+                        return false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }</code></pre>
+<p>客户端启动Connect连接服务端后，创建了数据接收检查通道线程，在连接Ready后receiveTask 为null时，调用一次服务接口方法ReceiveDataFromServer使用回调接收服务端传来的数据ReceivedData。</p>
+<p>客户端调用服务端ReceiveDataFromServer时，服务端创建了该客户端的Ip Port为key的任务TaskInfo来处理服务端后续传输给客户端的数据。当队列有数据时，通过服务接口的流传输_writerStream.WriteAsync(data);将数据发送给客户端，客户端利用回调方法接收到后进行处理。</p>
+<p>客户端给服务端发送数据：调用客户端的SendMsg(GrpcData Data)发送数据，服务端接收到数据后传给Func方法ServerReceiveData进行下一步处理。</p>
+<p>服务端给客户端发送数据：调用服务端的SendMsg(string ip, int port, GrpcData msg)方法，查看已连接客户端的Ip:Port的TaskInfo，将数据添加至相应队列。</p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

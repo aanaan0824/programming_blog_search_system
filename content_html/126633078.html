@@ -1,0 +1,128 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1>一、Qt Widgets 问题交流</h1>
+<h3>1.QWidget鼠标事件穿透</h3>
+<p>对于一些透明或者半透明的QWidget，可能需要点击其下方的按钮或其他组件，但是QWidget本身是会接收这些鼠标事件的，需要一些额外的处理。下面是百度到的一些方法：</p>
+<p>方式A.设置setAttribute(Qt::WA_TransparentForMouseEvents, true)，设置之后该QWidget对象树就不再处理鼠标事件。最大的缺点就是不仅该QWidget不响应鼠标事件，它上面的其他组件也没法响应鼠标事件了。</p>
+<p>方式B.setMask把底部要点击的地方抠出来，缺点是抠出来的地方就成了全透明，不适合半透明的需求：</p>
+<pre><code class="language-cpp">    QRegion reg(ui-&gt;widget-&gt;rect());
+    //bottom为被widget挡住的按钮
+    auto btn_area=ui-&gt;btnBottom-&gt;geometry();
+    btn_area.moveTo(btn_area.topLeft()-ui-&gt;widget-&gt;geometry().topLeft());
+    reg-=QRegion(btn_area);
+    ui-&gt;widget-&gt;setMask(reg);</code></pre>
+<p>方法C. QWdidget鼠标事件处理先判断坐标点下方是否有其他组件，有则传递下去：</p>
+<pre><code class="language-cpp">void mouseMoveEvent(QMouseEvent *event){
+    transMouseEvents(event);
+}
+
+void mousePressEvent(QMouseEvent *event){
+    transMouseEvents(event);
+}
+
+void mouseReleaseEvent(QMouseEvent *event){
+    transMouseEvents(event);
+}
+
+void mouseDoubleClickEvent(QMouseEvent *event){
+    transMouseEvents(event);
+}
+
+void transMouseEvents(QMouseEvent *event){
+    if (this-&gt;parentWidget()) {    
+        this-&gt;setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        QPoint pt = this-&gt;mapTo(this-&gt;parentWidget(), event-&gt;pos());
+        QWidget *wid = this-&gt;parentWidget()-&gt;childAt(pt);
+        if (wid) {
+            pt = wid-&gt;mapFrom(this-&gt;parentWidget(), pt);
+            QMouseEvent *mEvent = new QMouseEvent(event-&gt;type(), pt, event-&gt;button(), event-&gt;buttons(), event-&gt;modifiers());
+            QApplication::postEvent(wid, mEvent);
+        }
+        this-&gt;setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    }
+}</code></pre>
+<p>参考：<a href="https://zhuanlan.zhihu.com/p/96773017" title="QT 鼠标穿透 - 知乎">QT 鼠标穿透 - 知乎</a> </p>
+<h1>二、Qt Quick 问题交流</h1>
+<h3>1.打包命令问题</h3>
+<p>百度搜（QML打包），找到的结果一般都是这样的：</p>
+<pre><code class="language-cpp">windeployqt 程序.exe --qmldir C:\Qt\Qt5.15.2\5.15.2\msvc2019_64\qml
+</code></pre>
+<p>这些博文上，--qmldir的参数一般都是指向Qt安装目录，但是通过查看文档可知，qmldir应该指向项目源码的qml目录，以查找导入了哪些模块，qmlimport才是用来指向安装路径或者其他依赖模块路径的。</p>
+<p><img alt="" height="70" src="image\1525c31e364246948b0eacf13f0f8cdb.png" width="442"/></p>
+<p>文档：<a href="https://doc.qt.io/qt-5/windows-deployment.html" title="https://doc.qt.io/qt-5/windows-deployment.html">https://doc.qt.io/qt-5/windows-deployment.html</a> </p>
+<h1>三、其他</h1>
+<h3>1.QAXObject在WPS环境下读取Excel的UsedRange.Value为空</h3>
+<p>一开始测试MS Office时如下的代码可以正常的读取到UsedRange的表格内容：</p>
+<pre><code class="language-cpp">QAxObject *used_range = work_sheet-&gt;querySubObject("UsedRange");
+auto range_data = used_range-&gt;property("Value").toList();</code></pre>
+<p>但是在测试WPS时，读取到的值是空的，修改为dynamicCall后就能正常读取了：</p>
+<pre><code class="language-cpp">QAxObject *used_range = work_sheet-&gt;querySubObject("UsedRange");
+auto range_data = used_range-&gt;dynamicCall("Value()").toList();</code></pre>
+<p>完整的测试代码如下：</p>
+<pre><code class="language-cpp">void parseExcel()
+{
+    const QString filepath = QFileDialog::getOpenFileName(this);
+    if(filepath.isEmpty()){
+        qDebug()&lt;&lt;"filepath is empty";
+        return;
+    }
+
+    QSharedPointer&lt;QAxObject&gt; excel{new QAxObject};
+    //分别尝试WPS和MS Office的excel组件
+    if(!excel-&gt;setControl("KET.Application" )){
+        qDebug() &lt;&lt; "open wps excel failed";
+        if(!excel-&gt;setControl("Excel.Application")){
+            qDebug() &lt;&lt; "open office excel failed";
+            return;
+        }
+    }
+
+    qDebug()&lt;&lt;"excel open";
+    auto scope = qScopeGuard([=]{
+        qDebug()&lt;&lt;"excel quit";
+        //退出时关闭，不然excel进程没退出
+        excel-&gt;dynamicCall("Quit()");
+    });
+    Q_UNUSED(scope)
+
+    excel-&gt;setProperty("Visible", false);
+    excel-&gt;setProperty("EnableEvents", false);
+    excel-&gt;setProperty("DisplayAlerts", false);
+    QAxObject *work_books = excel-&gt;querySubObject("WorkBooks");
+    if(!work_books){
+        qDebug()&lt;&lt;"query WorkBooks error";
+        return;
+    }
+    work_books-&gt;dynamicCall("Open(const QString&amp;)", filepath);
+    QAxObject *active_book = excel-&gt;querySubObject("ActiveWorkBook");
+    if(!active_book){
+        qDebug()&lt;&lt;"query ActiveWorkBook error";
+        return;
+    }else{
+        qDebug()&lt;&lt;"book open";
+        auto book_scope = qScopeGuard([=]{
+            qDebug()&lt;&lt;"book close";
+            //bool是否保存修改
+            active_book-&gt;dynamicCall("Close(Boolean)", false);
+        });
+        Q_UNUSED(book_scope)
+
+        QAxObject *work_sheet = active_book-&gt;querySubObject("WorkSheets(int)", 1);
+        if(!work_sheet){
+            qDebug()&lt;&lt;"query WorkSheets error";
+            return;
+        }
+        QAxObject *used_range = work_sheet-&gt;querySubObject("UsedRange");
+        if(!used_range){
+            qDebug()&lt;&lt;"query UsedRange error";
+            return;
+        }
+        //全部读取，范围是上下左右最边上的数据所围城的矩形区域
+        auto range_data = used_range-&gt;dynamicCall("Value()").toList();
+        qDebug()&lt;&lt;"range data:"&lt;&lt;range_data;
+    }
+}</code></pre>
+<p></p>
+</div>
+</div>

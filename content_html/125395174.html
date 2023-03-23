@@ -1,0 +1,392 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>效果</p>
+<p>1.图片放大，缩小，拖拽功能</p>
+<p style="text-align:center;"><img alt="" class="left" src="https://img-blog.csdnimg.cn/caa0e3b8e909437a93bce24aaa530960.gif"/></p>
+<p>2.添加图片，分页功能</p>
+<p><img alt="" class="left" src="https://img-blog.csdnimg.cn/75b108e087ff447582480b8af9adb0ee.gif"/></p>
+<p></p>
+<h1>一、前言</h1>
+<p>在一些项目中也会用到预览图片的功能，至于为什么有一个添加图片的按钮，是因为有些项目，比如视觉相关的项目，摄像头拍摄图片，然后显示在界面上，拍一次显示一张。另一个，就是分页功能，当预览图位置不够用时就会用到。</p>
+<p>当前软件的功能</p>
+<p><strong>1.添加图片</strong></p>
+<p>如果8个预览图都满了，会自动分页，就可以点击上一页，或者下一页了。</p>
+<p><strong>2.点击预览图显示大图</strong></p>
+<p>点击预览图，之前的拖拽和放大会自动复位</p>
+<p><strong>3.大图可以拖拽，放大，缩小</strong></p>
+<p>如果图片比较小，有这个功能就看到图片的更多细节了。</p>
+<p><strong>4.图片倒序排列</strong></p>
+<p>最后拍摄的图片，始终显示在前面，方便用户更好的观察到最新的图片</p>
+<p><img alt="" height="193" src="image\413447b25d3b48deac13c3dd3c3a5006.png" width="200"/></p>
+<p></p>
+<p></p>
+<h1>二、实现功能</h1>
+<p>新建一个winform项目，界面如下：</p>
+<p><img alt="" height="691" src="image\524ca25137894ff99812517ad0073890.png" width="1185"/></p>
+<p>界面中大图和预览图都是 PictureBox 控件 ，至于控件的名字，在下面的代码中可以看到，在文章的最后面，我会附上这个Demo源码，Visual Studio 版本为2019.</p>
+<p>代码：</p>
+<pre><code class="language-cs">using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace 相册功能
+{
+    public partial class Form1 : Form
+    {
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        //本地的相册列表
+        private string AlbumPath = Application.StartupPath + "\\Album";
+        //相册列表
+        private List&lt;PictureBox&gt; PictureBoxList = new List&lt;PictureBox&gt;();
+        //图片路径列表
+        private List&lt;string&gt; FilesinfoList = new List&lt;string&gt;();
+        //相册显示的图片列表
+        private List&lt;Bitmap&gt; BitmapList = new List&lt;Bitmap&gt;();
+        //pictureBox1的初始位置
+        private Point PicStartPos;
+        //pictureBox1的初始大小
+        private Size PicSize;
+
+        //测试用
+        int index = -1;
+        //当前页数
+        private int NowPage = 1;
+        //总页数
+        private int TotalPage = 1;
+        //鼠标滚轮缩放图片的增量值
+        private int ZoomStep = 20;
+        //鼠标是否在拖拽中
+        private bool IsMove = false;
+        //鼠标点击的位置
+        private Point MouseDownPoint;
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            PicStartPos = pictureBox1.Location;
+            PicSize = pictureBox1.Size;
+            this.pictureBox1.MouseWheel += new MouseEventHandler(this.pictureBox1_MouseWheel);
+
+            PictureBoxList.Add(PictureBox_ImgList1);
+            PictureBoxList.Add(PictureBox_ImgList2);
+            PictureBoxList.Add(PictureBox_ImgList3);
+            PictureBoxList.Add(PictureBox_ImgList4);
+            PictureBoxList.Add(PictureBox_ImgList5);
+            PictureBoxList.Add(PictureBox_ImgList6);
+            PictureBoxList.Add(PictureBox_ImgList7);
+            PictureBoxList.Add(PictureBox_ImgList8);
+
+            //添加图片的点击事件
+            for (int i = 0; i &lt; PictureBoxList.Count; i++)
+            {
+                PictureBoxList[i].Click += new System.EventHandler(PictureBoxClick);
+            }
+
+            DirectoryInfo directory = new DirectoryInfo(AlbumPath);
+            FileSystemInfo[] filesArray = directory.GetFileSystemInfos();
+            foreach (var item in filesArray)
+            {
+                if (item.Attributes != FileAttributes.Directory)
+                {
+                    FilesinfoList.Add(item.FullName);
+                }
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 上一页
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void Button_Back_Click(object sender, EventArgs e)
+        {
+            if (NowPage &lt;= 1) return;
+
+            NowPage--;
+            for (int i = 0; i &lt; PictureBoxList.Count; i++)
+            {
+                PictureBoxList[i].Image = null;
+            }
+
+            List&lt;Bitmap&gt; list = GetPagesBitmap(NowPage);
+            for (int i = 0; i &lt; list.Count; i++)
+            {
+                PictureBoxList[i].Image = list[i];
+            }
+
+            pictureBox1.Image = list[0];
+            //设置坐标
+            pictureBox1.Location = PicStartPos;
+            //设置控件宽高
+            pictureBox1.Size = PicSize;
+
+            Label_NumberOfPages.Text = string.Format("{0} / {1}", NowPage, TotalPage);
+            BackNextButtonType();
+        }
+
+        /// &lt;summary&gt;
+        /// 下一页
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void Button_Next_Click(object sender, EventArgs e)
+        {
+            if (NowPage &gt;= TotalPage) return;
+
+            NowPage++;
+            for (int i = 0; i &lt; PictureBoxList.Count; i++)
+            {
+                PictureBoxList[i].Image = null;
+            }
+
+            List&lt;Bitmap&gt; list = GetPagesBitmap(NowPage);
+            for (int i = 0; i &lt; list.Count; i++)
+            {
+                PictureBoxList[i].Image = list[i];
+            }
+
+            pictureBox1.Image = list[0];
+            //设置坐标
+            pictureBox1.Location = PicStartPos;
+            //设置控件宽高
+            pictureBox1.Size = PicSize;
+
+            Label_NumberOfPages.Text = string.Format("{0} / {1}", NowPage, TotalPage);
+            BackNextButtonType();
+        }
+
+        /// &lt;summary&gt;
+        /// 添加图片
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void Button_Add_Click(object sender, EventArgs e)
+        {
+            index++;
+            AddPicture(new Bitmap(FilesinfoList[index]));
+            if (index &gt;= FilesinfoList.Count - 1)
+                index = -1;
+        }
+
+        /// &lt;summary&gt;
+        /// 添加图片
+        /// &lt;/summary&gt;
+        /// &lt;param name="bitmap"&gt;&lt;/param&gt;
+        private void AddPicture(Bitmap bitmap)
+        {
+            if (bitmap == null) return;
+
+            //添加到图片列表
+            BitmapList.Add(bitmap);
+            //界面预留图中显示
+            pictureBox1.Image = bitmap;
+            //设置坐标
+            pictureBox1.Location = PicStartPos;
+            //设置控件宽高
+            pictureBox1.Size = PicSize;
+
+            //计算当前总页数
+            int page = BitmapList.Count / PictureBoxList.Count;
+            int remainder = BitmapList.Count % PictureBoxList.Count;
+            TotalPage = remainder &gt; 0 ? page + 1 : page;
+            Label_NumberOfPages.Text = string.Format("{0} / {1}", NowPage, TotalPage);
+
+            BackNextButtonType();
+
+            //让图片按逆向顺序显示
+            List&lt;Bitmap&gt; reverseSort = new List&lt;Bitmap&gt;();
+            for (int i = BitmapList.Count - 1; i &gt;= 0; i--)
+            {
+                reverseSort.Add(BitmapList[i]);
+            }
+            for (int i = 0; i &lt; reverseSort.Count; i++)
+            {
+                if (i &lt;= 7)
+                    PictureBoxList[i].Image = reverseSort[i];
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 8张预览图片的点击事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void PictureBoxClick(Object sender, System.EventArgs e)
+        {
+            PictureBox pictureBox = (PictureBox)sender;
+            if (pictureBox != null &amp;&amp; pictureBox.Image != null)
+            {
+                pictureBox1.Image = pictureBox.Image;
+                //设置坐标
+                pictureBox1.Location = PicStartPos;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 获取索引对应的图片
+        /// &lt;/summary&gt;
+        /// &lt;param name="index"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private List&lt;Bitmap&gt; GetPagesBitmap(int index)
+        {
+            if (BitmapList.Count &lt;= 0) return null;
+
+            //页数
+            int page = BitmapList.Count / PictureBoxList.Count;
+            //余数
+            int remainder = BitmapList.Count % PictureBoxList.Count;
+            //总页数
+            int allPage = remainder &gt; 0 ? page + 1 : page;
+
+            if (index &gt; allPage) return null;
+
+            //索引起点
+            int start = (index * PictureBoxList.Count) - PictureBoxList.Count;
+            //索引结束点
+            int end = (index * PictureBoxList.Count) - 1;
+            if (end &gt; BitmapList.Count) end = BitmapList.Count - 1;
+
+            List&lt;Bitmap&gt; reverseSort = new List&lt;Bitmap&gt;();
+            for (int i = BitmapList.Count - 1; i &gt;= 0; i--)
+            {
+                reverseSort.Add(BitmapList[i]);
+            }
+
+            List&lt;Bitmap&gt; list = new List&lt;Bitmap&gt;();
+            for (int i = start; i &lt;= end; i++)
+            {
+                list.Add(reverseSort[i]);
+            }
+
+            if (list.Count &gt; 0)
+                return list;
+            return null;
+        }
+
+        /// &lt;summary&gt;
+        /// 上一页，下一页按钮状态
+        /// &lt;/summary&gt;
+        private void BackNextButtonType()
+        {
+            Button_Next.Enabled = true;
+            Button_Back.Enabled = true;
+
+            //现在页 = 总页数
+            if (NowPage == TotalPage)
+                Button_Next.Enabled = false;
+            //现在页 小于等于 1
+            if (NowPage &lt;= 1)
+                Button_Back.Enabled = false;
+        }
+
+
+        private void pictureBox1_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (pictureBox1.Image == null) return;
+
+            if (e.Button == MouseButtons.Left)
+            {
+                MouseDownPoint.X = Cursor.Position.X; //记录鼠标左键按下时位置
+                MouseDownPoint.Y = Cursor.Position.Y;
+                IsMove = true;
+                pictureBox1.Focus(); //鼠标滚轮事件(缩放时)需要picturebox有焦点
+            }
+        }
+
+        private void pictureBox1_MouseUp(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                IsMove = false;
+            }
+        }
+
+        private void pictureBox1_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (pictureBox1.Image == null) return;
+            pictureBox1.Focus(); //鼠标在picturebox上时才有焦点，此时可以缩放
+            if (IsMove)
+            {
+                int x, y;   //新的pictureBox1.Location(x,y)
+                int moveX, moveY; //X方向，Y方向移动大小。
+                moveX = Cursor.Position.X - MouseDownPoint.X;
+                moveY = Cursor.Position.Y - MouseDownPoint.Y;
+                x = pictureBox1.Location.X + moveX;
+                y = pictureBox1.Location.Y + moveY;
+                pictureBox1.Location = new Point(x, y);
+                MouseDownPoint.X = Cursor.Position.X;
+                MouseDownPoint.Y = Cursor.Position.Y;
+            }
+        }
+
+        private void pictureBox1_MouseWheel(object sender, MouseEventArgs e)
+        {
+            if (pictureBox1.Image == null) return;
+
+            PictureBox pbox = pictureBox1;
+            int x = e.Location.X;
+            int y = e.Location.Y;
+            int ow = pbox.Width;
+            int oh = pbox.Height;
+            int VX, VY;  //因缩放产生的位移矢量
+            if (e.Delta &gt; 0) //放大
+            {
+                //第1步
+                pbox.Width += ZoomStep;
+                pbox.Height += ZoomStep;
+                //第2步
+                PropertyInfo pInfo = pbox.GetType().GetProperty("ImageRectangle", BindingFlags.Instance | BindingFlags.NonPublic);
+                Rectangle rect = (Rectangle)pInfo.GetValue(pbox, null);
+                //第3步
+                pbox.Width = rect.Width;
+                pbox.Height = rect.Height;
+
+                //Console.WriteLine(string.Format("宽：{0}，高：{1}",pbox.Width,pbox.Height));
+            }
+            if (e.Delta &lt; 0) //缩小
+            {
+                //防止一直缩成负值
+                if (pbox.Width &lt; 300)
+                    return;
+
+                pbox.Width -= ZoomStep;
+                pbox.Height -= ZoomStep;
+                PropertyInfo pInfo = pbox.GetType().GetProperty("ImageRectangle", BindingFlags.Instance |
+                 BindingFlags.NonPublic);
+                Rectangle rect = (Rectangle)pInfo.GetValue(pbox, null);
+                pbox.Width = rect.Width;
+                pbox.Height = rect.Height;
+            }
+
+            //第4步，求因缩放产生的位移，进行补偿，实现锚点缩放的效果
+            VX = (int)((double)x * (ow - pbox.Width) / ow);
+            VY = (int)((double)y * (oh - pbox.Height) / oh);
+            pbox.Location = new Point(pbox.Location.X + VX, pbox.Location.Y + VY);
+        }
+
+
+    }
+}
+</code></pre>
+<p>代码中，鼠标缩放，拖拽功能，需要在控件里选择对应的方法，否则运行就没有效果</p>
+<p><img alt="" height="201" src="image\f2ed0462e73f4ed7adc30259501fb9d7.png" width="474"/></p>
+<p>运行后，效果就如文章开头的 Gif 图片</p>
+<p>源码：<a class="link-info" href="https://download.csdn.net/download/qq_38693757/85724749" title="点击下载">点击下载</a></p>
+<p></p>
+<h1 id="%E7%BB%93%E6%9D%9F">结束</h1>
+<p>如果这个帖子对你有用，欢迎 关注 + 点赞 + 留言，谢谢</p>
+<p>end</p>
+</div>
+</div>

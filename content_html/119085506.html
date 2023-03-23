@@ -1,0 +1,168 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2 style="text-align:left;"><strong><strong><strong>一、约束</strong></strong></strong></h2>
+<p>约束类型包括基类约束、构造函数约束、接口约束、参数约束等。如：</p>
+<pre><code>public class FateherTest
+{
+}
+//where的用法 接口约束IComparable 和构造函数约束new(), 基类约束 FatherTest
+public class TestA&lt;T&gt; where T : FateherTest, IComparable, new()
+{
+}
+
+public class TestB
+{
+ //限制传递参数的类型必须继承IComparable 参数类型约束
+    public int Caculate&lt;T&gt;(T t) where T : IComparable
+    {
+        throw new NotImplementedException();
+    }
+}</code></pre>
+<h2>二、<strong><strong><strong>集合条件查询</strong></strong></strong></h2>
+<h3><strong><strong><strong>1.使用方法</strong></strong></strong></h3>
+<pre><code class="language-cs">  List&lt;InstanceB&gt; list = new List&lt;InstanceB&gt;();
+  //返回b.value的值 ==2的 IEnumerable对象
+  list.Where((b) =&gt; b.value == 2).ToList();
+  Dictionary&lt;int, InstanceB&gt; dic = new Dictionary&lt;int, InstanceB&gt;();
+  //TSource是 KeyValuePair&lt;TKey, TValue&gt;
+  dic.Where((b) =&gt; b.Value.value== 2);</code></pre>
+<h3>2.如何实现的</h3>
+<p>在System.linq命名空间下的Enumerable类里面实现了IEnumerable的扩展方法.如下:</p>
+<pre><code class="language-cs"> //返回值是IEnumerable&lt;T&gt;迭代器对象
+
+ public static IEnumerable&lt;TSource&gt; Where&lt;TSource&gt;(
+      this IEnumerable&lt;TSource&gt; source,
+      Func&lt;TSource, bool&gt; predicate)
+    {
+      if (source == null)
+        throw Error.ArgumentNull(nameof (source));
+      if (predicate == null)
+        throw Error.ArgumentNull(nameof (predicate));
+      switch (source)
+      {
+        case Enumerable.Iterator&lt;TSource&gt; _:
+          return ((Enumerable.Iterator&lt;TSource&gt;) source).Where(predicate);
+        case TSource[] _:
+          return (IEnumerable&lt;TSource&gt;) new Enumerable.WhereArrayIterator&lt;TSource&gt;((TSource[]) source, predicate);
+        case List&lt;TSource&gt; _:
+          return (IEnumerable&lt;TSource&gt;) new Enumerable.WhereListIterator&lt;TSource&gt;((List&lt;TSource&gt;) source, predicate);
+        default:
+          return (IEnumerable&lt;TSource&gt;) new Enumerable.WhereEnumerableIterator&lt;TSource&gt;(source, predicate);
+      }
+    }</code></pre>
+<p> 当我们调用List.Where扩展方法时返回了一个WhereListIterator对象：</p>
+<p><span style="background-color:#ffff00;"><span style="color:#1f497d;">reurn  (IEnumerable&lt;TSource&gt;) new Enumerable.WhereListIterator&lt;TSource&gt;((TSource[]) source, predicate) 返回一个whereListIterator对象。其中 TSource就是InstanceB类型</span></span></p>
+<p>我们可查看 WhereListIterator 这个类，它继承了：<span style="color:#1f497d;">Enumerable.Iterator&lt;TResult&gt;：</span><strong><span style="color:#1f497d;"><strong>IEnumerable&lt;TSource&gt; .</strong></span></strong>其本身实现了迭代器的功能，查看MoveNext方法：</p>
+<pre><code class="language-cs">      public override bool MoveNext()
+      {
+        if (this.state == 1)
+        {
+          while (this.index &lt; this.source.Length)
+          {
+            TSource source = this.source[this.index];
+            ++this.index;
+            if (this.predicate(source))
+            {
+              this.current = source;
+              return true;
+            }
+          }
+          this.Dispose();
+        }
+        return false;
+      }</code></pre>
+<p><strong><span style="color:#1f497d;"><strong>    </strong></span></strong><span style="color:#0d0016;">只有通过predictate的检测之后MoveNext才会返回true.调用Tolist的时候回调用 IEnumrable的扩展方法Tolist 调用创建一个List&lt;T&gt;对象返回。只不过构造函数是使用集合做的初始化，如下：</span></p>
+<pre><code>    [__DynamicallyInvokable]
+
+    public List(IEnumerable&lt;T&gt; collection)
+    {
+      if (collection == null)
+        ThrowHelper.ThrowArgumentNullException(ExceptionArgument.collection);
+
+      if (collection is ICollection&lt;T&gt; objs)
+      {
+        int count = objs.Count;
+        if (count == 0)
+        {
+          this._items = List&lt;T&gt;._emptyArray;
+        }
+        else
+        {
+          this._items = new T[count];
+          objs.CopyTo(this._items, 0);
+          this._size = count;
+        }
+      }
+      else
+      {
+        this._size = 0;
+        this._items = List&lt;T&gt;._emptyArray;
+        foreach (T obj in collection)
+          this.Add(obj);
+      }
+    }</code></pre>
+<p><span style="color:#0d0016;">上面使用foreach会调用WhereListIterator 的MoveNext.直到返回false结束。而上面的MoveNext用来Func委托函数做筛选。</span></p>
+<p><span style="color:#0d0016;">我们还可以做如下操作：</span></p>
+<pre><code>var  whereListIt  = list.Where((b) =&gt; b.value &gt;1) 
+ Func&lt;InstanceB,InstanceB&gt; func = delegate (InstanceB b)
+ {
+     b.value = 3;
+     return b;
+  };
+newList = whereListIt.Select(func).ToList();</code></pre>
+<p><strong><span style="color:#1f497d;"><strong>筛选出第一次b.value &gt;1的独享 第二次将筛选对象的value都设置为3.</strong></span></strong></p>
+<pre><code>      public override bool MoveNext()
+      {
+        if (this.state == 1)
+        {
+          while (this.index &lt; this.source.Length)
+          {
+            TSource source = this.source[this.index];
+            ++this.index;
+            if (this.predicate == null || this.predicate(source))
+            {
+//这里可以看出Selector是对source进行操作，并不是筛选。
+              this.current = this.selector(source);
+              return true;
+            }
+          }
+          this.Dispose();
+        }
+        return false;
+      }</code></pre>
+<p>几个类结构如下：</p>
+<ol><li>WhereListIterator:Enumerable.Iterator&lt;TResult&gt;：IEnumerable&lt;TSource&gt;</li><li>WhereListIterator:Enumerable.Iterator&lt;TResult&gt;：IEnumerable&lt;TSource&gt;</li></ol>
+<p>  所以有连续的操作如：</p>
+<pre><code>list.Where((b) =&gt; b.value == 2).where((b) =&gt; b.value == 2)
+Func&lt;InstanceB,InstanceB&gt; func = delegate (InstanceB b)
+        {
+            b.value = 3;
+            return b;
+        };
+list.Select(t).Select(t)</code></pre>
+<p style="margin-left:21pt;"><span style="color:#000000;">也可以有组合的操作</span></p>
+<pre><code>list.Where((b) =&gt; b.value == 2).Select(t)
+
+原因是连续操作内部做了 Combine操作：下面是Selector调用Selector即：Selector.Selector
+public override IEnumerable&lt;TResult2&gt; Select&lt;TResult2&gt;(
+        Func&lt;TResult, TResult2&gt; selector) {
+        return (IEnumerable&lt;TResult2&gt;) new Enumerable.SelectEnumerableIterator&lt;TSource, TResult2&gt;(this._source, Enumerable.CombineSelectors&lt;TSource, TResult, TResult2&gt;(this._selector, selector));
+}
+组合操作做了组合：下面是Selector.Where的组合操作
+public override IEnumerable&lt;TResult&gt; Where(Func&lt;TResult, bool&gt; predicate) =&gt; (IEnumerable&lt;TResult&gt;) new Enumerable.WhereEnumerableIterator&lt;TResult&gt;((IEnumerable&lt;TResult&gt;) this, predicate);</code></pre>
+<p><span style="color:#1f497d;">/</span><span style="color:#0d0016;">组合操作时会把This当前对象传递到下个对象<span style="background-color:#ffff00;">WhereEnumerableIterator。</span>而<span style="background-color:#ffff00;">WhereEnumerableIterator在MoveNext中的操作如下：</span>   </span></p>
+<ul><li><span style="color:#0d0016;"> 取了上个对象的迭代器，先做处理。</span></li><li><span style="color:#0d0016;">调用了上个对象的MoveNext对Selector的Func进行了调用，之后再调用this.predicate做筛选。</span></li></ul>
+<h3>3.从设计模式的角度</h3>
+<p>对于List、Dictionary和Array</p>
+<ul><li>使用扩展方法扩展扩展IEnumrable的功能，而不修改IEnurable接口内容。</li><li>实现新的类对象，持有IEnumrable对象做迭代处理，使用的是组合的方式而不是继承的方式。</li><li>新创建的对象分别代表不同的操作，继承同一个父类，因此不同对象之间使用组合模式可以相互组合，实现复杂的操作。</li></ul>
+<p>现在又要给这些数据集合添加功能是筛选.实现方法有以下两种：</p>
+<p>    1.新写一个接口让这些集合实现，利用迭代的功能实现筛选。坏处是某个对象都需要实现这个方法。破坏了原有类的结构。</p>
+<p>    2.由于筛选功能只是用到了迭代器，因此可以：</p>
+<ul><li>使用扩展方法扩展扩展IEnumrable的功能，而不修改IEnurable接口内容。</li><li>实现新的类对象，持有IEnumrable对象做迭代处理，使用的是组合的方式而不是继承的方式。</li><li>新创建的对象分别代表不同的操作，继承同一个父类，因此不同对象之间使用组合模式可以相互组合，实现复杂的操作。</li></ul>
+<p></p>
+<p style="margin-left:21pt;"></p>
+<p style="margin-left:23.8pt;"></p>
+<p><strong> </strong></p>
+</div>
+</div>

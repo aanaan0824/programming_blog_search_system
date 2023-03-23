@@ -1,0 +1,136 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<blockquote>
+<p>非原创---东拼西凑来的</p>
+<p>游标(cursor)是一个存储在MySQL服务器上的数据库查询，它不是一条SELECT语句，而是被该语句检索出来的结果集。在存储了游标之后，应用程序可以根据需要滚动或浏览其中的数据。</p>
+<p>游标主要用于交互式应用，其中用户需要滚动屏幕上的数据，并对数据进行浏览或做出更改。不像多数DBMS，MySQL游标只能用于存储过程(和函数)。</p>
+<p><span style="color:#fe2c24;"><strong>简单的说，游标（CURSOR）的特殊性在于它可以用循环对返回值进行逐条编译，它具有只读性、不可跳跃性和迟钝性。</strong></span></p>
+<p><span style="color:#fe2c24;"><strong>游标会吃更多的内存，减少可用的并发。</strong></span></p>
+</blockquote>
+<p>游标5个组成部分</p>
+<p>1、声明 2、打开 3、从游标中查找信息 4、关闭 5、释放</p>
+<p>在能够使用游标前，必须声明（定义）它。这个过程实际上没有检索数据，它只是定义要使用的SELECT语句：</p>
+<pre><code>DECLARE 游标名 CURSOR
+FOR
+SELECT 语句 #此处必须是SELECT语句</code></pre>
+<p>一旦声明后，必须打开游标以供使用。这个过程用前面定义的SELECT语句把数据实际检索出来：</p>
+<pre><code>OPEN 游标名;</code></pre>
+<p>对于填有数据的游标，根据需要取出(检索)各行：</p>
+<pre><code>FETCH... FROM 游标名</code></pre>
+<p>FETCH指定检索什么数据，即所需的列，并指定检索出来的数据存储在什么地方。它还向前移动游标中的内部行指针，使下一条FETCH语句检索下一行，以不重复读取同一行。</p>
+<p>在结束游标使用时，必须关闭游标：</p>
+<pre><code>CLOSE 游标名;</code></pre>
+<p>在声明游标后，可根据需要频繁地打开和关闭游标。在游标打开后，可根据需要频繁地执行取操作。</p>
+<p></p>
+<h2>游标创建</h2>
+<p>游标用DECLARE语句创建。DECLARE命名游标，并定义相应的SELECT语句，根据需要带WHERE和其他子句。</p>
+<pre><code>CREATE PROCEDURE 储存过程名()
+BEGIN
+DECLARE 游标名 CURSOR
+FOR
+SELECT...
+FROM...
+WHERE...
+END</code></pre>
+<p>存储过程处理完成后，游标就“消失”了（因为它局限于存储过程之中）。</p>
+<p><strong>创建打开关闭游标举例</strong></p>
+<p>如前文所述，在定义游标之后，可以打开它：</p>
+<pre><code>declare cursor1（游标名） cursor for select XXX--声明游标 1
+open XXXX--打开 2
+fetch next from XXX into XXX--将游标值赋给XXX   3
+while(@@fetch_status=0)--循环查找
+fetch next from XXX into XXX--同上
+close cursor1--关闭游标   4
+deallocate cursor1--解散游标   5
+​
+fetch_status
+0 FETCH 语句成功
+-1 FETCH 语句失败或此行不在结果集中
+-2 被提取的行不存在</code></pre>
+<p>CLOSE释放游标使用的所有内部内存和资源，因此在每个游标不再需要时都应该关闭。</p>
+<p>在一个游标关闭后，如果没有重新打开，则不能使用它。但是，使用声明过的游标不需要再次声明，用OPEN语句打开它就可以了。</p>
+<p><strong>使用游标举例</strong></p>
+<p>在我们打开了游标后，如前文所述，可以用FETCH语句分别访问它的每一行：</p>
+<pre><code>alter PROCEDURE cursor_a_b_insert
+@aId int,
+@aName nchar(10)
+AS
+
+declare @id int
+declare @name varchar(50)
+
+declare cursor1 cursor for         --定义游标cursor1
+select bid,bname from b where aid=@aId             --使用游标的对象(跟据需要填入select文)
+open cursor1                       --打开游标
+fetch next from cursor1 into @id,@name  --将游标向下移1行，获取的数据放入之前定义的变量@id,@name中
+while @@fetch_status=0           --判断是否成功获取数据
+begin
+update b set bname=@aName+'1' where bid=@id                           --进行相应处理(跟据需要填入SQL文)
+update a set aname=@aName where aid=@aId
+fetch next from cursor1 into @id,@name  --将游标向下移1行
+end
+close cursor1                   --关闭游标
+deallocate cursor1 
+
+
+exec cursor_a_b_insert 55,'王媛媛'
+
+
+
+
+
+alter proc cursor_pr_UpUser
+@NoteUserId int
+as
+begin transaction
+declare @NLId int
+declare @NPLId int
+--创建用户所对应的日志游标cursorNLId，将日志id放入@NLId游标中
+declare cursorNLId cursor for select NoteLogId from NoteLogs where NUId=@NoteUserId
+open cursorNLId
+fetch next from cursorNLId into @NLId
+
+while @@fetch_status=0 --判断是否成功获取数据
+begin
+--创建日志所对应的评论游标cursorNPLId，将评论id放入@NPLId游标中
+declare cursorNPLId cursor for select NotePingLunId from NotePingLun where NLId=@NLId
+open cursorNPLId
+fetch next from cursorNPLId into @NPLId
+while @@fetch_status=0
+begin
+--根据评论游标@NPLId修改评论状态
+update dbo.NoteReply set NoteDel=0 where NoteReplyId=@NPLId
+fetch next from cursorNPLId into @NPLId
+end
+--当评论游标遍历完关闭
+close cursorNPLId --关闭游标
+deallocate cursorNPLId
+--根据日志游标@NPLId修改日志状态
+update dbo.NotePingLun set NoteDel=0 where NLId=@NLId
+fetch next from cursorNLId into @NLId
+
+end
+--关闭日志游标
+close cursorNLId --关闭游标
+deallocate cursorNLId
+--根据用户修改用户和日志状态
+update dbo.NoteUser set NoteDel=0 where NoteuserId=@NoteUserId
+update dbo.NoteLogs set NoteDel='qq' where NUId=@NoteUserId
+if @@error&lt;&gt;0 --如果有错误
+begin
+print '删除失败，回滚事务'
+rollback transaction --回滚
+end
+else
+begin
+print '删除成功，提交事务'
+commit transaction
+end
+go
+
+exec cursor_pr_UpUser 1</code></pre>
+<p>其中FETCH语句自动从第一行开始检索当前行的order_num列，并存储到一个名为“乖巧的局部变量”的局部声明的变量中。</p>
+<p> </p>
+</div>
+</div>

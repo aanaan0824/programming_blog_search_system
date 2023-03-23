@@ -1,0 +1,359 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1>1.什么是热更新</h1>
+<p>热更新是指在不需要重新编译打包游戏的情况下，在线更新游戏中的一些非核心代码和资源，比如活动运营和打补丁。热更新分为资源热更新和代码热更新两种，代码热更新实际上也是把代码当成资源的一种热更新，但通常所说的热更新一般是指代码热更新。资源热更新主要通过AssetBundle来实现，在Unity编辑器内为游戏中所用到的资源指定AB包的名称和后缀，然后进行打包并上传服务器，待游戏运行时动态加载服务器上的AB资源包。代码热更新主要包括Lua热更新、ILRuntime热更新和C#直接反射热更新等。由于ILRuntime热更新还不成熟可能存在一些坑，而C#直接反射热更新又不支持IOS平台，因此目前大多采用更成熟的、没有平台限制的Lua热更新方案。</p>
+<h1><br/> 2.为什么要有热更新</h1>
+<p>热更新，能够缩短用户取得新版客户端的流程，改善用户体验。</p>
+<h3><a name="t2"></a><strong>没有热更新：</strong></h3>
+<p>pc用户：下载客户端-&gt;等待下载-&gt;安装客户端-&gt;等待安装-&gt;启动-&gt;等待加载-&gt;玩</p>
+<p>手机用户：商城下载APP-&gt;等待下载-&gt;等待安装-&gt;启动-&gt;等待加载-&gt;玩</p>
+<h3><a name="t3"></a><strong>有了热更新：</strong></h3>
+<p>pc用户：启动-&gt;等待热更新-&gt;等待加载-&gt;玩</p>
+<p>有独立loader的pc用户：<strong>启动loader-&gt;等待热更新-&gt;启动游戏-&gt;等待加载-&gt;玩</strong></p>
+<p>手机用户：<strong>启动-&gt;等待热更新-&gt;等待加载-&gt;玩</strong></p>
+<p>通过对比就可以看出，有没有热更新对于用户体验的影响还是挺大的，主要就是省去用户自行更新客户端的步骤。</p>
+<h1><br/> 3.如何使用热更新，使用热更新的不同方案比较</h1>
+<h2>3.1.LUA热更（LUA与C#绑定，方案成熟）</h2>
+<p>Lua热更新解决方案是通过一个Lua热更新插件（如ulua、slua、tolua、xlua等）来提供一个Lua的运行环境以及和C#进行交互。<a href="https://github.com/Tencent/xLua" title="xLua">xLua</a>是腾讯开源的热更新插件，有大厂背书和专职人员维护，插件的稳定性和可持续性较强。 </p>
+<p>由于Lua不需要编译，因此Lua代码可以直接在Lua虚拟机里运行，Python和JavaScript等脚本语言也是同理。而xLua热更新插件就是为Unity、.Net、Mono等C#环境提供一个Lua虚拟机，使这些环境里也可以运行Lua代码，从而为它们增加Lua脚本编程的能力。借助xLua，这些Lua代码就可以方便的和C#相互调用。这样平时开发时使用C#，等需要热更新时再使用Lua，等下次版本更新时再把之前的Lua代码转换成C#代码，从而保证游戏正常运营。</p>
+<p><strong>其中的XLua下文会重点讨论。</strong></p>
+<p><strong>lua热更原理：</strong>逻辑代码转化为脚本，脚本转化为文本资源，以更新资源的形式更新程序<img alt="" src="https://img-blog.csdn.net/20160925170346080?watermark/2/text/aHR0cDovL2Jsb2cuY3Nkbi5uZXQv/font/5a6L5L2T/fontsize/400/fill/I0JBQkFCMA==/dissolve/70/gravity/Center"/></p>
+<p><strong> 一位老哥做的Xlua性能测试：</strong></p>
+<p><a class="has-card" href="https://blog.csdn.net/tian2kong/article/details/79423848" title="XLua 性能测试_tian2kong的专栏-CSDN博客_xlua性能优化"><span class="link-card-box"><span class="link-title">XLua 性能测试_tian2kong的专栏-CSDN博客_xlua性能优化</span><span class="link-desc">这个一段代码，运行的性能分析是这样的这个代码是我用lua写的，其他的环境是一样，就是这个代码差别，一个用lua写，一个C#写，运行的分析图是这样的从这个两个分析图，我们可以看出，就Translate这个api函数，一个在C#调用，一个在xlua调用，如果数量级多的话，性能上还是差别很大的所以我个人觉得，如果是UI用xlua实现没有大问题，如果是在战斗中，尽量不要再Xlua的update中取实现功能...</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/tian2kong/article/details/79423848</span></span></a>这位老哥，用一个同样的函数，用C#写的运行10.68ms，用Xlua写的运行37.29ms。可见Xlua性能上还是差别很大的。后文将继续研究为什么Xlua性能更差。</p>
+<p></p>
+<h2>3.2 .ILRuntime热更</h2>
+<p>ILRuntime项目是掌趣科技开源的热更新项目，它为基于C#的平台（例如Unity）提供了一个纯C#、快速、方便和可靠的IL运行时，使得能够在不支持JIT的硬件环境（如iOS）能够实现代码热更新。ILRuntime项目的原理实际上就是先用VS把需要热更新的C#代码封装成DLL（动态链接库）文件，然后通过Mono.Cecil库读取DLL信息并得到对应的IL中间代码（IL是.NET平台上的C#、F#等高级语言编译后产生的中间代码，IL的具体形式为.NET平台编译后得到的.dll动态链接库文件或.exe可执行文件），最后再用内置的IL解译执行虚拟机来执行DLL文件中的IL代码。</p>
+<p>由于ILRuntime项目是使用C#来完成热更新，因此很多时候会用到反射来实现某些功能。而反射是.NET平台在运行时获取类型（包括类、接口、结构体、委托和枚举等类型）信息的重要机制，即从对象外部获取内部的信息，包括字段、属性、方法、构造函数和特性等。我们可以使用反射动态获取类型的信息，并利用这些信息动态创建对应类型的对象。只不过ILRuntime中的反射有两种：一种是在热更新DLL中直接使用C#反射获取到System.Type类对象；另一种是在Unity主工程中通过appdomain.LoadedTypes来获取继承自System.Type类的IType类对象，因为在Unity主工程中无法直接通过System.Type类来获取热更新DLL中的类。</p>
+<p><strong>ILRuntime下文也会重点讨论。</strong></p>
+<p>ILRuntime项目为基于C#的平台（例如Unity）提供了一个<code>纯C#实现</code>，<code>快速</code>、<code>方便</code>且<code>可靠</code>的<strong>IL运行时（后文详细了解）</strong>，使得能够在<strong>不支持JIT的硬件环境（如iOS）（后文详细了解）</strong>能够实现代码的热更新。</p>
+<p><img alt="" height="871" src="image\7b7c90a0810a475ab5acca41e7e39123.png" width="1200"/></p>
+<p></p>
+<h2>3.3.直接更dll（IOS不能用）</h2>
+<p>由于Android支持JIT（Just In Time）即时编译（动态编译）的模式，即可以边运行边编译，支持在运行时动态生成代码和类型。从Android N开始引入了一种同时使用JIT和AOT的混合编译模式。JIT的优点是支持在运行时动态生成代码和类型，APP安装快，不占用太多内存。缺点是编译时占用运行时资源，执行速度比AOT慢。比如，C#中的虚函数和反射都是在程序运行时才确定对应的重载方法和类。因此，Android平台可以不借助任何第三方热更新方案，直接使用C#反射执行DLL文件。实际开发时通过System.Reflection.Assembly类加载程序集DLL文件，然后再利用System.Type类获取程序集中某个类的信息，还可以通过Activator类来动态创建实例对象。</p>
+<p>而IOS平台采用AOT（Ahead Of Time）预先编译（静态编译）的模式，不支持JIT编译模式，即程序运行前就将代码编译成机器码存储在本地，然后运行时直接执行即可，因此AOT不能在运行时动态生成代码和类型。AOT的优点是执行速度快，安全性更高。缺点是由于AOT需要提前编译，所以APP的安装时间长且占内存。Mono在IOS平台上采用<a href="http://http//www.mono-project.com/AOT#Full_AOT" title="Full AOT">Full AOT</a>模式运行，如果直接使用C#反射执行DLL文件，就会触发Mono的JIT编译器，而Full AOT模式下又不允许JIT，于是Mono就会报错。因此，IOS平台上不允许直接使用C#反射执行DLL文件来实现热更新。</p>
+<p>将执行代码预编译为assembly dll。将代码作为TextAsset打包进Assetbundle。运行时，使用Reflection机制实现代码的功能。更新相应的Assetbundle即可实现热更新。<strong>（具体技术细节，后文讨论）</strong></p>
+<h1><br/> 4.Xlua源码实现</h1>
+<h2>4.0 Xlua的特性</h2>
+<p>xLua为<strong>C#环境增加Lua脚本编程的能力</strong>，借助xLua，这些Lua代码可以方便的<strong>和C#相互调用</strong>。</p>
+<p><strong>Xlua可以：</strong> </p>
+<ul><li>1.可以运行时把C#实现（方法，操作符，属性，事件等等）替换成lua实现；</li><li>2.出色的GC优化，自定义struct，枚举在Lua和C#间传递无C# gc alloc；</li><li>3.编辑器下无需生成代码，开发更轻量；</li><li>4.为很多C#实现打热补丁</li></ul>
+<h2>4.1 Xlua的使用</h2>
+<h3>4.1.1 Lua文件加载</h3>
+<pre><code>luaenv = new LuaEnv();
+luaenv.DoString("print('hello world')");</code></pre>
+<h3>4.1.2 加载Lua文件</h3>
+<pre><code>            luaenv = new LuaEnv();
+            luaenv.DoString("require 'byfile'");</code></pre>
+<p><strong>require</strong>实际上是调一个个的原生的loader去加载，有一个成功就不再往下尝试，全失败则报文件找不到。 目前<strong>xLua除了原生的loader外，还添加了从Resource加载的loader（Xlua的一个特性，自定义loader）</strong>，需要注意的是因为Resource只支持有限的后缀，放Resources下的lua文件得加上txt后缀。</p>
+<p>建议的加载Lua脚本方式是：整个程序就一个DoString("require 'main'")，然后在main.lua加载其它脚本（类似lua脚本的命令行执行：lua main.lua）。</p>
+<p><img alt="" height="306" src="image\f9703381c6fa4c8a8998a32b9ef9f344.png" width="629"/></p>
+<p><img alt="" height="461" src="image\7cdeaa65423b48989b0d2f33fd6ca7ae.png" width="714"/></p>
+<p></p>
+<h3> 4.1.3 自定义Loader</h3>
+<p><strong>Loader运行的时候会检索所有的loader</strong>,这里给Loader列表，<strong>添加一个Loader</strong>，当其他所有loader都找不到"InMemory"的时候，这个自定义loader就起作用了。检测filename名称并返回相应的东西。</p>
+<pre><code>            luaenv = new LuaEnv();
+            luaenv.AddLoader((ref string filename) =&gt;
+            {
+                if (filename == "InMemory")
+                {
+                    string script = "return {ccc = 9999}";
+                    return System.Text.Encoding.UTF8.GetBytes(script);
+                }
+                return null;
+            });
+            luaenv.DoString("print('InMemory.ccc=', require('InMemory').ccc)");</code></pre>
+<p></p>
+<h3> 4.1.4 C#访问Lua</h3>
+<p>这里指的是C#主动发起对Lua数据结构的访问。</p>
+<p><strong>1.全局基本数据类型：（调用LuaEnv.</strong><strong>Global）</strong></p>
+<pre><code> luaenv.Global.Get&lt;int&gt;("a")
+ luaenv.Global.Get&lt;string&gt;("b")
+ luaenv.Global.Get&lt;bool&gt;("c")</code></pre>
+<p><strong>2.访问一个全局的table：</strong></p>
+<p>也是用上面的Get方法，类型则要特殊处理。</p>
+<p><strong>2.1 映射到普通class或struct:(其实就是Get&lt;&gt;中的参数填XXXClass)</strong></p>
+<pre><code>            DClass d = luaenv.Global.Get&lt;DClass&gt;("d");//映射到有对应字段的class，by value
+            Debug.Log("_G.d = {f1=" + d.f1 + ", f2=" + d.f2 + "}");</code></pre>
+<p>对于{f1 = 100, f2 = 100}可以定义一个包含public int f1;public int f2;的class。 这种方式下xLua会帮你new一个实例，并把对应的字段赋值过去。这个<strong>过程是值拷贝</strong>，如果<strong>class比较复杂代价会比较大</strong>。而且<strong>修改class的字段值不会同步到table，反过来也不会。</strong></p>
+<p><strong>2.2 映射到一个interface：</strong></p>
+<p>这种方式<strong>依赖于生成代码</strong>（如果没生成代码会抛InvalidCastException异常），<strong>代码生成器会生成这个interface的实例</strong>，如果get一个属性，生成代码会get对应的table字段，如果set属性也会设置对应的字段。甚至可以通过interface的方法访问lua的函数。（<strong>这个要求interface加到生成列表，否则会返回null</strong>）</p>
+<p>本来interface不能直接生成实例的，这里给直接生成实例了。</p>
+<pre><code>            ItfD d3 = luaenv.Global.Get&lt;ItfD&gt;("d"); //映射到interface实例，by ref，这个要求interface加到生成列表，否则会返回null，建议用法
+            d3.f2 = 1000;
+            Debug.Log("_G.d = {f1=" + d3.f1 + ", f2=" + d3.f2 + "}");
+            Debug.Log("_G.d:add(1, 2)=" + d3.add(1, 2));</code></pre>
+<p><strong>2.3 更轻量级的by value方式：映射到Dictionary&lt;&gt;，List&lt;&gt;</strong></p>
+<p>不想定义class或者interface的话，可以考虑用这个，<strong>前提table下key和value的类型都是一致的</strong>。</p>
+<pre><code>            Dictionary&lt;string, double&gt; d1 = luaenv.Global.Get&lt;Dictionary&lt;string, double&gt;&gt;("d");//映射到Dictionary&lt;string, double&gt;，by value
+            Debug.Log("_G.d = {f1=" + d1["f1"] + ", f2=" + d1["f2"] + "}, d.Count=" + d1.Count);</code></pre>
+<p><strong>2.4 另外一种by ref方式：映射到LuaTable类</strong></p>
+<p>这种方式好处是不需要生成代码，但也有一些问题，比如慢，比方式2要慢一个数量级，比如没有类型检查。</p>
+<pre><code>            LuaTable d4 = luaenv.Global.Get&lt;LuaTable&gt;("d");//映射到LuaTable，by ref
+            Debug.Log("_G.d = {f1=" + d4.Get&lt;int&gt;("f1") + ", f2=" + d4.Get&lt;int&gt;("f2") + "}");</code></pre>
+<p><strong>3.访问一个全局的function：</strong></p>
+<p><strong>3.1.映射到delegate：</strong></p>
+<p>这种是建议的方式，性能好很多，而且类型安全。缺点是要生成代码（如果没生成代码会抛InvalidCastException异常）。</p>
+<pre><code>        [CSharpCallLua]
+        public delegate int FDelegate(int a, string b, out DClass c);</code></pre>
+<pre><code>            Action e = luaenv.Global.Get&lt;Action&gt;("e");//映射到一个delgate，要求delegate加到生成列表，否则返回null，建议用法
+            e();
+
+            FDelegate f = luaenv.Global.Get&lt;FDelegate&gt;("f");
+            DClass d_ret;
+            int f_ret = f(100, "John", out d_ret);//lua的多返回值映射：从左往右映射到c#的输出参数，输出参数包括返回值，out参数，ref参数
+            Debug.Log("ret.d = {f1=" + d_ret.f1 + ", f2=" + d_ret.f2 + "}, ret=" + f_ret);</code></pre>
+<p> 或者：</p>
+<pre><code>        [CSharpCallLua]
+        public delegate Action GetE();</code></pre>
+<pre><code>            GetE ret_e = luaenv.Global.Get&lt;GetE&gt;("ret_e");//delegate可以返回更复杂的类型，甚至是另外一个delegate
+            e = ret_e();
+            e();</code></pre>
+<p><strong> 3.2.映射到LuaFunction</strong></p>
+<p>这种方式的优缺点刚好和第一种相反。性能差类型不安全，但是不用生成代码。 使用也简单，LuaFunction上有个变参的Call函数，可以传任意类型，任意个数的参数，返回值是object的数组，对应于lua的多返回值。</p>
+<pre><code>            LuaFunction d_e = luaenv.Global.Get&lt;LuaFunction&gt;("e");
+            d_e.Call();</code></pre>
+<p>会返回[object,object,object] 的列表，对应lua函数返回多个值</p>
+<p><strong>4.注意事项</strong></p>
+<p>4.1<strong> 访问lua全局数据，特别是table以及function，代价比较大</strong>，建议尽量少做，比如在<strong>初始化时把要调用的lua function获取一次（映射到delegate）后，保存下来</strong>，后续直接调用该delegate即可。table也类似。</p>
+<p>4.2如果lua侧的实现的部分都以delegate和interface的方式提供，使用方可以完全和xLua解耦：由一个专门的模块负责xlua的初始化以及delegate、interface的映射，然后把这些delegate和interface设置到要用到它们的地方。</p>
+<p></p>
+<h3>4.1.5 Lua调用C#</h3>
+<p><strong>1.new C#对象</strong></p>
+<pre><code>local newGameObj = CS.UnityEngine.GameObject()</code></pre>
+<p><strong> 2.访问C#静态属性，方法</strong></p>
+<p>读写静态属性</p>
+<pre><code>CS.UnityEngine.Time.deltaTime
+CS.UnityEngine.Time.timeScale = 0.5</code></pre>
+<p>调用静态方法</p>
+<pre><code>CS.UnityEngine.GameObject.Find('helloworld')</code></pre>
+<pre><code>//小技巧：如果需要经常访问的类，可以先用局部变量引用后访问，除了减少敲代码的时间，还能提高性能：
+local GameObject = CS.UnityEngine.GameObject
+GameObject.Find('helloworld')</code></pre>
+<p><strong>3.访问C#成员属性，方法</strong></p>
+<p><strong>读写成员属性</strong></p>
+<pre><code>testobj.DMF
+testobj.DMF = 1024
+</code></pre>
+<p><strong>调用成员方法</strong></p>
+<p>注意：调用成员方法，第一个参数需要传该对象，建议用冒号语法糖，如下</p>
+<pre><code>testobj:DMFunc()
+//等同于
+testobj.DMFunc(testobj)</code></pre>
+<p><strong>参数的输入输出属性（out，ref）</strong></p>
+<p>Lua调用侧的参数处理规则：C#的普通参数算一个输入形参，ref修饰的算一个输入形参，out不算，然后从左往右对应lua 调用侧的实参列表；</p>
+<p>Lua调用侧的返回值处理规则：C#函数的返回值（如果有的话）算一个返回值，out算一个返回值，ref算一个返回值，然后从左往右对应lua的多返回值。</p>
+<pre><code>		
+	public struct Param1
+	{
+		public int x;
+		public string y;
+	}
+
+        public double ComplexFunc(Param1 p1, ref int p2, out string p3, Action luafunc, out Action csfunc)
+		{
+			Debug.Log("P1 = {x=" + p1.x + ",y=" + p1.y + "},p2 = " + p2);
+			luafunc();
+			p2 = p2 * p1.x;
+			p3 = "hello " + p1.y;
+			csfunc = () =&gt;
+			{
+				Debug.Log("csharp callback invoked!");
+			};
+			return 1.23;
+		}</code></pre>
+<pre><code>            --复杂方法调用
+            local ret, p2, p3, csfunc = testobj:ComplexFunc({x=3, y = 'john'}, 100, function()
+               print('i am lua callback')
+            end)
+            print('ComplexFunc ret:', ret, p2, p3, csfunc)
+            csfunc()</code></pre>
+<p><strong>4.C#复杂类型和table的自动转换</strong></p>
+<p>对于一个有无参构造函数的C#复杂类型，<strong>在lua侧可以直接用一个table来代替</strong>，该table对应复杂类型的public字段有相应字段即可，支持函数参数传递，属性赋值等，例如： C#下B结构体（class也支持）定义如下：</p>
+<pre><code>public struct A
+{
+    public int a;
+}
+
+public struct B
+{
+    public A b;
+    public double c;
+}</code></pre>
+<p>某个类有成员函数如下：</p>
+<pre><code>void Foo(B b)
+</code></pre>
+<p>在lua可以这么调用</p>
+<pre><code>obj:Foo({b = {a = 100}, c = 200})</code></pre>
+<p><strong>5.获取类型（相当于C#的typeof）</strong></p>
+<pre><code>typeof(CS.UnityEngine.ParticleSystem)</code></pre>
+<p><strong>6.“强”转</strong></p>
+<p>lua没类型，所以不会有强类型语言的“强转”，但有个有点像的东西：告诉xlua要<strong>用指定的生成代码去调用一个对象</strong>，这在什么情况下能用到呢？有的时候第三方库对外暴露的是一个interface或者抽象类，实现类是隐藏的，这样我们无法对实现类进行代码生成。该<strong>实现类</strong>将会被xlua识别为未生成代码而<strong>用反射来访问</strong>，如果这个调用是很频繁的话还是<strong>很影响性能的</strong>，这时我们就可以把这个interface或者抽象类加到生成代码，然后指定用该生成代码来访问：</p>
+<pre><code>cast(calc, typeof(CS.Tutorial.Calc))
+</code></pre>
+<p>上面就是指定用CS.Tutorial.Calc的生成代码来访问calc对象。</p>
+<pre><code>            //通过反射来调用函数
+            local calc = testobj:GetCalc()
+            print('assess instance of InnerCalc via reflection', calc:add(1, 2))
+            assert(calc.id == 100)
+
+            //把这个interface或者抽象类加到生成代码，然后指定用该生成代码来访问
+            cast(calc, typeof(CS.Tutorial.ICalc))
+            print('cast to interface ICalc', calc:add(1, 2))
+            assert(calc.id == nil)</code></pre>
+<h2>4.2 Xlua具体代码的实现与原理</h2>
+<h3><strong>4.2.1 </strong>Xlua中 <strong>lua调用c#的原理：</strong></h3>
+<p>如果一个C#类型添加了<strong>[LuaCallCSharp]标签</strong>，xLua会生成这个类型的<strong>XXXXXWrap.cs适配代码</strong>（包括构造该类型实例，访问其成员属性、方法，静态属性、方法），并用luaAPI放到lua的堆栈里面。如果没有提前生成适配代码，等程序运行，lua调用c#的时候，就会用<strong>性能较低</strong>的<strong>反射方式</strong>来访问，把c#类用反射全部遍历一遍，然后再放入lua的堆栈中。（反射比普通方法慢10000倍）</p>
+<p>而且在IL2CPP下还有可能因为代码剪裁而导致无法访问。IL2CPP是Unity推出的用来替代Mono VM的编译器。</p>
+<p><strong>初始化过程：</strong></p>
+<p><img alt="" height="607" src="image\378f97292af3427e92a7e903cc0977f2.png" width="879"/></p>
+<p>（<strong>DelegatesGensBridge.cs </strong>：Xlua生成这个文件,是用来指向 “hotfix热更新中，lua替代掉c#的方法函数。” <strong> EnumWrap.cs: </strong>把枚举都遍历一遍，存到EnumWrap.cs中，之后放入lua堆栈中。 <strong>XXXXXWrap.cs适配代码</strong>：把lua需要调用的方法存到适配代码中，之后放入Lua堆栈中。)</p>
+<p><strong>lua调用C#的过程： </strong></p>
+<p><img alt="" height="1200" src="image\825700c4e04d4b42bcb0038c1da8dfd1.png" width="809"/></p>
+<h3> 4.2.2 Xlua中 c#调用lua的原理</h3>
+<p>如果C#想要访问Lua中函数或Table，就要在C#中对应的<strong>Delegate</strong>或<strong>Interface</strong>添加 <strong>[CSharpCallLua]标签</strong>。Xlua会生成相应的XXXXXBridge.cs文件，会把lua中相应的函数方法，映射到c#中相应的Delegate或Interface中，然后通过luaenv.Global来调用。尽管还有其他映射方式，但最好通过Delegate来映射Lua中的函数，通过Interface来映射Lua中的Table。</p>
+<p><img alt="" height="399" src="image\e0a3d3b4358b4d2b900f8adc3e064cde.png" width="829"/></p>
+<h3> 4.2.3 Xlua中 Hotfix原理</h3>
+<p>生成XXXXXWrap.cs适配器代码后，执行XLua/Hotfix inject in Editor后，xLua会<strong>使用Mono.Cecil库</strong>对当前工程下的<strong>Assembly-CSharp.dll程序集</strong>进行IL注入。由于移动平台无法把C#代码编译成IL中间代码，所以绝大多数热更新方案都会涉及到IL注入（啥意思？理解不了这句，直接跳过。），只有这样Unity内置的VM才能对热更新的代码进行处理。xLua进行IL注入时会为打上[Hotfix]标签的类的所有函数创建一个DelegateBridge变量，同时添加对应的判断条件,有hotfix代码就执行lua的hotfix代码，没有hotfix代码就执行原来的c#代码。</p>
+<p><img alt="" height="519" src="image\7e2d722f9f904d56981c0147edba7898.png" width="486"/></p>
+<p></p>
+<h2>4.3 Xlua中 其他问题</h2>
+<h3>1.luaenv的原理是什么？</h3>
+<p>luaenv是Xlua中的一个Lua虚拟机类，用来执行lua代码，或者管理Lua堆栈。</p>
+<p><img alt="" src="https://img-blog.csdn.net/20141113221648152"/></p>
+<p><a class="has-card" href="https://blog.csdn.net/zhuzhuyule/article/details/41086745?utm_medium=distribute.pc_relevant_t0.none-task-blog-2~default~BlogCommendFromMachineLearnPai2~default-1.control&amp;depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-2~default~BlogCommendFromMachineLearnPai2~default-1.control" title="Lua初学者（四）--Lua调用原理展示（lua的堆栈）_猪猪侠的点滴-CSDN博客_lua栈"><span class="link-card-box"><span class="link-title">Lua初学者（四）--Lua调用原理展示（lua的堆栈）_猪猪侠的点滴-CSDN博客_lua栈</span><span class="link-desc">本文较详细的描述了 宿主语言（这里拿C++实例） 调用 Lua 时过程中的 栈的使用情况，最后附图 动态 展示整个过程。希望对大家提供帮助。</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/zhuzhuyule/article/details/41086745?utm_medium=distribute.pc_relevant_t0.none-task-blog-2~default~BlogCommendFromMachineLearnPai2~default-1.control&amp;depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-2~default~BlogCommendFromMachineLearnPai2~default-1.control</span></span></a></p>
+<h3><strong>2.DoStrnig的原理是什么？</strong></h3>
+<p>让Xlua中的luaenv虚拟机，执行DoString中的代码。</p>
+<h3>3.自定义Loader的原理是什么？</h3>
+<p>通过LuaEnv.AddLoader以及LuaAPI注册require的回调，lua代码里头调用require时，参数将会透传给回调，回调中就可以根据这个参数去加载指定文件。</p>
+<h3>4.Lua映射到C#的class原理是什么？</h3>
+<p>通过为每个CShapeCallLua生成对应的XXXXXBridge.cs文件，然后通过LuaAPI对对应的lua函数具体部分进行操作，让C#中的函数和lua中的函数对应起来。</p>
+<h3>5.代码生成器是啥概念？</h3>
+<p>Xlua中的Generator.cs类，能根据模板，例如LuaClassWrap.tpl.txt，来生成具体的.cs或者.lua或者.xml文件。</p>
+<h3>6.为啥Lua映射到C#的LuaTable类会比映射到一个interface代码生成器慢一个数量级？</h3>
+<p>这种泛而全的LuaTable类，要把Lua映射上去，必定要对lua方法进行反射操作，反射又是十分耗时的。不如直接用代码生成器，提前生成好XXXXBridge.cs，直接照着Bridge.cs中的结构，用LuaAPI填数据进去，这样速度快非常多。</p>
+<h3>7 by ref方式映射又是啥？</h3>
+<p>by ref就是by reference，引用传递的意思。Xlua官方源码案例中，直接搜by ref能看到案例。</p>
+<h3>8.为什么访问lua全局数据，特别是table以及function，代价比较大</h3>
+<p>这个问题网上的答案也是众说纷纭，短期内我也找不到好的解答。问题肯定出在存全局和存局部的数据结构，堆栈中的配置方法不一样导致的。可能是全局数据需要扫描所有堆栈，而局部数据知道了入口以及数据量大小，只要扫描局部小部分。</p>
+<h3>9.lua调用C#中的CS.是什么原理？</h3>
+<p>生成XXXXBridge.cs，然后用luaAPI进行映射。前文有具体说明。</p>
+<h3>10.为什么先用局部变量引用后访问，能提高性能？</h3>
+<p>因为全局变量访问慢，用局部引用后，访问局部就快了。</p>
+<h3>11.语法糖的冒号testobj:DMFunc()是怎么实现的？</h3>
+<p>冒号这个，是Lua自身的特性，不是Xlua特有的东西。</p>
+<p>1、定义的时候：Class:test()与 Class.test(self)是等价的，点号(.)要达到冒号(:)的效果要加一个self参数到第一个参数；<br/> 2、调用的时候：object:test() 与object.test(object)等价，点号(.)要添加对象自身到第一个参数。</p>
+<p>总结：可以把点号(.)作为静态方法来看待，冒号(:)作为成员方法来看待。</p>
+<h3>12 泛化（模版）方法 是什么？Extension methods功能进行封装又是什么？</h3>
+<p>泛化编程，和模板是一个编程的概念。泛型编程：编写与类型无关的通用代码，是代码复用的一种手段。模板是泛型编程的基础。</p>
+<p><a class="has-card" href="https://blog.csdn.net/weixin_42357849/article/details/105492332" title="泛化编程和模板的使用_ice_玖闻于世丶的博客-CSDN博客_编程泛化"><span class="link-card-box"><span class="link-title">泛化编程和模板的使用_ice_玖闻于世丶的博客-CSDN博客_编程泛化</span><span class="link-desc">在学习的过程中，我们在写代码的时候会使用一些形式相同，参数相同，但参数类型和返回值类型不同的一些函数。当初我们学过函数重载，但函数重载存在以下一些不好的地方。-例如：重载的函数仅仅只是类型不同，代码的复用率比较低，只要有新类型出现时，就需要增加对应的函数。代码的可维护性比较低，一个出错可能所有的重载均出错。泛型编程：编写与类型无关的通用代码，是代码复用的一种手段。模板是泛型编程的...</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/weixin_42357849/article/details/105492332</span></span></a> 用泛化编程的理念，来对Extension methods扩展功能，进行一下封装，简化了扩展功能的实现。</p>
+<h3>13.il2cpp是什么?</h3>
+<p>IL2CPP 是 Unity一种新的脚本后处理（Scripting Backend）方式，针对.Net平台编译输出的IL（中间语言）进行处理。</p>
+<p>IL2CPP主要由两部分组成：</p>
+<ol><li>AOT静态编译编译器（il2cpp.exe）</li><li>运行时库（libil2cpp）</li></ol>
+<p>其中AOT将IL转换为C++源码，再交给各平台的C++编译器进行编译，达到平台兼容的目的；<strong>运行时库</strong>则会提供诸如<strong>垃圾回收</strong>、<strong>线程/文件获取</strong>、内部调用直接修改托管数据结构的<strong>原生代的服务与抽象</strong>。</p>
+<p><a class="has-card" href="https://zhuanlan.zhihu.com/p/141748334" title="Unity之IL2CPP - 知乎"><span class="link-card-box"><span class="link-title">Unity之IL2CPP - 知乎</span><span class="link-desc">作者：罗鹏背景在Unity4.6.1 p5以后版本中，在PlayerSettings—&gt;Other Settings—&gt;Scripting Backend有mono和il2cpp两个选项，它们是Unity脚本后处理（Scripting Backend）的两种方式。 概念IL2CPP 是 Unity…</span><span class="link-link"><img alt="" class="link-link-icon" src="image\apple-touch-icon-152.a53ae37b.png"/>https://zhuanlan.zhihu.com/p/141748334</span></span></a></p>
+<h3>16.c#的标签</h3>
+<p>[CSharpCallLua] 这种标签，其实是</p>
+<p>c#中的attribute的一种应用</p>
+<p><a class="has-card" href="https://www.runoob.com/csharp/csharp-attribute.html" title="C# 特性（Attribute） | 菜鸟教程"><span class="link-card-box"><span class="link-title">C# 特性（Attribute） | 菜鸟教程</span><span class="link-desc">C# 特性（Attribute） 特性（Attribute）是用于在运行时传递程序中各种元素（比如类、方法、结构、枚举、组件等）的行为信息的声明性标签。您可以通过使用特性向程序添加声明性信息。一个声明性标签是通过放置在它所应用的元素前面的方括号（[ ]）来描述的。 特性（Attribute）用于添加元数据，如编译器指令和注释、描述、方法、类等其他信息。.Net 框架提供了两种类型的特性：预定义特性和自定义特性。 规定特性（Att..</span><span class="link-link"><img alt="" class="link-link-icon" src="https://static.runoob.com/images/favicon.ico"/>https://www.runoob.com/csharp/csharp-attribute.html</span></span></a></p>
+<h3>17.Lua调用c#，使用反射方法的时候，l2cpp下还有可能因为代码剪裁，这是什么？link.xml阻止il2cpp的代码剪裁怎么做到的？</h3>
+<p>什么是代码裁剪?<br/> 关于代码裁剪的说明: <a href="https://docs.unity3d.com/Manual/ManagedCodeStripping.html" title="Unity - Manual:  Managed code stripping">Unity - Manual: Managed code stripping</a></p>
+<p>勾选代码裁剪,构建时Unity代码裁剪工具会分析项目中的程序集,查找和删除未使用的代码. 裁剪掉没有使用到的代码.比如,一款2D游戏只用到了Sprite, 2D物理组件, 就可以把没有用到的3D物理代码部分裁剪掉. 使用裁剪功能可以显著减小包体大小, 也是目前Unity游戏包体优化的一个重要环节.</p>
+<p>看起来确实是一个非常牛掰又实用的功能, 然而还有不少问题，Unity貌似只能正确裁剪那些构建时自动打包进apk的预制体和场景中的脚本. 而AssetBundle上的脚本就就不会被处理到, 也就是说如果Prefab被打包成AssetBundle, 这个Prefab上的代码可能会被裁剪掉, 导致运行的时候报错闪退, 这无疑是致命的。所以Unity提供了裁剪等级的设置, 以及通过配置link.xml告诉Unity需要保留哪些代码.<br/><a class="has-card" href="https://blog.csdn.net/final5788/article/details/100183528" title="Unity IL2CPP发布64位,以及代码裁剪Strip Engine Code_空空如我-CSDN博客_unity 代码裁剪"><span class="link-card-box"><span class="link-title">Unity IL2CPP发布64位,以及代码裁剪Strip Engine Code_空空如我-CSDN博客_unity 代码裁剪</span><span class="link-desc">关于此方面我也是最近遇到问题才刚刚接触,有理解有误的地方还请路过的看官大佬不吝赐教.Google Play要求从2019年8月1日起apk必须支持64位CPU, 否则就下架或不让上. 使apk支持ARM64就需要把Scripting Backend由Mono切换为IL2CPP那么问题来了, 通过IL2CPP打出的包往往不能正常运行(闪退,报错).其原因就是, BuildSettin...</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/final5788/article/details/100183528</span></span></a></p>
+<h3>18.XLua.GCOptimize，C#枚举值加上了这个配置。xLua会为该类型生成gc优化代码，效果是该值类型在lua和c#间传递不产生（C#）gc alloc，该类型的数组访问也不产生gc，这段话是什么意思？</h3>
+<p>传递引用类型需要boxing和unboxing，产生gc,而传递值类型则不需要产生gc,所以xlua生成XXXbridge.cs模板，把struct里的各字段拷贝到一块非托管内存(Pack)（托管内存由垃圾收集器GC)清理），以及从非托管内存拷贝出各字段的值(UnPack)，传递的都是值类型，所以不产生gc。</p>
+<p><a class="has-card" href="https://blog.csdn.net/qq_31915745/article/details/79635076" title="XLua官方demo5-避免c#和lua间值类型的GC分析_Troubledealer/uestc-CSDN博客_xlua 无gc"><span class="link-card-box"><span class="link-title">XLua官方demo5-避免c#和lua间值类型的GC分析_Troubledealer/uestc-CSDN博客_xlua 无gc</span><span class="link-desc">  代码里的几个标签解释：         · XLua.GCOptimize： gc代码优化。对于一个c#纯值类型(官网指一个只包含值类型的struct，可以嵌套其它只包含值类型的struct)或者c#枚举值加上了这个配置，会使得该类型在lua和c#间传递不产生gc alloc，该类型的数组访问也不会产生gc。         (除枚举之外，包含无参构造函数的复杂类型，都会生成lua table...</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/qq_31915745/article/details/79635076</span></span></a></p>
+<h3>20.luajit是什么？</h3>
+<p><em>LuaJIT</em>即采用C语言写的Lua代码的解释器。</p>
+<p>LuaJIT is a <strong>Just-In-Time Compiler</strong> for the Lua* programming language.</p>
+<h3>21.如何复现<a href="https://github.com/Tencent/xLua/blob/master/Assets/XLua/Doc/configure.md" title="XLua的配置">XLua的配置</a></h3>
+<p>直接在/Editor中新建一个静态列表，打上LuaCallCSharp标签。里面的typeof(xxx)内容就是要Lua调用Cs的函数。</p>
+<p><img alt="" height="442" src="image\6d00476c84ad4c74989dfd8b13861302.png" width="718"/></p>
+<h3><strong>22.如何复现<a href="https://github.com/Tencent/xLua/blob/master/Assets/XLua/Doc/hotfix.md" title="热补丁操作指南">热补丁操作指南</a></strong></h3>
+<p><img alt="" height="170" src="image\bbae5d3f2e7a43379705c13fc1171656.png" width="577"/></p>
+<h3>24.如何复现<a href="https://github.com/Tencent/xLua/blob/master/Assets/XLua/Doc/XLua%E5%A2%9E%E5%8A%A0%E5%88%A0%E9%99%A4%E7%AC%AC%E4%B8%89%E6%96%B9lua%E5%BA%93.md" title="XLua增加删除第三方lua库">XLua增加删除第三方lua库</a></h3>
+<p>参考这篇文章，照做就行。</p>
+<p><a class="has-card" href="https://blog.csdn.net/wanzhihui0000/article/details/105603317" title="xlua 集成rapidjson_尘封的羽翼-CSDN博客_lua-rapidjson"><span class="link-card-box"><span class="link-title">xlua 集成rapidjson_尘封的羽翼-CSDN博客_lua-rapidjson</span><span class="link-desc">1、结合</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/wanzhihui0000/article/details/105603317</span></span></a></p>
+<h3>25.如何复现<a href="https://github.com/Tencent/xLua/blob/master/Assets/XLua/Doc/custom_generate.md" title="生成引擎二次开发指南">生成引擎二次开发指南</a></h3>
+<p>根据模板生成link.xml文件</p>
+<p>目录Xlua/Src/Editor/LinkXmlGen/LinkXmlGen.cs（功能文件）和</p>
+<p>Xlua/Src/Editor/LinkXmlGen/LinkXmlGen.tpl.txt(模板文件)</p>
+<p><img alt="" height="823" src="image\dd1c8fe74bda4e9ba81dc27f17e58d60.png" width="1200"/></p>
+<p>模板文件其中的ForEachCsList函数，是个普通的lua函数，编写在TemplateCommon.lua.txt文件中。</p>
+<p>而&lt;%XXXXX%&gt;中间的lua代码，都是会直接执行的。其余的则直接打印</p>
+<p> <img alt="" height="481" src="image\4ebff0bfacac4a92bc4901e40b175947.png" width="592"/></p>
+<p> <img alt="" height="628" src="image\79eaf86afaeb4610859b1c5e89ad197c.png" width="541"/></p>
+<p> <img alt="" height="157" src="image\528d304b5c364a3689e38ca6b58cdc8f.png" width="313"/></p>
+<p>点击生成link.xml。 </p>
+<h3>26.由于ios的限制我们的lua虚拟机加载不了动态库，而是直接编译进进程里头。lua虚拟机是啥？加载动态库又是啥？编译进进程头又是啥？</h3>
+<p><strong>虚拟机：</strong>用于模拟计算机运行的程序.是个中间层,它处于脚本语言和硬件之间的一个程序。</p>
+<p><img alt="" height="255" src="image\7c0fa3542ac14abe8e05c9d2529da0a3.png" width="246"/></p>
+<p> VM就是虚拟机的意思。luaenv是Xlua中的一个Lua虚拟机类。</p>
+<p><strong>静态库</strong>特点（linux)：</p>
+<p>命名上是以 *.o 结尾<br/> 静态库在链接阶段直接就加入到可执行的文件中了，在执行过程中无需该静态库<br/> 相对于动态库生成的文件，使用静态库生成的文件连接生成的可执行文件较大<br/><strong>动态库</strong>的特点（linux)</p>
+<p>命名上是以 *.so<br/> 目标文件在链接阶段只是指明链接的那个动态库，动态库与目标文件保持独立。在执行过程中需要该动态库<br/> 使用动态库生成的目标文件较小<br/> 对于工程中比较共通的源码文件，比如多个进程使用同一个模块的源码，我们最好将其制作成动态库，以节省系统空间。同时如果动态库出现bug，只需要重新生成一个动态库并将以前的替换即可。不需要重新编译其他模块。<br/><a class="has-card" href="https://blog.csdn.net/xiaoxiongxiongshi/article/details/104520188" title="动态库_xiaoxiongxiongshi的博客-CSDN博客_动态库"><span class="link-card-box"><span class="link-title">动态库_xiaoxiongxiongshi的博客-CSDN博客_动态库</span><span class="link-desc">总结一：动态库前言 我们知道程序编译链接经常使用动态，同时我们可能还知道，动态库时程序运行时加载的。但是动态库到底有什么作用，如何生成、如何加载等，我们却很少关注。接下来，我给大家做一个简单的介绍。1.1 动态库和静态库的区别静态库特点（linux)：命名上是以 *.o 结尾静态库在链接阶段直接就加入到可执行的文件中了，在执行过程中无需该静态库相对于动态库生成的文件，使用静态库生...</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/xiaoxiongxiongshi/article/details/104520188</span></span></a><strong>直接编译进进程里头：</strong>用JIT即时编译器，直接编译到进程里头。</p>
+<h3>27.AOT和JIT的区别是什么？</h3>
+<p>目前，程序主要有两种运行方式：静态编译与动态解释。</p>
+<ul><li>静态编译的程序在执行前全部被翻译为机器码，通常将这种类型称为AOT （Ahead of time）即 “提前编译”，典型代表是用C/C++开发的应用，它们必须在执行前编译成机器码</li><li>而解释执行的则是一句一句边翻译边运行，通常将这种类型称为JIT（Just-in-time）即“即时编译”，代表则非常多，如JavaScript、python</li></ul>
+<p>IOS不让JIT，所以不能直接热更DLL，所以得使用Mono.Cecil库对当前工程下的Assembly-CSharp.dll程序集进行IL注入。该中间代码IL再经.NET平台中的CLR（类似于JVM）编译成机器码让CPU执行相关指令。</p>
+<h3>28.<strong>Assembly-CSharp.dll</strong>程序集是什么？</h3>
+<p>项目中的cs代码在打包时都会被打进Assembly-CSharp.dll中，通过Mono调用。</p>
+<h3>29.<strong>Mono.Cecil库干嘛的？</strong></h3>
+<p><em>Mono.Cecil</em>:一个可加载并浏览现有程序集并进行动态修改并保存的.NET框架</p>
+<h3>30 IL是什么？</h3>
+<p>IL的全称是Intermediate Language （IL）即将.NET代码转化为机器语言的一个中间语言的缩写。在一定程度上，我们可以将其理解为伪汇编语言。我们在使用.NET框架中的C#、VB.NET、F#等语言的时候，编译过程并不是像C/C++一样直接编译出原生代码，而是编译成IL中间语言。通过IL中间语言这种方式，可以实现跨平台、提高程序灵活性等多种优点。</p>
+<p><img alt="" height="464" src="image\2c05aee8a4ad425d87ba72c41f7bf1a3.png" width="635"/></p>
+<h3> 31.CLR是什么，JVM又是什么？</h3>
+<p><strong>公共语言运行库 (common language runtime,CLR) </strong>是<a href="https://baike.baidu.com/item/%E6%89%98%E7%AE%A1%E4%BB%A3%E7%A0%81/2886980" title="托管代码">托管代码</a>执行核心中的引擎。运行库为托管代码提供各种服务，如跨语言集成、<a href="https://baike.baidu.com/item/%E4%BB%A3%E7%A0%81%E8%AE%BF%E9%97%AE%E5%AE%89%E5%85%A8%E6%80%A7/2881793" title="代码访问安全性">代码访问安全性</a>、对象生存期管理、调试和分析支持。它是整个.NET框架的核心，它为.NET应用程序提供了一个托管的代码执行环境。它实际上是驻留在内存里的一段代理代码，负责应用程序在整个执行期间的代码管理工作。</p>
+<p><a class="has-card" href="https://baike.baidu.com/item/%E5%85%AC%E5%85%B1%E8%AF%AD%E8%A8%80%E8%BF%90%E8%A1%8C%E5%BA%93/2882128?fromtitle=CLR&amp;fromid=10567215&amp;fr=aladdin" title="公共语言运行库_百度百科"><span class="link-card-box"><span class="link-title">公共语言运行库_百度百科</span><span class="link-desc">公共语言运行库 (common language runtime,CLR) 是托管代码执行核心中的引擎。运行库为托管代码提供各种服务，如跨语言集成、代码访问安全性、对象生存期管理、调试和分析支持。它是整个.NET框架的核心，它为.NET应用程序提供了一个托管的代码执行环境。它实际上是驻留在内存里的一段代理代码，负责应用程序在整个执行期间的代码管理工作。</span><span class="link-link"><img alt="" class="link-link-icon" src="https://baike.baidu.com/favicon.ico"/>https://baike.baidu.com/item/%E5%85%AC%E5%85%B1%E8%AF%AD%E8%A8%80%E8%BF%90%E8%A1%8C%E5%BA%93/2882128?fromtitle=CLR&amp;fromid=10567215&amp;fr=aladdin</span></span></a><strong>JVM是Java Virtual Machine（<a href="https://baike.baidu.com/item/Java%E8%99%9A%E6%8B%9F%E6%9C%BA/6810577" title="Java虚拟机">Java虚拟机</a>）的缩写</strong>。</p>
+<p></p>
+<h1>5.ILRuntime源码实现</h1>
+<h2>5.1 ILRuntime的原理</h2>
+<p>（<strong>Runtime运行时刻</strong>是指一个程序在运行（cc或者在被执行）的状态）</p>
+<p>ILRuntime借助Mono.Cecil库来读取DLL的PE信息（Mono.Cecil库也可以进行IL注入），以及当中类型的所有信息，最终得到方法的IL汇编码，然后通过内置的IL解译执行虚拟机来执行DLL中的代码。</p>
+<p><img alt="" src="image\9358632553efe1a5f88723ef6d8c028d.png"/></p>
+<p><strong> ILRuntime热更流程：</strong></p>
+<p><img alt="" src="image\e5856ddf1702a831f81f206410e5efac.png"/></p>
+<p><strong>ILRuntime的主要限制</strong>：</p>
+<p><img alt="" src="image\b89591b95df4d8f0eafd0a70981e00c4.png"/></p>
+<p></p>
+<h1>6.热更新的关键点，重要节点，疑难杂症场景</h1>
+<h2>6.1 为什么Xlua性能更差？</h2>
+<p>lua调CS代码，还需要把XXXWrap.cs中的代码往lua堆栈里面传值，如果unity调用原生接口，就没有这个步骤了。</p>
+<h2>6.2 Xlua的几个优势</h2>
+<p>1.用的人最多，性能最好的lua热更新插件对应的热更新解决方案。</p>
+<p>2.<a href="https://github.com/Tencent/xLua" title="xLua">xLua</a>是腾讯开源的热更新插件，有大厂背书和专职人员维护，插件的稳定性和可持续性较强</p>
+<h2>6.3 Net 4.6编译的DLL啥意思？</h2>
+<p><a class="has-card" href="https://blog.csdn.net/qianchenglenger/article/details/21599235" title="如何编译生成dll_李青锋的专栏-CSDN博客_编译dll"><span class="link-card-box"><span class="link-title">如何编译生成dll_李青锋的专栏-CSDN博客_编译dll</span><span class="link-desc">动态链接库是Windows的基石。所有的Win32 API函数都包含在DLL中。3个最重要的DLL是KERNEL32.DLL，它由管理内存、进程和线程的函数组成；USER32.DLL，它由执行用户界面的任务（如创建窗口和发送消息）的函数组成；GDI32.DLL，它由绘图和显示文本的函数组成。在此，我们主要用实际的操作过程，简要的说明如何创建自己的 Win32 DLL。一、创建DLL工程</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/qianchenglenger/article/details/21599235</span></span></a></p>
+<h2><strong>6.4 CLR绑定使跨域调用是啥？</strong></h2>
+<p>这里特指的是ILRuntime方案里面的主dll和热更dll中间的跨域调用问题。</p>
+<p><a class="has-card" href="https://segmentfault.com/a/1190000023290547" title="Unity C#热更新方案 ILRuntime学习笔记(二) 代码跨域调用"><span class="link-card-box"><span class="link-title">Unity C#热更新方案 ILRuntime学习笔记(二) 代码跨域调用</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon-default.png"/>https://segmentfault.com/a/1190000023290547</span></span></a></p>
+<h2><strong>6.5 跨域继承是啥？</strong></h2>
+<p>同上的答案。</p>
+<h2>6.6 <strong>IL运行时是啥？</strong></h2>
+<p><img alt="" height="464" src="image\2c05aee8a4ad425d87ba72c41f7bf1a3.png" width="635"/></p>
+<h2><strong>6.7 不支持JIT的硬件环境（如iOS），为什么IOS不支持JIT ？</strong></h2>
+<p>IOS不让JIT，所以不能直接热更DLL，所以得使用Mono.Cecil库对当前工程下的Assembly-CSharp.dll程序集进行IL注入。该中间代码IL再经.NET平台中的CLR（类似于JVM）编译成机器码让CPU执行相关指令。</p>
+<p> 为什么IOS不支持JIT,我也不知道。不过最新的IOS14.2又支持JIT模式了，难不成？以后基于DLL的热更....又能用啦？那Xlua岂不是要被淘汰了？</p>
+<p></p>
+<h2>6.8  我的DLL怎么才能获取到UnityEngine命名空间类的引用?</h2>
+<p><a class="has-card" href="https://blog.csdn.net/qq_42345116/article/details/121695595" title="unity 使用C#反射获取dll中的类、调用类中的字段、方法_被代码折磨的狗子的博客-CSDN博客_c#获取dll中的方法"><span class="link-card-box"><span class="link-title">unity 使用C#反射获取dll中的类、调用类中的字段、方法_被代码折磨的狗子的博客-CSDN博客_c#获取dll中的方法</span><span class="link-desc">一、什么是反射？反射是.NET中的重要机制，通过反射，可以在运行时获得程序或程序集中每一个类型（包括类、结构、委托、接口和枚举等）的成员和成员的信息。有了反射，即可对每一个类型了如指掌。另外我还可以直接创建对象，即使这个对象的类型在编译时还不知道。二、反射的使用平时我们的写法是先引用命名空间（dll），然后new一个对象，通过这个对象调用其中的字段或方法，通过反射，我们可以不用添加dll来实现效果。1.首先我们在C#中创建一个Testdll类 打包dll，内容如下using Sy.</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/qq_42345116/article/details/121695595</span></span></a>反射assembly-csharp.dll中的类。</p>
+<h2>6.9 我的DLL需要如何打成AssetBundle?</h2>
+<p>资源怎么打包，它就怎么打包。</p>
+<h2>6.10 程序下载AssetBundle如何读取里面DLL?</h2>
+<p>调JIT相应的方法。反射热更下来的 .dll中的类。</p>
+<h2>6.11如何测试各个热更新方案的性能</h2>
+<p><a class="has-card" href="https://blog.csdn.net/Tokyo_2024/article/details/105388523" title="Unity Profiler性能分析全解析_Tokyo_2024的博客-CSDN博客_unityprofiler"><span class="link-card-box"><span class="link-title">Unity Profiler性能分析全解析_Tokyo_2024的博客-CSDN博客_unityprofiler</span><span class="link-desc">Profiler概述打开Unity Profiler1. Window-&gt;Analysis-&gt;Profiler。</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/Tokyo_2024/article/details/105388523</span></span></a></p>
+<h1>6.参考资料</h1>
+<p><a href="https://blog.csdn.net/zhaixh_89/article/details/83538557" title="xlua扩展第三方库记录_流彩飞霞的专栏-CSDN博客_xlua 第三方">xlua扩展第三方库记录_流彩飞霞的专栏-CSDN博客_xlua 第三方</a></p>
+<p><a href="https://www.zhihu.com/question/54344452" title="如何评价腾讯在Unity下的xLua（开源）热更方案？">如何评价腾讯在Unity下的xLua（开源）热更方案？</a></p>
+<p><a href="http://gad.qq.com/article/detail/7201590" title="Unity 游戏用XLua的HotFix实现热更原理揭秘">Unity 游戏用XLua的HotFix实现热更原理揭秘</a></p>
+<p><a href="http://www.infoq.com/cn/news/2017/01/C-NET-Lua-Unity3D" title="腾讯开源手游热更新方案，Unity3D下的Lua编程">腾讯开源手游热更新方案，Unity3D下的Lua编程</a></p>
+<p><a href="http://www.jianshu.com/p/4bef7f66aefd" title="[Unity]基于IL代码注入的Lua补丁方案">[Unity]基于IL代码注入的Lua补丁方案</a></p>
+<p><a href="http://www.jianshu.com/p/481994e8b7df" title="另类Unity热更新大法：代码注入式补丁热更新">另类Unity热更新大法：代码注入式补丁热更新</a></p>
+<p><a href="https://blog.csdn.net/baidu_28955655/article/details/52661698" title="unity dll实现热更新_baidu_28955655的博客-CSDN博客_unity 热更新">unity dll实现热更新_baidu_28955655的博客-CSDN博客_unity 热更新</a></p>
+<p><a href="http://ourpalm.github.io/ILRuntime/public/v1/guide/principle.html" title="ILRuntime的实现原理 — ILRuntime">ILRuntime的实现原理 — ILRuntime</a></p>
+<p><a href="https://www.cnblogs.com/gangtie/p/13665727.html" title="深入理解xLua热更新原理 - 钢与铁 - 博客园">深入理解xLua热更新原理 - 钢与铁 - 博客园</a></p>
+</div>
+</div>

@@ -1,0 +1,174 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>首先修改统一请求路径为我们自己的登陆接口，在.env.development文件中</p>
+<pre><code># base api
+VUE_APP_BASE_API = 'http://localhost:8081/api/dsxs/company'</code></pre>
+<p>打开登陆页面，src/views/login/index.vue</p>
+<pre><code>&lt;template&gt;
+  &lt;div class="login-container"&gt;
+    &lt;el-form ref="loginForm" :model="loginForm" :rules="loginRules" class="login-form" auto-complete="on" label-position="left"&gt;
+
+      &lt;div class="title-container"&gt;
+        &lt;h3 class="title"&gt;Login Form&lt;/h3&gt;
+      &lt;/div&gt;
+
+      &lt;el-form-item prop="username"&gt;
+        &lt;span class="svg-container"&gt;
+          &lt;svg-icon icon-class="user" /&gt;
+        &lt;/span&gt;
+        &lt;el-input
+          ref="username"
+          v-model="loginForm.username"
+          placeholder="Username"
+          name="username"
+          type="text"
+          tabindex="1"
+          auto-complete="on"
+        /&gt;
+      &lt;/el-form-item&gt;
+
+      &lt;el-form-item prop="password"&gt;
+        &lt;span class="svg-container"&gt;
+          &lt;svg-icon icon-class="password" /&gt;
+        &lt;/span&gt;
+        &lt;el-input
+          :key="passwordType"
+          ref="password"
+          v-model="loginForm.password"
+          :type="passwordType"
+          placeholder="Password"
+          name="password"
+          tabindex="2"
+          auto-complete="on"
+          @keyup.enter.native="handleLogin"
+        /&gt;
+        &lt;span class="show-pwd" @click="showPwd"&gt;
+          &lt;svg-icon :icon-class="passwordType === 'password' ? 'eye' : 'eye-open'" /&gt;
+        &lt;/span&gt;
+      &lt;/el-form-item&gt;
+
+      &lt;el-button :loading="loading" type="primary" style="width:100%;margin-bottom:30px;" @click.native.prevent="handleLogin"&gt;Login&lt;/el-button&gt;
+
+      &lt;div class="tips"&gt;
+        &lt;span style="margin-right:20px;"&gt;username: admin&lt;/span&gt;
+        &lt;span&gt; password: any&lt;/span&gt;
+      &lt;/div&gt;
+
+    &lt;/el-form&gt;
+  &lt;/div&gt;
+&lt;/template&gt;</code></pre>
+<p>可以看到页面使用组件对loginForm进行名称和密码的绑定</p>
+<pre><code> data() {
+    const validateUsername = (rule, value, callback) =&gt; {
+      if (!validUsername(value)) {
+        callback(new Error('Please enter the correct user name'))
+      } else {
+        callback()
+      }
+    }
+    const validatePassword = (rule, value, callback) =&gt; {
+      if (value.length &lt; 6) {
+        callback(new Error('The password can not be less than 6 digits'))
+      } else {
+        callback()
+      }
+    }</code></pre>
+<p>这段代码则为对输入的内容进行验证</p>
+<p>看登陆的方法</p>
+<pre><code>   handleLogin() {
+      
+      this.$refs.loginForm.validate(valid =&gt; {
+        if (valid) {
+          this.loading = true
+          this.$store.dispatch('user/login', this.loginForm).then(() =&gt; {
+            this.$router.push({ path: this.redirect || '/' })
+            this.loading = false
+          }).catch(() =&gt; {
+            this.loading = false
+          })
+        } else {
+
+          return false
+        }
+      })
+    }</code></pre>
+<p>其中 this.$store.dispatch('user/login', this.loginForm)，不是请求后台user/login接口，而是转到modules下的user.js中的login方法，打开store/modules/user.js可以看到login方法。而login方法则是调用api/user.js中的login方法。</p>
+<p>此时修改store/modules/user.js接收后台传来的响应数据</p>
+<pre><code>const actions = {
+  // user login
+  login({ commit }, userInfo) {
+    const { username, password } = userInfo
+    return new Promise((resolve, reject) =&gt; {
+      login({ username: username.trim(), password: password }).then(response =&gt; {
+        console.log(response)
+        const { data } = response
+        commit('SET_TOKEN', response.data.token)
+        setToken(response.data.token)
+        resolve()
+      }).catch(error =&gt; {
+        reject(error)
+      })
+    })
+  },</code></pre>
+<p>同时在api/user.js中修改为我们后台的请求地址</p>
+<p></p>
+<pre><code>import request from '@/utils/request'
+
+export function login(data) {
+  return request({
+    url: 'userlogin',
+    method: 'post',
+    data
+  })
+}
+
+export function getInfo(token) {
+  return request({
+    url: 'userinfo',
+    method: 'get',
+    params: { token }
+  })
+}</code></pre>
+<p>此时可以发现模板采用的登陆方式是请求两次，第一次通过用户名密码请求后端，后端判断后，返回对应的token。然后在通过getInfo方法请求后端，获取用户真实信息。</p>
+<p>在编写后端之前还需要修改utils/request.js，因为默认状态码是20000为成功，而我们平时返回的是200</p>
+<pre><code>   // if the custom code is not 20000, it is judged as an error.
+    if (res.code !== 200) {
+      Message({
+        message: res.message || 'Error',
+        type: 'error',
+        duration: 5 * 1000
+      })</code></pre>
+<p>简单的编写后端代码，登陆方法根据账号密码查出用户信息，根据用户id与name生成token并返回，userinfo则是对token进行获取，在查出对应值进行返回。</p>
+<pre><code>@CrossOrigin
+@RestController
+@RequestMapping("/api/dsxs/company")
+public class CompanyuserController {
+    @Autowired
+    private CompanyuserService companyuserService;
+    //后台登陆
+    @PostMapping("userlogin")
+    @ResponseBody
+    public R userlogin(@RequestBody UserVo userVo){
+        Companyuser companyuser = companyuserService.login(userVo);
+        String token = JwtHelper.createToken(companyuser.getId(), companyuser.getName());
+        return R.ok().data("token",token);
+    }
+    //返回信息
+    @GetMapping("userinfo")
+    public R userinfo( String token){
+        Integer userId = JwtHelper.getUserId(token);
+        System.out.println("====");
+        Companyuser user = companyuserService.getById(userId);
+        HashMap&lt;String, String&gt; map = new HashMap&lt;&gt;();
+        map.put("name",user.getName());
+        map.put("avatar",user.getAvatar());
+        return R.ok().data("name",user.getName()).data("avatar",user.getAvatar());
+    }
+}</code></pre>
+<p>我这里使用@CrossOrigin注解解决的跨域问题。</p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

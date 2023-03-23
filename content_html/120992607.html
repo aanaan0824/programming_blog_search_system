@@ -1,0 +1,798 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#1__8">1 目录概述</a></li><li><a href="#2__22">2 算法介绍</a></li><li><ul><li><a href="#21_Astart_24">2.1 Astart改进</a></li><li><a href="#22_ROSGazebo_48">2.2 ROS（Gazebo仿真）</a></li><li><ul><li><a href="#221_Gazebo_54">2.2.1 使用Gazebo仿真需要安装的功能包</a></li><li><a href="#222__catkin_ws_63">2.2.2 创建工作空间 catkin_ws</a></li><li><a href="#223_Pure_pursuit_82">2.2.3 Pure_pursuit算法</a></li><li><a href="#224_LQR_323">2.2.4 LQR横向控制算法</a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<p>​ 最近在学习自动驾驶规划控制相关内容，并着手用c++和ros编写相关算法，代码部分见<a href="https://github.com/NeXTzhao/routing_planning.git">GitHub:https://github.com/NeXTzhao/routing_planning.git</a>，下面是对github内容的一些说明。</p>
+<h1><a id="1__8"></a>1 目录概述</h1>
+<p><em><strong>routing_planning/Astart改进</strong></em></p>
+<p>针对A*算法做出优化：加入靠近路沿的启发函数，并对生成的轨迹点做了均值滤波处理，使轨迹更加平滑。</p>
+<p><em><strong>routing_planning/ros/src</strong></em></p>
+<p>ros工作空间中，purepursuit功能包使用purepursuit算法对spline生成的样条曲线进行了路径跟踪。lqr_steering功能包使用lqr算法对生成的五次多项式轨迹进行横向路径跟踪。</p>
+<p><strong>purepursuit算法:原理很简单，网上很多资料也比较多</strong></p>
+<p><strong>LQR控制算法主要参考<a href="https://space.bilibili.com/287989852/">b站up主</a></strong></p>
+<h1><a id="2__22"></a>2 算法介绍</h1>
+<h2><a id="21_Astart_24"></a>2.1 Astart改进</h2>
+<pre><code class="prism language-shell"> 编译：g++ -std<span class="token operator">=</span>c++11  xxx.cpp -o xx <span class="token variable"><span class="token variable">$(</span>pkg-config --cflags --libs opencv<span class="token variable">)</span></span> （需要安装opencv）
+</code></pre>
+<p><strong>实现思路：</strong></p>
+<p>先用opencv将图片做灰度处理，再做二值化，将像素保存到vector二维数组作为地图，设置起点和终点，调用AStart算法(改进版：加入路沿代价函数)找到一条路径，由于算法会导致路径出现锯齿状，故用均值滤波对路径点做平滑处理。</p>
+<p><strong>算法流程：</strong></p>
+<ol><li>原始地图:</li></ol>
+<img alt="mapload4" src="https://user-images.githubusercontent.com/68492981/132976491-de0eb792-02cf-4d98-a0cc-24c78338121e.jpg"/>
+<ol start="2"><li>A*算法生成的路径不平滑且贴近路沿，故增加道路膨胀层并加入靠近路沿的启发函数:</li></ol>
+<p><img alt="loadToMap1" src="https://user-images.githubusercontent.com/68492981/133076047-7c432bd4-a349-4288-8f30-e6b61ddbc2e9.jpg"/> <img alt="loadToMap4" src="https://user-images.githubusercontent.com/68492981/132976596-99eee2ee-7b96-464c-9700-36805340588b.jpg"/></p>
+<ol start="3"><li>利用均值滤波对路径做平滑处理并加大膨胀半径:</li></ol>
+<img alt="loadToMap7" src="https://user-images.githubusercontent.com/68492981/132976579-f1298c8a-17c5-4eeb-8fc4-a1b2bfde91ae.jpg"/>
+<h2><a id="22_ROSGazebo_48"></a>2.2 ROS（Gazebo仿真）</h2>
+<pre><code class="prism language-shell">系统要求：ubuntu + ros +gazebo
+</code></pre>
+<h3><a id="221_Gazebo_54"></a>2.2.1 使用Gazebo仿真需要安装的功能包</h3>
+<pre><code class="prism language-shell"><span class="token function">sudo</span> <span class="token function">apt-get</span> <span class="token function">install</span> -y ros-<span class="token punctuation">(</span>对应的ros版本，例如kinetic，下面两个同理<span class="token punctuation">)</span>-gazebo-ros-control
+<span class="token function">sudo</span> <span class="token function">apt-get</span> <span class="token function">install</span> -y ros-kinetic-ros-control ros-kinetic-ros-controllers
+<span class="token function">sudo</span> <span class="token function">apt-get</span> <span class="token function">install</span> -y ros-kinetic-gazebo-ros-control
+</code></pre>
+<h3><a id="222__catkin_ws_63"></a>2.2.2 创建工作空间 catkin_ws</h3>
+<pre><code class="prism language-shell"><span class="token number">1</span>.创建src文件，放置功能包源码：
+  <span class="token function">mkdir</span> -p ~/catkin_ws/src
+
+<span class="token number">2</span>.进入src文件夹
+  <span class="token builtin class-name">cd</span> ~/catkin_ws/src
+
+<span class="token number">3</span>.将路径ros/src下的功能包复制粘贴到创建的src目录下
+
+<span class="token number">4</span>.初始化文件夹
+  catkin_init_workspace
+
+<span class="token number">5</span>.编译工作空间catkin_make
+  <span class="token builtin class-name">cd</span> ~/catkin_ws/
+  catkin_make
+</code></pre>
+<h3><a id="223_Pure_pursuit_82"></a>2.2.3 Pure_pursuit算法</h3>
+<p><strong>实现思路</strong></p>
+<ol><li>运用spline插值进行简单轨迹生成</li><li>编写pure_pursuit纯路径跟踪算法，对生成的轨迹进行跟踪</li></ol>
+<p><strong>代码部分</strong></p>
+<pre><code class="prism language-cpp"><span class="token comment">/**
+ * @file purepursuit.cpp
+ */</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;ros/ros.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;algorithm&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;cassert&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;cmath&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;fstream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;string&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;vector&gt;</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;geometry_msgs/Twist.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;nav_msgs/Path.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;tf/tf.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;tf/transform_broadcaster.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"geometry_msgs/PoseStamped.h"</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"cpprobotics_types.h"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"cubic_spline.h"</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">PREVIEW_DIS</span> <span class="token expression"><span class="token number">3</span>  </span><span class="token comment">//预瞄距离</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">Ld</span> <span class="token expression"><span class="token number">1.868</span>  </span><span class="token comment">//轴距</span></span>
+
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> cpprobotics<span class="token punctuation">;</span>
+
+ros<span class="token double-colon punctuation">::</span>Publisher purepersuit_<span class="token punctuation">;</span>
+ros<span class="token double-colon punctuation">::</span>Publisher path_pub_<span class="token punctuation">;</span>
+nav_msgs<span class="token double-colon punctuation">::</span>Path path<span class="token punctuation">;</span>
+
+<span class="token keyword">float</span> carVelocity <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token keyword">float</span> preview_dis <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token keyword">float</span> k <span class="token operator">=</span> <span class="token number">0.1</span><span class="token punctuation">;</span>
+
+<span class="token comment">// 计算四元数转换到欧拉角</span>
+std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> <span class="token function">calQuaternionToEuler</span><span class="token punctuation">(</span><span class="token keyword">const</span> <span class="token keyword">float</span> x<span class="token punctuation">,</span> <span class="token keyword">const</span> <span class="token keyword">float</span> y<span class="token punctuation">,</span>
+                                          <span class="token keyword">const</span> <span class="token keyword">float</span> z<span class="token punctuation">,</span> <span class="token keyword">const</span> <span class="token keyword">float</span> w<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> calRPY <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+  <span class="token comment">// roll = atan2(2(wx+yz),1-2(x*x+y*y))</span>
+  calRPY<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token function">atan2</span><span class="token punctuation">(</span><span class="token number">2</span> <span class="token operator">*</span> <span class="token punctuation">(</span>w <span class="token operator">*</span> x <span class="token operator">+</span> y <span class="token operator">*</span> z<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span> <span class="token operator">-</span> <span class="token number">2</span> <span class="token operator">*</span> <span class="token punctuation">(</span>x <span class="token operator">*</span> x <span class="token operator">+</span> y <span class="token operator">*</span> y<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// pitch = arcsin(2(wy-zx))</span>
+  calRPY<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token function">asin</span><span class="token punctuation">(</span><span class="token number">2</span> <span class="token operator">*</span> <span class="token punctuation">(</span>w <span class="token operator">*</span> y <span class="token operator">-</span> z <span class="token operator">*</span> x<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// yaw = atan2(2(wx+yz),1-2(y*y+z*z))</span>
+  calRPY<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token function">atan2</span><span class="token punctuation">(</span><span class="token number">2</span> <span class="token operator">*</span> <span class="token punctuation">(</span>w <span class="token operator">*</span> z <span class="token operator">+</span> x <span class="token operator">*</span> y<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span> <span class="token operator">-</span> <span class="token number">2</span> <span class="token operator">*</span> <span class="token punctuation">(</span>y <span class="token operator">*</span> y <span class="token operator">+</span> z <span class="token operator">*</span> z<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">return</span> calRPY<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+cpprobotics<span class="token double-colon punctuation">::</span>Vec_f r_x_<span class="token punctuation">;</span>
+cpprobotics<span class="token double-colon punctuation">::</span>Vec_f r_y_<span class="token punctuation">;</span>
+
+<span class="token keyword">int</span> pointNum <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>  <span class="token comment">//保存路径点的个数</span>
+<span class="token keyword">int</span> targetIndex <span class="token operator">=</span> pointNum <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">;</span>
+<span class="token comment">/*方案一*/</span>
+<span class="token comment">// vector&lt;int&gt; bestPoints_ = {pointNum - 1};</span>
+<span class="token comment">/*方案二*/</span>
+vector<span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span> bestPoints_ <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token number">0.0</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">//计算发送给模型车的转角</span>
+<span class="token keyword">void</span> <span class="token function">poseCallback</span><span class="token punctuation">(</span><span class="token keyword">const</span> geometry_msgs<span class="token double-colon punctuation">::</span>PoseStamped <span class="token operator">&amp;</span>currentWaypoint<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token keyword">auto</span> currentPositionX <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>x<span class="token punctuation">;</span>
+  <span class="token keyword">auto</span> currentPositionY <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>y<span class="token punctuation">;</span>
+  <span class="token keyword">auto</span> currentPositionZ <span class="token operator">=</span> <span class="token number">0.0</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">auto</span> currentQuaternionX <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>x<span class="token punctuation">;</span>
+  <span class="token keyword">auto</span> currentQuaternionY <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>y<span class="token punctuation">;</span>
+  <span class="token keyword">auto</span> currentQuaternionZ <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>z<span class="token punctuation">;</span>
+  <span class="token keyword">auto</span> currentQuaternionW <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>w<span class="token punctuation">;</span>
+
+  std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> calRPY <span class="token operator">=</span>
+      <span class="token function">calQuaternionToEuler</span><span class="token punctuation">(</span>currentQuaternionX<span class="token punctuation">,</span> currentQuaternionY<span class="token punctuation">,</span>
+                           currentQuaternionZ<span class="token punctuation">,</span> currentQuaternionW<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token comment">/*************************************************************************************************
+  //  方案一：通过累加路径距离，和预瞄距离进行比较以及夹角方向
+  // 寻找匹配目标点
+  for (int i = 0; i &lt; pointNum; i++) {
+    float lad = 0.0;  //累加前视距离
+
+    float next_x = r_x_[i + 1];
+    float next_y = r_y_[i + 1];
+    lad += sqrt(pow(next_x - currentPositionX, 2) +
+                pow(next_y - currentPositionY, 2));
+    // cos(aAngle)判断方向
+    float aAngle =
+        atan2(next_y - currentPositionY, next_x - currentPositionX) -
+        calRPY[2];
+    if (lad &gt; preview_dis &amp;&amp; cos(aAngle) &gt;= 0) {
+      targetIndex = i + 1;
+      bestPoints_.push_back(targetIndex);
+      break;
+    }
+  }
+  // 取容器中的最大值
+  int index = *max_element(bestPoints_.begin(), bestPoints_.end());
+  ***************************************************************************************************/</span>
+
+  <span class="token comment">/**************************************************************************************************/</span>
+  <span class="token comment">// 方案二:通过计算当前坐标和目标轨迹距离，找到一个最小距离的索引号</span>
+  <span class="token keyword">int</span> index<span class="token punctuation">;</span>
+  vector<span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span> bestPoints_<span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> pointNum<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// float lad = 0.0;</span>
+    <span class="token keyword">float</span> path_x <span class="token operator">=</span> r_x_<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+    <span class="token keyword">float</span> path_y <span class="token operator">=</span> r_y_<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+    <span class="token comment">// 遍历所有路径点和当前位置的距离，保存到数组中</span>
+    <span class="token keyword">float</span> lad <span class="token operator">=</span> <span class="token function">sqrt</span><span class="token punctuation">(</span><span class="token function">pow</span><span class="token punctuation">(</span>path_x <span class="token operator">-</span> currentPositionX<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">+</span>
+                     <span class="token function">pow</span><span class="token punctuation">(</span>path_y <span class="token operator">-</span> currentPositionY<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    bestPoints_<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>lad<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token comment">// 找到数组中最小横向距离</span>
+  <span class="token keyword">auto</span> smallest <span class="token operator">=</span> <span class="token function">min_element</span><span class="token punctuation">(</span>bestPoints_<span class="token punctuation">.</span><span class="token function">begin</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> bestPoints_<span class="token punctuation">.</span><span class="token function">end</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// 找到最小横向距离的索引位置</span>
+  index <span class="token operator">=</span> <span class="token function">distance</span><span class="token punctuation">(</span>bestPoints_<span class="token punctuation">.</span><span class="token function">begin</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> smallest<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">int</span> temp_index<span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> index<span class="token punctuation">;</span> i <span class="token operator">&lt;</span> pointNum<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//遍历路径点和预瞄点的距离，从最小横向位置的索引开始</span>
+    <span class="token keyword">float</span> dis <span class="token operator">=</span>
+        <span class="token function">sqrt</span><span class="token punctuation">(</span><span class="token function">pow</span><span class="token punctuation">(</span>r_y_<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">-</span> r_y_<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token function">pow</span><span class="token punctuation">(</span>r_x_<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">-</span> r_x_<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//判断跟预瞄点的距离</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>dis <span class="token operator">&lt;</span> preview_dis<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+      temp_index <span class="token operator">=</span> i<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+      <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  index <span class="token operator">=</span> temp_index<span class="token punctuation">;</span>
+  <span class="token comment">/**************************************************************************************************/</span>
+
+  <span class="token keyword">float</span> alpha <span class="token operator">=</span>
+      <span class="token function">atan2</span><span class="token punctuation">(</span>r_y_<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">-</span> currentPositionY<span class="token punctuation">,</span> r_x_<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">-</span> currentPositionX<span class="token punctuation">)</span> <span class="token operator">-</span>
+      calRPY<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+
+  <span class="token comment">// 当前点和目标点的距离Id</span>
+  <span class="token keyword">float</span> dl <span class="token operator">=</span> <span class="token function">sqrt</span><span class="token punctuation">(</span><span class="token function">pow</span><span class="token punctuation">(</span>r_y_<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">-</span> currentPositionY<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">+</span>
+                  <span class="token function">pow</span><span class="token punctuation">(</span>r_x_<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">-</span> currentPositionX<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// 发布小车运动指令及运动轨迹</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>dl <span class="token operator">&gt;</span> <span class="token number">0.2</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">float</span> theta <span class="token operator">=</span> <span class="token function">atan</span><span class="token punctuation">(</span><span class="token number">2</span> <span class="token operator">*</span> Ld <span class="token operator">*</span> <span class="token function">sin</span><span class="token punctuation">(</span>alpha<span class="token punctuation">)</span> <span class="token operator">/</span> dl<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    geometry_msgs<span class="token double-colon punctuation">::</span>Twist vel_msg<span class="token punctuation">;</span>
+    vel_msg<span class="token punctuation">.</span>linear<span class="token punctuation">.</span>x <span class="token operator">=</span> <span class="token number">3</span><span class="token punctuation">;</span>
+    vel_msg<span class="token punctuation">.</span>angular<span class="token punctuation">.</span>z <span class="token operator">=</span> theta<span class="token punctuation">;</span>
+    purepersuit_<span class="token punctuation">.</span><span class="token function">publish</span><span class="token punctuation">(</span>vel_msg<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 发布小车运动轨迹</span>
+    geometry_msgs<span class="token double-colon punctuation">::</span>PoseStamped this_pose_stamped<span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>x <span class="token operator">=</span> currentPositionX<span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>y <span class="token operator">=</span> currentPositionY<span class="token punctuation">;</span>
+
+    geometry_msgs<span class="token double-colon punctuation">::</span>Quaternion goal_quat <span class="token operator">=</span> tf<span class="token double-colon punctuation">::</span><span class="token function">createQuaternionMsgFromYaw</span><span class="token punctuation">(</span>theta<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>x <span class="token operator">=</span> currentQuaternionX<span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>y <span class="token operator">=</span> currentQuaternionY<span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>z <span class="token operator">=</span> currentQuaternionZ<span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>w <span class="token operator">=</span> currentQuaternionW<span class="token punctuation">;</span>
+
+    this_pose_stamped<span class="token punctuation">.</span>header<span class="token punctuation">.</span>stamp <span class="token operator">=</span> ros<span class="token double-colon punctuation">::</span><span class="token class-name">Time</span><span class="token double-colon punctuation">::</span><span class="token function">now</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    this_pose_stamped<span class="token punctuation">.</span>header<span class="token punctuation">.</span>frame_id <span class="token operator">=</span> <span class="token string">"world"</span><span class="token punctuation">;</span>
+    path<span class="token punctuation">.</span>poses<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>this_pose_stamped<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+    geometry_msgs<span class="token double-colon punctuation">::</span>Twist vel_msg<span class="token punctuation">;</span>
+    vel_msg<span class="token punctuation">.</span>linear<span class="token punctuation">.</span>x <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    vel_msg<span class="token punctuation">.</span>angular<span class="token punctuation">.</span>z <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    purepersuit_<span class="token punctuation">.</span><span class="token function">publish</span><span class="token punctuation">(</span>vel_msg<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  path_pub_<span class="token punctuation">.</span><span class="token function">publish</span><span class="token punctuation">(</span>path<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> <span class="token function">velocityCall</span><span class="token punctuation">(</span><span class="token keyword">const</span> geometry_msgs<span class="token double-colon punctuation">::</span>TwistStamped <span class="token operator">&amp;</span>carWaypoint<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token comment">// carVelocity = carWaypoint.linear.x;</span>
+  carVelocity <span class="token operator">=</span> carWaypoint<span class="token punctuation">.</span>twist<span class="token punctuation">.</span>linear<span class="token punctuation">.</span>x<span class="token punctuation">;</span>
+  preview_dis <span class="token operator">=</span> k <span class="token operator">*</span> carVelocity <span class="token operator">+</span> PREVIEW_DIS<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> <span class="token function">pointCallback</span><span class="token punctuation">(</span><span class="token keyword">const</span> nav_msgs<span class="token double-colon punctuation">::</span>Path <span class="token operator">&amp;</span>msg<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token comment">// geometry_msgs/PoseStamped[] poses</span>
+  pointNum <span class="token operator">=</span> msg<span class="token punctuation">.</span>poses<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token comment">// auto a = msg.poses[0].pose.position.x;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> pointNum<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    r_x_<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>msg<span class="token punctuation">.</span>poses<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    r_y_<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>msg<span class="token punctuation">.</span>poses<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>y<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">int</span> argc<span class="token punctuation">,</span> <span class="token keyword">char</span> <span class="token operator">*</span><span class="token operator">*</span>argv<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token comment">//创建节点</span>
+  ros<span class="token double-colon punctuation">::</span><span class="token function">init</span><span class="token punctuation">(</span>argc<span class="token punctuation">,</span> argv<span class="token punctuation">,</span> <span class="token string">"pure_pursuit"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token comment">//创建节点句柄</span>
+  ros<span class="token double-colon punctuation">::</span>NodeHandle n<span class="token punctuation">;</span>
+  <span class="token comment">//创建Publisher，发送经过pure_pursuit计算后的转角及速度</span>
+  purepersuit_ <span class="token operator">=</span> n<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">advertise</span><span class="token generic class-name"><span class="token operator">&lt;</span>geometry_msgs<span class="token double-colon punctuation">::</span>Twist<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token string">"/smart/cmd_vel"</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  path_pub_ <span class="token operator">=</span> n<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">advertise</span><span class="token generic class-name"><span class="token operator">&lt;</span>nav_msgs<span class="token double-colon punctuation">::</span>Path<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token string">"rvizpath"</span><span class="token punctuation">,</span> <span class="token number">100</span><span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// ros::Rate loop_rate(10);</span>
+
+  path<span class="token punctuation">.</span>header<span class="token punctuation">.</span>frame_id <span class="token operator">=</span> <span class="token string">"world"</span><span class="token punctuation">;</span>
+  <span class="token comment">// 设置时间戳</span>
+  path<span class="token punctuation">.</span>header<span class="token punctuation">.</span>stamp <span class="token operator">=</span> ros<span class="token double-colon punctuation">::</span><span class="token class-name">Time</span><span class="token double-colon punctuation">::</span><span class="token function">now</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  geometry_msgs<span class="token double-colon punctuation">::</span>PoseStamped pose<span class="token punctuation">;</span>
+  pose<span class="token punctuation">.</span>header<span class="token punctuation">.</span>stamp <span class="token operator">=</span> ros<span class="token double-colon punctuation">::</span><span class="token class-name">Time</span><span class="token double-colon punctuation">::</span><span class="token function">now</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// 设置参考系</span>
+  pose<span class="token punctuation">.</span>header<span class="token punctuation">.</span>frame_id <span class="token operator">=</span> <span class="token string">"world"</span><span class="token punctuation">;</span>
+
+  ros<span class="token double-colon punctuation">::</span>Subscriber splinePath <span class="token operator">=</span> n<span class="token punctuation">.</span><span class="token function">subscribe</span><span class="token punctuation">(</span><span class="token string">"/splinepoints"</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> pointCallback<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  ros<span class="token double-colon punctuation">::</span>Subscriber carVel <span class="token operator">=</span> n<span class="token punctuation">.</span><span class="token function">subscribe</span><span class="token punctuation">(</span><span class="token string">"/smart/velocity"</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> velocityCall<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  ros<span class="token double-colon punctuation">::</span>Subscriber carPose <span class="token operator">=</span> n<span class="token punctuation">.</span><span class="token function">subscribe</span><span class="token punctuation">(</span><span class="token string">"/smart/rear_pose"</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> poseCallback<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  ros<span class="token double-colon punctuation">::</span><span class="token function">spin</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p><strong>操作步骤：（新开终端窗口）</strong></p>
+<pre><code class="prism language-shell"><span class="token builtin class-name">source</span> devel/setup.sh
+roslaunch car_model spawn_car.launch
+roslaunch purepursuit splinepath.launch 
+roslaunch purepursuit purepursuit.launch
+rviz 中add /splinepoints /rvizpath  /smart（在rviz显示中，红色为小车运动轨迹，绿色为规划模块给出的轨迹）
+</code></pre>
+<p><strong>Pure_pursuit仿真结果：</strong><br/> <img alt="pure_pursuit" src="https://img-blog.csdnimg.cn/img_convert/08f20d3bbfe2ca048b99ca0ab2ab6bcd.png"/></p>
+<h3><a id="224_LQR_323"></a>2.2.4 LQR横向控制算法</h3>
+<p><strong>实现思路</strong></p>
+<ol><li>运用五次多项式生成控制算法所需要的轨迹</li><li>编写lqr路径跟踪算法，对轨迹进行跟踪控制</li></ol>
+<p><strong>代码部分</strong></p>
+<pre><code class="prism language-cpp"><span class="token comment">/**
+ * @file frenetlqr.cpp
+ */</span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;stdio.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;Eigen/Eigen&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;array&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;fstream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;string&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;vector&gt;</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;geometry_msgs/PoseStamped.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;geometry_msgs/Twist.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;nav_msgs/Path.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;tf/tf.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;tf/transform_broadcaster.h&gt;</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"cpprobotics_types_double.h"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"frenet_path_double.h"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"quintic_polynomial_double.h"</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">DT</span> <span class="token expression"><span class="token number">0.1</span>  </span><span class="token comment">// time tick [s]</span></span>
+
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> cpprobotics<span class="token punctuation">;</span>
+
+ros<span class="token double-colon punctuation">::</span>Publisher frenet_lqr_<span class="token punctuation">;</span>
+ros<span class="token double-colon punctuation">::</span>Publisher path_pub_<span class="token punctuation">;</span>
+ros<span class="token double-colon punctuation">::</span>Publisher trajectory_path<span class="token punctuation">;</span>
+
+nav_msgs<span class="token double-colon punctuation">::</span>Path path<span class="token punctuation">;</span>
+nav_msgs<span class="token double-colon punctuation">::</span>Path trajectorypath<span class="token punctuation">;</span>
+
+<span class="token comment">/**************************************************************************/</span>
+
+<span class="token comment">// t-t0经历的时间</span>
+<span class="token keyword">double</span> T <span class="token operator">=</span> <span class="token number">50</span><span class="token punctuation">;</span>
+
+<span class="token keyword">double</span> xend <span class="token operator">=</span> <span class="token number">80.0</span><span class="token punctuation">;</span>
+<span class="token keyword">double</span> yend <span class="token operator">=</span> <span class="token number">30.0</span><span class="token punctuation">;</span>
+
+<span class="token comment">// 起始状态</span>
+std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> x_start<span class="token punctuation">{<!-- --></span><span class="token number">0.0</span><span class="token punctuation">,</span> <span class="token number">0.0</span><span class="token punctuation">,</span> <span class="token number">0.0</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> x_end<span class="token punctuation">{<!-- --></span>xend<span class="token punctuation">,</span> <span class="token number">0.0</span><span class="token punctuation">,</span> <span class="token number">0.0</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token comment">// 终点状态</span>
+std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> y_start<span class="token punctuation">{<!-- --></span><span class="token number">0.0</span><span class="token punctuation">,</span> <span class="token number">0.0</span><span class="token punctuation">,</span> <span class="token number">0.0</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> y_end<span class="token punctuation">{<!-- --></span>yend<span class="token punctuation">,</span> <span class="token number">0.0</span><span class="token punctuation">,</span> <span class="token number">0.0</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token comment">/**************************************************************************/</span>
+<span class="token comment">/**
+ * 整车参数及状态
+*/</span>
+<span class="token comment">// 纵向速度</span>
+<span class="token keyword">double</span> vx <span class="token operator">=</span> <span class="token number">0.01</span><span class="token punctuation">;</span>
+<span class="token comment">// 横向速度</span>
+<span class="token keyword">double</span> vy <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>  <span class="token comment">//质心侧偏角视为不变</span>
+<span class="token comment">// 轮胎侧偏刚度</span>
+<span class="token keyword">double</span> cf <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">65494.663</span><span class="token punctuation">,</span> cr <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">115494.663</span><span class="token punctuation">;</span>
+
+<span class="token comment">// 前后悬架载荷</span>
+<span class="token keyword">double</span> mass_fl <span class="token operator">=</span> <span class="token number">500</span><span class="token punctuation">,</span> mass_fr <span class="token operator">=</span> <span class="token number">500</span><span class="token punctuation">,</span> mass_rl <span class="token operator">=</span> <span class="token number">520</span><span class="token punctuation">,</span> mass_rr <span class="token operator">=</span> <span class="token number">520</span><span class="token punctuation">;</span>
+<span class="token keyword">double</span> mass_front <span class="token operator">=</span> mass_fl <span class="token operator">+</span> mass_fr<span class="token punctuation">;</span>
+<span class="token keyword">double</span> mass_rear <span class="token operator">=</span> mass_rl <span class="token operator">+</span> mass_rr<span class="token punctuation">;</span>
+<span class="token keyword">double</span> m <span class="token operator">=</span> mass_front <span class="token operator">+</span> mass_rear<span class="token punctuation">;</span>
+
+<span class="token comment">// 最大纵向加速度</span>
+<span class="token keyword">double</span> max_lateral_acceleration <span class="token operator">=</span> <span class="token number">5.0</span><span class="token punctuation">;</span>
+<span class="token comment">// 最大制动减速度</span>
+<span class="token keyword">double</span> standstill_acceleration <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">3.0</span><span class="token punctuation">;</span>
+<span class="token comment">// 轴距</span>
+<span class="token keyword">double</span> wheel_base <span class="token operator">=</span> <span class="token number">3.8</span><span class="token punctuation">;</span>
+<span class="token comment">// 前轴中心到质心的距离</span>
+<span class="token keyword">double</span> a <span class="token operator">=</span> wheel_base <span class="token operator">*</span> <span class="token punctuation">(</span><span class="token number">1.0</span> <span class="token operator">-</span> mass_front <span class="token operator">/</span> m<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">// 后轴中心到质心的距离</span>
+<span class="token keyword">double</span> b <span class="token operator">=</span> wheel_base <span class="token operator">*</span> <span class="token punctuation">(</span><span class="token number">1.0</span> <span class="token operator">-</span> mass_rear <span class="token operator">/</span> m<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">// 车辆绕z轴转动的转动惯量</span>
+<span class="token keyword">double</span> Iz <span class="token operator">=</span> std<span class="token double-colon punctuation">::</span><span class="token function">pow</span><span class="token punctuation">(</span>a<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">*</span> mass_front <span class="token operator">+</span> std<span class="token double-colon punctuation">::</span><span class="token function">pow</span><span class="token punctuation">(</span>b<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">*</span> mass_rear<span class="token punctuation">;</span>
+
+<span class="token comment">// 轮胎最大转角(rad)</span>
+<span class="token keyword">double</span> wheel_max_degree <span class="token operator">=</span> <span class="token number">0.6</span><span class="token punctuation">;</span>
+
+<span class="token comment">/**************************************************************************/</span>
+
+<span class="token comment">/**
+ * @brief 计算四元数转换到欧拉角
+ * @return std::array&lt;double, 3&gt;
+ */</span>
+std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> <span class="token function">calQuaternionToEuler</span><span class="token punctuation">(</span><span class="token keyword">const</span> <span class="token keyword">double</span> x<span class="token punctuation">,</span> <span class="token keyword">const</span> <span class="token keyword">double</span> y<span class="token punctuation">,</span>
+                                           <span class="token keyword">const</span> <span class="token keyword">double</span> z<span class="token punctuation">,</span> <span class="token keyword">const</span> <span class="token keyword">double</span> w<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> calRPY <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+  <span class="token comment">// roll = atan2(2(wx+yz),1-2(x*x+y*y))</span>
+  calRPY<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token function">atan2</span><span class="token punctuation">(</span><span class="token number">2</span> <span class="token operator">*</span> <span class="token punctuation">(</span>w <span class="token operator">*</span> x <span class="token operator">+</span> y <span class="token operator">*</span> z<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span> <span class="token operator">-</span> <span class="token number">2</span> <span class="token operator">*</span> <span class="token punctuation">(</span>x <span class="token operator">*</span> x <span class="token operator">+</span> y <span class="token operator">*</span> y<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// pitch = arcsin(2(wy-zx))</span>
+  calRPY<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token function">asin</span><span class="token punctuation">(</span><span class="token number">2</span> <span class="token operator">*</span> <span class="token punctuation">(</span>w <span class="token operator">*</span> y <span class="token operator">-</span> z <span class="token operator">*</span> x<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// yaw = atan2(2(wx+yz),1-2(y*y+z*z))</span>
+  calRPY<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token function">atan2</span><span class="token punctuation">(</span><span class="token number">2</span> <span class="token operator">*</span> <span class="token punctuation">(</span>w <span class="token operator">*</span> z <span class="token operator">+</span> x <span class="token operator">*</span> y<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span> <span class="token operator">-</span> <span class="token number">2</span> <span class="token operator">*</span> <span class="token punctuation">(</span>y <span class="token operator">*</span> y <span class="token operator">+</span> z <span class="token operator">*</span> z<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">return</span> calRPY<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token comment">/**************************************************************************/</span>
+
+<span class="token comment">/**
+ * @brief 规划路径
+ *
+ */</span>
+FrenetPath fp<span class="token punctuation">;</span>
+<span class="token keyword">void</span> <span class="token function">calc_frenet_paths</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token comment">// 纵向</span>
+  QuinticPolynomial <span class="token function">lon_qp</span><span class="token punctuation">(</span>x_start<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span> x_start<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span> x_start<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">,</span> x_end<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+                           x_end<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span> x_end<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">,</span> T<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// 横向</span>
+  QuinticPolynomial <span class="token function">lat_qp</span><span class="token punctuation">(</span>y_start<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span> y_start<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span> y_start<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">,</span> y_end<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+                           y_end<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span> y_end<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">,</span> T<span class="token punctuation">,</span> xend<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">double</span> t <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> t <span class="token operator">&lt;</span> T<span class="token punctuation">;</span> t <span class="token operator">+=</span> DT<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">double</span> x <span class="token operator">=</span> lon_qp<span class="token punctuation">.</span><span class="token function">calc_point_x</span><span class="token punctuation">(</span>t<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">double</span> xd <span class="token operator">=</span> lon_qp<span class="token punctuation">.</span><span class="token function">calc_point_xd</span><span class="token punctuation">(</span>t<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">double</span> xdd <span class="token operator">=</span> lon_qp<span class="token punctuation">.</span><span class="token function">calc_point_xdd</span><span class="token punctuation">(</span>t<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    fp<span class="token punctuation">.</span>t<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>t<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    fp<span class="token punctuation">.</span>x<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    fp<span class="token punctuation">.</span>x_d<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>xd<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    fp<span class="token punctuation">.</span>x_dd<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>xdd<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">double</span> y_x_t <span class="token operator">=</span> lat_qp<span class="token punctuation">.</span><span class="token function">calc_point_y_x</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">double</span> y_x_d <span class="token operator">=</span> lat_qp<span class="token punctuation">.</span><span class="token function">calc_point_y_x_d</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">double</span> y_x_t_d <span class="token operator">=</span> lat_qp<span class="token punctuation">.</span><span class="token function">calc_point_y_t_d</span><span class="token punctuation">(</span>y_x_d<span class="token punctuation">,</span> xd<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">double</span> y_x_dd <span class="token operator">=</span> lat_qp<span class="token punctuation">.</span><span class="token function">calc_point_y_x_dd</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">double</span> y_x_t_dd <span class="token operator">=</span> lat_qp<span class="token punctuation">.</span><span class="token function">calc_point_y_t_dd</span><span class="token punctuation">(</span>y_x_dd<span class="token punctuation">,</span> xd<span class="token punctuation">,</span> y_x_d<span class="token punctuation">,</span> xdd<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    fp<span class="token punctuation">.</span>y<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>y_x_t<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    fp<span class="token punctuation">.</span>y_d<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>y_x_t_d<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    fp<span class="token punctuation">.</span>y_dd<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>y_x_t_dd<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 压入航向角</span>
+    <span class="token comment">// fp.threat.push_back(lat_qp.calc_point_thetar(y_x_t_d, xd));</span>
+
+    <span class="token comment">// 压入曲率</span>
+    fp<span class="token punctuation">.</span>k<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>lat_qp<span class="token punctuation">.</span><span class="token function">calc_point_k</span><span class="token punctuation">(</span>y_x_dd<span class="token punctuation">,</span> y_x_d<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// fp.k.push_back(lat_qp.calc_point_k(y_x_t_dd, y_x_t_d, xdd, xd));</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">int</span> num <span class="token operator">=</span> fp<span class="token punctuation">.</span>x<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> num<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">double</span> dy <span class="token operator">=</span> fp<span class="token punctuation">.</span>y<span class="token punctuation">[</span>i <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">-</span> fp<span class="token punctuation">.</span>y<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+    <span class="token keyword">double</span> dx <span class="token operator">=</span> fp<span class="token punctuation">.</span>x<span class="token punctuation">[</span>i <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">-</span> fp<span class="token punctuation">.</span>x<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+    fp<span class="token punctuation">.</span>threat<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>lat_qp<span class="token punctuation">.</span><span class="token function">calc_point_thetar</span><span class="token punctuation">(</span>dy<span class="token punctuation">,</span> dx<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token comment">// 最后一个道路航向角和前一个相同</span>
+  <span class="token comment">// fp.threat.push_back(fp.threat.back());</span>
+<span class="token punctuation">}</span>
+<span class="token comment">/**************************************************************************/</span>
+
+<span class="token comment">/**
+ * @brief 寻找匹配点及距离最短的点
+ * @return int
+ */</span>
+<span class="token keyword">int</span> index_ <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token keyword">int</span> <span class="token function">findTrajref</span><span class="token punctuation">(</span><span class="token keyword">double</span> current_post_x<span class="token punctuation">,</span> <span class="token keyword">double</span> current_post_y<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token keyword">int</span> numPoints <span class="token operator">=</span> fp<span class="token punctuation">.</span>x<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// double dis_min = std::pow(fp.x[0] - current_post_x, 2) +</span>
+  <span class="token comment">//                  std::pow(fp.y[0] - current_post_y, 2);</span>
+  <span class="token keyword">double</span> dis_min <span class="token operator">=</span> std<span class="token double-colon punctuation">::</span><span class="token class-name">numeric_limits</span><span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token operator">&gt;</span><span class="token double-colon punctuation">::</span><span class="token function">max</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">int</span> index <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> index<span class="token punctuation">;</span> i <span class="token operator">&lt;</span> numPoints<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">double</span> temp_dis <span class="token operator">=</span> std<span class="token double-colon punctuation">::</span><span class="token function">pow</span><span class="token punctuation">(</span>fp<span class="token punctuation">.</span>x<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">-</span> current_post_x<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">+</span>
+                      std<span class="token double-colon punctuation">::</span><span class="token function">pow</span><span class="token punctuation">(</span>fp<span class="token punctuation">.</span>y<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">-</span> current_post_y<span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// printf("dis_min,temp_dis=%f,%f \n", dis_min, temp_dis);</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>temp_dis <span class="token operator">&lt;</span> dis_min<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+      dis_min <span class="token operator">=</span> temp_dis<span class="token punctuation">;</span>
+      index <span class="token operator">=</span> i<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  index_ <span class="token operator">=</span> index<span class="token punctuation">;</span>
+  <span class="token comment">// printf("index,numPoints=%d,%d \n", index, numPoints);</span>
+  <span class="token keyword">return</span> index<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/**
+ * @brief 计算误差err和投影点的曲率
+ *  1.先遍历找到匹配点
+ *  2.通过匹配点近似求解投影点
+ *    2.1 由投影点得到对应的航向角和曲率
+ * @return std::array&lt;double, 5&gt;
+ */</span>
+std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token operator">&gt;</span> <span class="token function">cal_err_k</span><span class="token punctuation">(</span><span class="token keyword">double</span> current_post_x<span class="token punctuation">,</span> <span class="token keyword">double</span> current_post_y<span class="token punctuation">,</span>
+                                std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> calRPY<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token operator">&gt;</span> err_k<span class="token punctuation">;</span>
+  <span class="token keyword">int</span> index <span class="token operator">=</span> <span class="token function">findTrajref</span><span class="token punctuation">(</span>current_post_x<span class="token punctuation">,</span> current_post_y<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// 找到index后，开始求解投影点</span>
+  <span class="token comment">// Eigen::Vector2f tor;</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token operator">&gt;</span> tor<span class="token punctuation">;</span>
+  tor <span class="token operator">&lt;&lt;</span> <span class="token function">cos</span><span class="token punctuation">(</span>fp<span class="token punctuation">.</span>threat<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">sin</span><span class="token punctuation">(</span>fp<span class="token punctuation">.</span>threat<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// Eigen::Vector2f nor;</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token operator">&gt;</span> nor<span class="token punctuation">;</span>
+  nor <span class="token operator">&lt;&lt;</span> <span class="token operator">-</span><span class="token function">sin</span><span class="token punctuation">(</span>fp<span class="token punctuation">.</span>threat<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">cos</span><span class="token punctuation">(</span>fp<span class="token punctuation">.</span>threat<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token comment">// Eigen::Vector2f d_err;</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token operator">&gt;</span> d_err<span class="token punctuation">;</span>
+  d_err <span class="token operator">&lt;&lt;</span> current_post_x <span class="token operator">-</span> fp<span class="token punctuation">.</span>x<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">,</span> current_post_y <span class="token operator">-</span> fp<span class="token punctuation">.</span>y<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">double</span> phi <span class="token operator">=</span> calRPY<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+
+  <span class="token comment">// nor.transpose()对nor转置</span>
+  <span class="token keyword">double</span> ed <span class="token operator">=</span> nor<span class="token punctuation">.</span><span class="token function">transpose</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> d_err<span class="token punctuation">;</span>
+  <span class="token comment">// double ed = -vx*sin();</span>
+
+  <span class="token keyword">double</span> es <span class="token operator">=</span> tor<span class="token punctuation">.</span><span class="token function">transpose</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> d_err<span class="token punctuation">;</span>
+
+  <span class="token comment">// 投影点的threat角度</span>
+  <span class="token keyword">double</span> projection_point_threat <span class="token operator">=</span> fp<span class="token punctuation">.</span>threat<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">+</span> fp<span class="token punctuation">.</span>k<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">*</span> es<span class="token punctuation">;</span>
+
+  <span class="token comment">// double phi = fp.threat[index];</span>
+  <span class="token keyword">double</span> ed_d <span class="token operator">=</span> vy <span class="token operator">*</span> <span class="token function">cos</span><span class="token punctuation">(</span>phi <span class="token operator">-</span> projection_point_threat<span class="token punctuation">)</span> <span class="token operator">+</span>
+                vx <span class="token operator">*</span> <span class="token function">sin</span><span class="token punctuation">(</span>phi <span class="token operator">-</span> projection_point_threat<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">// 计算ephi</span>
+  <span class="token comment">// double ephi = sin(phi - projection_point_threat);</span>
+  <span class="token keyword">double</span> ephi <span class="token operator">=</span> phi <span class="token operator">-</span> projection_point_threat<span class="token punctuation">;</span>
+
+  <span class="token comment">// 计算s_d</span>
+  <span class="token keyword">double</span> s_d <span class="token operator">=</span> <span class="token punctuation">(</span>vx <span class="token operator">*</span> <span class="token function">cos</span><span class="token punctuation">(</span>phi <span class="token operator">-</span> projection_point_threat<span class="token punctuation">)</span> <span class="token operator">-</span>
+                vy <span class="token operator">*</span> <span class="token function">sin</span><span class="token punctuation">(</span>phi <span class="token operator">-</span> projection_point_threat<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token operator">/</span>
+               <span class="token punctuation">(</span><span class="token number">1</span> <span class="token operator">-</span> fp<span class="token punctuation">.</span>k<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">*</span> ed<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">double</span> phi_d <span class="token operator">=</span> vx <span class="token operator">*</span> fp<span class="token punctuation">.</span>k<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">;</span>
+  <span class="token keyword">double</span> ephi_d <span class="token operator">=</span> phi_d <span class="token operator">-</span> fp<span class="token punctuation">.</span>k<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">*</span> s_d<span class="token punctuation">;</span>
+
+  <span class="token comment">// 计算投影点曲率k</span>
+  <span class="token keyword">double</span> projection_point_curvature <span class="token operator">=</span> fp<span class="token punctuation">.</span>k<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">;</span>
+
+  err_k<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">=</span> ed<span class="token punctuation">;</span>
+  err_k<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">=</span> ed_d<span class="token punctuation">;</span>
+  err_k<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span> <span class="token operator">=</span> ephi<span class="token punctuation">;</span>
+  err_k<span class="token punctuation">[</span><span class="token number">3</span><span class="token punctuation">]</span> <span class="token operator">=</span> ephi_d<span class="token punctuation">;</span>
+  err_k<span class="token punctuation">[</span><span class="token number">4</span><span class="token punctuation">]</span> <span class="token operator">=</span> projection_point_curvature<span class="token punctuation">;</span>
+
+  <span class="token keyword">return</span> err_k<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/**
+ * @brief 求解k系数
+ *   1.首先用迭代法解黎卡提方程得到参数得到p矩阵
+ *   2.将p带入k得到k值
+ *   2.将得到的k带入u(n)=-kx(n)得到u也就是转角的控制量
+ * @return Eigen::RowVector4cf
+ */</span>
+Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token operator">&gt;</span> <span class="token function">cal_dlqr</span><span class="token punctuation">(</span>Eigen<span class="token double-colon punctuation">::</span>Matrix4d A<span class="token punctuation">,</span>
+                                     Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token operator">&gt;</span> B<span class="token punctuation">,</span>
+                                     Eigen<span class="token double-colon punctuation">::</span>Matrix4d Q<span class="token punctuation">,</span>
+                                     Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token operator">&gt;</span> R<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token comment">// 设置最大循环迭代次数</span>
+  <span class="token keyword">int</span> numLoop <span class="token operator">=</span> <span class="token number">200</span><span class="token punctuation">;</span>
+  <span class="token comment">// 设置目标极小值</span>
+  <span class="token keyword">double</span> minValue <span class="token operator">=</span> <span class="token number">10e-10</span><span class="token punctuation">;</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix4d p_old<span class="token punctuation">;</span>
+  p_old <span class="token operator">=</span> Q<span class="token punctuation">;</span>
+
+  <span class="token comment">/*************************************/</span>
+
+  <span class="token comment">/**
+   * 离散化状态方程
+   *
+   */</span>
+  <span class="token keyword">double</span> ts <span class="token operator">=</span> <span class="token number">0.001</span><span class="token punctuation">;</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix4d eye<span class="token punctuation">;</span>
+  eye<span class="token punctuation">.</span><span class="token function">setIdentity</span><span class="token punctuation">(</span><span class="token number">4</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  Eigen<span class="token double-colon punctuation">::</span>Matrix4d Ad<span class="token punctuation">;</span>
+  Ad <span class="token operator">=</span> <span class="token punctuation">(</span>eye <span class="token operator">-</span> ts <span class="token operator">*</span> <span class="token number">0.5</span> <span class="token operator">*</span> A<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">inverse</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> <span class="token punctuation">(</span>eye <span class="token operator">+</span> ts <span class="token operator">*</span> <span class="token number">0.5</span> <span class="token operator">*</span> A<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token operator">&gt;</span> Bd<span class="token punctuation">;</span>
+  Bd <span class="token operator">=</span> B <span class="token operator">*</span> ts<span class="token punctuation">;</span>
+
+  <span class="token comment">/*************************************/</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> numLoop<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// B.inverse()求逆</span>
+    Eigen<span class="token double-colon punctuation">::</span>Matrix4d p_new <span class="token operator">=</span> Ad<span class="token punctuation">.</span><span class="token function">transpose</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> p_old <span class="token operator">*</span> Ad <span class="token operator">-</span>
+                            Ad<span class="token punctuation">.</span><span class="token function">transpose</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> p_old <span class="token operator">*</span> Bd <span class="token operator">*</span>
+                                <span class="token punctuation">(</span>R <span class="token operator">+</span> Bd<span class="token punctuation">.</span><span class="token function">transpose</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> p_old <span class="token operator">*</span> Bd<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">inverse</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span>
+                                Bd<span class="token punctuation">.</span><span class="token function">transpose</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> p_old <span class="token operator">*</span> Ad <span class="token operator">+</span>
+                            Q<span class="token punctuation">;</span>
+    <span class="token comment">// p.determinant()求行列式</span>
+    <span class="token comment">// if (std::abs((p_old - p_new).determinant()) &lt;= minValue) {<!-- --></span>
+    <span class="token comment">// cwiseAbs()求绝对值、maxCoeff()求最大系数</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">fabs</span><span class="token punctuation">(</span><span class="token punctuation">(</span>p_new <span class="token operator">-</span> p_old<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">maxCoeff</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token operator">&lt;</span> minValue<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+      p_old <span class="token operator">=</span> p_new<span class="token punctuation">;</span>
+      <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    p_old <span class="token operator">=</span> p_new<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token operator">&gt;</span> k<span class="token punctuation">;</span>
+  <span class="token comment">// Eigen::RowVector4f;</span>
+  <span class="token comment">// 当两个超出范围的浮点数（即INF）进行运算时，运算结果会成为NaN。</span>
+  k <span class="token operator">=</span> <span class="token punctuation">(</span>R <span class="token operator">+</span> Bd<span class="token punctuation">.</span><span class="token function">transpose</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> p_old <span class="token operator">*</span> Bd<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">inverse</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> Bd<span class="token punctuation">.</span><span class="token function">transpose</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> p_old <span class="token operator">*</span> Ad<span class="token punctuation">;</span>
+  <span class="token keyword">return</span> k<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/**
+ * @brief 计算k值
+ *
+ * @param err_k
+ * @return Eigen::Matrix&lt;double, 1, 4&gt;
+ */</span>
+Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token operator">&gt;</span> <span class="token function">cal_k</span><span class="token punctuation">(</span>std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token operator">&gt;</span> err_k<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix4d A<span class="token punctuation">;</span>
+  A <span class="token operator">&lt;&lt;</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>cf <span class="token operator">+</span> cr<span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token punctuation">(</span>m <span class="token operator">*</span> vx<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token operator">-</span><span class="token punctuation">(</span>cf <span class="token operator">+</span> cr<span class="token punctuation">)</span> <span class="token operator">/</span> m<span class="token punctuation">,</span>
+      <span class="token punctuation">(</span>a <span class="token operator">*</span> cf <span class="token operator">-</span> b <span class="token operator">*</span> cr<span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token punctuation">(</span>m <span class="token operator">*</span> vx<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span>
+      <span class="token punctuation">(</span>a <span class="token operator">*</span> cf <span class="token operator">-</span> b <span class="token operator">*</span> cr<span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token punctuation">(</span>Iz <span class="token operator">*</span> vx<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token operator">-</span><span class="token punctuation">(</span>a <span class="token operator">*</span> cf <span class="token operator">-</span> b <span class="token operator">*</span> cr<span class="token punctuation">)</span> <span class="token operator">/</span> Iz<span class="token punctuation">,</span>
+      <span class="token punctuation">(</span>a <span class="token operator">*</span> a <span class="token operator">*</span> cf <span class="token operator">+</span> b <span class="token operator">*</span> b <span class="token operator">*</span> cr<span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token punctuation">(</span>Iz <span class="token operator">*</span> vx<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token comment">// Eigen::Vector4f B;</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token operator">&gt;</span> B<span class="token punctuation">;</span>
+  B <span class="token operator">&lt;&lt;</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token operator">-</span>cf <span class="token operator">/</span> m<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token operator">-</span>a <span class="token operator">*</span> cf <span class="token operator">/</span> Iz<span class="token punctuation">;</span>
+
+  <span class="token comment">// Eigen::Matrix4f Q;</span>
+  <span class="token comment">// // 设置成单位矩阵</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix4d Q<span class="token punctuation">;</span>
+  <span class="token comment">// Q.setIdentity(4, 4);</span>
+  <span class="token function">Q</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token number">60</span><span class="token punctuation">;</span>
+  <span class="token function">Q</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+  <span class="token function">Q</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+  <span class="token function">Q</span><span class="token punctuation">(</span><span class="token number">3</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+
+  Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token operator">&gt;</span> R<span class="token punctuation">;</span>
+  <span class="token function">R</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token number">35.0</span><span class="token punctuation">;</span>
+  <span class="token comment">// MatrixXd矩阵只能用(),VectorXd不仅能用()还能用[]</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token operator">&gt;</span> k <span class="token operator">=</span> <span class="token function">cal_dlqr</span><span class="token punctuation">(</span>A<span class="token punctuation">,</span> B<span class="token punctuation">,</span> Q<span class="token punctuation">,</span> R<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">return</span> k<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/**
+ * @brief 计算前馈环节
+ * @return double
+ */</span>
+<span class="token keyword">double</span> <span class="token function">cal_forword_angle</span><span class="token punctuation">(</span>Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token operator">&gt;</span> k<span class="token punctuation">,</span>
+                         std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token operator">&gt;</span> err_k<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token keyword">double</span> k3 <span class="token operator">=</span> k<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+  <span class="token comment">// 不足转向系数</span>
+  <span class="token keyword">double</span> kv <span class="token operator">=</span> b <span class="token operator">*</span> m <span class="token operator">/</span> <span class="token punctuation">(</span>cf <span class="token operator">*</span> wheel_base<span class="token punctuation">)</span> <span class="token operator">-</span> a <span class="token operator">*</span> m <span class="token operator">/</span> <span class="token punctuation">(</span>cr <span class="token operator">*</span> wheel_base<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token comment">//投影点的曲率final_path.k[index]</span>
+  <span class="token keyword">double</span> point_curvature <span class="token operator">=</span> err_k<span class="token punctuation">[</span><span class="token number">4</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+  <span class="token keyword">double</span> forword_angle <span class="token operator">=</span>
+      wheel_base <span class="token operator">*</span> point_curvature <span class="token operator">+</span> kv <span class="token operator">*</span> vx <span class="token operator">*</span> vx <span class="token operator">*</span> point_curvature <span class="token operator">-</span>
+      k3 <span class="token operator">*</span> <span class="token punctuation">(</span>b <span class="token operator">*</span> point_curvature <span class="token operator">-</span> a <span class="token operator">*</span> m <span class="token operator">*</span> vx <span class="token operator">*</span> vx <span class="token operator">*</span> point_curvature <span class="token operator">/</span> cr <span class="token operator">/</span> b<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">return</span> forword_angle<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/**
+ * @brief 计算前轮转角u
+ */</span>
+<span class="token keyword">double</span> <span class="token function">cal_angle</span><span class="token punctuation">(</span>Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token operator">&gt;</span> k<span class="token punctuation">,</span> <span class="token keyword">double</span> forword_angle<span class="token punctuation">,</span>
+                 std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token operator">&gt;</span> err_k<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token operator">&gt;</span> err<span class="token punctuation">;</span>
+  err <span class="token operator">&lt;&lt;</span> err_k<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span> err_k<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span> err_k<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">,</span> err_k<span class="token punctuation">[</span><span class="token number">3</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+  <span class="token keyword">double</span> angle <span class="token operator">=</span> <span class="token operator">-</span>k <span class="token operator">*</span> err <span class="token operator">+</span> forword_angle<span class="token punctuation">;</span>
+
+  <span class="token keyword">return</span> angle<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/**
+ * @brief 限制前轮最大转角
+ */</span>
+<span class="token keyword">double</span> <span class="token function">limitSterringAngle</span><span class="token punctuation">(</span><span class="token keyword">double</span> value<span class="token punctuation">,</span> <span class="token keyword">double</span> bound1<span class="token punctuation">,</span> <span class="token keyword">double</span> bound2<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>bound1 <span class="token operator">&gt;</span> bound2<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    std<span class="token double-colon punctuation">::</span><span class="token function">swap</span><span class="token punctuation">(</span>bound1<span class="token punctuation">,</span> bound2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>value <span class="token operator">&lt;</span> bound1<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">return</span> bound1<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>value <span class="token operator">&gt;</span> bound2<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">return</span> bound2<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">return</span> value<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/**
+ * @brief 统一调用各个子函数
+ * @return double
+ */</span>
+<span class="token keyword">double</span> <span class="token function">theta_angle</span><span class="token punctuation">(</span><span class="token keyword">double</span> currentPositionX<span class="token punctuation">,</span> <span class="token keyword">double</span> currentPositionY<span class="token punctuation">,</span>
+                   std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> cal_RPY<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token operator">&gt;</span> err_k <span class="token operator">=</span>
+      <span class="token function">cal_err_k</span><span class="token punctuation">(</span>currentPositionX<span class="token punctuation">,</span> currentPositionY<span class="token punctuation">,</span> cal_RPY<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  Eigen<span class="token double-colon punctuation">::</span>Matrix<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token operator">&gt;</span> k <span class="token operator">=</span> <span class="token function">cal_k</span><span class="token punctuation">(</span>err_k<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">double</span> forword_angle <span class="token operator">=</span> <span class="token function">cal_forword_angle</span><span class="token punctuation">(</span>k<span class="token punctuation">,</span> err_k<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">double</span> tempangle <span class="token operator">=</span> <span class="token function">cal_angle</span><span class="token punctuation">(</span>k<span class="token punctuation">,</span> forword_angle<span class="token punctuation">,</span> err_k<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">double</span> angle <span class="token operator">=</span>
+      <span class="token function">limitSterringAngle</span><span class="token punctuation">(</span>tempangle<span class="token punctuation">,</span> <span class="token operator">-</span>wheel_max_degree<span class="token punctuation">,</span> wheel_max_degree<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"angle,forword_angle=%.3f,%.3f\n"</span><span class="token punctuation">,</span> angle<span class="token punctuation">,</span> forword_angle<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">return</span> angle<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> <span class="token function">velocityCall</span><span class="token punctuation">(</span><span class="token keyword">const</span> geometry_msgs<span class="token double-colon punctuation">::</span>TwistStamped <span class="token operator">&amp;</span>carWaypoint<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token comment">//错误写法 carVelocity = carWaypoint.linear.x;</span>
+  vx <span class="token operator">=</span> carWaypoint<span class="token punctuation">.</span>twist<span class="token punctuation">.</span>linear<span class="token punctuation">.</span>x<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> <span class="token function">poseCallback</span><span class="token punctuation">(</span><span class="token keyword">const</span> geometry_msgs<span class="token double-colon punctuation">::</span>PoseStamped <span class="token operator">&amp;</span>currentWaypoint<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token keyword">double</span> currentPositionX <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>x<span class="token punctuation">;</span>
+  <span class="token keyword">double</span> currentPositionY <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>y<span class="token punctuation">;</span>
+  <span class="token keyword">double</span> currentPositionZ <span class="token operator">=</span> <span class="token number">0.0</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">double</span> currentQuaternionX <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>x<span class="token punctuation">;</span>
+  <span class="token keyword">double</span> currentQuaternionY <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>y<span class="token punctuation">;</span>
+  <span class="token keyword">double</span> currentQuaternionZ <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>z<span class="token punctuation">;</span>
+  <span class="token keyword">double</span> currentQuaternionW <span class="token operator">=</span> currentWaypoint<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>w<span class="token punctuation">;</span>
+
+  std<span class="token double-colon punctuation">::</span>array<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token operator">&gt;</span> cal_RPY <span class="token operator">=</span>
+      <span class="token function">calQuaternionToEuler</span><span class="token punctuation">(</span>currentQuaternionX<span class="token punctuation">,</span> currentQuaternionY<span class="token punctuation">,</span>
+                           currentQuaternionZ<span class="token punctuation">,</span> currentQuaternionW<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">double</span> theta <span class="token operator">=</span> <span class="token function">theta_angle</span><span class="token punctuation">(</span>currentPositionX<span class="token punctuation">,</span> currentPositionY<span class="token punctuation">,</span> cal_RPY<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">int</span> numpoints <span class="token operator">=</span> fp<span class="token punctuation">.</span>x<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>index_ <span class="token operator">&lt;</span> numpoints <span class="token operator">-</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    geometry_msgs<span class="token double-colon punctuation">::</span>Twist vel_msg<span class="token punctuation">;</span>
+    vel_msg<span class="token punctuation">.</span>linear<span class="token punctuation">.</span>x <span class="token operator">=</span> <span class="token number">8</span><span class="token punctuation">;</span>
+    vel_msg<span class="token punctuation">.</span>angular<span class="token punctuation">.</span>z <span class="token operator">=</span> theta<span class="token punctuation">;</span>
+    frenet_lqr_<span class="token punctuation">.</span><span class="token function">publish</span><span class="token punctuation">(</span>vel_msg<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    geometry_msgs<span class="token double-colon punctuation">::</span>PoseStamped this_pose_stamped<span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>x <span class="token operator">=</span> currentPositionX<span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>y <span class="token operator">=</span> currentPositionY<span class="token punctuation">;</span>
+
+    geometry_msgs<span class="token double-colon punctuation">::</span>Quaternion goal_quat <span class="token operator">=</span> tf<span class="token double-colon punctuation">::</span><span class="token function">createQuaternionMsgFromYaw</span><span class="token punctuation">(</span>theta<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>x <span class="token operator">=</span> currentQuaternionX<span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>y <span class="token operator">=</span> currentQuaternionY<span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>z <span class="token operator">=</span> currentQuaternionZ<span class="token punctuation">;</span>
+    this_pose_stamped<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>orientation<span class="token punctuation">.</span>w <span class="token operator">=</span> currentQuaternionW<span class="token punctuation">;</span>
+
+    this_pose_stamped<span class="token punctuation">.</span>header<span class="token punctuation">.</span>stamp <span class="token operator">=</span> ros<span class="token double-colon punctuation">::</span><span class="token class-name">Time</span><span class="token double-colon punctuation">::</span><span class="token function">now</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    this_pose_stamped<span class="token punctuation">.</span>header<span class="token punctuation">.</span>frame_id <span class="token operator">=</span> <span class="token string">"world"</span><span class="token punctuation">;</span>
+    trajectorypath<span class="token punctuation">.</span>poses<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>this_pose_stamped<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    trajectory_path<span class="token punctuation">.</span><span class="token function">publish</span><span class="token punctuation">(</span>trajectorypath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+    geometry_msgs<span class="token double-colon punctuation">::</span>Twist vel_msg<span class="token punctuation">;</span>
+    vel_msg<span class="token punctuation">.</span>linear<span class="token punctuation">.</span>x <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    vel_msg<span class="token punctuation">.</span>angular<span class="token punctuation">.</span>z <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    frenet_lqr_<span class="token punctuation">.</span><span class="token function">publish</span><span class="token punctuation">(</span>vel_msg<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">int</span> argc<span class="token punctuation">,</span> <span class="token keyword">char</span> <span class="token operator">*</span><span class="token operator">*</span>argv<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token comment">//创建节点</span>
+  ros<span class="token double-colon punctuation">::</span><span class="token function">init</span><span class="token punctuation">(</span>argc<span class="token punctuation">,</span> argv<span class="token punctuation">,</span> <span class="token string">"lqr"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">//创建节点句柄</span>
+  ros<span class="token double-colon punctuation">::</span>NodeHandle a<span class="token punctuation">;</span>
+  <span class="token comment">//创建Publisher，发送经过lqr计算后的转角及速度</span>
+  frenet_lqr_ <span class="token operator">=</span> a<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">advertise</span><span class="token generic class-name"><span class="token operator">&lt;</span>geometry_msgs<span class="token double-colon punctuation">::</span>Twist<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token string">"/smart/cmd_vel"</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token comment">//初始化五次多项式轨迹</span>
+  <span class="token function">calc_frenet_paths</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">int</span> Num <span class="token operator">=</span> fp<span class="token punctuation">.</span>x<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> Num<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"x,y,th,k,i=%.3f,%.3f,%.3f,%f,%d \n"</span><span class="token punctuation">,</span> fp<span class="token punctuation">.</span>x<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span> fp<span class="token punctuation">.</span>y<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span>
+    fp<span class="token punctuation">.</span>threat<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span>
+           fp<span class="token punctuation">.</span>k<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span> i<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+
+  <span class="token comment">/**************************************************************/</span>
+  <span class="token comment">// 发布规划轨迹</span>
+  path_pub_ <span class="token operator">=</span> a<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">advertise</span><span class="token generic class-name"><span class="token operator">&lt;</span>nav_msgs<span class="token double-colon punctuation">::</span>Path<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token string">"rviz_path"</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  path<span class="token punctuation">.</span>header<span class="token punctuation">.</span>frame_id <span class="token operator">=</span> <span class="token string">"world"</span><span class="token punctuation">;</span>
+  path<span class="token punctuation">.</span>header<span class="token punctuation">.</span>stamp <span class="token operator">=</span> ros<span class="token double-colon punctuation">::</span><span class="token class-name">Time</span><span class="token double-colon punctuation">::</span><span class="token function">now</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  geometry_msgs<span class="token double-colon punctuation">::</span>PoseStamped pose<span class="token punctuation">;</span>
+  pose<span class="token punctuation">.</span>header<span class="token punctuation">.</span>stamp <span class="token operator">=</span> ros<span class="token double-colon punctuation">::</span><span class="token class-name">Time</span><span class="token double-colon punctuation">::</span><span class="token function">now</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  pose<span class="token punctuation">.</span>header<span class="token punctuation">.</span>frame_id <span class="token operator">=</span> <span class="token string">"world"</span><span class="token punctuation">;</span>
+  <span class="token keyword">int</span> sNum <span class="token operator">=</span> fp<span class="token punctuation">.</span>x<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> sNum<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    pose<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>x <span class="token operator">=</span> fp<span class="token punctuation">.</span>x<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+    pose<span class="token punctuation">.</span>pose<span class="token punctuation">.</span>position<span class="token punctuation">.</span>y <span class="token operator">=</span> fp<span class="token punctuation">.</span>y<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+
+    path<span class="token punctuation">.</span>poses<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>pose<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  path_pub_<span class="token punctuation">.</span><span class="token function">publish</span><span class="token punctuation">(</span>path<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token comment">/**************************************************************/</span>
+  <span class="token comment">//发布小车运动轨迹</span>
+  trajectory_path <span class="token operator">=</span> a<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">advertise</span><span class="token generic class-name"><span class="token operator">&lt;</span>nav_msgs<span class="token double-colon punctuation">::</span>Path<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token string">"trajector_ypath"</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  trajectorypath<span class="token punctuation">.</span>header<span class="token punctuation">.</span>frame_id <span class="token operator">=</span> <span class="token string">"world"</span><span class="token punctuation">;</span>
+  trajectorypath<span class="token punctuation">.</span>header<span class="token punctuation">.</span>stamp <span class="token operator">=</span> ros<span class="token double-colon punctuation">::</span><span class="token class-name">Time</span><span class="token double-colon punctuation">::</span><span class="token function">now</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token comment">/**************************************************************/</span>
+
+  ros<span class="token double-colon punctuation">::</span>Subscriber carVel <span class="token operator">=</span> a<span class="token punctuation">.</span><span class="token function">subscribe</span><span class="token punctuation">(</span><span class="token string">"/smart/velocity"</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> velocityCall<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  ros<span class="token double-colon punctuation">::</span>Subscriber carPose <span class="token operator">=</span> a<span class="token punctuation">.</span><span class="token function">subscribe</span><span class="token punctuation">(</span><span class="token string">"/smart/rear_pose"</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> poseCallback<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  ros<span class="token double-colon punctuation">::</span><span class="token function">spin</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre>
+<p><strong>操作步骤：（新开终端窗口）</strong></p>
+<pre><code class="prism language-shell"><span class="token builtin class-name">source</span> devel/setup.sh
+roslaunch car_model spawn_car.launch
+roslaunch lqr_steering frenet_lqr.launch 
+rviz 中add /trajector_ypath /rviz_path  /smart　（在rviz显示中，红色为小车运动轨迹，绿色为规划模块给出的轨迹）
+</code></pre>
+<p><strong>LQR仿真结果：</strong><br/> <img alt="lqr" src="https://img-blog.csdnimg.cn/img_convert/aafa6ee998145f441c35f9d93e664ae1.png"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,424 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-dracula" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="GLOG_0"></a>GLOG从入门到入门</h1>
+<h2><a id="1_C_1"></a>1 C++日志需求</h2>
+<p>任何可用的工程代码，都无法保证不出bug。因此，日志系统对于工程代码非常重要。对于像耳东小白这样的初级程序员（感谢某高级程序员大佬赐予“初级程序员”封号，小白会继续努力）来说，编写自己的日志系统，缺乏这种必要~~（主要是缺乏这种能力）~~。</p>
+<blockquote>
+<p>Google Logging (glog) is a C++98 library that implements application-level logging. The library provides logging APIs based on C+±style streams and various helper macros.</p>
+</blockquote>
+<p>GLOG即谷歌日志系统，是一个C++98标准下开发的库，实现了应用级的日志系统。该库提供了C++风格的日志API，以及丰富的帮助宏。——翻译完毕。<br/> <a href="https://github.com/google/glog">GLOG github传送门</a></p>
+<h2><a id="2_CMakeGLOG060_9"></a>2 用CMake编译GLOG-0.6.0</h2>
+<p>很尴尬，小白并不知道哪里有编译好的GLOG版本（知道的同学可以把下载地址打在评论区），只能从github上下载源码来编译。<br/> 小白的编译环境是Win10系统 + Visual Studio 2013 + CMake-3.21.0。<br/> 此时此刻，下载的最新版本是GLOG-0.6.0。<br/> 编译其实很简单，选好源码的路径，建好编译结果的路径，编译器选64位的Visual C++（这些太基础了，连作为初级程序员的小白都觉得可以跳过了）<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/48b76862156d4a64a1f79093ee5c5857.png#pic_center"/></p>
+<p>本着大胆乱来的精神，反正只要是没有预装的东西，且影响编译的东西，都别勾上。<br/> 这里注意把<code>WITH_GFLAGS</code> <code>WITH_GTEST</code> <code>WITH_UNWIND</code>都不要勾选。因为没预装，看这些名称，估计也不是非得装不可（其实不是估计出来的，因为勾上了就会报error），没有就算了。<br/> 接下来就是Configure --&gt; Generate --&gt; Open Project一连三键。<br/> 打开.sln文件后，把INSTALL设为启动项目，然后生成x64 Release版本。（有了之前编译OpenCV和DarkNet的经验，感觉乱来的时候内心毫无波澜）。<br/> 通常如果没有啥幺蛾子的话，应该会直接编译成功，小白这里一共17个项目编译成功。<br/> 到这一步为止，好像拿到了一个编译成功的版本，那么它到底能不能用呢？</p>
+<h2><a id="3_CGLOG_22"></a>3 在C++项目中引入GLOG库</h2>
+<p>参看前人的博客，都会说只需要找到libglog.dll和libglog.lib，再加上几个头文件，就是能用的glog库了。然鹅…<br/> 编译出来没有libglog.dll，也没有libglog.lib！<br/> 小白在此时真的觉得自己是不是还是应该把那几个没勾选的东西先折腾一下？！<br/> 那么我们来看看编译出来的文件里到底有什么…<br/> 编译出来的Release文件夹里，找到了glog.dll和glog.lib。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e5051c14190f48f4b3c8cfa10ca69f1f.png#pic_center"/></p>
+<p>在编译出来的glog文件夹里，找到了疑似需要的几个头文件：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e14125b4f7a54e18abb1ffe3991e6e9e.png#pic_center"/></p>
+<p>其中，logging.h是很多代码里直接包含的，那么是不是glog本身版本升级后，导出库的名称发生了变化？<br/> 干脆试一试。<br/> 小白建立的工程文件树是这样的：</p>
+<pre><code class="prism language-shell">├─3rdparty
+│  └─glog-0.6.0
+│      ├─bin
+│      ├─include
+│      │  └─glog
+│      └─lib
+├─build
+│  └─x64
+│      └─Release
+├─log
+├─source
+└─windows
+    └─testGlog
+</code></pre>
+<p>其中，glog.dll放在<code> ./3rdparty/glog-0.6.0/bin/</code>目录下;<br/> glog.lib放在<code>./3rdparty/glog-0.6.0/lib/</code> 目录下；<br/> 那几个头文件全部放在<code>./3rdparty/glog-0.6.0/include/glog/</code>目录下；</p>
+<blockquote>
+<p>此处要注意，由于glog中头文件的相互包含带有路径关系，一定要将头文件置于名为glog的目录下，且在工程文件中附加包含目录要包含glog的上级目录，在小白的工程中，即需要包含<code>./3rdparty/glog-0.6.0/include</code>路径</p>
+</blockquote>
+<p>执行文件输出到<code>./build/x64/Release/</code>目录下；<br/> 目标日志输出到<code>./log/</code>目录下。<br/> 在source下新建一个源文件testMain.cpp:</p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">GLOG_NO_ABBREVIATED_SEVERITIES</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;glog/logging.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;vector&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">WRITE_LOG</span><span class="token expression"><span class="token punctuation">(</span>s<span class="token punctuation">)</span> <span class="token punctuation">(</span><span class="token function">LOG</span><span class="token punctuation">(</span>INFO<span class="token punctuation">)</span><span class="token operator">&lt;&lt;</span>s<span class="token punctuation">)</span></span></span>
+
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span>
+
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">int</span> argc<span class="token punctuation">,</span> <span class="token keyword">char</span> <span class="token operator">*</span> argv<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	FLAGS_log_dir <span class="token operator">=</span> <span class="token string">"../../../log"</span><span class="token punctuation">;</span>
+	google<span class="token double-colon punctuation">::</span><span class="token function">SetLogFilenameExtension</span><span class="token punctuation">(</span><span class="token string">".log"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	google<span class="token double-colon punctuation">::</span><span class="token function">InitGoogleLogging</span><span class="token punctuation">(</span><span class="token string">"AlgLog"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">WRITE_LOG</span><span class="token punctuation">(</span><span class="token string">"google initial log"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	google<span class="token double-colon punctuation">::</span><span class="token function">FlushLogFiles</span><span class="token punctuation">(</span>google<span class="token double-colon punctuation">::</span>GLOG_INFO<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">system</span><span class="token punctuation">(</span><span class="token string">"pause"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> EXIT_SUCCESS<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>其中，<code>GLOG_NO_ABBREVIATED_SEVERITIES</code>一开始没定义，报错。<br/> 点击生成----&gt; 没通过！<br/> 看一下报错信息，似乎是少了头文件…<br/> log_severity.h 和 platform.h？<br/> 小白突然灵机一闪，去看了一眼源文件的glog目录：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/dce06faebea84c7c8e9a0f6fc587886a.png#pic_center"/></p>
+<p>于是把这两个文件都拷到工程目录下的<code>./3rdparty/glog-0.6.0/include/glog/</code>目录下。<br/> 生成通过！<br/> 运行得到的.exe文件，可以生成日志：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/0da89566786546789e84d57439ab5f97.png#pic_center"/></p>
+<p>打开可以看到日志的内容：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b39e587b0efb4ed8a820c11a0ae74391.png#pic_center"/></p>
+<p>至此我们完成了GLOG-0.6.0的编译安装初步使用。<br/> 至于以上代码的解释，我们在下一节中再进行讨论。</p>
+<blockquote>
+<p>有两个问题：</p>
+<ol><li>小白的编译过程中，少勾选的那三个选项，是不是导致这两个头文件没有被迁移到编译好的文件中去的原因？</li><li>glog.dll和glog.lib是否确实就是libglog.dll和libglog.lib的更名后文件？</li></ol>
+</blockquote>
+<p>对于第1个问题，小白暂时没有去验证，因为没有去安装未勾选的那几项。（后面估计还要去尝试<br/> GTEST的安装和使用，等到那时候再返回来验证。暂时留坑）<br/> 对于第2个问题，小白尝试着去找一下github上的更新说明，并未找到实证。结合前人的博客来说，目前只能推测是0.4.0或0.5.0版本时，对导出库的名称进行了变更。这个问题也有待查证。</p>
+<h2><a id="4_GLOG_105"></a>4 GLOG常用函数及示意</h2>
+<p>前面不管有没有存在一些问题，总算是能正常使用。<br/> 接下来把精力聚焦到GLOG的使用本身。</p>
+<h3><a id="41_GLOG_108"></a>4.1 GLOG的四级日志</h3>
+<p>GLOG的日志按严重等级分为四级，由低到高分别是</p>
+<ul><li>INFO（0级）</li><li>WARNING（1级）</li><li>ERROR（2级）</li><li>FATAL（3级）<br/> 更高严重等级的日志，会出现在所有比它等级低的日志中。例如，FATAL的日志，不仅会出现在FATAL中，也会出现在ERROR、WARNING、INFO之中。</li></ul>
+<h3><a id="42_GLOG_115"></a>4.2 GLOG的常用标志位</h3>
+<p>GLOG中包含众多常用标志位，这些标志位的设置将决定了GLOG的输出行为。如果系统已经安装有GFLAGS库，那么可以使用命令行系统来开启这些常用标志位。例如如果想把<code>--logtostderr</code>设置成1，则可以在命令行中如此开启：</p>
+<pre><code class="prism language-shell">./your-application --logtostderr<span class="token operator">=</span><span class="token number">1</span>
+</code></pre>
+<p>但小白前面编译的时候没有安装GFLAGS，所以只能使用环境变量的方式进行开启，这里每一个“环境变量”命名前都加有一个<code>GLOG_</code>前缀。例如：</p>
+<pre><code class="prism language-shell"><span class="token assign-left variable">GLOG_logtostderr</span><span class="token operator">=</span><span class="token number">1</span> ./your-application
+</code></pre>
+<p>常用的标志位包括：<br/> <code>logtostderr(bool, default=false)</code><br/> 该标志位为true时，将log内容输出到标准输出，对windows系统来说就是命令行。可以通过赋<code>1</code>,<code>true</code>或<code>yes</code>来使能这个标志位，反之，通过赋<code>0</code>,<code>false</code>或<code>no</code>来抑能这个标志位。注意，大小写不限。</p>
+<p><code>stderrthreshold(int, default=2, which is ERROR)</code><br/> 除了向日志文件中复制之外，也将当前级别或以上的日志消息复制到标准输出。严重级别<code>INFO</code>、<code>WARNING</code>、<code>ERROR</code>、<code>FATAL</code>的值分别是0、1、2、3。</p>
+<p><code>minloglevel(int, default=0, which is INFO)</code><br/> 输出此级别或更高级别的日志信息。严重级别<code>INFO</code>、<code>WARNING</code>、<code>ERROR</code>、<code>FATAL</code>的值分别是0、1、2、3。</p>
+<p><code>log_dir(string, default="")</code><br/> 如果有指定，则日志会被写入指定的路径，而不是默认的日志路径。</p>
+<p><code>v(int, default=0)</code><br/> 使能后，显示所有小于等于m等级的<code>VLOG(m)</code>信息。</p>
+<p><code>vmodule(string, default="")</code><br/> 每个模块的详细级别。该参数必须包含逗号分隔的列表<code>&lt;模块名称&gt;=&lt;日志级别&gt;.&lt;模块名称&gt;</code>是一种glob模式（例如，<code>gfs*</code>用于名称以<code>gfs</code>开头的所有模块），与文件名基数匹配（即，名称忽略<code>.cc/.h/-inl.h</code>）。<code>&lt;日志级别&gt;</code>将覆盖 <code>--v</code>给出的任意值 。</p>
+<p>logging.cc中还定义了其他一些标志。在源码中<code>DEFINE_</code>查看所有标志的完整列表。</p>
+<p>还可以通过在代码中修改全局变量<code>FLAGS_*</code>来修改程序中的标志位值。大多数设置在更新<code>FLAGS_*</code>后立即开始工作。例外情况是与目标文件相关的标志。例如，必须在调用<code>google::InitGoogleLogging</code>之前设置<code>FLAGS_log_dir</code>。下面给出一个示例：</p>
+<pre><code class="prism language-cpp"><span class="token function">LOG</span><span class="token punctuation">(</span>INFO<span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"file"</span><span class="token punctuation">;</span>
+<span class="token comment">// 多数标志位在修改后立即生效</span>
+FLAGS_logtostderr <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+<span class="token function">LOG</span><span class="token punctuation">(</span>INFO<span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"stderr"</span><span class="token punctuation">;</span>
+FLAGS_logtostderr <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token comment">// 这种写法不会起效，如果你想设置这个标志位的值，应该在</span>
+<span class="token comment">// google::InitGoogleLogging之前设置</span>
+FLAGS_log_dir <span class="token operator">=</span> <span class="token string">"/some/log/directory"</span><span class="token punctuation">;</span>
+<span class="token function">LOG</span><span class="token punctuation">(</span>INFO<span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"the same file"</span><span class="token punctuation">;</span>
+</code></pre>
+<h3><a id="43_GLOG_159"></a>4.3 GLOG的常用函数</h3>
+<h4><a id="431__160"></a>4.3.1 条件/偶然日志</h4>
+<p>有时，只需要在特定条件下才输出一条日志信息，这称为条件日志，可以使用以下的<code>Log_IF</code>宏来实现：</p>
+<pre><code class="prism language-cpp"><span class="token function">LOG_IF</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> num_cookies <span class="token operator">&gt;</span> <span class="token number">10</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Got lots of cookies"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>只有当<code>num_cookies</code>这个变量达到10以上时，才会在日志文件中输出一条"Got lots of cookies"信息。如果一行代码会执行多次（例如在循环中），则仅按特定的间隔记录信息可能会很有用。这种日志记录对于信息性消息最有用。</p>
+<pre><code class="prism language-cpp"><span class="token function">LOG_EVERY_N</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token number">10</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Got the "</span> <span class="token operator">&lt;&lt;</span> google<span class="token double-colon punctuation">::</span>COUNTER <span class="token operator">&lt;&lt;</span> <span class="token string">"th cookie"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>以上的这行代码使用了<code>LOG_EVERY_N</code>宏，将会在第1、11、21…次执行时输出一条日志信息。注意上述中的<code>google::COUNTER</code>值表示的是重复发生的次数，在实际代码中需要用实际能表示次数的变量替换。<br/> 也可以把条件和偶然日志通过以下的<code>LOG_IF_EVERY_N</code>宏方式结合起来使用：</p>
+<pre><code class="prism language-cpp"><span class="token function">LOG_IF_EVERY_N</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token punctuation">(</span>size <span class="token operator">&gt;</span> <span class="token number">1024</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">10</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Got the "</span> <span class="token operator">&lt;&lt;</span> google<span class="token double-colon punctuation">::</span>COUNTER<span class="token operator">&lt;&lt;</span> <span class="token string">"th big cookie"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>也可以用<code>LOG_FIRST_N</code>宏限制前n次输出，而不是每n次都输出：</p>
+<pre><code class="prism language-cpp"><span class="token function">LOG_FIRST_N</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Got the "</span> <span class="token operator">&lt;&lt;</span> google<span class="token double-colon punctuation">::</span>COUNTER <span class="token operator">&lt;&lt;</span> <span class="token string">"th cookie"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>上述代码在前20次执行均会输出日志信息。<br/> 另外，也可以每间隔特定时间输出一条信息，使用<code>LOG_EVERY_T</code>宏，以下例子每10ms记录一条日志信息：</p>
+<pre><code class="prism language-cpp"><span class="token function">LOG_EVERY_T</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token number">0.01</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Got a cookie"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>或者每2.35s记录一条日志信息：</p>
+<pre><code class="prism language-cpp"><span class="token function">LOG_EVERY_T</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token number">2.35</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Got a cookie"</span><span class="token punctuation">;</span>
+</code></pre>
+<h4><a id="432_Debug_187"></a>4.3.2 Debug模式</h4>
+<p>特殊的“调试模式”使用<code>DLOG</code>宏，使日志仅在调试模式下起作用，并且在非调试模式编译时被编译为零。使用这些宏可以避免由于过多的日志记录而降低生产应用程序的速度。</p>
+<pre><code class="prism language-cpp"><span class="token function">DLOG</span><span class="token punctuation">(</span>INFO<span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Found cookies"</span><span class="token punctuation">;</span>
+<span class="token function">DLOG_IF</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> num_cookies <span class="token operator">&gt;</span> <span class="token number">10</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Got lots of cookies"</span><span class="token punctuation">;</span>
+<span class="token function">DLOG_EVERY_N</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token number">10</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Got the "</span> <span class="token operator">&lt;&lt;</span> google<span class="token double-colon punctuation">::</span>COUNTER <span class="token operator">&lt;&lt;</span> <span class="token string">"th cookie"</span><span class="token punctuation">;</span>
+</code></pre>
+<h4><a id="433_CHECK__194"></a>4.3.3 CHECK 宏</h4>
+<p>最好经常检查程序中的预期条件，以便迟早发现错误。<code>CHECK</code>宏提供了在不满足条件时路上应用程序的功能，类似于标准C库中定义的断言。<br/> 如果条件不为真，<code>CHECK</code>将中止应用程序，与assert不同，它不由NDEBUG控制，因此，无论编译模式如何，都将执行检查。因此，以下示例中的<code>fp-&gt;Write(x)</code>始终执行。</p>
+<pre><code class="prism language-cpp"><span class="token function">CHECK</span><span class="token punctuation">(</span>fp<span class="token operator">-&gt;</span><span class="token function">Write</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">4</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Write failed!"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>有各种用于相等/不等式检查的帮助器宏-<code>CHECK_EQ</code>、<code>CHECK_NE</code>、<code>CHECK_LE</code>、<code>CHECK_LT</code>、<code>CHECK_GE</code>以及<code>CHECK_GT</code>。它们比较两个值，并在结果不符合预期时记录包含这两个值的FATAL消息。这些值必须定义了运算符<code>&lt;&lt;(ostream, ...)</code>。<br/> 你可以像这样使用错误信息：</p>
+<pre><code class="prism language-cpp"><span class="token function">CHECK_NE</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">": The world must be ending!"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>我们非常小心地确保每个参数只被评估一次，并且任何能让函数最终合法的函数参数在这里都是合法的。特别是，参数可能是临时表达式，最终将在明显的语句末尾被销毁，例如：</p>
+<pre><code class="prism language-cpp"><span class="token function">CHECK_EQ</span><span class="token punctuation">(</span><span class="token function">string</span><span class="token punctuation">(</span><span class="token string">"abc"</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span> ’b’<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>如果其中一个参数是指针，而另一个参数是NULL，则编译器将报告错误。要解决此问题，只需将NULL静态转换成所需指针的类型即可，如下所示：</p>
+<pre><code class="prism language-cpp"><span class="token function">CHECK_EQ</span><span class="token punctuation">(</span>some_ptr<span class="token punctuation">,</span> <span class="token generic-function"><span class="token function">static_cast</span><span class="token generic class-name"><span class="token operator">&lt;</span>SomeType<span class="token operator">*</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token constant">NULL</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>更优地选择是，使用<code>CHECK_NOTNULL</code>宏：</p>
+<pre><code class="prism language-cpp"><span class="token function">CHECK_NOTNULL</span><span class="token punctuation">(</span>some_ptr<span class="token punctuation">)</span><span class="token punctuation">;</span>
+some_ptr<span class="token operator">-&gt;</span><span class="token function">DoSomething</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>由于此宏返回给定的指针，因此这在构造函数初始值设定项列表中非常有用。</p>
+<pre><code class="prism language-cpp"><span class="token keyword">struct</span> <span class="token class-name">S</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token function">S</span><span class="token punctuation">(</span>Something<span class="token operator">*</span> ptr<span class="token punctuation">)</span> <span class="token operator">:</span> <span class="token function">ptr_</span><span class="token punctuation">(</span><span class="token function">CHECK_NOTNULL</span><span class="token punctuation">(</span>ptr<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span><span class="token punctuation">}</span>
+    Something<span class="token operator">*</span> ptr_<span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre>
+<p>请注意，由于此功能，无法将此宏用作c++流，在中止应用程序之前，需要使用上述<code>CHECK_EQ</code>记录自定义消息。<br/> 如果要比较C字符串(char*)，一组方便的宏将执行区分大小写和不区分大小写的比较：<code>CHECK_STREQ</code>、<code>CHECK_STRNE</code>、<code>CHECK_STRCASEEQ</code>和<code>CHECK_STRCASENE</code>，CASE版本的宏不区分大小写。可以安全地为此宏传递NULL指针。它们将NULL和任何非NULL字符串视为不相等。两个NULL相等。<br/> 请注意，这两个参数都可能是临时字符串，它们在当前“完整表达式”的末尾被析构（例如，<code>CHECK_STREQ(Foo().c_str(),Bar().c_str())</code>其中Foo和Bar返回C++的std::string串）。<br/> <code>CHECK_DOUBLE_EQ</code>宏检查两个浮点值是否相等，接受较小的误差幅度。<code>CHECK_NEAR</code>接受第三个浮点参数，该参数指定可接受的误差幅度。</p>
+<p>以上这段功能和另一个开源库gtest有很大的相似性，都是google出品，建议去补充阅读这些内容。</p>
+<h4><a id="434__231"></a>4.3.4 详细日志</h4>
+<p>当追查困难的错误时，全面的日志消息非常有用。但是，我们也希望忽略通常开发中过于冗长的消息。对于此类详细日志记录，GLOG提供了<code>VLOG</code>宏，允许定义自己的数字日志记录级别。<code>--v</code>命令行选项控制记录哪些详细消息：</p>
+<pre><code class="prism language-cpp"><span class="token function">VLOG</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"I’m printed when you run the program with --v=1 or higher"</span><span class="token punctuation">;</span>
+<span class="token function">VLOG</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"I’m printed when you run the program with --v=2 or higher"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>使用<code>VLOG</code>，详细级别越低，就越有可能记录消息。例如，如果<code>--v==1</code>，<code>VLOG(1)</code>将记录，但<code>VLOG(2)</code>将不记录。这与严重性级别相反，其中<code>INFO</code>为0，<code>ERROR</code>为2。<code>--minloglevel</code>为1时将记录<code>WARNING</code>及以上级别的消息。<br/> 尽管可以为<code>VLOG</code>宏和<code>--v</code>标志指定任何整数，但它们的常见值是小的正整数。例如，如果编写<code>VLOG(0)</code>，则应指定<code>--v=-1</code>或更低以使其静默。这不太有用，因为在大多数情况下，我们可能不希望默认使用详细日志。<code>VLOG</code>宏始终在<code>INFO</code>日志级别记录（当它们全部记录时）。<br/> 详细日志记录可以从命令行按模块进行控制：</p>
+<pre><code class="prism language-cpp"><span class="token operator">--</span>vmodule<span class="token operator">=</span>mapreduce<span class="token operator">=</span><span class="token number">2</span><span class="token punctuation">,</span>file<span class="token operator">=</span><span class="token number">1</span><span class="token punctuation">,</span>gfs<span class="token operator">*=</span><span class="token number">3</span> <span class="token operator">--</span>v<span class="token operator">=</span><span class="token number">0</span>
+</code></pre>
+<p>这句控制代码将可以：</p>
+<ol><li>mapreduce.{h,cc}文件中将打印<code>VLOG(2)</code>和更低级别的消息；</li><li>file.{h,cc}文件中将打印<code>VLOG(1)</code>和更低级别的消息；</li><li>前缀带有"gfs"的文件中将打印<code>VLOG(3)</code>和更低级别的消息；</li><li>其他文件中打印<code>VLOG(0)</code>和更像级别的消息。<br/> ©显示的通配符功能同时支持"<code>*</code>“（匹配0个或更多字符）和”<code>?</code>"（匹配任何单个字符）通配符。<br/> 还有一种<code>VLOG_IS_ON(n)</code>“详细级别”条件宏。当<code>--v</code>等于或大于n时，此宏返回true，用法如下：</li></ol>
+<pre><code class="prism language-cpp"><span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">VLOG_IS_ON</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// 做一些日志准备和日志，这些操作</span>
+    <span class="token comment">// 直接用VLOG(2) &lt;&lt; ...不能完成;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>详细级别条件宏<code>VLOG_IF</code>、<code>VLOG_EVERY_N</code>和<code>VLOG_IF_EVERY_N</code>的行为类似于<code>LOG_IF</code>、<code>LOG_EVERY_N</code>、<code>LOF_IF_EVERY</code>，但接受的是数字详细级别而不是严重度级别。</p>
+<pre><code class="prism language-cpp"><span class="token function">VLOG_IF</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>size <span class="token operator">&gt;</span> <span class="token number">1024</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token string">"I’m printed when size is more than 1024 and when you run the "</span>
+      <span class="token string">"program with --v=1 or more"</span><span class="token punctuation">;</span>
+<span class="token function">VLOG_EVERY_N</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">10</span><span class="token punctuation">)</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token string">"I’m printed every 10th occurrence, and when you run the program "</span>
+      <span class="token string">"with --v=1 or more. Present occurence is "</span> <span class="token operator">&lt;&lt;</span> google<span class="token double-colon punctuation">::</span>COUNTER<span class="token punctuation">;</span>
+<span class="token function">VLOG_IF_EVERY_N</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>size <span class="token operator">&gt;</span> <span class="token number">1024</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">10</span><span class="token punctuation">)</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token string">"I’m printed on every 10th occurence of case when size is more "</span>
+      <span class="token string">" than 1024, when you run the program with --v=1 or more. "</span><span class="token punctuation">;</span>
+      <span class="token string">"Present occurence is "</span> <span class="token operator">&lt;&lt;</span> google<span class="token double-colon punctuation">::</span>COUNTER<span class="token punctuation">;</span>
+</code></pre>
+<pre><code class="prism language-cpp"><span class="token function">VLOG_IF</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>size <span class="token operator">&gt;</span> <span class="token number">1024</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+</code></pre>
+<p>这一句当<code>size&gt;1024</code>时，才能以<code>--v=1</code>或更多来输出一条日志；</p>
+<pre><code class="prism language-cpp"><span class="token function">VLOG_EVERY_N</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">10</span><span class="token punctuation">)</span>
+</code></pre>
+<p>这一句每10次执行才输出一次；</p>
+<pre><code class="prism language-cpp"><span class="token function">VLOG_IF_EVERY_N</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>size <span class="token operator">&gt;</span> <span class="token number">1024</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">10</span><span class="token punctuation">)</span>
+</code></pre>
+<p>这一句既需要<code>size&gt;1024</code>，还需要满足10次执行才输出一次。</p>
+<h4><a id="435__281"></a>4.3.5 日志前缀命名</h4>
+<p>glog支持通过接收用户提供的用于生成此类字符串的回调来更改附加到日志消息前缀的格式。该功能必须在编译时由<code>WITH_CUSTOM_PREFIX</code>标志启用。<br/> 核对了一下，小白编译时这个勾是勾上的，所以小白编译出来的版本，这个功能应该是可以使用。<br/> 对于每个日志条目，将使用<code>LogMessageInfo</code>结构调用回调，该结构包含事件的严重性、文件名、行号、线程ID和时间。它还将获得对输出流的引用，其内容将附加到最终日志行中的实际消息之前。<br/> 举例：</p>
+<pre><code class="prism language-cpp"><span class="token comment">/* This function writes a prefix that matches glog's default format.
+ * (The third parameter can be used to receive user-supplied data, and is
+ * NULL by default.)
+ */</span>
+<span class="token keyword">void</span> <span class="token function">CustomPrefix</span><span class="token punctuation">(</span>std<span class="token double-colon punctuation">::</span>ostream <span class="token operator">&amp;</span>s<span class="token punctuation">,</span> <span class="token keyword">const</span> LogMessageInfo <span class="token operator">&amp;</span>l<span class="token punctuation">,</span> <span class="token keyword">void</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+   s <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>severity<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">4</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token number">1900</span> <span class="token operator">+</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">year</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token number">1</span> <span class="token operator">+</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">month</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">day</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token char">' '</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">hour</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token char">':'</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">min</span><span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token operator">&lt;&lt;</span> <span class="token char">':'</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">sec</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"."</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">6</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">usec</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token char">' '</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token function">setfill</span><span class="token punctuation">(</span><span class="token char">' '</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">5</span><span class="token punctuation">)</span>
+   <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>thread_id <span class="token operator">&lt;&lt;</span> <span class="token function">setfill</span><span class="token punctuation">(</span><span class="token char">'0'</span><span class="token punctuation">)</span>
+   <span class="token operator">&lt;&lt;</span> <span class="token char">' '</span>
+   <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>filename <span class="token operator">&lt;&lt;</span> <span class="token char">':'</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>line_number <span class="token operator">&lt;&lt;</span> <span class="token string">"]"</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>若要启用<code>CustomPrefix()</code>，需要在初始化时简单地给glog一个指针：<code>InitGoogleLogging(argv[0], &amp;CustomPrefix);</code><br/> 可选地，<code>InitGoogleLogging()</code>可以在第三个参数，类型为<code>void*</code>来在回调函数中传递。</p>
+<p>小白试了一下，写了以下代码：</p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">GLOG_NO_ABBREVIATED_SEVERITIES</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">GLOG_CUSTOM_PREFIX_SUPPORT</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">NOMINMAX</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;glog/logging.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;vector&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iomanip&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">WRITE_LOG</span><span class="token expression"><span class="token punctuation">(</span>s<span class="token punctuation">)</span> <span class="token punctuation">(</span><span class="token function">LOG</span><span class="token punctuation">(</span>INFO<span class="token punctuation">)</span><span class="token operator">&lt;&lt;</span>s<span class="token punctuation">)</span></span></span>
+
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span>
+
+<span class="token keyword">void</span> <span class="token function">CustomPrefix</span><span class="token punctuation">(</span>std<span class="token double-colon punctuation">::</span>ostream <span class="token operator">&amp;</span>s<span class="token punctuation">,</span> <span class="token keyword">const</span> google<span class="token double-colon punctuation">::</span>LogMessageInfo <span class="token operator">&amp;</span>l<span class="token punctuation">,</span> <span class="token keyword">void</span><span class="token operator">*</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	s <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>severity<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">4</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token number">1900</span> <span class="token operator">+</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">year</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"-"</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token number">1</span> <span class="token operator">+</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">month</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"-"</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">day</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token char">' '</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">hour</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token char">':'</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">min</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token char">':'</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">sec</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"."</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">6</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>time<span class="token punctuation">.</span><span class="token function">usec</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token char">' '</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token function">setfill</span><span class="token punctuation">(</span><span class="token char">' '</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token function">setw</span><span class="token punctuation">(</span><span class="token number">5</span><span class="token punctuation">)</span>
+		<span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>thread_id <span class="token operator">&lt;&lt;</span> <span class="token function">setfill</span><span class="token punctuation">(</span><span class="token char">'0'</span><span class="token punctuation">)</span>
+		<span class="token operator">&lt;&lt;</span> <span class="token char">' '</span>
+		<span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>filename <span class="token operator">&lt;&lt;</span> <span class="token char">':'</span> <span class="token operator">&lt;&lt;</span> l<span class="token punctuation">.</span>line_number <span class="token operator">&lt;&lt;</span> <span class="token string">"]"</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">int</span> argc<span class="token punctuation">,</span> <span class="token keyword">char</span> <span class="token operator">*</span> argv<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	FLAGS_log_dir <span class="token operator">=</span> <span class="token string">"../../../log"</span><span class="token punctuation">;</span>
+	google<span class="token double-colon punctuation">::</span><span class="token function">SetLogFilenameExtension</span><span class="token punctuation">(</span><span class="token string">".log"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//google::InitGoogleLogging("AlgLog");</span>
+	google<span class="token double-colon punctuation">::</span><span class="token function">InitGoogleLogging</span><span class="token punctuation">(</span><span class="token string">"AlgLog"</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>CustomPrefix<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">WRITE_LOG</span><span class="token punctuation">(</span><span class="token string">"google initial log"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	google<span class="token double-colon punctuation">::</span><span class="token function">FlushLogFiles</span><span class="token punctuation">(</span>google<span class="token double-colon punctuation">::</span>GLOG_INFO<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">LOG_EVERY_T</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token number">0.10</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"haha"</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> <span class="token number">101</span><span class="token punctuation">;</span> <span class="token operator">++</span>i<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">LOG_IF</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> i <span class="token operator">&gt;</span> <span class="token number">90</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"it's "</span> <span class="token operator">&lt;&lt;</span> i <span class="token operator">&lt;&lt;</span> <span class="token string">"th loop."</span><span class="token punctuation">;</span>
+		<span class="token function">LOG_EVERY_N</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token number">5</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"it's "</span> <span class="token operator">&lt;&lt;</span> i <span class="token operator">&lt;&lt;</span> <span class="token string">"th loop."</span><span class="token punctuation">;</span>
+		<span class="token function">LOG_IF_EVERY_N</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> i <span class="token operator">&gt;</span> <span class="token number">90</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"it's "</span> <span class="token operator">&lt;&lt;</span> i <span class="token operator">&lt;&lt;</span> <span class="token string">"th loop."</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+	google<span class="token double-colon punctuation">::</span><span class="token function">ShutdownGoogleLogging</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">system</span><span class="token punctuation">(</span><span class="token string">"pause"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> EXIT_SUCCESS<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>生成的日志前缀变化了：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4261e5ec452142f5851e7a26153b2132.png#pic_center"/></p>
+<p>对比一下之前的日志前缀<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2c89b031f7164a598f749cff70100816.png#pic_center"/><br/> 可以看到前缀中的年月日格式有所变化。</p>
+<h3><a id="44_GLOG_370"></a>4.4 GLOG常用技巧</h3>
+<h4><a id="441__371"></a>4.4.1 失败信号句柄</h4>
+<p>GLOG库提供一个方便的信号处理程序，当程序在某些信号（如SIGSEGV）上崩溃时，它将转储有用的信息。信号处理程序可以通过<code>google::InstallFailureSiginalHandler()</code>安装。以下是信号处理程序的输出示例：</p>
+<pre><code class="prism language-shell">*** Aborted at <span class="token number">1225095260</span> <span class="token punctuation">(</span>unix <span class="token function">time</span><span class="token punctuation">)</span> try <span class="token string">"date -d @1225095260"</span> <span class="token keyword">if</span> you are using GNU <span class="token function">date</span> ***
+*** SIGSEGV <span class="token punctuation">(</span>@0x0<span class="token punctuation">)</span> received by PID <span class="token number">17711</span> <span class="token punctuation">(</span>TID 0x7f893090a6f0<span class="token punctuation">)</span> from PID <span class="token number">0</span><span class="token punctuation">;</span> stack trace: ***
+PC: @           0x412eb1 TestWaitingLogSink::send<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    @     0x7f892fb417d0 <span class="token punctuation">(</span>unknown<span class="token punctuation">)</span>
+    @           0x412eb1 TestWaitingLogSink::send<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    @     0x7f89304f7f06 google::LogMessage::SendToLog<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    @     0x7f89304f35af google::LogMessage::Flush<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    @     0x7f89304f3739 google::LogMessage::~LogMessage<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    @           0x408cf4 TestLogSinkWaitTillSent<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    @           0x4115de main
+    @     0x7f892f7ef1c4 <span class="token punctuation">(</span>unknown<span class="token punctuation">)</span>
+    @           0x4046f9 <span class="token punctuation">(</span>unknown<span class="token punctuation">)</span>
+</code></pre>
+<p>默认情况下，信号处理程序将故障转储写入标准错误。也可以通过InstallFailureWriter()自定义目标。</p>
+<h4><a id="442__388"></a>4.4.2 日志信息的性能</h4>
+<p>GLOG提供的条件日志记录宏（例如，<code>CHECK</code>、<code>LOG_IF</code>、<code>VLOG</code>等）是精心实现的，并且在条件为假时不执行右侧表达式。因此，以下检查可能不会牺牲广泛应用程序的性能。</p>
+<pre><code class="prism language-cpp"><span class="token function">CHECK</span><span class="token punctuation">(</span>obj<span class="token punctuation">.</span>ok<span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> obj<span class="token punctuation">.</span><span class="token function">CreatePrettyFormattedStringButVerySlow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h4><a id="443__393"></a>4.4.3 用户自定义失败函数</h4>
+<p>FATAL严重性级别消息或未满足<code>CHECK</code>条件会终止程序，可以通过<code>InstallFailureFunction</code>更改终止的行为。</p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token function">YourFailureFunction</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token comment">// Reports something...</span>
+  <span class="token function">exit</span><span class="token punctuation">(</span>EXIT_FAILURE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">int</span> argc<span class="token punctuation">,</span> <span class="token keyword">char</span><span class="token operator">*</span> argv<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+  google<span class="token double-colon punctuation">::</span><span class="token function">InstallFailureFunction</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>YourFailureFunction<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>默认情况下，GLOG尝试转储堆栈跟踪，并使程序退出状态为1。仅当在GLOG支持堆栈跟踪的体系架构上运行程序时，才会生成堆栈跟踪。（截至2008年9月，GLOG支持x86和x86_64的堆栈跟踪）</p>
+<h4><a id="444__406"></a>4.4.4 原始日志</h4>
+<p>头文件<code>&lt;glog/raw_logging.h&gt;</code>可用于线程安全日志记录，该日志记录不分配任何内存或获取任何锁。因此，此头文件中定义的宏可由低级内存分配和同步代码使用。有关详细信息，请查看src/glog/raw_logging.h.in<br/> 这个原始日志可以在多线程中安全使用。</p>
+<h4><a id="445__409"></a>4.4.5 剪枝日志语句</h4>
+<p>日志消息中使用的字符串可能会增加二进制文件的大小并引起隐私问题。因此，可以使用<code>GOOGLE_STRIP_LOG</code>宏指示glog删除所有低于特定严重性级别的字符串：<br/> 只需要采用如下的应用程序：</p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">GOOGLE_STRIP_LOG</span> <span class="token expression"><span class="token number">1</span>    </span><span class="token comment">// 要定义在 #include之前!</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;glog/logging.h&gt;</span></span>
+</code></pre>
+<p>编译器将删除严重性小于指定整数值的日志消息。由于VLOG记录的严重性级别为INFO(数值0)，因此将<code>GOOGLE_STRIP_LOG</code>设置为1或更大会删除与VLOG关联的所有日志消息以及INFO日志语句。</p>
+<h4><a id="446__417"></a>4.4.6 自动移除旧日志</h4>
+<p>这个功能非常实用，小白也遇到过日志文件过大，造成旧日志严重冗余的情况。<br/> 若要使能日志清除器：</p>
+<pre><code class="prism language-cpp">google<span class="token double-colon punctuation">::</span><span class="token function">EnableLogCleaner</span><span class="token punctuation">(</span><span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 表示能保留3天的日志</span>
+</code></pre>
+<p>然后，每当执行刷新时，glog都会检查是否有过期的日志。在此示例中，项目中上次修改时间大于3天的任何日志文件都将被取消链接。<br/> 如果已启用这个功能，则可以随时禁用此功能：</p>
+<pre><code class="prism language-cpp">google<span class="token double-colon punctuation">::</span><span class="token function">DisableLogCleaner</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h4><a id="447_Windows_428"></a>4.4.7 Windows用户注意</h4>
+<p>GLOG定义了一个严重性级别ERROR，该级别也在windows.h中定义。可以通过在包含glog/logging.h之前定义<code>GLOG_NO_ABBREVIATED_SEVERITIES</code>来使GLOG不定义INFO、WARNING、ERROR和FATAL。即使使用此宏，仍然可以像日志记录工具一样使用iostream:</p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">GLOG_NO_ABBREVIATED_SEVERITIES</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;windows.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;glog/logging.h&gt;</span></span>
+
+<span class="token comment">// ...</span>
+
+<span class="token function">LOG</span><span class="token punctuation">(</span>ERROR<span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"This should work"</span><span class="token punctuation">;</span>
+<span class="token function">LOG_IF</span><span class="token punctuation">(</span>ERROR<span class="token punctuation">,</span> x <span class="token operator">&gt;</span> y<span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"This should be also OK"</span><span class="token punctuation">;</span>
+</code></pre>
+<p>但是，不能再对glog/logging.h中定义的函数使用INFO、WARNING、ERROR和FATAL，必须加前缀<code>GLOG_</code></p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">GLOG_NO_ABBREVIATED_SEVERITIES</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;windows.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;glog/logging.h&gt;</span></span>
+
+<span class="token comment">// ...</span>
+
+<span class="token comment">// This won’t work.</span>
+<span class="token comment">// google::FlushLogFiles(google::ERROR);</span>
+
+<span class="token comment">// Use this instead.</span>
+google<span class="token double-colon punctuation">::</span><span class="token function">FlushLogFiles</span><span class="token punctuation">(</span>google<span class="token double-colon punctuation">::</span>GLOG_ERROR<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>如果不需要windows.h定义的ERROR，则还有一些有时不起作用的解决方法：</p>
+<ul><li><code>#define WIN32_LEAN_AND_MEAN</code> or <code>NOGDI</code> 必须要在<code>#include &lt;windows.h&gt;</code>之前</li><li><code>#undef ERROR</code>必须在<code>#include &lt;windows.h&gt;</code>之后</li></ul>
+<h3><a id="45__457"></a>4.5 小白自己的代码示例</h3>
+<p>虽然GLOG很强大，有上面这么多的功能，但对于像小白这样的“初级程序员”来说还没有那么多的使用场景， 一次也消化不了这么多内容。暂且用一个HelloWorld级别难度的代码示例来作为学习的一个结束：</p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">GLOG_NO_ABBREVIATED_SEVERITIES</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;glog/logging.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;vector&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">WRITE_LOG</span><span class="token expression"><span class="token punctuation">(</span>s<span class="token punctuation">)</span> <span class="token punctuation">(</span><span class="token function">LOG</span><span class="token punctuation">(</span>INFO<span class="token punctuation">)</span><span class="token operator">&lt;&lt;</span>s<span class="token punctuation">)</span></span></span>
+
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span>
+
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">int</span> argc<span class="token punctuation">,</span> <span class="token keyword">char</span> <span class="token operator">*</span> argv<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	FLAGS_log_dir <span class="token operator">=</span> <span class="token string">"../../../log"</span><span class="token punctuation">;</span>
+	google<span class="token double-colon punctuation">::</span><span class="token function">SetLogFilenameExtension</span><span class="token punctuation">(</span><span class="token string">".log"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	google<span class="token double-colon punctuation">::</span><span class="token function">InitGoogleLogging</span><span class="token punctuation">(</span><span class="token string">"AlgLog"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">WRITE_LOG</span><span class="token punctuation">(</span><span class="token string">"google initial log"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	google<span class="token double-colon punctuation">::</span><span class="token function">FlushLogFiles</span><span class="token punctuation">(</span>google<span class="token double-colon punctuation">::</span>GLOG_INFO<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">LOG_EVERY_T</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token number">0.10</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"haha"</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> <span class="token number">101</span><span class="token punctuation">;</span> <span class="token operator">++</span>i<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">LOG_IF</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> i <span class="token operator">&gt;</span> <span class="token number">90</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"it's "</span> <span class="token operator">&lt;&lt;</span> i <span class="token operator">&lt;&lt;</span> <span class="token string">"th loop."</span><span class="token punctuation">;</span>
+		<span class="token function">LOG_EVERY_N</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token number">5</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"it's "</span> <span class="token operator">&lt;&lt;</span> i <span class="token operator">&lt;&lt;</span> <span class="token string">"th loop."</span><span class="token punctuation">;</span>
+		<span class="token function">LOG_IF_EVERY_N</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> i <span class="token operator">&gt;</span> <span class="token number">90</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"it's "</span> <span class="token operator">&lt;&lt;</span> i <span class="token operator">&lt;&lt;</span> <span class="token string">"th loop."</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+	google<span class="token double-colon punctuation">::</span><span class="token function">ShutdownGoogleLogging</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">system</span><span class="token punctuation">(</span><span class="token string">"pause"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> EXIT_SUCCESS<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p>运行后，日志输出的结果为</p>
+<pre><code class="prism language-shell">Log <span class="token function">file</span> created at: <span class="token number">2022</span>/06/18 <span class="token number">14</span>:36:07
+Running on machine: JACOBCHEN-PC
+Running duration <span class="token punctuation">(</span>h:mm:ss<span class="token punctuation">)</span>: <span class="token number">0</span>:00:00
+Log line format: <span class="token punctuation">[</span>IWEF<span class="token punctuation">]</span>yyyymmdd hh:mm:ss.uuuuuu threadid file:line<span class="token punctuation">]</span> msg
+I20220618 <span class="token number">14</span>:36:07.086558 <span class="token number">14432</span> testMain.cpp:14<span class="token punctuation">]</span> google initial log
+I20220618 <span class="token number">14</span>:36:07.088560 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 0th loop.
+I20220618 14:36:07.088560 14432 testMain.cpp:20] it'</span>s 5th loop.
+I20220618 <span class="token number">14</span>:36:07.088560 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 10th loop.
+I20220618 14:36:07.088560 14432 testMain.cpp:20] it'</span>s 15th loop.
+I20220618 <span class="token number">14</span>:36:07.088560 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 20th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:20] it'</span>s 25th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 30th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:20] it'</span>s 35th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 40th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:20] it'</span>s 45th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 50th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:20] it'</span>s 55th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 60th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:20] it'</span>s 65th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 70th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:20] it'</span>s 75th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 80th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:20] it'</span>s 85th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 90th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:19] it'</span>s 91th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:21<span class="token punctuation">]</span> it<span class="token string">'s 91th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:19] it'</span>s 92th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:19<span class="token punctuation">]</span> it<span class="token string">'s 93th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:19] it'</span>s 94th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:21<span class="token punctuation">]</span> it<span class="token string">'s 94th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:19] it'</span>s 95th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:20<span class="token punctuation">]</span> it<span class="token string">'s 95th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:19] it'</span>s 96th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:19<span class="token punctuation">]</span> it<span class="token string">'s 97th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:21] it'</span>s 97th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:19<span class="token punctuation">]</span> it<span class="token string">'s 98th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:19] it'</span>s 99th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:19<span class="token punctuation">]</span> it<span class="token string">'s 100th loop.
+I20220618 14:36:07.089558 14432 testMain.cpp:20] it'</span>s 100th loop.
+I20220618 <span class="token number">14</span>:36:07.089558 <span class="token number">14432</span> testMain.cpp:21<span class="token punctuation">]</span> it's 100th loop.
+</code></pre>
+<pre><code class="prism language-cpp"><span class="token function">LOG_EVERY_N</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> <span class="token number">5</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"it's "</span> <span class="token operator">&lt;&lt;</span> i <span class="token operator">&lt;&lt;</span> <span class="token string">"th loop."</span><span class="token punctuation">;</span>
+</code></pre>
+<p>这一句，从第0次循环开始，每5个循环输出一条日志。</p>
+<pre><code class="prism language-cpp"><span class="token function">LOG_IF</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> i <span class="token operator">&gt;</span> <span class="token number">90</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"it's "</span> <span class="token operator">&lt;&lt;</span> i <span class="token operator">&lt;&lt;</span> <span class="token string">"th loop."</span><span class="token punctuation">;</span>
+</code></pre>
+<p>这一句，当<code>i&gt;90</code>开始，每次循环输出一条日志，所以i为95和100各多出一条日志。</p>
+<pre><code class="prism language-cpp"><span class="token function">LOG_IF_EVERY_N</span><span class="token punctuation">(</span>INFO<span class="token punctuation">,</span> i <span class="token operator">&gt;</span> <span class="token number">90</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"it's "</span> <span class="token operator">&lt;&lt;</span> i <span class="token operator">&lt;&lt;</span> <span class="token string">"th loop."</span><span class="token punctuation">;</span>
+</code></pre>
+<p>这一句，当<code>i&gt;90</code>时，每3次循环输出一条日志，所以i为91 94 97 100时各多出一条日志。</p>
+<h2><a id="5__545"></a>5 结语</h2>
+<p>至此，耳东小白完成了C++工程领域的通用日志工具google/GLOG的初步入门学习。在Windows10平台下结合Visual Studio和CMake工具进行了编译和初步使用。这一过程，只能说是从入门到入门，但已能满足编程过程中的部分基础需求。<br/> 此日志工具还有很多特性有待学习和研究。这取决于今后在工程实践中的继续探索。<br/> 【水平所限，难免错漏】<br/> 【创作不易，轻喷勿骂】</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/51307b9a32224ccd8889dcf568b47ead.gif#pic_center"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

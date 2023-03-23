@@ -1,0 +1,186 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="Unity_0"></a>用Unity实现抛物线向目标点发射炮弹功能</h2>
+<blockquote>
+<p>游戏开发中经常会涉及到制作向特定的目标点投掷物体的功能，比如：塔防类、射击类、即时战斗类游戏…等等，首先需要明确的一点是，要打中目标点，<mark>发射的角度、发射点与目标点的距离是最重要的计算参数</mark>。如果发射的物体是具有方向性的实体，那被发射出去的物体是要有角度变化的，而不只是一条运动轨迹。<br/> 本功能实现原理是<mark>根据与目标点距离，实时设置炮弹的旋转角度。炮弹始终朝着自身正前方移动</mark>。话不多说，上代码！</p>
+</blockquote>
+<ul><li>准备阶段<br/> 实现此功能，我一共创建了三个脚本：<br/> <strong>DirectionalArtilleryShell.cs</strong>挂载到附加了Collider和Rigbody的炮弹物体上。<br/> <strong>DirectionalArtilleryController.cs</strong> 挂载到发射台上<br/> <strong>DirectionalArtilleryShootPoint.cs</strong>挂载到发射点组件上，其实这个脚本可以省略掉的，为了后面加上对发射台其他的操作，就先加上吧，哈哈。<br/> 为了使用方便，发射的炮弹是通过 <strong>Resources.Load</strong> 实例化的，<strong>DirectionalArtilleryShell</strong>是发射的炮弹，<strong>FX_ZiMuDan_ChildHit</strong>是炮弹击中之后势力画出来的特效。<br/> 炮弹和特效存放目录位置如图（可根据不同项目自行设置）：<br/> <img alt="存放炮弹和特效目录" src="https://img-blog.csdnimg.cn/1d3c2e6811d54980969ea77d1eed8f69.png"/><br/> 组件节点顺序<br/> <img alt="组件节点顺序" src="https://img-blog.csdnimg.cn/5fdc95056b1c42749f95376f729c1bfb.png"/></li><li>一、实现炮弹的飞行功能，脚本名称【DirectionalArtilleryShell】</li></ul>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine</span><span class="token punctuation">;</span>
+
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">DirectionalArtilleryShell</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//打击目标</span>
+    <span class="token keyword">private</span> <span class="token class-name">Transform</span> Target<span class="token punctuation">;</span>
+    <span class="token comment">//发射速度</span>
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">float</span></span> speed <span class="token operator">=</span> <span class="token number">0f</span><span class="token punctuation">;</span>
+    <span class="token comment">//最小接近距离</span>
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">float</span></span> min_distance <span class="token operator">=</span> <span class="token number">0f</span><span class="token punctuation">;</span>
+    <span class="token comment">//是否需要追踪</span>
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">bool</span></span> IsTrace <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    <span class="token comment">//炮弹与目标点距离</span>
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">float</span></span> distanceToTarget<span class="token punctuation">;</span>
+    <span class="token comment">//是否移动</span>
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">bool</span></span> move_flag <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+    <span class="token comment">//目标点坐标</span>
+    <span class="token keyword">private</span> <span class="token class-name">Vector3</span> TargetPosition <span class="token operator">=</span> Vector3<span class="token punctuation">.</span>zero<span class="token punctuation">;</span>
+    <span class="token comment">//击中目标点时与目标点的角度</span>
+    <span class="token keyword">public</span> <span class="token class-name"><span class="token keyword">float</span></span> HitAngle <span class="token operator">=</span> <span class="token number">45f</span><span class="token punctuation">;</span>
+    <span class="token comment">//集中特效</span>
+    <span class="token keyword">private</span> <span class="token class-name">GameObject</span> HitEffect<span class="token punctuation">;</span>
+
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Awake</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        HitEffect <span class="token operator">=</span> Resources<span class="token punctuation">.</span><span class="token function">Load</span><span class="token punctuation">(</span><span class="token string">"Prefabs/ShellHitEffect/FX_ZiMuDan_ChildHit"</span><span class="token punctuation">)</span> <span class="token keyword">as</span> <span class="token class-name">GameObject</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 参数： 攻击目标点、发射速度、最小停止运动距离</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">SetShellData</span><span class="token punctuation">(</span><span class="token class-name">Transform</span> target<span class="token punctuation">,</span><span class="token class-name"><span class="token keyword">float</span></span> speed<span class="token punctuation">,</span><span class="token class-name"><span class="token keyword">float</span></span> distance<span class="token punctuation">,</span><span class="token class-name"><span class="token keyword">float</span></span> hitAngle<span class="token punctuation">,</span><span class="token class-name"><span class="token keyword">bool</span></span> isTrace<span class="token punctuation">)</span> 
+    <span class="token punctuation">{<!-- --></span>
+        Target <span class="token operator">=</span> target<span class="token punctuation">;</span>
+        TargetPosition <span class="token operator">=</span> Target<span class="token punctuation">.</span>position<span class="token punctuation">;</span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>speed <span class="token operator">=</span> speed<span class="token punctuation">;</span>
+        min_distance <span class="token operator">=</span> distance<span class="token punctuation">;</span>
+        HitAngle <span class="token operator">=</span> hitAngle<span class="token punctuation">;</span>
+        IsTrace <span class="token operator">=</span> isTrace<span class="token punctuation">;</span>
+        distanceToTarget <span class="token operator">=</span> Vector3<span class="token punctuation">.</span><span class="token function">Distance</span><span class="token punctuation">(</span>transform<span class="token punctuation">.</span>position<span class="token punctuation">,</span> Target<span class="token punctuation">.</span>position<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 发射炮弹</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Shoot</span><span class="token punctuation">(</span><span class="token punctuation">)</span> 
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">StartCoroutine</span><span class="token punctuation">(</span><span class="token function">Parabola</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 炮弹主要实现</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token comment">/// &lt;returns&gt;&lt;/returns&gt;</span>
+    <span class="token return-type class-name">IEnumerator</span> <span class="token function">Parabola</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">while</span> <span class="token punctuation">(</span>move_flag<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>IsTrace<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                TargetPosition <span class="token operator">=</span> Target<span class="token punctuation">.</span>position<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            transform<span class="token punctuation">.</span><span class="token function">LookAt</span><span class="token punctuation">(</span>TargetPosition<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name"><span class="token keyword">float</span></span> angle <span class="token operator">=</span> Mathf<span class="token punctuation">.</span><span class="token function">Min</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> Vector3<span class="token punctuation">.</span><span class="token function">Distance</span><span class="token punctuation">(</span>transform<span class="token punctuation">.</span>position<span class="token punctuation">,</span> TargetPosition<span class="token punctuation">)</span> <span class="token operator">/</span> distanceToTarget<span class="token punctuation">)</span> <span class="token operator">*</span> HitAngle<span class="token punctuation">;</span>
+            transform<span class="token punctuation">.</span>rotation <span class="token operator">=</span> transform<span class="token punctuation">.</span>rotation <span class="token operator">*</span> Quaternion<span class="token punctuation">.</span><span class="token function">Euler</span><span class="token punctuation">(</span>Mathf<span class="token punctuation">.</span><span class="token function">Clamp</span><span class="token punctuation">(</span><span class="token operator">-</span>angle<span class="token punctuation">,</span> <span class="token operator">-</span><span class="token number">42</span><span class="token punctuation">,</span><span class="token number">42</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name"><span class="token keyword">float</span></span> currentDist <span class="token operator">=</span> Vector3<span class="token punctuation">.</span><span class="token function">Distance</span><span class="token punctuation">(</span>transform<span class="token punctuation">.</span>position<span class="token punctuation">,</span> TargetPosition<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>currentDist <span class="token operator">&lt;</span> min_distance<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                move_flag <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            transform<span class="token punctuation">.</span><span class="token function">Translate</span><span class="token punctuation">(</span>Vector3<span class="token punctuation">.</span>forward <span class="token operator">*</span> Mathf<span class="token punctuation">.</span><span class="token function">Min</span><span class="token punctuation">(</span>speed <span class="token operator">*</span> Time<span class="token punctuation">.</span>deltaTime<span class="token punctuation">,</span> currentDist<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">yield</span> <span class="token keyword">return</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>move_flag <span class="token operator">==</span> <span class="token boolean">false</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            transform<span class="token punctuation">.</span>position <span class="token operator">=</span> TargetPosition<span class="token punctuation">;</span>
+            <span class="token function">StopCoroutine</span><span class="token punctuation">(</span><span class="token function">Parabola</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name">GameObject</span> vfx <span class="token operator">=</span> <span class="token function">Instantiate</span><span class="token punctuation">(</span>HitEffect<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            vfx<span class="token punctuation">.</span>transform<span class="token punctuation">.</span>position <span class="token operator">=</span> transform<span class="token punctuation">.</span>position<span class="token punctuation">;</span>
+            <span class="token function">Destroy</span><span class="token punctuation">(</span>gameObject<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+
+</code></pre>
+<ul><li>二、下面是实例化炮弹的控制器了，脚本名称【DirectionalArtilleryController】</li></ul>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine</span><span class="token punctuation">;</span>
+
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">DirectionalArtilleryController</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">Header</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"攻击目标点"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token class-name">Transform</span> Target<span class="token punctuation">;</span>
+
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">Header</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"运动速度"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token class-name"><span class="token keyword">float</span></span> speed <span class="token operator">=</span> <span class="token number">10</span><span class="token punctuation">;</span>
+
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">Header</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"最小接近距离, 以停止运动"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token class-name"><span class="token keyword">float</span></span> min_distance <span class="token operator">=</span> <span class="token number">0.5f</span><span class="token punctuation">;</span>
+
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">Header</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"到达目标时与目标的角度"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token class-name"><span class="token keyword">float</span></span> HitAngle <span class="token operator">=</span> <span class="token number">45f</span><span class="token punctuation">;</span>
+
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">Header</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"是否追踪"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token class-name"><span class="token keyword">bool</span></span> IsTrace <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+
+    <span class="token comment">//炮弹实例</span>
+    <span class="token keyword">private</span> <span class="token class-name">GameObject</span> DirShell<span class="token punctuation">;</span>
+
+    <span class="token comment">//炮弹发射位置</span>
+    <span class="token keyword">private</span> <span class="token class-name">DirectionalArtilleryShootPoint</span> ShootPoint <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Awake</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        DirShell <span class="token operator">=</span> Resources<span class="token punctuation">.</span><span class="token function">Load</span><span class="token punctuation">(</span><span class="token string">"Prefabs/DirectionalArtillery/DirectionalArtilleryShell"</span><span class="token punctuation">)</span> <span class="token keyword">as</span> <span class="token class-name">GameObject</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Start</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>ShootPoint <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            ShootPoint <span class="token operator">=</span> <span class="token generic-method"><span class="token function">GetComponentInChildren</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>DirectionalArtilleryShootPoint<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// Update is called once per frame</span>
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Update</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>Input<span class="token punctuation">.</span><span class="token function">GetKeyDown</span><span class="token punctuation">(</span>KeyCode<span class="token punctuation">.</span>Space<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">DirectionalArtilleryShell</span> artilleryShell <span class="token operator">=</span> <span class="token function">CreatShell</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            artilleryShell<span class="token punctuation">.</span>transform<span class="token punctuation">.</span><span class="token function">SetParent</span><span class="token punctuation">(</span>ShootPoint<span class="token punctuation">.</span>transform<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            artilleryShell<span class="token punctuation">.</span>transform<span class="token punctuation">.</span>localPosition <span class="token operator">=</span> Vector3<span class="token punctuation">.</span>zero<span class="token punctuation">;</span>
+            artilleryShell<span class="token punctuation">.</span><span class="token function">SetShellData</span><span class="token punctuation">(</span>Target<span class="token punctuation">,</span>speed<span class="token punctuation">,</span>min_distance<span class="token punctuation">,</span> HitAngle<span class="token punctuation">,</span> IsTrace<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            artilleryShell<span class="token punctuation">.</span><span class="token function">Shoot</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 创建定向炮弹实例</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token comment">/// &lt;returns&gt;&lt;/returns&gt;</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name">DirectionalArtilleryShell</span> <span class="token function">CreatShell</span><span class="token punctuation">(</span><span class="token punctuation">)</span> 
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">GameObject</span> shellObj <span class="token operator">=</span> <span class="token function">Instantiate</span><span class="token punctuation">(</span>DirShell<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        shellObj<span class="token punctuation">.</span>transform<span class="token punctuation">.</span><span class="token function">TryGetComponent</span><span class="token punctuation">(</span><span class="token keyword">out</span> <span class="token class-name">DirectionalArtilleryShell</span> shell<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">return</span> shell<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<ul><li>三、下面是炮弹的发射位置，脚本名称【DirectionalArtilleryShootPoint 】</li></ul>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine</span><span class="token punctuation">;</span>
+
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">DirectionalArtilleryShootPoint</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//这是没有方法的空脚本确实没啥用...哈哈哈</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<blockquote>
+<p>按照上面的步骤设置好，把Target对象组件拖进脚本引用，设置好参数，其中IsTrace是是否追踪，如果开启则炮弹会实时计算出新的抛物线角度方向到目标点。运行编辑器，按下<strong>Space</strong>键就可以看到这样的效果啦：<br/> <img alt="炮弹向目标点发射效果" src="https://img-blog.csdnimg.cn/632f8514595f4cd8a66184a6083a21de.gif#pic_center"/></p>
+</blockquote>
+<p>各位Unity兄弟萌，如果本文章对您有帮助，欢迎点赞和收藏啊！天气炎热，注意降温哦~ ovo</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

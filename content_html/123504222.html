@@ -1,0 +1,129 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>前几天使用了LibTorch对模型进行C++转换和测试，发现速度比原始Python的Pytorch模型提升了将近2倍。现在尝试以下另一种跨平台的模型转换方式——Onnx，可实现跨X86/ARM架构的迁移应用。</p>
+<p>本文主要介绍C++版本的onnxruntime使用，Python的操作较容易就不再提及了。</p>
+<h1><a id="_4"></a>一、克隆及编译</h1>
+<pre><code class="prism language-bash"><span class="token function">git</span> clone --recursive https://github.com/Microsoft/onnxruntime
+<span class="token function">cd</span> onnxruntime/
+<span class="token function">git</span> checkout v1.8.0
+</code></pre>
+<p>这里建议checkout到旧tag，否则容易因为版本过新而编译失败，比如Cmake版本要求过高、CUDA版本不匹配等问题。若跟随网上其他教程，大概率会因为版本过新而导致后续编译失败。</p>
+<p>接下来编译：</p>
+<pre><code class="prism language-bash">./build.sh --skip_tests --use_cuda --config Release --build_shared_lib --parallel --cuda_home /usr/local/cuda-11.3 --cudnn_home /usr/local/cuda-11.3
+</code></pre>
+<p>其中的<code>use_cuda</code>表示你要使用CUDA的onnxruntime，<code>cuda_home</code>和<code>cudnn_home</code>均指向你的CUDA安装目录即可。</p>
+<p>最后就编译成功了：</p>
+<pre><code class="prism language-bash"><span class="token punctuation">[</span>100%<span class="token punctuation">]</span> Linking CXX executable onnxruntime_test_all
+<span class="token punctuation">[</span>100%<span class="token punctuation">]</span> Built target onnxruntime_test_all
+<span class="token punctuation">[</span>100%<span class="token punctuation">]</span> Linking CUDA shared module libonnxruntime_providers_cuda.so
+<span class="token punctuation">[</span>100%<span class="token punctuation">]</span> Built target onnxruntime_providers_cuda
+2022-03-15 13:49:03,260 util.run <span class="token punctuation">[</span>DEBUG<span class="token punctuation">]</span> - Subprocess completed. Return code: 0
+2022-03-15 13:49:03,260 build <span class="token punctuation">[</span>INFO<span class="token punctuation">]</span> - Build complete
+</code></pre>
+<h1><a id="onnxruntime_29"></a>二、onnxruntime使用实例</h1>
+<h2><a id="21_onnx_31"></a>2.1 onnx模型保存</h2>
+<p>重点关注<code>example</code>的设置（输入）和如何<code>export</code>出onnx模型。</p>
+<pre><code class="prism language-bash"><span class="token function">import</span> numpy as np
+from modules.feature_extracter_without_delta_layer <span class="token function">import</span> featureExtracter
+
+
+checkpoint <span class="token operator">=</span> torch.load<span class="token punctuation">(</span><span class="token string">"./amodel.pth.tar"</span><span class="token punctuation">)</span>
+amodel <span class="token operator">=</span> featureExtracter<span class="token punctuation">(</span>channels<span class="token operator">=</span>1<span class="token punctuation">)</span>
+amodel.load_state_dict<span class="token punctuation">(</span>checkpoint<span class="token punctuation">[</span><span class="token string">'state_dict'</span><span class="token punctuation">]</span><span class="token punctuation">)</span> 
+amodel.cuda<span class="token punctuation">(</span><span class="token punctuation">)</span>
+amodel.eval<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+example <span class="token operator">=</span> torch.rand<span class="token punctuation">(</span>1, 1, 32, 900<span class="token punctuation">)</span>
+example <span class="token operator">=</span> example.cuda<span class="token punctuation">(</span><span class="token punctuation">)</span>
+torch.onnx.export<span class="token punctuation">(</span>amodel,
+                 <span class="token punctuation">(</span>example<span class="token punctuation">)</span>,
+                 <span class="token string">'overlapTransformer.onnx'</span>,
+                 input_names <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token string">'input'</span><span class="token punctuation">]</span>,
+                 output_names <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token string">'output'</span><span class="token punctuation">]</span>,
+                 opset_version<span class="token operator">=</span>11,
+                 verbose <span class="token operator">=</span> True<span class="token punctuation">)</span>
+</code></pre>
+<h2><a id="22_onnxC_56"></a>2.2 onnx模型的C++调用</h2>
+<p>其中的<code>cuda_options</code>与<code>AppendExecutionProvider_CUDA</code>的联合使用保证了CUDA加速。</p>
+<pre><code class="prism language-bash"><span class="token comment">#include &lt;iostream&gt;</span>
+<span class="token comment">#include &lt;vector&gt;</span>
+<span class="token comment">#include &lt;chrono&gt;</span>
+<span class="token comment">#include &lt;string&gt;</span>
+<span class="token comment">#include &lt;vector&gt;</span>
+<span class="token comment">#include &lt;onnxruntime_cxx_api.h&gt;</span>
+
+using namespace std<span class="token punctuation">;</span>
+
+
+int main<span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    Ort::Env env<span class="token punctuation">(</span>ORT_LOGGING_LEVEL_WARNING, <span class="token string">"test"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    Ort::SessionOptions session_options<span class="token punctuation">;</span>
+
+    OrtCUDAProviderOptions cuda_options<span class="token punctuation">{<!-- --></span>
+          0,
+          OrtCudnnConvAlgoSearch::EXHAUSTIVE,
+          std::numeric_limits<span class="token operator">&lt;</span>size_t<span class="token operator">&gt;</span>::max<span class="token punctuation">(</span><span class="token punctuation">)</span>,
+          0,
+          <span class="token boolean">true</span>
+      <span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+    session_options.AppendExecutionProvider_CUDA<span class="token punctuation">(</span>cuda_options<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    const char* model_path <span class="token operator">=</span> <span class="token string">"./overlapTransformer.onnx"</span><span class="token punctuation">;</span>
+
+    int width <span class="token operator">=</span> 900<span class="token punctuation">;</span>
+    int height <span class="token operator">=</span> 32<span class="token punctuation">;</span>
+    int len_arr <span class="token operator">=</span> width*height<span class="token punctuation">;</span>
+    float virtual_image<span class="token punctuation">[</span>len_arr<span class="token punctuation">]</span><span class="token punctuation">;</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>int i<span class="token operator">=</span>0<span class="token punctuation">;</span> i<span class="token operator">&lt;</span>height<span class="token punctuation">;</span> i++<span class="token punctuation">)</span>
+        <span class="token keyword">for</span> <span class="token punctuation">(</span>int j<span class="token operator">=</span>0<span class="token punctuation">;</span> j<span class="token operator">&lt;</span>width<span class="token punctuation">;</span> j++<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            virtual_image<span class="token punctuation">[</span>int<span class="token punctuation">(</span>i*width+j<span class="token punctuation">)</span><span class="token punctuation">]</span> <span class="token operator">=</span> 1<span class="token punctuation">;</span> // range
+        <span class="token punctuation">}</span>
+
+
+    Ort::Session session<span class="token punctuation">(</span>env, model_path, session_options<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    // print model input layer <span class="token punctuation">(</span>node names, types, shape etc.<span class="token punctuation">)</span>
+    Ort::AllocatorWithDefaultOptions allocator<span class="token punctuation">;</span>
+
+    // print number of model input nodes
+    size_t num_input_nodes <span class="token operator">=</span> session.GetInputCount<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    std::vector<span class="token operator">&lt;</span>const char*<span class="token operator">&gt;</span> input_node_names <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token string">"input"</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+    std::vector<span class="token operator">&lt;</span>const char*<span class="token operator">&gt;</span> output_node_names <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token string">"output"</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+    std::vector<span class="token operator">&lt;</span>int64_t<span class="token operator">&gt;</span> input_node_dims <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span>1, 1, 32, 900<span class="token punctuation">}</span><span class="token punctuation">;</span>
+    size_t input_tensor_size <span class="token operator">=</span> 32 * 900<span class="token punctuation">;</span>
+    std::vector<span class="token operator">&lt;</span>float<span class="token operator">&gt;</span> input_tensor_values<span class="token punctuation">(</span>input_tensor_size<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>unsigned int i <span class="token operator">=</span> 0<span class="token punctuation">;</span> i <span class="token operator">&lt;</span> input_tensor_size<span class="token punctuation">;</span> i++<span class="token punctuation">)</span>
+        input_tensor_values<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">=</span> float<span class="token punctuation">(</span>virtual_image<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    // create input tensor object from data values ！！！！！！！！！！
+    auto memory_info <span class="token operator">=</span> Ort::MemoryInfo::CreateCpu<span class="token punctuation">(</span>OrtArenaAllocator, OrtMemTypeDefault<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    Ort::Value input_tensor <span class="token operator">=</span> Ort::Value::CreateTensor<span class="token operator">&lt;</span>float<span class="token operator">&gt;</span><span class="token punctuation">(</span>memory_info, input_tensor_values.data<span class="token punctuation">(</span><span class="token punctuation">)</span>,
+                                                            input_tensor_size, input_node_dims.data<span class="token punctuation">(</span><span class="token punctuation">)</span>, 4<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    std::vector<span class="token operator">&lt;</span>Ort::Value<span class="token operator">&gt;</span> ort_inputs<span class="token punctuation">;</span>
+    ort_inputs.push_back<span class="token punctuation">(</span>std::move<span class="token punctuation">(</span>input_tensor<span class="token punctuation">))</span><span class="token punctuation">;</span>
+
+    auto output_tensors <span class="token operator">=</span> session.Run<span class="token punctuation">(</span>Ort::RunOptions<span class="token punctuation">{<!-- --></span>nullptr<span class="token punctuation">}</span>, input_node_names.data<span class="token punctuation">(</span><span class="token punctuation">)</span>, ort_inputs.data<span class="token punctuation">(</span><span class="token punctuation">)</span>,
+                                    ort_inputs.size<span class="token punctuation">(</span><span class="token punctuation">)</span>, output_node_names.data<span class="token punctuation">(</span><span class="token punctuation">)</span>, 1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    float* floatarr <span class="token operator">=</span> output_tensors<span class="token punctuation">[</span>0<span class="token punctuation">]</span>.GetTensorMutableData<span class="token operator">&lt;</span>float<span class="token operator">&gt;</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>int i<span class="token operator">=</span>0<span class="token punctuation">;</span> i<span class="token operator">&lt;</span>256<span class="token punctuation">;</span> i++<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        std::cout<span class="token operator">&lt;&lt;</span>floatarr<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token operator">&lt;&lt;</span>std::endl<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">return</span> 0<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>相关教程，可供参考：<br/> https://github.com/microsoft/onnxruntime<br/> https://blog.csdn.net/znsoft/article/details/114583048<br/> https://ask.csdn.net/questions/7619412<br/> https://blog.csdn.net/XCCCCZ/article/details/110356437</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

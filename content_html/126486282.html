@@ -1,0 +1,295 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atelier-sulphurpool-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><ul><li><a href="#1_1">1、前言</a></li><li><a href="#2OSS_14">2、阿里云OSS</a></li><li><ul><li><a href="#21_16">2.1、开通服务</a></li><li><a href="#22Bucket_24">2.2、创建Bucket</a></li><li><a href="#23_42">2.3、创建子账户</a></li></ul>
+</li><li><a href="#3_56">3、服务端</a></li><li><ul><li><a href="#31_58">3.1、依赖导入</a></li><li><a href="#32_88">3.2、配置文件</a></li><li><a href="#33_118">3.3、控制器编写</a></li><li><a href="#34_194">3.4、接口测试</a></li></ul>
+</li><li><a href="#4_202">4、前端联调</a></li><li><ul><li><a href="#41_204">4.1、组件编写</a></li><li><a href="#42_326">4.2、开启跨域访问</a></li><li><a href="#43_339">4.3、整体测试</a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<h2><a id="1_1"></a>1、前言</h2>
+<p>阿里云对象存储**OSS（Object Storage Service）**是一款海量、安全、低成本、高可靠的云存储服务，这也是我们开发过程中较为常用的一个服务。Web端常见的上传方法是用户在浏览器或App端上传文件到应用服务器，应用服务器再把文件上传到OSS。</p>
+<p>而在这里则是基于 <strong>Post Policy（用户表单上传的策略）</strong> 的使用规则在<strong>服务端完成签名</strong>，然后通过<strong>表单直传数据到OSS</strong>。由于服务端签名直传无需将AccessKey暴露在前端页面，相比JavaScript客户端签名直传具有<strong>更高的安全性</strong>。</p>
+<p><img alt="img" src="image\0c12ef8502990529a0ed51f66d408d10.png"/></p>
+<blockquote>
+<p>参考文档：</p>
+<ul><li><a href="https://github.com/alibaba/aliyun-spring-boot/tree/master/aliyun-spring-boot-samples/aliyun-oss-spring-boot-sample#aliyun-spring-boot-oss-simple">Aliyun Spring Boot OSS Simple</a></li><li><a href="https://help.aliyun.com/document_detail/91868.htm?spm=a2c4g.11186623.0.0.16073967Cu5dF7#concept-ahk-rfz-2fb">服务端签名直传并设置上传回调示例</a></li></ul>
+</blockquote>
+<h2><a id="2OSS_14"></a>2、阿里云OSS</h2>
+<h3><a id="21_16"></a>2.1、开通服务</h3>
+<hr/>
+<p>进入到阿里云控制台，打开左上角的菜单选中对象存储OSS（找不到的可以在<strong>产品与服务</strong>中搜索）</p>
+<p><img alt="image-20220823115628451" src="image\2750df581a90612a4eede24acb88216b.png"/></p>
+<h3><a id="22Bucket_24"></a>2.2、创建Bucket</h3>
+<hr/>
+<p>在开通OSS对象存储服务之后，点击<strong>新建Bucket</strong>，填写自己的<strong>Bucket Name</strong>和地狱，优先选择靠近自己所在地的，完成设置之后确认即可记得这里保存后弹出来的界面的<strong>概览的访问域名的外网访问的Endpoint（地域节点)</strong>。</p>
+<p>下面是我个人的一个选项参数供大家参考（个人用途为项目<strong>存储图片</strong>）：</p>
+<ul><li>存储类型：低频访问存储，因为为个人练手项目，因此不需要很高的访问量；</li><li>HDFS服务：不搞，穷得叮当响；</li><li>同城冗余存储：不搞，穷得叮当响；</li><li>版本控制：不搞，穷得叮当响；</li><li>读写权限：公共读，方便访问，但是不要开公共读写；</li><li>服务端加密方式：不搞，穷得叮当响；</li><li>实时日志查询：不搞，穷得叮当响。</li></ul>
+<p><img alt="image-20220823120322883" src="image\d66c7e46c7b11817e47c1c555c64751d.png"/></p>
+<h3><a id="23_42"></a>2.3、创建子账户</h3>
+<hr/>
+<p>创建子账户获取<code>AccessKey ID</code>和<code>AccessKey Secret</code>。这一操作在<strong>鼠标停顿在右上角头像 -&gt; AccessKey管理</strong>（前提是进入控制台之后头像才会有这一菜单）。</p>
+<ul><li>在里面创建用户，选中<strong>Open API</strong>之后确认，会提示你进行认证，这里记得记得，AK和AS一定要复制下来保存好，截个图也行，因为你关掉这一信息之后再也找不到AS了。</li></ul>
+<p><img alt="image-20220823121727080" src="image\fa4b67d7265c1a7aab3f8d00412f55a4.png"/></p>
+<ul><li>在用户界面找到创建的子账户，点击<strong>添加权限</strong>进行分配权限，让它拥有操作OSS的权限。</li></ul>
+<p><img alt="image-20220823125747734" src="image\a3950952040be1056da04d3cc75fd27f.png"/></p>
+<h2><a id="3_56"></a>3、服务端</h2>
+<h3><a id="31_58"></a>3.1、依赖导入</h3>
+<hr/>
+<p>在服务端，主要就是对OSS进行一个配置连接，利用阿里云提供的API生成需要的签名。针对这一需求，我们需要导入阿里云OSS云存储依赖，注意的是这里已忽略Spring web、Lombok等依赖。</p>
+<pre><code class="prism language-xml"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>dependencies</span><span class="token punctuation">&gt;</span></span>
+    <span class="token comment">&lt;!-- 略 --&gt;</span>
+    <span class="token comment">&lt;!--阿里云OSS云存储依赖--&gt;</span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>dependency</span><span class="token punctuation">&gt;</span></span>
+        <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>groupId</span><span class="token punctuation">&gt;</span></span>com.alibaba.cloud<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>groupId</span><span class="token punctuation">&gt;</span></span>
+        <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>artifactId</span><span class="token punctuation">&gt;</span></span>spring-cloud-starter-alicloud-oss<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>artifactId</span><span class="token punctuation">&gt;</span></span>
+        <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>version</span><span class="token punctuation">&gt;</span></span>2.2.0.RELEASE<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>version</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>dependency</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>dependencies</span><span class="token punctuation">&gt;</span></span>
+
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>dependencyManagement</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>dependencies</span><span class="token punctuation">&gt;</span></span>
+        <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>dependency</span><span class="token punctuation">&gt;</span></span>
+            <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>groupId</span><span class="token punctuation">&gt;</span></span>com.alibaba.cloud<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>groupId</span><span class="token punctuation">&gt;</span></span>
+            <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>artifactId</span><span class="token punctuation">&gt;</span></span>spring-cloud-alibaba-dependencies<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>artifactId</span><span class="token punctuation">&gt;</span></span>
+            <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>version</span><span class="token punctuation">&gt;</span></span>2.2.6.RELEASE<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>version</span><span class="token punctuation">&gt;</span></span>
+            <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>type</span><span class="token punctuation">&gt;</span></span>pom<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>type</span><span class="token punctuation">&gt;</span></span>
+            <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>scope</span><span class="token punctuation">&gt;</span></span>import<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>scope</span><span class="token punctuation">&gt;</span></span>
+        <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>dependency</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>dependencies</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>dependencyManagement</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<h3><a id="32_88"></a>3.2、配置文件</h3>
+<hr/>
+<p>为了数据的统一管理，将服务所需数据统一填写在application.yml文件中，同样也可以直接存放在类中，下面是各个属性数据的获取处：</p>
+<ul><li><strong>endpoint</strong>：地域节点，位于<code>对象存储/Bucket 列表/所创建的Bucket/概览</code>下的<strong>访问域名的外网访问</strong>的Endpoint（地域节点)；</li><li><strong>bucket</strong>：所创建的Bucket名；</li><li><strong>access-key</strong>：创建子账户时生成的AK，如果前面保存了可直接cv，没有的话也可前往子账户界面进行查看；</li><li><strong>secret-key</strong>：创建子账户时生成的AS，只能前面保存然后进行cv，没有保存的话需重新创建子账户。</li></ul>
+<pre><code class="prism language-yaml"><span class="token comment"># 指定端口号</span>
+<span class="token key atrule">server</span><span class="token punctuation">:</span>
+  <span class="token key atrule">port</span><span class="token punctuation">:</span> <span class="token number">8808</span>
+
+<span class="token key atrule">spring</span><span class="token punctuation">:</span>
+	<span class="token comment"># 服务名称</span>
+  <span class="token key atrule">application</span><span class="token punctuation">:</span>
+    <span class="token key atrule">name</span><span class="token punctuation">:</span> 你的服务名称
+  <span class="token comment"># OSS配置</span>
+  <span class="token key atrule">cloud</span><span class="token punctuation">:</span>
+    <span class="token key atrule">alicloud</span><span class="token punctuation">:</span>
+      <span class="token key atrule">oss</span><span class="token punctuation">:</span>
+        <span class="token key atrule">endpoint</span><span class="token punctuation">:</span> 你的地域节点
+        <span class="token key atrule">bucket</span><span class="token punctuation">:</span> 你的Bucket名
+      <span class="token key atrule">access-key</span><span class="token punctuation">:</span> 你的AK
+      <span class="token key atrule">secret-key</span><span class="token punctuation">:</span> 你的AS
+</code></pre>
+<h3><a id="33_118"></a>3.3、控制器编写</h3>
+<hr/>
+<p>在controller包下新建OssController类，在其中编写生成签名等信息的相关操作。</p>
+<pre><code class="prism language-java"><span class="token annotation punctuation">@RestController</span>
+<span class="token annotation punctuation">@RequestMapping</span><span class="token punctuation">(</span><span class="token string">"/oss"</span><span class="token punctuation">)</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">OssController</span> <span class="token punctuation">{<!-- --></span>
+
+    <span class="token annotation punctuation">@Autowired</span>
+    <span class="token class-name">OSS</span> ossClient<span class="token punctuation">;</span>
+
+    <span class="token annotation punctuation">@Value</span><span class="token punctuation">(</span><span class="token string">"${spring.cloud.alicloud.oss.endpoint}"</span><span class="token punctuation">)</span>
+    <span class="token class-name">String</span> endpoint<span class="token punctuation">;</span>
+
+    <span class="token annotation punctuation">@Value</span><span class="token punctuation">(</span><span class="token string">"${spring.cloud.alicloud.oss.bucket}"</span><span class="token punctuation">)</span>
+    <span class="token class-name">String</span> bucket<span class="token punctuation">;</span>
+
+    <span class="token annotation punctuation">@Value</span><span class="token punctuation">(</span><span class="token string">"${spring.cloud.alicloud.access-key}"</span><span class="token punctuation">)</span>
+    <span class="token class-name">String</span> accessId<span class="token punctuation">;</span>
+    <span class="token annotation punctuation">@Value</span><span class="token punctuation">(</span><span class="token string">"${spring.cloud.alicloud.secret-key}"</span><span class="token punctuation">)</span>
+    <span class="token class-name">String</span> accessKey<span class="token punctuation">;</span>
+
+    <span class="token annotation punctuation">@GetMapping</span><span class="token punctuation">(</span><span class="token string">"/policy"</span><span class="token punctuation">)</span>
+    <span class="token keyword">public</span> <span class="token class-name">Result</span> <span class="token function">policy</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+
+        <span class="token comment">// host的格式为 bucketname.endpoint，即https://你的bucket名.地域节点/文件名.文件后缀</span>
+        <span class="token class-name">String</span> host <span class="token operator">=</span> <span class="token string">"https://"</span> <span class="token operator">+</span> bucket <span class="token operator">+</span> <span class="token string">"."</span> <span class="token operator">+</span> endpoint<span class="token punctuation">;</span>
+
+        <span class="token comment">// 用户上传文件时指定的前缀，即存放在以时间命名的文件夹内</span>
+        <span class="token class-name">String</span> dir <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">SimpleDateFormat</span><span class="token punctuation">(</span><span class="token string">"yyyy-MM-dd"</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">format</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">Date</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token class-name">Map</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> respMap <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// 过期时间</span>
+            <span class="token keyword">long</span> expireTime <span class="token operator">=</span> <span class="token number">30</span><span class="token punctuation">;</span>
+            <span class="token keyword">long</span> expireEndTime <span class="token operator">=</span> <span class="token class-name">System</span><span class="token punctuation">.</span><span class="token function">currentTimeMillis</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">+</span> expireTime <span class="token operator">*</span> <span class="token number">1000</span><span class="token punctuation">;</span>
+            <span class="token class-name">Date</span> expiration <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Date</span><span class="token punctuation">(</span>expireEndTime<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name">PolicyConditions</span> policyConds <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">PolicyConditions</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            policyConds<span class="token punctuation">.</span><span class="token function">addConditionItem</span><span class="token punctuation">(</span><span class="token class-name">PolicyConditions</span><span class="token punctuation">.</span>COND_CONTENT_LENGTH_RANGE<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">1048576000</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            policyConds<span class="token punctuation">.</span><span class="token function">addConditionItem</span><span class="token punctuation">(</span><span class="token class-name">MatchMode<span class="token punctuation">.</span>StartWith</span><span class="token punctuation">,</span> <span class="token class-name">PolicyConditions</span><span class="token punctuation">.</span>COND_KEY<span class="token punctuation">,</span> dir<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token comment">// 生成签名</span>
+            <span class="token class-name">String</span> postPolicy <span class="token operator">=</span> ossClient<span class="token punctuation">.</span><span class="token function">generatePostPolicy</span><span class="token punctuation">(</span>expiration<span class="token punctuation">,</span> policyConds<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span> binaryData <span class="token operator">=</span> postPolicy<span class="token punctuation">.</span><span class="token function">getBytes</span><span class="token punctuation">(</span><span class="token string">"utf-8"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name">String</span> encodedPolicy <span class="token operator">=</span> <span class="token class-name">BinaryUtil</span><span class="token punctuation">.</span><span class="token function">toBase64String</span><span class="token punctuation">(</span>binaryData<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name">String</span> postSignature <span class="token operator">=</span> ossClient<span class="token punctuation">.</span><span class="token function">calculatePostSignature</span><span class="token punctuation">(</span>postPolicy<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            respMap <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">LinkedHashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token comment">// AK</span>
+            respMap<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span><span class="token string">"accessid"</span><span class="token punctuation">,</span> accessId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token comment">// 用户表单上传的策略（Policy）</span>
+            respMap<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span><span class="token string">"policy"</span><span class="token punctuation">,</span> encodedPolicy<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token comment">// 签名</span>
+            respMap<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span><span class="token string">"signature"</span><span class="token punctuation">,</span> postSignature<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token comment">// 上传文件时指定的前缀</span>
+            respMap<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span><span class="token string">"dir"</span><span class="token punctuation">,</span> dir<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token comment">// oss保存文件的host</span>
+            respMap<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span><span class="token string">"host"</span><span class="token punctuation">,</span> host<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token comment">// 过期时间</span>
+            respMap<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span><span class="token string">"expire"</span><span class="token punctuation">,</span> <span class="token class-name">String</span><span class="token punctuation">.</span><span class="token function">valueOf</span><span class="token punctuation">(</span>expireEndTime <span class="token operator">/</span> <span class="token number">1000</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> e<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// Assert.fail(e.getMessage());</span>
+            <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>e<span class="token punctuation">.</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">finally</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// 关闭oss客户端流</span>
+            ossClient<span class="token punctuation">.</span><span class="token function">shutdown</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">return</span> <span class="token class-name">Result</span><span class="token punctuation">.</span><span class="token function">ok</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span><span class="token string">"data"</span><span class="token punctuation">,</span> respMap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="34_194"></a>3.4、接口测试</h3>
+<hr/>
+<p>由于请求的方式为Get，因此可以直接使用浏览器，或使用Postman、Apifox等接口测试工具进行测试，这里使用的是Apifox，请求<code>http://localhost:8808/oss/policy</code>。</p>
+<p><img alt="image-20220823151519641" src="image\14d70ecb54437865f1a9e9b79831e4bd.png"/></p>
+<h2><a id="4_202"></a>4、前端联调</h2>
+<h3><a id="41_204"></a>4.1、组件编写</h3>
+<hr/>
+<p>这里使用到的前端技术为Vue+Element-UI，这里只提供了单独的文件上传组件，大家自行导入使用即可，但是记得下载Element-UI以及UUID的依赖包。注意的是上传组件中的action需要你创建的Bucket中的<strong>Bucket域名</strong>，这个<strong>和地域节点获取的地方一致</strong>。</p>
+<pre><code class="prism language-vue">&lt;template&gt; 
+  &lt;div&gt;
+    &lt;el-upload
+      action="你创建的Bucket中的Bucket域名，xu"
+      :data="dataObj"
+      list-type="picture"
+      :multiple="false" :show-file-list="showFileList"
+      :file-list="fileList"
+      :before-upload="beforeUpload"
+      :on-remove="handleRemove"
+      :on-success="handleUploadSuccess"
+      :on-preview="handlePreview"&gt;
+      &lt;el-button size="small" type="primary"&gt;点击上传&lt;/el-button&gt;
+      &lt;div slot="tip" class="el-upload__tip"&gt;只能上传jpg/png文件，且不超过10MB&lt;/div&gt;
+    &lt;/el-upload&gt;
+    &lt;el-dialog :visible.sync="dialogVisible"&gt;
+      &lt;img width="100%" :src="fileList[0].url" alt=""&gt;
+    &lt;/el-dialog&gt;
+  &lt;/div&gt;
+&lt;/template&gt;
+&lt;script&gt;
+
+  export default {
+    name: 'singleUpload',
+    props: {
+      value: String
+    },
+    computed: {
+      imageUrl() {
+        return this.value;
+      },
+      imageName() {
+        if (this.value != null &amp;&amp; this.value !== '') {
+          return this.value.substr(this.value.lastIndexOf("/") + 1);
+        } else {
+          return null;
+        }
+      },
+      fileList() {
+        return [{
+          name: this.imageName,
+          url: this.imageUrl
+        }]
+      },
+      showFileList: {
+        get: function () {
+          return this.value !== null &amp;&amp; this.value !== ''&amp;&amp; this.value!==undefined;
+        },
+        set: function (newValue) {
+        }
+      }
+    },
+    data() {
+      return {
+        // 封装服务端返回的数据
+        dataObj: {
+          policy: '',
+          signature: '',
+          key: '',
+          ossaccessKeyId: '',
+          dir: '',
+          host: '',
+        },
+        dialogVisible: false
+      };
+    },
+    methods: {
+      emitInput(val) {
+        this.$emit('input', val)
+      },
+      handleRemove(file, fileList) {
+        this.emitInput('');
+      },
+      handlePreview(file) {
+        this.dialogVisible = true;
+      },
+      beforeUpload(file) {
+        console.log(file.size);
+        let _self = this;
+        return new Promise((resolve, reject) =&gt; {
+          // 这里使用了封装的请求方式，可以直接换成axios即可
+          http({
+            url: http.adornUrl("/oss/policy"),
+            method: "get",
+            params: http.adornParams({})
+          }).then(response =&gt; {
+            console.log("响应的数据",response);
+            _self.dataObj.policy = response.data.policy;
+            _self.dataObj.signature = response.data.signature;
+            _self.dataObj.ossaccessKeyId = response.data.accessid;
+            // 存放进oss的命名格式为uuid+原本文件名
+            _self.dataObj.key = response.data.dir + '/' + getUUID()+'_${filename}';
+            _self.dataObj.dir = response.data.dir;
+            _self.dataObj.host = response.data.host;
+            resolve(true)
+          }).catch(err =&gt; {
+            reject(false)
+          })
+        })
+      },
+      handleUploadSuccess(res, file) {
+        console.log("上传成功...")
+        this.showFileList = true;
+        this.fileList.pop();
+        this.fileList.push({name: file.name, url: this.dataObj.host + '/' + this.dataObj.key.replace("${filename}",file.name) });
+        this.emitInput(this.fileList[0].url);
+      }
+    }
+  }
+&lt;/script&gt;
+&lt;style&gt;
+
+&lt;/style&gt;
+</code></pre>
+<h3><a id="42_326"></a>4.2、开启跨域访问</h3>
+<hr/>
+<p>这时候功能按道理来说其实都是可以正常运行的了，只是在前端测试的时候会出现CORS跨域问题。这时因为客户端进行表单直传到OSS时，会从浏览器向OSS发送带有<code>Origin</code>的请求消息。OSS对带有<code>Origin</code>头的请求消息会进行跨域规则（CORS）的验证。因此需要为Bucket设置跨域规则以支持Post方法。</p>
+<ol><li>登录<a href="https://oss.console.aliyun.com/">OSS管理控制台</a>。</li><li>单击<strong>Bucket列表</strong>，然后单击目标Bucket名称。</li><li>在左侧导航栏，选择****权限管理** &gt; *<em>跨域设置*</em><strong>，然后在</strong>跨域设置<strong>区域，单击</strong>设置**。</li><li>单击<strong>创建规则</strong>，配置如下图所示，确认即可。</li></ol>
+<p><img alt="img" src="image\200e8764d588e2f2e5efe48920c46488.png"/></p>
+<h3><a id="43_339"></a>4.3、整体测试</h3>
+<hr/>
+<p>将前端项目和后端项目都跑起来之后，我们来到前端界面进行上传测试，下面是测试结果：</p>
+<p><img alt="image-20220823153300120" src="image\67b7e9bebba76a82fcea5c84da9f5a69.png"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

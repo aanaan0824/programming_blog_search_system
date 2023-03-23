@@ -1,0 +1,83 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="stdcondition_variable_2"></a>std::condition_variable</h1>
+<p><a href="https://en.cppreference.com/w/cpp/thread/condition_variable">std::condition_variable</a>，是C++11提供的条件变量，可用于同时阻塞一个线程或多个线程。一般的，生产者线程利用支持std::mutex的std::lock_guard/std::unique_lock修改共享变量后，并通知condition_variable。消费者线程获取同一个std::mutex(std::unique_lock所持有)，并调用std::condition_variable的wait, wait_for, or wait_until。wait操作会释放互斥量，同时挂起该线程。当条件变量收到通知、超时到期或发生虚假唤醒时，线程被唤醒，互斥量也被原子地重新获取。需要注意的是，如果是虚假唤醒，线程应该检查条件并继续等待，以保证业务的正确性。</p>
+<h1><a id="stdcondition_variablewait_6"></a>std::condition_variable::wait()</h1>
+<table><thead><tr><th align="left">unconditional (1)</th><th align="left">void wait( std::unique_lockstd::mutex&amp; lock );</th></tr></thead><tbody><tr><td align="left">predicate (2)</td><td align="left">template&lt; class Predicate &gt; <br/>void wait( std::unique_lock&lt; std::mutex &gt;&amp; lock, Predicate stop_waiting );<br/></td></tr></tbody></table>
+<p>wait() 有两个重载，第二个算是一个语法糖，可用于在等待特定条件变为真时忽略虚假唤醒。相当于：</p>
+<pre><code class="prism language-cpp"><span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token function">stop_waiting</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token function">wait</span><span class="token punctuation">(</span>lock<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p>注意：lock必须在wait()前调用，可以用来守护访问stop_waiting()。wait(lock)返回后会重新获取该lock。</p>
+<h2><a id="_19"></a>示例：</h2>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;string&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;thread&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;mutex&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;condition_variable&gt;</span></span>
+ 
+std<span class="token double-colon punctuation">::</span>mutex mtx<span class="token punctuation">;</span>
+std<span class="token double-colon punctuation">::</span>condition_variable cv<span class="token punctuation">;</span>
+std<span class="token double-colon punctuation">::</span>string data<span class="token punctuation">;</span>
+<span class="token keyword">bool</span> ready <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+<span class="token keyword">bool</span> processed <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+ 
+<span class="token keyword">void</span> <span class="token function">worker_thread</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// Wait until main() sends data</span>
+    std<span class="token double-colon punctuation">::</span>unique_lock <span class="token function">lock</span><span class="token punctuation">(</span>mtx<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    cv<span class="token punctuation">.</span><span class="token function">wait</span><span class="token punctuation">(</span>lock<span class="token punctuation">,</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">{<!-- --></span><span class="token keyword">return</span> ready<span class="token punctuation">;</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ 
+    <span class="token comment">// after the wait, we own the lock.</span>
+    std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"Worker thread is processing data\n"</span><span class="token punctuation">;</span>
+    data <span class="token operator">+=</span> <span class="token string">" after processing"</span><span class="token punctuation">;</span>
+ 
+    <span class="token comment">// Send data back to main()</span>
+    processed <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+    std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"Worker thread signals data processing completed\n"</span><span class="token punctuation">;</span>
+ 
+    <span class="token comment">// Manual unlocking is done before notifying, to avoid waking up</span>
+    <span class="token comment">// the waiting thread only to block again (see notify_one for details)</span>
+    lock<span class="token punctuation">.</span><span class="token function">unlock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    cv<span class="token punctuation">.</span><span class="token function">notify_one</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+ 
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    std<span class="token double-colon punctuation">::</span>thread <span class="token function">worker</span><span class="token punctuation">(</span>worker_thread<span class="token punctuation">)</span><span class="token punctuation">;</span>
+ 
+    data <span class="token operator">=</span> <span class="token string">"Example data"</span><span class="token punctuation">;</span>
+    <span class="token comment">// send data to the worker thread</span>
+    <span class="token punctuation">{<!-- --></span>
+        std<span class="token double-colon punctuation">::</span>lock_guard <span class="token function">lock</span><span class="token punctuation">(</span>mtx<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        ready <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+        std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"main() signals data ready for processing\n"</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    cv<span class="token punctuation">.</span><span class="token function">notify_one</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ 
+    <span class="token comment">// wait for the worker</span>
+    <span class="token punctuation">{<!-- --></span>
+        std<span class="token double-colon punctuation">::</span>unique_lock <span class="token function">lock</span><span class="token punctuation">(</span>mtx<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        cv<span class="token punctuation">.</span><span class="token function">wait</span><span class="token punctuation">(</span>lock<span class="token punctuation">,</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">{<!-- --></span><span class="token keyword">return</span> processed<span class="token punctuation">;</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"Back in main(), data = "</span> <span class="token operator">&lt;&lt;</span> data <span class="token operator">&lt;&lt;</span> <span class="token char">'\n'</span><span class="token punctuation">;</span>
+ 
+    worker<span class="token punctuation">.</span><span class="token function">join</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>输出:</p>
+<pre><code class="prism language-c"><span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span> signals data ready <span class="token keyword">for</span> processing
+Worker thread is processing data
+Worker thread signals data processing completed
+Back in <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> data <span class="token operator">=</span> Example data after processing
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

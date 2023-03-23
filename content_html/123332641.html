@@ -1,0 +1,149 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2> <strong>一、Timer</strong></h2>
+<p>Timer是JAVA自带的定时任务类，实现如下：</p>
+<pre><code class="language-java">public class MyTimerTask {    
+    public static void main(String[] args) {        
+        // 定义一个任务       
+        TimerTask timerTask = new TimerTask() {            
+        @Override            
+            public void run() {                
+            System.out.println("打印当前时间：" + new Date());    
+            }       
+         };        
+        // 计时器       
+        Timer timer = new Timer();       
+        // 开始执行任务 (延迟1000毫秒执行，每3000毫秒执行一次)        
+        timer.schedule(timerTask, 1000, 3000);    
+    }
+}</code></pre>
+<p><strong>Timer 优缺点分析</strong></p>
+<p><strong>优点是使用简单，缺点是当添加并执行多个任务时，前面任务的执行用时和异常将影响到后面任务，这边深海建议谨慎使用。</strong></p>
+<h1><a name="t5"></a><strong>二、ScheduledExecutorService</strong></h1>
+<p><strong>ScheduledExecutorService </strong>也是Java自带的类，</p>
+<p><strong>它可以实现Timer具备的所有功能，并解决了 Timer类存在的问题</strong>。</p>
+<p>实现如下：</p>
+<pre><code class="language-java">public class MyScheduledExecutorService {    
+    public static void main(String[] args) {        
+        // 创建任务队列   10 为线程数量      
+        ScheduledExecutorService scheduledExecutorService = 
+                Executors.newScheduledThreadPool(10); 
+        // 执行任务      
+        scheduledExecutorService.scheduleAtFixedRate(() -&gt; {          
+            System.out.println("打印当前时间：" + new Date());      
+        }, 1, 3, TimeUnit.SECONDS); // 1s 后开始执行，每 3s 执行一次   
+
+  }
+}
+</code></pre>
+<p><strong>ScheduledExecutorService 优缺点分析</strong></p>
+<p><strong>优点是，该类是JDK1.5自带的类，使用简单，缺点是该方案仅适用于单机环境。</strong></p>
+<h1><a name="t10"></a><strong>三、Spring Task</strong></h1>
+<p>Spring系列框架中Spring Framework自带的定时任务，</p>
+<p><strong>使用上面两种方式，很难实现某些特定需求，比如每周一执行某任务</strong>，但SpringTask可轻松实现。</p>
+<p>以SpringBoot为例来实现：</p>
+<h3><a name="t11"></a><strong>1、开启定时任务</strong></h3>
+<p>在SpringBoot的启动类上声明 @EnableScheduling：</p>
+<pre><code class="language-java">@SpringBootApplication
+@EnableScheduling //开启定时任务
+public class DemoApplication {  
+     // --  -- 
+}</code></pre>
+<h3><a name="t12"></a><strong>2、添加定时任务</strong></h3>
+<p>只需使用@Scheduled注解标注即可，</p>
+<p>如果有多个定时任务，可以创建多个@Scheduled标注的方法，示例如下：</p>
+<pre><code class="language-java">import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+@Component // 把此类托管给 Spring，不能省略
+public class TaskUtils {    
+    // 添加定时任务    
+    @Scheduled(cron = "30 40 23 0 0 5") // cron表达式：每周一 23:40:30 执行    
+    public void doTask(){        
+        System.out.println("我是定时任务~");    
+    }
+}</code></pre>
+<p> Spring Boot 启动后会自动加载并执行定时任务，无需手动操作。</p>
+<h1><a name="t13"></a><strong>Cron 表达式</strong></h1>
+<p>Spring Task 的实现需要使用 cron 表达式来声明执行的频率和规则，cron 表达式是由 6 位或者 7 位组成的(最后一位可以省略)，每位之间以空格分隔，每位从左到右代表的含义如下：</p>
+<p><img alt="5bdc076e79dfa867ee79fae9743731e5.png" src="https://img-blog.csdnimg.cn/img_convert/5bdc076e79dfa867ee79fae9743731e5.png"/></p>
+<p>其中 * 和 ? 号都表示匹配所有的时间。</p>
+<p><img alt="e941509e3f1ac07ebee74c70f368654f.png" src="https://img-blog.csdnimg.cn/img_convert/e941509e3f1ac07ebee74c70f368654f.png"/></p>
+<p>cron 表达式在线生成地址：https://cron.qqe2.com/</p>
+<h1><a name="t14"></a><strong>知识扩展：分布式定时任务</strong></h1>
+<p><strong>上面的方法都是关于单机定时任务的实现，如果是分布式环境可以使用 Redis 来实现定时任务。</strong></p>
+<p>使用 Redis <strong>实现延迟任务的方法大体可分为两类：通过 ZSet 的方式和键空间通知的方式</strong>。</p>
+<h1><a name="t15"></a><strong>1、ZSet 实现方式</strong></h1>
+<p>通过 ZSet 实现定时任务的思路是，将定时任务存放到 ZSet 集合中，并且将过期时间存储到 ZSet 的 Score 字段中，然后通过一个无线循环来判断当前时间内是否有需要执行的定时任务，如果有则进行执行，具体实现代码如下：</p>
+<pre><code class="language-java">import redis.clients.jedis.Jedis;
+import utils.JedisUtils;
+import java.time.Instant;
+import java.util.Set;
+public class DelayQueueExample {        
+    private static final String _KEY = "DelayQueueExample";        
+    public static void main(String[] args) throws InterruptedException {        
+        Jedis jedis = JedisUtils.getJedis();        
+        // 30s 后执行        
+        long delayTime = Instant.now().plusSeconds(30).getEpochSecond();       
+        jedis.zadd(_KEY, delayTime, "order_1");        
+        // 继续添加测试数据        
+       jedis.zadd(_KEY, Instant.now().plusSeconds(2).getEpochSecond(), "order_2");       
+      jedis.zadd(_KEY, Instant.now().plusSeconds(2).getEpochSecond(), "order_3");        
+      jedis.zadd(_KEY, Instant.now().plusSeconds(7).getEpochSecond(), "order_4");        
+     jedis.zadd(_KEY, Instant.now().plusSeconds(10).getEpochSecond(), "order_5");        
+        // 开启定时任务队列        
+        doDelayQueue(jedis);    
+    }    
+    /**     
+    * 定时任务队列消费     
+    * @param jedis Redis 客户端     
+    */    
+    public static void doDelayQueue(Jedis jedis) throws InterruptedException {        
+        while (true) {            
+            // 当前时间            
+            Instant nowInstant = Instant.now();            
+            long lastSecond = nowInstant.plusSeconds(-1).getEpochSecond(); 
+            // 上一秒时间            
+            long nowSecond = nowInstant.getEpochSecond();            
+            // 查询当前时间的所有任务            
+            Set data = jedis.zrangeByScore(_KEY, lastSecond, nowSecond);            
+            for (String item : data) {                
+            // 消费任务                
+            System.out.println("消费：" + item);            
+        }            
+        // 删除已经执行的任务            
+        jedis.zremrangeByScore(_KEY, lastSecond, nowSecond);            
+        Thread.sleep(1000); // 每秒查询一次        
+        }    
+    }
+}</code></pre>
+<h1><a name="t16"></a><strong>2、键空间通知</strong></h1>
+<p>我们可以通过 Redis 的键空间通知来实现定时任务，它的实现思路是给所有的定时任务设置一个过期时间，等到了过期之后，我们通过订阅过期消息就能感知到定时任务需要被执行了，此时我们执行定时任务即可。</p>
+<p>默认情况下 Redis 是不开启键空间通知的，需要我们通过 config set notify-keyspace-events Ex 的命令手动开启，开启之后定时任务的代码如下：</p>
+<pre><code class="language-java">import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPubSub;
+import utils.JedisUtils;
+public class TaskExample {    
+    public static final String _TOPIC = "__keyevent@0__:expired"; // 订阅频道名称   
+    public static void main(String[] args) {       
+        Jedis jedis = JedisUtils.getJedis();       
+        // 执行定时任务        
+        doTask(jedis);    
+    }   
+     /**     
+       * 订阅过期消息，执行定时任务     
+       * @param jedis Redis 客户端     
+       */    
+    public static void doTask(Jedis jedis) {        
+        // 订阅过期消息        
+        jedis.psubscribe(new JedisPubSub() {            
+            @Override            
+ public void onPMessage(String pattern, String channel, String message) {                
+            // 接收到消息，执行定时任务                
+            System.out.println("收到消息：" + message);            
+            }            
+        }, _TOPIC);    
+    }
+}</code></pre>
+</div>
+</div>

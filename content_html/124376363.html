@@ -1,0 +1,87 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>        Photon Unity Networking (PUN) 是为多人对战游戏而生的一个Unity package。灵活的配对让您的玩家进入可以通过网络实现同步对象的房间。 RPCs，自定义属性和“低级”Photon事件是其中的一些功能特性。快速和（可选的）可靠的通信是通过Photon专用服务器完成的，所以客户端不必一对一连接。</p>
+<p>        PUN 基本上可以支持Unity 的所有平台，并且有两种选择：</p>
+<p>        PUN2 FREE ：包含各种演示、预制脚本和参考文档的免费软件包。基本支持所有的平台。</p>
+<p>        PUN2 PLUS：不仅PUN2 FREE包含的内容，附加Photon Cloud 的 100 个并发用户计划（约 40k MAU，有效期 12 个月）。</p>
+<p>1、PUN2的结构</p>
+<p>        你通常不必了解PUN包的结构，对于了解它的结构还是有必要提及，PUN封装了三层API：</p>
+<p>        （1）最上层是 PUN 代码，它实现了 Unity 特定的功能，如网络对象、RPC 等。</p>
+<p>        （2）第二层包含与 Photon 服务器一起工作、匹配、回调等的逻辑。这是实时 API，可以单独使用。您会注意到 PUN 和 Realtime API（也称为 LoadBalancing API）之间的主题有很多重叠，但这很好。</p>
+<p>        （3）最底层由 DLL 文件组成，其中包含反序列化、协议等。</p>
+<p>2、开始使用</p>
+<p>        为了充分利用 PUN，您需要进行一些编程。此页面显示了几个重要的代码片段作为概述。</p>
+<p>        完成学习 "<a href="https://doc.photonengine.com/zh-cn/pun/current/demos-and-tutorials/pun-basics-tutorial/intro" title="PUN Basics Tutorial">PUN Basics Tutorial</a>"之后，我们就可以开始使用了。</p>
+<p>3、连接和回调</p>
+<p>        <code>ConnectUsingSettings可以立刻上网，它获取PhotonServerSettings上所有重要的设置，你就可以放手去做了。</code></p>
+<pre><code class="language-cs">PhotonNetwork.ConnectUsingSettings();</code></pre>
+<p>        PUN 使用回调让您知道客户端何时建立连接、加入房间等。</p>
+<p>        比如：<code>IConnectionCallbacks.OnConnectedToMaster</code></p>
+<p>        为了方便使用，PUN拥有<code>MonoBehaviourPunCallbacks，</code>它继承自MonoBehaviour。它实现了重要的回调接口并自动注册，因此您可以继承它并覆盖特定的回调方法。</p>
+<pre><code class="language-cs">public class YourClass : MonoBehaviourPunCallbacks
+{
+    // ...
+    public override void OnConnectedToMaster()
+    {
+        Debug.Log("OnConnectedToMaster() was called by PUN.");
+        PhotonNetwork.JoinRandomRoom();
+    }
+    // ...
+}</code></pre>
+<p>        或者在任何类中实现 IConnectionCallbacks，并通过 PhotonNetwork.AddCallbackTarget 为回调注册实例。</p>
+<p>4、配对系统</p>
+<p>        在<code>OnConnectedToMaster的内部，</code>您可以尝试加入现有房间或创建自己的房间。以下代码片段显示了开始或加入游戏的可能方法调用。</p>
+<pre><code class="language-cs">// Join room "someRoom"
+PhotonNetwork.JoinRoom("someRoom");
+//Fails if "someRoom" is not existing, closed or full. Error callback: IMatchmakingCallbacks.OnJoinRoomFailed
+
+// Tries to join any random game:
+PhotonNetwork.JoinRandomRoom();
+//Fails if there are no open games. Error callback: IMatchmakingCallbacks.OnJoinRandomFailed
+
+// Create this room.
+PhotonNetwork.CreateRoom("MyMatch");
+// Fails if "MyMatch" room already exists and calls: IMatchmakingCallbacks.OnCreateRoomFailed</code></pre>
+<p>        当朋友们想一起玩并且想通过 PUN 之外的方式进行交流（例如使用 Photon Chat、Facebook）时，他们可以起一个房间名然后使用 <code>JoinOrCreateRoom</code>.。其他人就无法看到这个房间进行匹配。</p>
+<pre><code class="language-cs">RoomOptions roomOptions = new RoomOptions();
+roomOptions.IsVisible = false;
+roomOptions.MaxPlayers = 4;
+PhotonNetwork.JoinOrCreateRoom(nameEveryFriendKnows, roomOptions, TypedLobby.Default);</code></pre>
+<p>        使用<code>JoinOrCreateRoom可以让房间按需构造，也不必关心谁先进到房间，如果房间人数满了，则调用IMatchmakingCallbacks.OnJoinRoomFailed</code>（如果您在某处实现并注册它）。</p>
+<p>        在我们的指南中阅读有关配对的更多信息。</p>
+<p>5、游戏逻辑</p>
+<p>        游戏对象可以通过<code>PhotonView</code>组件实例化为“网络游戏对象” 。它标识对象和所有者（或控制器），控制的玩家会更新其他所有人。</p>
+<p>        通常，您会将 PhotonView 添加到预制件中，为其选择 Observed 组件并使用 PhotonNetwork.Instantiate 创建实例。</p>
+<p>        PhotonView 的被观察组件负责每秒多次写入（和读取）网络对象的状态。为此，脚本必须实现 IPunObservable，它定义了 OnPhotonSerializeView。它看起来像这样：</p>
+<pre><code class="language-cs">// used as Observed component in a PhotonView, this only reads/writes the position
+public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
+{
+    if (stream.IsWriting)
+    {
+        Vector3 pos = transform.localPosition;
+        stream.Serialize(ref pos);
+    }
+    else
+    {
+        Vector3 pos = Vector3.zero;
+        stream.Serialize(ref pos);  // pos gets filled-in. must be used somewhere
+    }
+}</code></pre>
+<p>        客户端可以调用 <a href="https://doc.photonengine.com/zh-cn/pun/current/gameplay/rpcsandraiseevent" title="Remote Procedure Calls">Remote Procedure Calls</a> 在不经常发生改变的特定网络对象上。</p>
+<pre><code class="language-cs">// defining a method that can be called by other clients:
+[PunRPC]
+public void OnAwakeRPC(byte myParameter)
+{
+    //Debug.Log(string.Format("RPC: 'OnAwakeRPC' Parameter: {0} PhotonView: {1}", myParameter, this.photonView));
+}</code></pre>
+<pre><code class="language-cs">// calling the RPC somewhere else
+photonView.RPC("OnAwakeRPC", RpcTarget.All, (byte)1);</code></pre>
+<p>        单独的 GameObjects，您还可以发送自己的事件：</p>
+<pre><code class="language-cs">PhotonNetwork.RaiseEvent(eventCode, eventContent, raiseEventOptions, SendOptions.SendReliable);</code></pre>
+<p>        Read <a href="https://doc.photonengine.com/zh-cn/pun/current/gameplay/rpcsandraiseevent" title="more about PUN's RPCs and RaiseEvent">more about PUN's RPCs and RaiseEvent</a>.</p>
+<p>6、演示和教程</p>
+<p>        在PUN包中，你能找到一些演示和有用的脚本，他们可以被重复利用、拆解之后重构。</p>
+<p>        To get properly started, take your time to read and code the "<a href="https://doc.photonengine.com/zh-cn/pun/current/demos-and-tutorials/pun-basics-tutorial/intro" title="PUN Basics Tutorial">PUN Basics Tutorial</a>".</p>
+</div>
+</div>

@@ -1,0 +1,103 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>注意：skywalking官方是没有提供php接入的，采用的都是社区的接入方案，具体方案可参考<a href="https://github.com/SkyAPM/SkyAPM-php-sdk" title="Github地址">Github地址</a>；</p>
+<p>PHP接入SW是通过在服务器上安装PHP扩展的方式实现，并且接入SW的服务名在 php.ini 中配置</p>
+<h2>接入步骤</h2>
+<h3>环境准备：我的环境</h3>
+<pre><code class="language-java">CentOS Linux release 7.9.2009 
+PHP 7.2.34
+gcc (GCC) 7.3.1 
+cmake version 3.20.0
+swoole 4.4.7
+SkyAPM-php-sdk-4.1.1</code></pre>
+<p>注意：gcc和cmake版本越高越好，低了会失败。centos默认用yum安装的gcc版本会比较低，要额外自己下载高版本的gcc，下载好之后进入根目录下执行 source ./enable即可切换版本</p>
+<p><img alt="" height="173" src="image\c8614642b9764c9da7d24549fb1c4f6e.png" width="902"/></p>
+<h3>工具准备</h3>
+<h3>1:gcc安装</h3>
+<p>gcc版本要求4.9+,相关命令如下</p>
+<pre><code class="language-java">sudo yum install centos-release-scl
+sudo yum install devtoolset-7
+scl enable devtoolset-7 bash
+gcc --version</code></pre>
+<p></p>
+<h3>2:cmake安装</h3>
+<p>cmake 版本: 3.20.0 （cmake版本过低最后安装php扩展时出错，yum安装的版本也较低，因此采用从源码安装方式）</p>
+<pre><code class="language-java">wget https://cmake.org/files/v3.20/cmake-3.20.0.tar.gz
+tar -zxvf cmake-3.20.0.tar.gz
+cd cmake-3.20.0
+./bootstrap
+make
+make install</code></pre>
+<h3>3:安装protobuf和grpc</h3>
+<p>官方文档中介绍需要下载GRPC源码进行构建安装，小编个人这边的grpc模块放在我的网盘上了，有需要的同学可自取，下载好后，就可以执行后面的步骤了</p>
+<pre><code class="language-java">链接：https://pan.baidu.com/s/1ywd_V4GPoFXzJzPWop0ygg 
+提取码：1219</code></pre>
+<p> 3.1安装protobuf</p>
+<pre><code class="language-java">unzip grpc
+cd grpc/third_party/protobuf
+./autogen.sh
+./configure
+make -j$(nproc)
+sudo make install
+sudo ldconfig
+make clean
+</code></pre>
+<p>  3.2安装grpc</p>
+<pre><code class="language-java"># 定位到grpc目录
+cd ../..  
+mkdir -p cmake/build
+cd cmake/build
+cmake ../.. -DBUILD_SHARED_LIBS=ON -DgRPC_INSTALL=ON
+make -j$(nproc)
+sudo make install
+make clean
+sudo ldconfig
+</code></pre>
+<p>验证grpc是否安装成功：</p>
+<p>进入grpc目录下</p>
+<p><img alt="" height="198" src="image\1ef4d2fc989544059585fe1a593cc99b.png" width="1200"/></p>
+<p>在此目录下./greeter_server启动服务端后，再启动./greeter_client客户端，如果输出Hello world即安装成功 </p>
+<p><img alt="" height="81" src="image\c1dcd6bb98f44a229b103a9c994a28d3.png" width="793"/></p>
+<h3>4:如果没有安装php，需要提前安装下，我这里使用的是php7.2</h3>
+<pre><code class="language-java">sudo rpm -Uvh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+sudo rpm -Uvh https://mirror.webtatic.com/yum/el7/webtatic-release.rpm
+sudo yum -y install php72w php72w-cli php72w-fpm php72w-common php72w-devel
+php -v
+</code></pre>
+<h3>5:安装skywalking扩展</h3>
+<pre><code class="language-java"># 安装curl-devel，否则 make 时候出错
+sudo yum -y install curl-devel
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib:/usr/local/lib64
+curl -Lo v4.1.1.tar.gz https://github.com/SkyAPM/SkyAPM-php-sdk/archive/v4.1.1.tar.gz
+tar zxvf v4.1.1.tar.gz
+cd SkyAPM-php-sdk-4.1.1
+phpize
+
+# 注意：configure如果有错误，不要执行后面的步骤
+./configure
+make
+sudo make install
+sudo ldconfig
+</code></pre>
+<h3>6:修改php配置文件</h3>
+<p>php --ini查看php的执行配置文件如我的是</p>
+<p><img alt="" height="407" src="image\1350fd628aa64e4b8777058fe8669110.png" width="1200"/></p>
+<p> 在该配置文件中加入以下配置即可</p>
+<p><img alt="" height="459" src="image\da08fd546c804f229f9e4c0d08eb3483.png" width="1200"/></p>
+<p> 配置完成后执行 php -m如出现skywalking则该扩展配置成功</p>
+<p><img alt="" height="804" src="image\9326e8fc35804d9a8e3d266a900c166e.png" width="1200"/></p>
+<p>也可通过启动php服务（./php-fpm启动服务）访问php详情页配置查看</p>
+<p>注意：一定要记得关闭linux防火墙（systemctl stop firewalld）</p>
+<p><img alt="" height="639" src="image\cba5c49510bd4fdf878da05c913543ab.png" width="1169"/></p>
+<p> </p>
+<h3> 7：配置相应监控，配置变更之后（systemctl restart httpd.service重启服务，使配置生效）</h3>
+<p>由于我个人这边是安装swoole扩展，所以启动相应swoole服务端后，通过浏览器访问相关服务</p>
+<p>则相关swoole链路即可出现</p>
+<p><img alt="" height="507" src="image\06c8feaff4c64f1a8257a80abcfb8813.png" width="1200"/></p>
+<p> </p>
+<p> </p>
+<p></p>
+<p> 到此，安装配置成功</p>
+</div>
+</div>

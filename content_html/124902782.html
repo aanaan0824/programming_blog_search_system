@@ -1,0 +1,374 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>C#上位机：串口通讯</h3>
+<ul><li><a href="#_2">基本介绍</a></li><li><ul><li><a href="#_41">参数配置</a></li><li><a href="#_157">串口开关与检测</a></li><li><a href="#_250">数据发送</a></li><li><a href="#_295">数据接收</a></li><li><a href="#_332">相关功能函数</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<h1><a id="_2"></a>基本介绍</h1>
+<p>语言与开发技术：<br/> C#、Winform。<br/> 串口通讯是上位机的基础功能，可以通过USB等COM串口进行数据的收发，实现数据采集，自动控制等功能。一套完整的串口通讯功能可以分为以下几个功能：属性设置，串口开关（检测），数据发送，数据接收。同时我们还有如下几个重要参数：<br/> <strong>波特率：</strong><br/> 波特率的大小代表每秒钟可以传输多少个二进制位，如波特率是9600，能每秒传输9600个二进制位。<br/> 常用数值：<br/> 4800<br/> 9600<br/> 14400<br/> 19200<br/> 38400<br/> 56000<br/> 57600<br/> 115200<br/> 128000<br/> 256000<br/> <strong>起始位、停止位</strong><br/> 数据包从起始位开始，到停止位结束。起始信号用逻辑0的数据位表示，停止信号由0.5、1、1.5或2个逻辑1的数据位表示，只要双方约定一致即可。<br/> 常用数值：<br/> 1<br/> 1.5<br/> 2<br/> None<br/> <strong>数据位</strong><br/> 起始位之后便是传输的主体数据内容了，也称为有效数据，其长度一般被约定为5、6、7或8位长。<br/> 常用数值：<br/> 5<br/> 6<br/> 7<br/> 8<br/> <strong>奇偶校验位</strong><br/> 由于在通讯过程中易受到外部干扰导致传输数据出现偏差，所以在有效数据之后加上校验位解决。<br/> 常用数值：<br/> Even<br/> Odd<br/> None</p>
+<h2><a id="_41"></a>参数配置</h2>
+<p>先在界面端布置好控件，示例如下：<img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ed347c7046ea4752a3dbab58d9f355a7.png#pic_center"/><br/> 大致结构：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b932aad7aa074c14a4e56cc8a565b17f.png#pic_center"/></p>
+<p>一些声明：</p>
+<pre><code class="prism language-csharp"> <span class="token class-name">SerialPort</span> sp <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span><span class="token comment">//声明一个串口类</span>
+        <span class="token class-name"><span class="token keyword">bool</span></span> isOpen <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span><span class="token comment">//打开串口标志位</span>
+        <span class="token class-name"><span class="token keyword">bool</span></span> isSetProperty <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span><span class="token comment">//属性设置标志位</span>
+        <span class="token class-name"><span class="token keyword">bool</span></span> isHex <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span><span class="token comment">//十六进制显示标志位</span>
+</code></pre>
+<p>后端代码示例：</p>
+<pre><code class="prism language-csharp"> <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> <span class="token number">10</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span><span class="token comment">//最大支持到串口10，可根据自己需求增加</span>
+            <span class="token punctuation">{<!-- --></span>
+                cbxCOMPort<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"COM"</span> <span class="token operator">+</span> <span class="token punctuation">(</span>i <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token punctuation">}</span>
+            cbxCOMPort<span class="token punctuation">.</span>SelectedIndex <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+            <span class="token comment">//列出常用的波特率</span>
+            cbxBaudRate<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"1200"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxBaudRate<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"2400"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxBaudRate<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"4800"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxBaudRate<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"9600"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxBaudRate<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"19200"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxBaudRate<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"38400"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxBaudRate<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"43000"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxBaudRate<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"56000"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxBaudRate<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"57600"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxBaudRate<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"115200"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxBaudRate<span class="token punctuation">.</span>SelectedIndex <span class="token operator">=</span> <span class="token number">5</span><span class="token punctuation">;</span>
+            <span class="token comment">//列出停止位</span>
+            cbxStopBits<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"0"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxStopBits<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"1"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxStopBits<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"1.5"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxStopBits<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"2"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxStopBits<span class="token punctuation">.</span>SelectedIndex <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+            <span class="token comment">//列出数据位</span>
+            cbxDataBits<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"8"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxDataBits<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"7"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxDataBits<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"6"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxDataBits<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"5"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxDataBits<span class="token punctuation">.</span>SelectedIndex <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+            <span class="token comment">//列出奇偶校验位</span>
+            cbxParity<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"无"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxParity<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"奇校验"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxParity<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"偶校验"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            cbxParity<span class="token punctuation">.</span>SelectedIndex <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+            <span class="token comment">//默认为Char显示</span>
+            rbnChar<span class="token punctuation">.</span>Checked <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+</code></pre>
+<p>属性设置，打开串口前代码端的参数配置：</p>
+<pre><code class="prism language-csharp"> <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">SetPortProperty</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            sp <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SerialPort</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            sp<span class="token punctuation">.</span>PortName <span class="token operator">=</span> cbxCOMPort<span class="token punctuation">.</span>Text<span class="token punctuation">.</span><span class="token function">Trim</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置串口名</span>
+            sp<span class="token punctuation">.</span>BaudRate <span class="token operator">=</span> Convert<span class="token punctuation">.</span><span class="token function">ToInt32</span><span class="token punctuation">(</span>cbxBaudRate<span class="token punctuation">.</span>Text<span class="token punctuation">.</span><span class="token function">Trim</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置串口的波特率</span>
+            <span class="token class-name"><span class="token keyword">float</span></span> f <span class="token operator">=</span> Convert<span class="token punctuation">.</span><span class="token function">ToSingle</span><span class="token punctuation">(</span>cbxStopBits<span class="token punctuation">.</span>Text<span class="token punctuation">.</span><span class="token function">Trim</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置停止位</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>f <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                sp<span class="token punctuation">.</span>StopBits <span class="token operator">=</span> StopBits<span class="token punctuation">.</span>None<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>f <span class="token operator">==</span> <span class="token number">1.5</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                sp<span class="token punctuation">.</span>StopBits <span class="token operator">=</span> StopBits<span class="token punctuation">.</span>OnePointFive<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>f <span class="token operator">==</span> <span class="token number">1</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                sp<span class="token punctuation">.</span>StopBits <span class="token operator">=</span> StopBits<span class="token punctuation">.</span>One<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>f <span class="token operator">==</span> <span class="token number">2</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                sp<span class="token punctuation">.</span>StopBits <span class="token operator">=</span> StopBits<span class="token punctuation">.</span>Two<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span>
+            <span class="token punctuation">{<!-- --></span>
+                sp<span class="token punctuation">.</span>StopBits <span class="token operator">=</span> StopBits<span class="token punctuation">.</span>One<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            sp<span class="token punctuation">.</span>DataBits <span class="token operator">=</span> Convert<span class="token punctuation">.</span><span class="token function">ToInt16</span><span class="token punctuation">(</span>cbxDataBits<span class="token punctuation">.</span>Text<span class="token punctuation">.</span><span class="token function">Trim</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置数据位</span>
+            <span class="token class-name"><span class="token keyword">string</span></span> s <span class="token operator">=</span> cbxParity<span class="token punctuation">.</span>Text<span class="token punctuation">.</span><span class="token function">Trim</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//设置奇偶校验位</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>s<span class="token punctuation">.</span><span class="token function">CompareTo</span><span class="token punctuation">(</span><span class="token string">"无"</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                sp<span class="token punctuation">.</span>Parity <span class="token operator">=</span> Parity<span class="token punctuation">.</span>None<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>s<span class="token punctuation">.</span><span class="token function">CompareTo</span><span class="token punctuation">(</span><span class="token string">"奇校验"</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                sp<span class="token punctuation">.</span>Parity <span class="token operator">=</span> Parity<span class="token punctuation">.</span>Odd<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>s<span class="token punctuation">.</span><span class="token function">CompareTo</span><span class="token punctuation">(</span><span class="token string">"偶校验"</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                sp<span class="token punctuation">.</span>Parity <span class="token operator">=</span> Parity<span class="token punctuation">.</span>Even<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span>
+            <span class="token punctuation">{<!-- --></span>
+                sp<span class="token punctuation">.</span>Parity <span class="token operator">=</span> Parity<span class="token punctuation">.</span>None<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            sp<span class="token punctuation">.</span>ReadTimeout <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span><span class="token comment">//设置超时读取时间</span>
+            sp<span class="token punctuation">.</span>RtsEnable <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+
+            <span class="token comment">//定义DataReceived事件，当串口收到数据后触发事件</span>
+            sp<span class="token punctuation">.</span>DataReceived <span class="token operator">+=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SerialDataReceivedEventHandler</span><span class="token punctuation">(</span>sp_DataReceived<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>rbnHex<span class="token punctuation">.</span>Checked<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                isHex <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span>
+            <span class="token punctuation">{<!-- --></span>
+                isHex <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="_157"></a>串口开关与检测</h2>
+<p>串口检测，即检测可用串口，并自动显示在界面：</p>
+<pre><code class="prism language-csharp"> <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">btnCheckCom_Click_1</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">bool</span></span> comExistence <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span><span class="token comment">//有可用串口标志位</span>
+            cbxCOMPort<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//清除当前串口号中的所有串口名称</span>
+            <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> <span class="token number">10</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">try</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token class-name">SerialPort</span> sp <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SerialPort</span><span class="token punctuation">(</span><span class="token string">"COM"</span> <span class="token operator">+</span> <span class="token punctuation">(</span>i <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    sp<span class="token punctuation">.</span><span class="token function">Open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    sp<span class="token punctuation">.</span><span class="token function">Close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    cbxCOMPort<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span><span class="token string">"COM"</span> <span class="token operator">+</span> <span class="token punctuation">(</span>i <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    comExistence <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+
+                <span class="token punctuation">}</span>
+                <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">continue</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>comExistence<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                cbxCOMPort<span class="token punctuation">.</span>SelectedIndex <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span><span class="token comment">//使ListBox显示第1个添加的索引</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span>
+            <span class="token punctuation">{<!-- --></span>
+                MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span><span class="token string">"没有找到可用串口！"</span><span class="token punctuation">,</span> <span class="token string">"错误提示"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+        <span class="token punctuation">}</span>
+
+</code></pre>
+<p>在此处可以添加开关触发接口，检测后自动连接，也可以在多个串口同时需要开启时设置串口位，比如XX功能串口要求串口号1-5，XX功能串口要求串口号6-10，然后在代码中更改for的范围；<br/> 串口打开（关闭）：</p>
+<pre><code class="prism language-csharp"><span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 串口状态检测：是否设置、是否占用</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;param name="sender"&gt;&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="e"&gt;&lt;/param&gt;</span>
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">btnOpenCom_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>isOpen <span class="token operator">==</span> <span class="token boolean">false</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token function">CheckPortSetting</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token comment">//检测串口设置</span>
+                <span class="token punctuation">{<!-- --></span>
+                    MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span><span class="token string">"串口未设置！"</span><span class="token punctuation">,</span> <span class="token string">"错误提示"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">return</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+
+                <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>isSetProperty<span class="token punctuation">)</span><span class="token comment">//串口未设置则设置串口</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token function">SetPortProperty</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    isSetProperty <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token keyword">try</span><span class="token comment">//打开串口</span>
+                <span class="token punctuation">{<!-- --></span>
+                    sp<span class="token punctuation">.</span><span class="token function">Open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    isOpen <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                    btnOpenCom<span class="token punctuation">.</span>Text <span class="token operator">=</span> <span class="token string">"关闭串口"</span><span class="token punctuation">;</span>
+                   
+                <span class="token punctuation">}</span>
+                <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token comment">//打开串口失败后，相应标志位取消</span>
+                    isSetProperty <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+                    isOpen <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+                    MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span><span class="token string">"串口无效或已被占用！"</span><span class="token punctuation">,</span> <span class="token string">"错误提示"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">try</span><span class="token comment">//打开串口</span>
+                <span class="token punctuation">{<!-- --></span>
+                    sp<span class="token punctuation">.</span><span class="token function">Close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                    isOpen <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+                    isSetProperty <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+                    btnOpenCom<span class="token punctuation">.</span>Text <span class="token operator">=</span> <span class="token string">"打开串口"</span><span class="token punctuation">;</span>
+                   
+                <span class="token punctuation">}</span>
+                <span class="token keyword">finally</span> <span class="token punctuation">{<!-- --></span> <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="_250"></a>数据发送</h2>
+<p>设置发送数据的格式（字符or十六进制）：</p>
+<pre><code class="prism language-csharp"> <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 发送串口数据</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;param name="sender"&gt;&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="e"&gt;&lt;/param&gt;</span>
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">btnSend_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>isOpen<span class="token punctuation">)</span><span class="token comment">//写串口数据</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">try</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> data <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+                    <span class="token keyword">if</span> <span class="token punctuation">(</span>SendHex<span class="token punctuation">.</span>Checked<span class="token punctuation">)</span>
+                    <span class="token punctuation">{<!-- --></span>
+                        data <span class="token operator">=</span> <span class="token function">getBytesFromString</span><span class="token punctuation">(</span>tbxSendData<span class="token punctuation">.</span>Text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        sp<span class="token punctuation">.</span><span class="token function">Write</span><span class="token punctuation">(</span>data<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> data<span class="token punctuation">.</span>Length<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                    <span class="token keyword">else</span>
+                        sp<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span>tbxSendData<span class="token punctuation">.</span>Text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span><span class="token string">"发送数据时发生错误！"</span><span class="token punctuation">,</span> <span class="token string">"错误提示"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">return</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span>
+            <span class="token punctuation">{<!-- --></span>
+                MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span><span class="token string">"串口未打开！"</span><span class="token punctuation">,</span> <span class="token string">"错误提示"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token function">CheckSendData</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token comment">//检测要发送的数据</span>
+            <span class="token punctuation">{<!-- --></span>
+
+                MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span><span class="token string">"请输入要发送的数据！"</span><span class="token punctuation">,</span> <span class="token string">"错误提示"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="_295"></a>数据接收</h2>
+<p>接收数据时同样分为16进制接收和字符接收，并显示到界面的Text：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">sp_DataReceived</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">SerialDataReceivedEventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            System<span class="token punctuation">.</span>Threading<span class="token punctuation">.</span>Thread<span class="token punctuation">.</span><span class="token function">Sleep</span><span class="token punctuation">(</span><span class="token number">100</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//延时100ms等待接收完数据</span>
+
+            <span class="token comment">// this.Invoke就是跨线程访问ui的方法</span>
+
+            <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span><span class="token punctuation">(</span>EventHandler<span class="token punctuation">)</span><span class="token punctuation">(</span><span class="token keyword">delegate</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>isHex <span class="token operator">==</span> <span class="token boolean">false</span><span class="token punctuation">)</span><span class="token comment">//格式判断</span>
+                <span class="token punctuation">{<!-- --></span>
+                    tbxRecvData<span class="token punctuation">.</span>Text <span class="token operator">+=</span> sp<span class="token punctuation">.</span><span class="token function">ReadLine</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token keyword">else</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token class-name">Byte<span class="token punctuation">[</span><span class="token punctuation">]</span></span> ReceivedData <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Byte</span><span class="token punctuation">[</span>sp<span class="token punctuation">.</span>BytesToRead<span class="token punctuation">]</span><span class="token punctuation">;</span>
+                    sp<span class="token punctuation">.</span><span class="token function">Read</span><span class="token punctuation">(</span>ReceivedData<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> ReceivedData<span class="token punctuation">.</span>Length<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token class-name">String</span> RecvDataText <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+                    <span class="token class-name">String</span> Hexadecimal <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span> 
+                        <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> i <span class="token operator">=</span> screen<span class="token punctuation">;</span> i <span class="token operator">&lt;</span> ReceivedData<span class="token punctuation">.</span>Length <span class="token operator">-</span> <span class="token number">1</span> <span class="token operator">-</span> screen<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">{<!-- --></span>
+                            RecvDataText <span class="token operator">+=</span> <span class="token punctuation">(</span><span class="token string">"0x"</span> <span class="token operator">+</span> ReceivedData<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token string">"X2"</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                            Hexadecimal <span class="token operator">=</span> ReceivedData<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token string">"X2"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                            <span class="token comment">//getHex.Text += Convert.ToString(GetHexadecimalValue(Hexadecimal)) + " ";</span>
+                        <span class="token punctuation">}</span>
+                    
+                    tbxRecvData<span class="token punctuation">.</span>Text <span class="token operator">+=</span> RecvDataText<span class="token operator">+</span> <span class="token string">"\r\n"</span><span class="token punctuation">;</span>
+                    <span class="token comment">//getHex.Text += "\r\n";</span>
+
+
+                <span class="token punctuation">}</span>
+                sp<span class="token punctuation">.</span><span class="token function">DiscardInBuffer</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//丢弃接收缓冲区数据</span>
+            <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="_332"></a>相关功能函数</h2>
+<p>内容检查：</p>
+<pre><code class="prism language-csharp"><span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 检查是否发送数据</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;returns&gt;&lt;/returns&gt;</span>
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">CheckSendData</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>tbxSendData<span class="token punctuation">.</span>Text<span class="token punctuation">.</span><span class="token function">Trim</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token string">""</span><span class="token punctuation">)</span>
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<p>格式转换：</p>
+<pre><code class="prism language-csharp"><span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 把十六进制格式的字符串转换成字节数组。</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;param name="pString"&gt;要转换的十六进制格式的字符串&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;returns&gt;返回字节数组。&lt;/returns&gt;</span>
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> <span class="token function">getBytesFromString</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> pString<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> str <span class="token operator">=</span> pString<span class="token punctuation">.</span><span class="token function">Split</span><span class="token punctuation">(</span><span class="token char">' '</span><span class="token punctuation">)</span><span class="token punctuation">;</span>     <span class="token comment">//把十六进制格式的字符串按空格转换为字符串数组。</span>
+            <span class="token class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> bytes <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">byte</span></span><span class="token punctuation">[</span>str<span class="token punctuation">.</span>Length<span class="token punctuation">]</span><span class="token punctuation">;</span>     <span class="token comment">//定义字节数组并初始化，长度为字符串数组的长度。</span>
+            <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> str<span class="token punctuation">.</span>Length<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>     <span class="token comment">//遍历字符串数组，把每个字符串转换成字节类型赋值给每个字节变量。</span>
+                bytes<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">=</span> Convert<span class="token punctuation">.</span><span class="token function">ToByte</span><span class="token punctuation">(</span>Convert<span class="token punctuation">.</span><span class="token function">ToInt32</span><span class="token punctuation">(</span>str<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span> <span class="token number">16</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> bytes<span class="token punctuation">;</span>     <span class="token comment">//返回字节数组。</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<p>还有可能用得到的进制转换：</p>
+<pre><code class="prism language-csharp"> <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 十六进制换算为十进制</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;param name="strColorValue"&gt;&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;returns&gt;&lt;/returns&gt;</span>
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> <span class="token function">GetHexadecimalValue</span><span class="token punctuation">(</span><span class="token class-name">String</span> strColorValue<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">char</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> nums <span class="token operator">=</span> strColorValue<span class="token punctuation">.</span><span class="token function">ToCharArray</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name"><span class="token keyword">int</span></span> total <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+            <span class="token keyword">try</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> nums<span class="token punctuation">.</span>Length<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token class-name">String</span> strNum <span class="token operator">=</span> nums<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">ToUpper</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">switch</span> <span class="token punctuation">(</span>strNum<span class="token punctuation">)</span>
+                    <span class="token punctuation">{<!-- --></span>
+                        <span class="token keyword">case</span> <span class="token string">"A"</span><span class="token punctuation">:</span>
+                            strNum <span class="token operator">=</span> <span class="token string">"10"</span><span class="token punctuation">;</span>
+                            <span class="token keyword">break</span><span class="token punctuation">;</span>
+                        <span class="token keyword">case</span> <span class="token string">"B"</span><span class="token punctuation">:</span>
+                            strNum <span class="token operator">=</span> <span class="token string">"11"</span><span class="token punctuation">;</span>
+                            <span class="token keyword">break</span><span class="token punctuation">;</span>
+                        <span class="token keyword">case</span> <span class="token string">"C"</span><span class="token punctuation">:</span>
+                            strNum <span class="token operator">=</span> <span class="token string">"12"</span><span class="token punctuation">;</span>
+                            <span class="token keyword">break</span><span class="token punctuation">;</span>
+                        <span class="token keyword">case</span> <span class="token string">"D"</span><span class="token punctuation">:</span>
+                            strNum <span class="token operator">=</span> <span class="token string">"13"</span><span class="token punctuation">;</span>
+                            <span class="token keyword">break</span><span class="token punctuation">;</span>
+                        <span class="token keyword">case</span> <span class="token string">"E"</span><span class="token punctuation">:</span>
+                            strNum <span class="token operator">=</span> <span class="token string">"14"</span><span class="token punctuation">;</span>
+                            <span class="token keyword">break</span><span class="token punctuation">;</span>
+                        <span class="token keyword">case</span> <span class="token string">"F"</span><span class="token punctuation">:</span>
+                            strNum <span class="token operator">=</span> <span class="token string">"15"</span><span class="token punctuation">;</span>
+                            <span class="token keyword">break</span><span class="token punctuation">;</span>
+                        <span class="token keyword">default</span><span class="token punctuation">:</span>
+                            <span class="token keyword">break</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                    <span class="token class-name"><span class="token keyword">double</span></span> power <span class="token operator">=</span> Math<span class="token punctuation">.</span><span class="token function">Pow</span><span class="token punctuation">(</span><span class="token number">16</span><span class="token punctuation">,</span> Convert<span class="token punctuation">.</span><span class="token function">ToDouble</span><span class="token punctuation">(</span>nums<span class="token punctuation">.</span>Length <span class="token operator">-</span> i <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    total <span class="token operator">+=</span> Convert<span class="token punctuation">.</span><span class="token function">ToInt32</span><span class="token punctuation">(</span>strNum<span class="token punctuation">)</span> <span class="token operator">*</span> Convert<span class="token punctuation">.</span><span class="token function">ToInt32</span><span class="token punctuation">(</span>power<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    
+                <span class="token punctuation">}</span>
+
+            <span class="token punctuation">}</span>
+            <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">System<span class="token punctuation">.</span>Exception</span> ex<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token class-name">String</span> strErorr <span class="token operator">=</span> ex<span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+
+           <span class="token keyword">return</span> total<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

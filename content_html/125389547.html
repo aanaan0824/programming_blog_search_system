@@ -1,0 +1,677 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>项目中遇到表格单元格合并的需求，在此记录整个解决过程。</p>
+<p>项目使用的是 Element UI，表格使用的是 table 组件。Element UI 的 table 表格组件中对单元格进行合并，需要使用 table 组件的 span-method 属性。</p>
+<p class="img-center"><img alt="" height="74" src="image\afe94dd791ee4795b44daea8ce0557f6.png" width="868"/></p>
+<p>先看一张成果图（完整代码放在末尾）：</p>
+<p class="img-center"><img alt="" height="754" src="image\e96e71b7077e420bb866a2bf5d00dc2f.png" width="1200"/></p>
+<p></p>
+<p>解决思路：</p>
+<p>1、格式化后台返回的数据（根据实际数据格式处理）</p>
+<p>项目后台返回的数据格式为树形结构，这里做简化展示：</p>
+<pre><code class="language-javascript">[
+  {
+    'column1': '111',
+    'column2': '222',
+    'column3': '333',
+    'children1': [
+      {
+        'column6': 666,
+        'column4': '4440',
+        'column5': '5550',
+        'children2': [
+          {
+            'column7': '77701',
+            'column8': '88801',
+            'column9': '99901'
+          }
+        ]
+      }
+    ]
+  }
+]</code></pre>
+<p></p>
+<p></p>
+<p>需要先将树结构数据转为一维数组：</p>
+<pre><code class="language-javascript">// table 表格数据初始化处理，将树结构数据转为一维数组
+    handleData(data, parentId) {
+      data.map((res, index) =&gt; {
+        var obj = {
+          id: parentId
+        }
+        for (const key in res) {
+          const isarr = Object.values(res).find((age) =&gt; {
+            return Array.isArray(age)
+          })
+          if (isarr) {
+            if (Array.isArray(res[key])) {
+              for (let i = 0; i &lt; res[key].length; i++) {
+                Object.assign(obj, res[key][i])
+                data.push(obj)
+                res[key].splice(i, 1)
+                if (res[key].length === 0) {
+                  data.splice(index, 1)
+                }
+                this.handleData(data, parentId)
+              }
+            } else {
+              Object.assign(obj, { [key]: res[key] })
+            }
+          }
+        }
+      })
+      return data
+    }</code></pre>
+<p>因为后台返回的数据里没有唯一标识符，所以需要单独添加一个唯一标识表示转换为一维数组的数据是出自同一组树结构里。故此处在展开时单独加了一个 id 属性，用来代替唯一标识。如果后台返回的数据格式就是一个一维数组，可跳过数据格式化步骤。</p>
+<p>2、在 data 中定义数据，需要合并几列就定义几个数组和索引</p>
+<pre><code class="language-javascript">  data() {
+    return {
+      tableData: [],
+      // 合并单元格
+      column1Arr: [], // column1
+      column1Index: 0, // column1索引
+      column2Arr: [], // column2
+      column2Index: 0, // column2索引
+      column3Arr: [], // column3
+      column3Index: 0, // column3索引
+      column4Arr: [], // column4
+      column4Index: 0, // column4
+      column5Arr: [], // column5
+      column5Index: 0, // column5索引
+      column6Arr: [], // column6
+      column6Index: 0 // column6索引
+    }
+  }</code></pre>
+<p> 3、定义合并函数</p>
+<p>以第一行为基准，一层层对比，参数 data 就是格式化以后的表格数据，以每个数据里的唯一标识 id 作为合并的参照字段：</p>
+<pre><code class="language-javascript">    // 初始化合并行数组
+    mergeInit() {
+      this.column1Arr = [] // column1
+      this.column1Index = 0 // column1索引
+      this.column2Arr = [] // column2
+      this.column2Index = 0 // column2索引
+      this.column3Arr = [] // column3
+      this.column3Index = 0 // column3索引
+      this.column4Arr = [] // column4
+      this.column4Index = 0 // column4索引
+      this.column5Arr = [] // column5
+      this.column5Index = 0 // column5索引
+      this.column6Arr = [] // column6
+      this.column6Index = 0 // column6索引
+    },
+    // 合并表格
+    mergeTable(data) {
+      this.mergeInit()
+      if (data.length &gt; 0) {
+        for (var i = 0; i &lt; data.length; i++) {
+          if (i === 0) {
+            // 第一行必须存在，以第一行为基准
+            this.column1Arr.push(1) // column1
+            this.column1Index = 0
+
+            this.column2Arr.push(1) // column2
+            this.column2Index = 0
+
+            this.column3Arr.push(1) // column3
+            this.column3Index = 0
+
+            this.column4Arr.push(1) // column4
+            this.column4Index = 0
+
+            this.column5Arr.push(1) // column5
+            this.column5Index = 0
+
+            this.column6Arr.push(1) // column6
+            this.column6Index = 0
+          } else {
+            // 判断当前元素与上一元素是否相同
+            // column1
+            if (
+              data[i].column1 === data[i - 1].column1 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column1Arr[this.column1Index] += 1
+              this.column1Arr.push(0)
+            } else {
+              this.column1Arr.push(1)
+              this.column1Index = i
+            }
+
+            // column2
+            if (
+              data[i].column2 === data[i - 1].column2 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column2Arr[this.column2Index] += 1
+              this.column2Arr.push(0)
+            } else {
+              this.column2Arr.push(1)
+              this.column2Index = i
+            }
+
+            // column3
+            if (
+              data[i].column3 === data[i - 1].column3 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column3Arr[this.column3Index] += 1
+              this.column3Arr.push(0)
+            } else {
+              this.column3Arr.push(1)
+              this.column3Index = i
+            }
+
+            // column4
+            if (
+              data[i].column4 === data[i - 1].column4 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column4Arr[this.column4Index] += 1
+              this.column4Arr.push(0)
+            } else {
+              this.column4Arr.push(1)
+              this.column4Index = i
+            }
+
+            // column5
+            if (
+              data[i].column5 === data[i - 1].column5 &amp;&amp;
+              data[i].column4 === data[i - 1].column4 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column5Arr[this.column5Index] += 1
+              this.column5Arr.push(0)
+            } else {
+              this.column5Arr.push(1)
+              this.column5Index = i
+            }
+
+            // column6
+            if (
+              data[i].column6 === data[i - 1].column6 &amp;&amp;
+              data[i].column4 === data[i - 1].column4 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column6Arr[this.column6Index] += 1
+              this.column6Arr.push(0)
+            } else {
+              this.column6Arr.push(1)
+              this.column6Index = i
+            }
+          }
+        }
+      }
+    },</code></pre>
+<p>注意，同一组数据里可能会有多个  children1 或者 children2，这时合并的时候会有多个条件进行判断：</p>
+<p class="img-center"><img alt="" height="137" src="image\84f027f5045b4a9b88105fc659a49f8d.png" width="399"/></p>
+<p> </p>
+<p> 4、table 组件属性 span-method 的单元格合并方法：</p>
+<pre><code>    handleSpanMethod({ row, column, rowIndex, columnIndex }) {
+      if (columnIndex === 0 || columnIndex === 1) {
+        // 第一列 column1
+        const _row_1 = this.column1Arr[rowIndex]
+        const _col_1 = _row_1 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_1,
+          colspan: _col_1
+        }
+      } else if (columnIndex === 2) {
+        // 第二列 column2
+        const _row_2 = this.column2Arr[rowIndex]
+        const _col_2 = _row_2 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_2,
+          colspan: _col_2
+        }
+      } else if (columnIndex === 3) {
+        // 第三列 column3
+        const _row_2 = this.column3Arr[rowIndex]
+        const _col_2 = _row_2 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_2,
+          colspan: _col_2
+        }
+      } else if (columnIndex === 4) {
+        // 第四列 column4
+        const _row_2 = this.column4Arr[rowIndex]
+        const _col_2 = _row_2 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_2,
+          colspan: _col_2
+        }
+      } else if (columnIndex === 5) {
+        // 第五列 column5
+        const _row_2 = this.column5Arr[rowIndex]
+        const _col_2 = _row_2 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_2,
+          colspan: _col_2
+        }
+      } else if (columnIndex === 6) {
+        // 第六列 column6
+        const _row_2 = this.column6Arr[rowIndex]
+        const _col_2 = _row_2 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_2,
+          colspan: _col_2
+        }
+      }
+    }</code></pre>
+<p>至此，整个单元格合并就完成了！</p>
+<p>如果觉得写得还不错，还请点赞支持，感谢感谢感谢！！！</p>
+<p>完整代码：</p>
+<pre><code class="language-javascript">&lt;template&gt;
+  &lt;div class="table-wrap"&gt;
+    &lt;el-table
+      :data="tableData"
+      :span-method="handleSpanMethod"
+      :cell-style="{ background: '#FFFFFF' }"
+      border
+      style="width: 100%"
+    &gt;
+      &lt;el-table-column prop="id" label="序号" align="center" width="80"&gt;
+        &lt;template slot-scope="scope"&gt;
+          {<!-- -->{ scope.row.id + 1 }}
+        &lt;/template&gt;
+      &lt;/el-table-column&gt;
+      &lt;el-table-column prop="column1" label="column1" align="center" /&gt;
+      &lt;el-table-column prop="column2" label="column2" align="center" /&gt;
+      &lt;el-table-column prop="column3" label="column3" align="center" /&gt;
+      &lt;el-table-column prop="column4" label="column4" align="center" /&gt;
+      &lt;el-table-column prop="column5" label="column5" align="center" /&gt;
+      &lt;el-table-column prop="column6" label="column6" align="center" /&gt;
+      &lt;el-table-column prop="column7" label="column7" align="center" /&gt;
+      &lt;el-table-column prop="column8" label="column8" align="center" /&gt;
+      &lt;el-table-column prop="column9" label="column9" align="center" /&gt;
+    &lt;/el-table&gt;
+  &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;script&gt;
+export default {
+  name: 'CellMerge',
+  data() {
+    return {
+      tableData: [],
+      // 合并单元格
+      column1Arr: [], // column1
+      column1Index: 0, // column1索引
+      column2Arr: [], // column2
+      column2Index: 0, // column2索引
+      column3Arr: [], // column3
+      column3Index: 0, // column3索引
+      column4Arr: [], // column4
+      column4Index: 0, // column4
+      column5Arr: [], // column5
+      column5Index: 0, // column5索引
+      column6Arr: [], // column6
+      column6Index: 0 // column6索引
+    }
+  },
+  mounted() {
+    this.initTableData()
+  },
+  methods: {
+    // 初始化表格数据
+    initTableData() {
+      const newTableData = [
+        {
+          'column1': '111',
+          'column2': '222',
+          'column3': '333',
+          'children1': [
+            {
+              'column6': 666,
+              'column4': '4440',
+              'column5': '5550',
+              'children2': [
+                {
+                  'column7': '77701',
+                  'column8': '88801',
+                  'column9': '99901'
+                },
+                {
+                  'column7': '77702',
+                  'column8': '88802',
+                  'column9': '99902'
+                },
+                {
+                  'column7': '77703',
+                  'column8': '88803',
+                  'column9': '99903'
+                }
+              ]
+            },
+            {
+              'column6': 666,
+              'column4': '4441',
+              'column5': '5551',
+              'children2': [
+                {
+                  'column7': '77711',
+                  'column8': '88811',
+                  'column9': '99911'
+                }
+              ]
+            },
+            {
+              'column6': 666,
+              'column4': '4442',
+              'column5': '5552',
+              'children2': [
+                {
+                  'column7': '77721',
+                  'column8': '88821',
+                  'column9': '99921'
+                },
+                {
+                  'column7': '77722',
+                  'column8': '88822',
+                  'column9': '99922'
+                }
+              ]
+            }
+          ]
+        },
+        {
+          'column1': '111',
+          'column2': '222',
+          'column3': '333',
+          'children1': [
+            {
+              'column6': 666,
+              'column4': '4440',
+              'column5': '5550',
+              'children2': [
+                {
+                  'column7': '77701',
+                  'column8': '88801',
+                  'column9': '99901'
+                }
+              ]
+            },
+            {
+              'column6': 666,
+              'column4': '4441',
+              'column5': '5551',
+              'children2': [
+                {
+                  'column7': '77711',
+                  'column8': '88811',
+                  'column9': '99911'
+                },
+                {
+                  'column7': '77712',
+                  'column8': '88812',
+                  'column9': '99912'
+                }
+              ]
+            }
+          ]
+        },
+        {
+          'column1': '111',
+          'column2': '222',
+          'column3': '333',
+          'children1': [
+            {
+              'column6': 666,
+              'column4': '4440',
+              'column5': '5550',
+              'children2': [
+                {
+                  'column7': '77701',
+                  'column8': '88801',
+                  'column9': '99901'
+                },
+                {
+                  'column7': '77702',
+                  'column8': '88802',
+                  'column9': '99902'
+                },
+                {
+                  'column7': '77703',
+                  'column8': '88803',
+                  'column9': '99903'
+                }
+              ]
+            },
+            {
+              'column6': 666,
+              'column4': '4441',
+              'column5': '5551',
+              'children2': [
+                {
+                  'column7': '77711',
+                  'column8': '88811',
+                  'column9': '99911'
+                }
+              ]
+            }
+          ]
+        }
+      ]
+      this.tableData = []
+      newTableData.map((res, index) =&gt; {
+        const parentId = index
+        this.tableData.push.apply(
+          this.tableData,
+          this.handleData([res], parentId)
+        )
+      })
+      this.mergeTable(this.tableData)
+    },
+    // table 表格数据初始化处理，将树结构数据转为一维数组
+    handleData(data, parentId) {
+      data.map((res, index) =&gt; {
+        var obj = {
+          id: parentId
+        }
+        for (const key in res) {
+          const isarr = Object.values(res).find((age) =&gt; {
+            return Array.isArray(age)
+          })
+          if (isarr) {
+            if (Array.isArray(res[key])) {
+              for (let i = 0; i &lt; res[key].length; i++) {
+                Object.assign(obj, res[key][i])
+                data.push(obj)
+                res[key].splice(i, 1)
+                if (res[key].length === 0) {
+                  data.splice(index, 1)
+                }
+                this.handleData(data, parentId)
+              }
+            } else {
+              Object.assign(obj, { [key]: res[key] })
+            }
+          }
+        }
+      })
+      return data
+    },
+    // 初始化合并行数组
+    mergeInit() {
+      this.column1Arr = [] // column1
+      this.column1Index = 0 // column1索引
+      this.column2Arr = [] // column2
+      this.column2Index = 0 // column2索引
+      this.column3Arr = [] // column3
+      this.column3Index = 0 // column3索引
+      this.column4Arr = [] // column4
+      this.column4Index = 0 // column4索引
+      this.column5Arr = [] // column5
+      this.column5Index = 0 // column5索引
+      this.column6Arr = [] // column6
+      this.column6Index = 0 // column6索引
+    },
+    // 合并表格
+    mergeTable(data) {
+      this.mergeInit()
+      if (data.length &gt; 0) {
+        for (var i = 0; i &lt; data.length; i++) {
+          if (i === 0) {
+            // 第一行必须存在，以第一行为基准
+            this.column1Arr.push(1) // column1
+            this.column1Index = 0
+
+            this.column2Arr.push(1) // column2
+            this.column2Index = 0
+
+            this.column3Arr.push(1) // column3
+            this.column3Index = 0
+
+            this.column4Arr.push(1) // column4
+            this.column4Index = 0
+
+            this.column5Arr.push(1) // column5
+            this.column5Index = 0
+
+            this.column6Arr.push(1) // column6
+            this.column6Index = 0
+          } else {
+            // 判断当前元素与上一元素是否相同
+            // column1
+            if (
+              data[i].column1 === data[i - 1].column1 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column1Arr[this.column1Index] += 1
+              this.column1Arr.push(0)
+            } else {
+              this.column1Arr.push(1)
+              this.column1Index = i
+            }
+
+            // column2
+            if (
+              data[i].column2 === data[i - 1].column2 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column2Arr[this.column2Index] += 1
+              this.column2Arr.push(0)
+            } else {
+              this.column2Arr.push(1)
+              this.column2Index = i
+            }
+
+            // column3
+            if (
+              data[i].column3 === data[i - 1].column3 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column3Arr[this.column3Index] += 1
+              this.column3Arr.push(0)
+            } else {
+              this.column3Arr.push(1)
+              this.column3Index = i
+            }
+
+            // column4
+            if (
+              data[i].column4 === data[i - 1].column4 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column4Arr[this.column4Index] += 1
+              this.column4Arr.push(0)
+            } else {
+              this.column4Arr.push(1)
+              this.column4Index = i
+            }
+
+            // column5
+            if (
+              data[i].column5 === data[i - 1].column5 &amp;&amp;
+              data[i].column4 === data[i - 1].column4 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column5Arr[this.column5Index] += 1
+              this.column5Arr.push(0)
+            } else {
+              this.column5Arr.push(1)
+              this.column5Index = i
+            }
+
+            // column6
+            if (
+              data[i].column6 === data[i - 1].column6 &amp;&amp;
+              data[i].column4 === data[i - 1].column4 &amp;&amp;
+              data[i].id === data[i - 1].id
+            ) {
+              this.column6Arr[this.column6Index] += 1
+              this.column6Arr.push(0)
+            } else {
+              this.column6Arr.push(1)
+              this.column6Index = i
+            }
+          }
+        }
+      }
+    },
+    handleSpanMethod({ row, column, rowIndex, columnIndex }) {
+      if (columnIndex === 0 || columnIndex === 1) {
+        // 第一列 column1
+        const _row_1 = this.column1Arr[rowIndex]
+        const _col_1 = _row_1 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_1,
+          colspan: _col_1
+        }
+      } else if (columnIndex === 2) {
+        // 第二列 column2
+        const _row_2 = this.column2Arr[rowIndex]
+        const _col_2 = _row_2 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_2,
+          colspan: _col_2
+        }
+      } else if (columnIndex === 3) {
+        // 第三列 column3
+        const _row_2 = this.column3Arr[rowIndex]
+        const _col_2 = _row_2 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_2,
+          colspan: _col_2
+        }
+      } else if (columnIndex === 4) {
+        // 第四列 column4
+        const _row_2 = this.column4Arr[rowIndex]
+        const _col_2 = _row_2 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_2,
+          colspan: _col_2
+        }
+      } else if (columnIndex === 5) {
+        // 第五列 column5
+        const _row_2 = this.column5Arr[rowIndex]
+        const _col_2 = _row_2 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_2,
+          colspan: _col_2
+        }
+      } else if (columnIndex === 6) {
+        // 第六列 column6
+        const _row_2 = this.column6Arr[rowIndex]
+        const _col_2 = _row_2 &gt; 0 ? 1 : 0
+        return {
+          rowspan: _row_2,
+          colspan: _col_2
+        }
+      }
+    }
+  }
+}
+&lt;/script&gt;
+&lt;style lang="scss" scoped&gt;
+  .table-wrap {
+    width: 100%;
+    height: 100%;
+    padding: 20px;
+  }
+&lt;/style&gt;
+</code></pre>
+<p> </p>
+<p></p>
+</div>
+</div>

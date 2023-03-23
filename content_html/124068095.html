@@ -1,0 +1,51 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2>[RoarCTF 2019]Easy Java</h2>
+<ul><li> <p>java源码泄露</p> </li></ul>
+<h3>0x01初步尝试</h3>
+<p>看到登录第一反应是sql，试了一下，没什么进展。ctrl+u看到有个超链接，是help按键对应的链接。得到</p>
+<pre>
+java.io.FileNotFoundException:{help.docx}</pre>
+<p style="text-align:center;"><img alt="" src="image\b622d2b5515246eb8e5a97b8a7ca735a.png"/></p>
+<p>发现help.docx的部分更改之后也可以回显，以为是注入捏（结果不是，别学我）</p>
+<h3>0x02/WEB-INF/web.xml</h3>
+<p>首先是直接在url里加上/help.docx，下载得到文档，内容如下：</p>
+<p style="text-align:center;"><img alt="" src="image\e2d20843323475e0a6687f917bb86737.png"/></p>
+<p> </p>
+<p></p>
+<p>鉴于是java，于是去找Java的源码泄露。参照这位师傅的总结博客<a class="has-card" href="https://blog.csdn.net/wy_97/article/details/78165051" title="(ctf/web源码泄露及利用办法【总结中】_Sp4rkW的博客-CSDN博客_web源码泄露)"><span class="link-card-box"><span class="link-title">(ctf/web源码泄露及利用办法【总结中】_Sp4rkW的博客-CSDN博客_web源码泄露)</span><span class="link-link"><img alt="icon-default.png?t=M276" class="link-link-icon" src="https://csdnimg.cn/release/blog_editor_html/release2.0.8/ckeditor/plugins/CsdnLink/icons/icon-default.png?t=M276"/>https://blog.csdn.net/wy_97/article/details/78165051</span></span></a></p>
+<p>本题用到的是<strong>WEB-INF/web.xml和/WEB-INF/classes/泄露</strong><br/> WEB-INF是Java的WEB应用的安全目录。如果想在页面中直接访问其中的文件，必须通过web.xml文件对要访问的文件进行相应映射才能访问。WEB-INF主要包含一下文件或目录：</p>
+<pre><code>    /WEB-INF/web.xml：Web应用程序配置文件，描述了 servlet 和其他的应用组件配置及命名规则。
+    /WEB-INF/classes/：含了站点所有用的 class 文件，包括 servlet class 和非servlet class，他们不能包含在 .jar文件中
+    /WEB-INF/lib/：存放web应用需要的各种JAR文件，放置仅在这个应用中要求使用的jar文件,如数据库驱动jar文件
+    /WEB-INF/src/：源码目录，按照包名结构放置各个java文件。
+    /WEB-INF/database.properties：数据库配置文件</code></pre>
+<p>参照之前，想尝试访问/WEB-INF/web.xml得到文件但是失败了，查看源码发现有个地方是要求POST方式传入</p>
+<p style="text-align:center;"><img alt="" src="image\bc48c3bb18a44950a7eb900a52643035.png"/></p>
+<p> （不知道是不是因为这里，如果理解有误还请其他师傅指正）</p>
+<p>所以在Download页面试了试，传参如下，成功下载了</p>
+<p style="text-align:center;"><img alt="" src="image\0e381faa2a564bcc9346a651ceda2b53.png"/></p>
+<h3> 0x03构造payload</h3>
+<p>看看web.xml，这几行里有flag相关</p>
+<pre><code class="language-java">&lt;servlet&gt;
+&lt;servlet-name&gt;FlagController&lt;/servlet-name&gt;
+&lt;servlet-class&gt;com.wm.ctf.FlagController&lt;/servlet-class&gt;
+&lt;/servlet&gt;
+&lt;servlet-mapping&gt;
+&lt;servlet-name&gt;FlagController&lt;/servlet-name&gt;
+&lt;url-pattern&gt;/Flag&lt;/url-pattern&gt;
+&lt;/servlet-mapping&gt;</code></pre>
+<p>首先试了试直接访问根目录下的/Flag，然而并没有什么用。</p>
+<p>但是！！这里的<strong>&lt;servlet-class&gt;</strong>是不是很眼熟！</p>
+<blockquote>
+<p> /WEB-INF/classes/：含了站点所有用到的 class 文件，包括<span style="color:#1c7892;"> servlet class 和非servlet class</span></p>
+</blockquote>
+<p> 所以我们只需要继续在Download页面用POST传入“filename=”+这一串路径（<strong>com.wm.ctf.FlagController</strong>），把路径中的“."换成”/"（个人觉得是因为java和php访问路径的格式不一样），并且在前面加上<strong>/WEB-INF/classes/，</strong>在末尾加上文件后缀（<strong>.class</strong>）就可以得到payload啦</p>
+<p>完整payload：</p>
+<pre><code>filename=/WEB-INF/classes/com.wm.ctf.FlagController.class</code></pre>
+<p>需要注意的是，直接在页面中传参会报错，得不到回显，所以抓包查看 </p>
+<p style="text-align:center;"><img alt="" src="image\410931f6207d42c7bc3ac04ccc407263.png"/></p>
+<p> 高亮的这一段是不是很可疑！所以丢去base64解码一下，flag就出来了~~</p>
+</div>
+</div>

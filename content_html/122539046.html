@@ -1,0 +1,220 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="_0"></a>进程地址空间</h1>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#_0">进程地址空间</a></li><li><ul><li><ul><li><ul><li><a href="#_16">验证地址空间的基本排布</a></li><li><a href="#_56">进程地址空间究竟是什么？</a></li></ul>
+</li><li><a href="#_174">地址空间和物理内存之间的关系</a></li><li><a href="#_192">为什么要存在地址空间？</a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<br/>
+<img alt="image-20211128195336713" src="https://17and31.oss-cn-shenzhen.aliyuncs.com/image-20211128195336713.png"/>
+<p></p>
+<p>我们在学习C语言期间，经常可以提及到这些区域，有一个问题：这里的地址空间是内存吗？答案是这里的地址空间并不是内存。这里的地址空间是进程地址空间，下面我们就讲解进程地址空间。</p>
+<p>这段空间中自下而上，地址是增长的，栈是向地址减小方向增长(栈是先使用高地址)，而堆是向地址增长方向增长(堆是先使用低地址)，堆栈之间的共享区，主要用来加载动态库。</p>
+<p>接下来我们来说明四个问题：</p>
+<ol><li><strong>验证地址空间的基本排布</strong></li><li><strong>进程地址空间究竟是什么？</strong></li><li><strong>为什么要存在地址空间？</strong></li><li><strong>地址空间和物理内存之间的关系</strong></li></ol>
+<h4><a id="_16"></a>验证地址空间的基本排布</h4>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;stdio.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;stdlib.h&gt;</span></span>
+<span class="token keyword">int</span> g_unval<span class="token punctuation">;</span><span class="token comment">//未初始化</span>
+<span class="token keyword">int</span> g_val <span class="token operator">=</span> <span class="token number">100</span><span class="token punctuation">;</span><span class="token comment">//初始化</span>
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">int</span> argc<span class="token punctuation">,</span><span class="token keyword">char</span> <span class="token operator">*</span>argv<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">,</span><span class="token keyword">char</span> <span class="token operator">*</span>env<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"code addr:           %p\n"</span><span class="token punctuation">,</span>main<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//代码区起始地址</span>
+    <span class="token keyword">const</span> <span class="token keyword">char</span><span class="token operator">*</span> p <span class="token operator">=</span> <span class="token string">"hello bit"</span><span class="token punctuation">;</span><span class="token comment">//p是指针变量(栈区)，p指向字符常量h(字符常量区)</span>
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"read only :          %p\n"</span><span class="token punctuation">,</span>p<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"global val:          %p\n"</span><span class="token punctuation">,</span><span class="token operator">&amp;</span>g_val<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"global uninit val:   %p\n"</span><span class="token punctuation">,</span><span class="token operator">&amp;</span>g_unval<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">char</span> <span class="token operator">*</span>q <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">char</span> <span class="token operator">*</span><span class="token punctuation">)</span><span class="token function">malloc</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"heap addr:           %p\n"</span><span class="token punctuation">,</span>q<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"stack addr:          %p\n"</span><span class="token punctuation">,</span><span class="token operator">&amp;</span>p<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//p先定义，先入栈</span>
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"stack addr:          %p\n"</span><span class="token punctuation">,</span><span class="token operator">&amp;</span>q<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"args addr            %p\n"</span><span class="token punctuation">,</span>argv<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//命令行参数</span>
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"args addr            %p\n"</span><span class="token punctuation">,</span>argv<span class="token punctuation">[</span>argc<span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"env addr:            %p\n"</span><span class="token punctuation">,</span>env<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//环境变量</span>
+    <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><img alt="image-20211128202507130" src="https://img-blog.csdnimg.cn/img_convert/66b23fb1091ae376513f4fed5b63d9e1.png"/></p>
+<p>我们可以看到代码区的地址是最小的，这里就验证了地址空间的基本排布：p和q都是定义在栈区的，p先定义，先入栈，可以看到p的地址大于q，说明了栈是先使用高地址再使用低地址。</p>
+<p>这里我们首先得出两点结论：</p>
+<blockquote>
+<p><strong>1、进程地址空间不是内存</strong></p>
+<p><strong>2、进程地址空间，会在进程的整个生命周期内一直存在，直到进程退出</strong></p>
+<blockquote>
+<p><strong>这也就解释了全局变量为什么会一直存在，原因是未初始化数据，初始化数据，这些区域是一直存在的</strong></p>
+</blockquote>
+</blockquote>
+<h4><a id="_56"></a>进程地址空间究竟是什么？</h4>
+<p>下面我们通过一个代码来看一个现象，我们定义了一个全局变量，fork创建一个子进程，让父进程和子进程完成自己的任务，在子进程中定义count来计数，当子进程的打印任务进行到第五次时，让子进程将这个全局变量改成100：</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;stdio.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;unistd.h&gt;</span></span>
+<span class="token keyword">int</span> g_val <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"begin.....%d\n"</span><span class="token punctuation">,</span>g_val<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token class-name">pid_t</span> id <span class="token operator">=</span> <span class="token function">fork</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span>id<span class="token operator">==</span><span class="token number">0</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//child</span>
+        <span class="token keyword">int</span> count <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+    		<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"child: pid: %d,ppid: %d, g_val:%d, &amp;g_val: %p\n"</span><span class="token punctuation">,</span><span class="token function">getpid</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token function">getppid</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>g_val<span class="token punctuation">,</span><span class="token operator">&amp;</span>g_val<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token function">sleep</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            count<span class="token operator">++</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>count <span class="token operator">==</span> <span class="token number">5</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                g_val <span class="token operator">=</span> <span class="token number">100</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            
+        <span class="token punctuation">}</span>
+        
+    <span class="token punctuation">}</span>
+    <span class="token keyword">else</span> <span class="token keyword">if</span><span class="token punctuation">(</span>id<span class="token operator">&gt;</span><span class="token number">0</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//father</span>
+        <span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+             <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"father: pod: %d,ppid: %d, g_val:%d, &amp;g_val: %p\n"</span><span class="token punctuation">,</span><span class="token function">getpid</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token function">getppid</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>g_val<span class="token punctuation">,</span><span class="token operator">&amp;</span>g_val<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token function">sleep</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+       	
+    <span class="token punctuation">}</span>
+    <span class="token keyword">else</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//todo</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><img alt="image-20211128204600905" src="https://img-blog.csdnimg.cn/img_convert/c19a08cd4239bd3e88dcd68d11ad15da.png"/></p>
+<p>代码共享，所以看到前五次打印的g_val的地址都是一样的，这我们不意外，等到了第六次时，我们发现父进程g_val依然是0，子进程的g_val变成了100，因为我们将它改了，这也不意外，因为前面说了，父子进程之间代码共享，而数据是各自私有一份的(写时拷贝)，但是令人奇怪的是地址竟然是一样的！</p>
+<p>如果我们看到的地址，是物理地址，这种情况可不可能呢？</p>
+<blockquote>
+<p><strong>这是绝对不可能的，如果可能，那么父子进程在同一个地址处读取数据怎么会是不同的值呢？所以，我们曾经所学到的所有的地址，绝对不是物理地址</strong></p>
+</blockquote>
+<p>其实这种地址本质就是一种虚拟地址！</p>
+<p>任何我们学过的语言，里面的地址都绝对不会是物理地址，虚拟地址这种地址是由操作系统给我们提供的，操作系统如何给我们提供呢？既然这种地址是虚拟地址，那么一定有某种途径将虚拟地址转化为物理地址，因为数据和代码一定在物理内存上，因为冯诺依曼规定任何数据在启动时必须加载到物理内存，所以肯定需要将虚拟地址转化成物理地址，这里的转化工作由操作系统完成，所有的程序都必须运行起来，运行起来之后，该程序立即变成了进程，那么刚刚打印的虚拟地址大概率和进程有某种关系</p>
+<p>我们在上学期间，经常可能会和同桌画三八线，比如一张课桌是100cm，我们用一把尺子来划分区域，女孩的区域是0，50，男孩的区域是50，100，那么我们再计算机当中怎么描述这个事情呢？我们可以这样定义：</p>
+<pre><code>struct area
+{
+	unsigned long start;
+	unsigned long end;
+};
+struct area girl = {0,50};
+struct area boy = {50,100};
+</code></pre>
+<p>此时我们就划分好了区域，这时，不管是男孩还是女孩，大脑里都有了这样的一个区域：</p>
+<p><img alt="image-20211128210824535" src="https://img-blog.csdnimg.cn/img_convert/376f7703a88027047bb7d9c5ed6702cc.png"/></p>
+<p>当女孩觉得自己活动范围不够，想扩大自己的区域时，就可以调整自己认为的[start,end]，划分三八线的过程，就是划分区域的过程，调整区域的过程，本质就是调整自己认为的[start,end]</p>
+<p>其中我们将桌子认为是物理内存，男孩和女孩认为是每一个进程，而男孩和女孩本质上都认为自己有一把尺子(脑海里的尺子)，这把尺子就是进程地址空间，男孩想放自己的书包、铅笔等物品时，男孩就在自己的进程地址空间再划分区域放自己的物品。</p>
+<p>那么如何划分进程地址空间的区域呢？在Linux当中，进程地址空间本质上是一种数据结构，是多个区域的集合。</p>
+<p>在Linux内核中，有这样一个结构体：struct mm_struct，在这个结构体去表示我们开始说的一个一个的区域呢？这样去表示：</p>
+<pre><code class="prism language-c"><span class="token keyword">struct</span> <span class="token class-name">mm_struct</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">unsigned</span> <span class="token keyword">long</span> code_start<span class="token punctuation">;</span><span class="token comment">//代码区</span>
+    <span class="token keyword">unsigned</span> <span class="token keyword">long</span> code_end<span class="token punctuation">;</span>
+    
+    <span class="token keyword">unsigned</span> <span class="token keyword">long</span> init_start<span class="token punctuation">;</span><span class="token comment">//初始化区</span>
+    <span class="token keyword">unsigned</span> <span class="token keyword">long</span> init_end<span class="token punctuation">;</span>
+    
+    <span class="token keyword">unsigned</span> <span class="token keyword">long</span> uninit_start<span class="token punctuation">;</span><span class="token comment">//未初始化区</span>
+    <span class="token keyword">unsigned</span> <span class="token keyword">long</span> uninit_end<span class="token punctuation">;</span>
+    
+    <span class="token keyword">unsigned</span> <span class="token keyword">long</span> heap_start<span class="token punctuation">;</span><span class="token comment">//堆区</span>
+    <span class="token keyword">unsigned</span> <span class="token keyword">long</span> heap_end<span class="token punctuation">;</span>
+    
+    <span class="token keyword">unsigned</span> <span class="token keyword">long</span> stack_start<span class="token punctuation">;</span><span class="token comment">//栈区</span>
+    <span class="token keyword">unsigned</span> <span class="token keyword">long</span> stack_end<span class="token punctuation">;</span>
+    <span class="token comment">//...等等</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>在上面的例子中，男孩脑海里有一把尺子，想着自己拥有桌子的一半，女孩脑海里也有一把尺子，想着自己也拥有桌子的一半，而此时我们改变了：男孩和女孩关系比较好，不进行什么划分三八线，男孩脑海里有一把尺子，想着自己拥有0-100cm的桌子，女孩脑海里有一把尺子，想着自己也拥有0-100cm的桌子，他们在放东西时，只要记住了尺子的刻度就可以了。</p>
+<p>为了更深一步的理解进程地址空间，我们再来举一个例子：</p>
+<blockquote>
+<p><strong>比如有一个富豪，他拥有10个亿的身家，这个富豪有10个私生子，这10个私生子互相并不知道自己的存在，富豪对自己的每一个私生子都说孩子你好好学习，老爸现在有10个亿的家产，以后就全是你的，请问在这十个私生子的视觉来看，他们认为他们有多少的家产？当然是10亿，当每个私生子向这个富豪要钱时，只要能接受，富豪肯定都会给，不能接受，富豪可以直接拒绝，在这个例子中富豪给每个私生子脑海里建立了虚拟的10个亿，此时每个私生子都认为自己有10个亿，每个人要的钱都是不一样的。</strong></p>
+</blockquote>
+<p>在这个例子中：富豪称之为操作系统，私生子称之为进程，富豪给私生子画的10亿家产，当前私生子的地址空间，对比言之：操作系统默认会给每个进程构成一个地址空间的概念(32位下，地址空间是从000000…0000到FFFFFF…FFF)4GB的空间，每个进程都认为自己有4GB的空间，每个进程都可以向内存申请空间，只要能接受都会给你，不能接受操作系统会直接拒绝，但是并没有什么影响，进程依旧认为自己有4GB的空间。</p>
+<p>再回到男孩和女孩的例子，我们的进程地址空间就相当于是那把尺子，而尺子是有刻度的，进程地址空间也是从全000的地址到全FFF的地址，可以在这上面进行区域划分：比如代码区：[code_start,code_end]，比如代码区的地址区间是这个：[0x10000,0x20000]，那么区间的每一个地址单位就称为虚拟地址</p>
+<p><strong>总结</strong>：</p>
+<blockquote>
+<p><strong>进程地址空间本质是进程看待内存的方式，抽象出来的一个概念，内核：struct mm_struct，这样的每个进程，都认为自己独占系统内存资源(每个私生子都认为自己独占10亿家产)，地址空间区域划分本质：将线性地址空间划分成为一个一个的area，[start,end]。虚拟地址本质，在[start,end]之间的各个地址叫做虚拟地址</strong></p>
+</blockquote>
+<h3><a id="_174"></a>地址空间和物理内存之间的关系</h3>
+<p>我们写了三个程序，将这三个程序运行起来，生成了可执行程序，此时系统存在三个进程，我们有三个task_struct结构体，那么对应的三个进程都有各自的进程地址空间mm_struct，这三个task_struct里面各自会有一个指针指向对应的进程地址空间，我们知道可执行程序运行起来需要将代码和数据加载到内存当中，那么是怎么加载到内存当中的呢？进程将自己的代码和数据首先放在虚拟地址空间的对应的区域，在这其中会有一种表结构，叫做页表，页表的核心工作就是完成虚拟地址到物理地址之间的映射，最终我们的可执行程序的代码和数据可以加载到物理内存的任意位置，因为最终只需要建立代码和数据与物理内存之间的映射关系，就可以通过虚拟地址找到物理内存的对应地址</p>
+<p>不同进程的虚拟地址可以完全一样吗？答案是可以完全一样，因为每个进程都有各自的页表，每个进程都是独立的进行通过各自页表中虚拟地址和物理内存的映射关系去找代码和数据</p>
+<p><img alt="image-20211130175546310" src="https://img-blog.csdnimg.cn/img_convert/912602e7d0f833f0b41facd048ddcc3f.png"/></p>
+<p>那么不同进程的虚拟地址在页表中映射的物理地址可能会重吗？答案是不会的，如果会重操作系统就挂掉了，有一种可能性会重，但这是我们可以刻意为之，比如创建子进程，让父子进程代码共享：</p>
+<p><img alt="image-20211130190604080" src="https://img-blog.csdnimg.cn/img_convert/f1b660566fc9f0f5469139cf0cff282b.png"/></p>
+<p><strong>总结</strong>：</p>
+<blockquote>
+<p><strong>虚拟地址和物理空间之间是通过页表完成的映射关系</strong></p>
+</blockquote>
+<h3><a id="_192"></a>为什么要存在地址空间？</h3>
+<p>为什么进程不直接访问物理内存呢？这样不行吗？为什么要存在地址空间呢？</p>
+<ul><li class="task-list-item"><input checked="true" class="task-list-item-checkbox" disabled="disabled" type="checkbox"/> <strong>保护物理内存不受到任何进程内地址的直接访问，在虚拟地址到物理地址的转化过程中方便进行合法性校验</strong></li></ul>
+<p>在早些时候是没有地址空间的：</p>
+<img alt="image-20211130191609309" src="https://17and31.oss-cn-shenzhen.aliyuncs.com/image-20211130191609309.png"/>
+<blockquote>
+<p><strong>如果进程直接访问物理内存，那么看到的地址就是物理地址，而语言中有指针，如果指针越界了，一个进程的指针指向了另一个进程的代码和数据，那么进程的独立性，便无法保证，因为物理内存暴露，其中就有可能有恶意程序直接通过物理地址，进行内存数据的篡改，如果里面的数据有账号密码就可以改密码，即使操作系统不让改，也可以读取。</strong></p>
+</blockquote>
+<p>后来就发展出来了虚拟地址空间，那么虚拟地址空间如何避免这样的问题呢？</p>
+<blockquote>
+<p><strong>由上面我们所了解的知识，一个进程有它的task_struct，有地址空间，有页表，页表当中有虚拟地址和物理内存的映射关系，有了页表的存在，虚拟地址到物理地址的一个转化，由操作系统来完成的，同时也可以帮系统进行合法性检测</strong></p>
+</blockquote>
+<p>我们在写代码的时候肯定了解过指针越界，我们知道地址空间有各个区域，那么指针越界一定会出现错误吗？</p>
+<blockquote>
+<p><strong>不一定，越界可能他还是在自己的合法区域。比如他本来指向的是栈区，越界后它依然指向栈区，编译器的检查机制认为这是合法的，当你指针本来指向数据区，结果指针后来指向了字符常量区，编译器就会根据mm_struct里面的start，end区间来判断你有没有越界，此时发现你越界了就会报错了，这是其中的一种检查，第二种检查为：页表因为将每个虚拟地址的区域映射到了物理内存，其实页表也有一种权限管理，当你对数据区进行映射时，数据区是可以读写的，相应的在页表中的映射关系中的权限就是可读可写，但是当你对代码区和字符常量区进行映射时，因为这两个区域是只读的，相应的在页表中的映射关系中的权限就是只读，如果你对这段区域进行了写，通过页表当中的权限管理，操作系统就直接就将这个进程干掉。</strong></p>
+</blockquote>
+<p>所以进程地址空间的存在也使得可以通过start和end以及页表的权限管理来判断指针是否合法访问</p>
+<ul><li class="task-list-item"><input checked="true" class="task-list-item-checkbox" disabled="disabled" type="checkbox"/> <strong>将内存管理和进程管理进行解耦</strong></li></ul>
+<p><strong>操作系统有四种核心管理：</strong></p>
+<p>1、进程管理</p>
+<p>2、内存管理</p>
+<p>3、驱动管理</p>
+<p>4、文件管理</p>
+<p>这里我们主要讲的是进程管理和内存管理：</p>
+<blockquote>
+<p><strong>如果没有进程地址空间，进程直接访问物理内存，当进程退出时，内存管理需要尽快将该进程回收，在这个过程当中必须得保证内存管理得知道某个进程退出了，并且内存管理也得知道某个进程开始了，这样才能给他们及时的分配资源和回收资源，这就意味着内存管理和进程管理模块是强耦合的，也就是说内存管理和进程管理关系比较大，通过我们上面的理解，如果有了进程地址空间，当一个进程需要资源的时候，通过页表映射去要就可以了，内存管理就只需要知道哪些内存区域(配置)是无效的，哪些是有效的(被页表映射的就是有效的，没有被页表映射的就是无效的)，当一个进程退出时，它的映射关系也就没了，此时没有了映射关系，物理内存这里就将该进程的数据设置为无效，所以第二个好处就是将内存管理和进程管理进行解耦，内存管理是怎么知道有效还是无效的呢？比如说在一块物理内存区域设置一个计数器count，当页表中有映射到这块区域时，count就++，当一个映射去掉时，就将count–，内存管理只需要检测这个count是不是0，如果为0，说明它是没人用的。</strong></p>
+</blockquote>
+<p>没有进程地址空间时，内存也可以和进程进行解耦，但是代码会设计的特别复杂，所以最终会有进程地址空间</p>
+<p><strong>内存管理是怎么将一些大型数据加载到物理内存的？</strong></p>
+<blockquote>
+<p><strong>内存管理是通过延迟加载的方式加载到物理内存的，什么意思呢？比如说你有一个16GB的大型进程，内存管理首先会给你加载小一部分先供你使用，当你使用完时，会先将进程置为睡眠状态，然后再加载一部分，然后将进程再唤醒，进程再继续使用就可以了。对于用户来说，唯一感觉到的是我的游戏运行的慢了。</strong></p>
+</blockquote>
+<ul><li class="task-list-item"> <p><input checked="true" class="task-list-item-checkbox" disabled="disabled" type="checkbox"/> <strong>让每个进程，以同样的方式(虚拟地址)，看待代码和数据，明确程序运行的地址</strong></p> <p>目标文件和可执行程序，本身就已经被划分成为了一个个的区域：</p> </li></ul>
+<img alt="image-20211130202009002" src="https://17and31.oss-cn-shenzhen.aliyuncs.com/image-20211130202009002.png"/>
+<blockquote>
+<p><strong>磁盘上的可执行程序分区域的每个大小单位为4KB，每个这个大小的数据称为页帧，在物理内存中的每个大小单位也为4KB，每个这个大小的数据称为页框，那么为什么要分区域呢？因为方便生成可执行程序，在这之后其中有一个链接库的过程，如果可执行程序是乱的，那么这个链接过程非常困难，所以需要分好区域，由此进程地址空间才有了区域划分这样的概念，进程的地址空间连续化，也让顺序语句的执行成为了可能：当前语句的起始地址+当前代码的长度就等于下一条语句的地址。如果没有进程地址空间，因为物理内存空余的地方不一定是连续的空间，可能是零散的，那么将可执行程序的数据加载到内存当中时，那么这些数据就是零散的放在各个位置，而这些位置我们又是不确定的，此时很难找到代码和数据的位置了，进程地址空间的存在，进程地址空间又是进行区域划分的，通过页表的映射关系可以很好的找到物理内存，所以这也是存在地址空间的一个理由：让每个进程，以同样的方式(虚拟地址)，明确程序运行的地址</strong></p>
+</blockquote>
+<p>最开始我们的四个问题已经全部讲解完，回到最初的那个问题：为什么父进程和子进程的数据不一样，这个我们不意外，因为数据是私有的，但是地址却也是相同的，这是什么原因呢？到达这里我想这个问题已经显而易见了：</p>
+<p><img alt="image-20211130222152087" src="https://img-blog.csdnimg.cn/img_convert/cab9db6a98474e5e945bd61be81c4763.png"/></p>
+<p><img alt="image-20211130222120405" src="https://img-blog.csdnimg.cn/img_convert/a09d5c8cf2b4fac162802c18d87d474d.png"/></p>
+<blockquote>
+<p><strong>此时g_val的虚拟地址没有变化，而子进程的g_val的虚拟地址对物理内存地址的映射已经发生了变化，指向的数据区的g_val已经变为了100。</strong></p>
+</blockquote>
+<p><strong>进程和程序有什么区别？？</strong></p>
+<blockquote>
+<p><strong>提到进程需要知道这三个东西：task_struct,mm_struct,页表。进程是加载进内存的程序，由进程常见的数据结构(struct task_struct(控制块) &amp;&amp; struct mm_struct(地址空间))和代码数据组成</strong></p>
+</blockquote>
+<p><strong>运行队列、等待队列</strong>：</p>
+<blockquote>
+<p><strong>task_struct中是包含了很多的进程链接信息的，本质是把进程PCB进行排队的过程</strong></p>
+</blockquote>
+<p>若干PCB在一个队列中进行等待使用CPU的资源，该对称为运行队列</p>
+<p>若干PCB在一个队列中进行等待访问磁盘的资源，该对称为等待队列</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

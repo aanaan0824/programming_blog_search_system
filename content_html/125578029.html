@@ -1,0 +1,180 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<blockquote>
+<p><strong>1.mutex</strong></p>
+</blockquote>
+<p>“锁”的本质属性是为内存中的各种变量提供“访问保护”，计算机定义为互斥量（mutex）。</p>
+<p>mutex：互斥访问的量，在多线程编程中起作用，c++11开始提供了std::mutex，对多线程的加锁操作提供了很好的支持。</p>
+<p>例：假定有一个全局变量counter，启动两个线程，每个都对该变量自增10000次，最后输出该变量的值</p>
+<pre><code class="language-cpp">#include &lt;iostream&gt;
+#include &lt;thread&gt;
+#include &lt;vector&gt;
+#include &lt;mutex&gt;
+#include &lt;chrono&gt;
+#include &lt;stdexcept&gt;
+
+int counter = 0;
+void increase(int time){
+	for(int i=0;i&lt;time;i++){
+	//当前线程休眠1ms
+	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	counter++;
+	}
+}
+
+int main(int argc, char** argv){
+	std::thread t1(increase, 10000);
+	std::thread t2(increase, 10000);
+	t1.join();
+	t2.join();
+	std::cout&lt;&lt;"counter:"&lt;&lt;counter&lt;&lt; std::endl;
+	return 0;
+}</code></pre>
+<p>为了显示多线程竞争，导致结果不正确的现象，在每次自增操作的时候都让当前线程休眠1ms</p>
+<p>对应的cmakelists.txt</p>
+<pre><code class="language-cpp">#声明要求的cmake最低版本
+cmake_minimum_required(VESRION 3.0.0)
+#声明一个cmake工程
+project(HelloMutex)
+#设置编译模式
+set(CMAKE_BUILD_TYPE "Debug")
+#语法：add_excutable(程序名 源代码文件)
+add_excutable(${PROJECT_NAME} mutex_demo1_no_mutex.cpp)
+
+if(WIN32)
+ set(PLATFROM_LIBS Ws2_32 mswsock iphlpapi ntdll)
+else(WIN32)
+ set(PLATFROM_LIBS pthread ${CMAKE_DL_LIBS})
+endif(WIN32)
+#将库文件链接到可执行程序上
+target_link_libraries(${PROJECT_NAME} ${PLATFROM_LIBS})</code></pre>
+<p>自增操作“counter++”不是原子操作，而是由多条汇编指令完成的，多个线程对同一个变量进行读写操作就会出现不可预期的操作。假定counter当前值为1，线程1 读取到了10，线程2也读取到了10，分别执行自增操作，线程1和线程2分别将自增的结果写回counter,不管写入的顺序如何，counter的值都会是11，但我们期望的结果是12.</p>
+<pre><code class="language-cpp">#include &lt;iostream&gt;
+#include &lt;thread&gt;
+#include &lt;vector&gt;
+#include &lt;mutex&gt;
+#include &lt;chrono&gt;
+#include &lt;stdexcept&gt;
+
+int counter = 0;
+std::mutex mtx;
+void increase(int time){
+	for(int i=0;i&lt;time;i++){
+	mtx.lock();
+	//当前线程休眠1ms
+	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	counter++;
+	mtx.unlock(); //利用锁来保护共享变量
+	}
+}
+
+int main(int argc, char** argv){
+	std::thread t1(increase, 10000);
+	std::thread t2(increase, 10000);
+	t1.join();
+	t2.join();
+	std::cout&lt;&lt;"counter:"&lt;&lt;counter&lt;&lt; std::endl;
+	return 0;
+}</code></pre>
+<p>“利用锁来保护共享变量”，在这里共享变量就是counter(多个线程对能对期进行访问)</p>
+<p>std::mutex总结： std::mutex对象，任意时刻最多允许一个线程对其上锁；mtx.lock()，调用该函数的线程尝试加锁，如果上锁不成功，即：其他线程已经上锁且未释放，则当前线程block.如果上锁成功，则执行后面的操作，操作完成后要调用mtx.unlock()释放锁，否则会导致死锁的产生。</p>
+<p>mtx.unlock():释放锁</p>
+<p>std::mutex还有一个操作：mtx.try_lock(),与mtx.lock()不同点在于，如果上锁不成功，当前线程不阻塞。</p>
+<blockquote>
+<p><strong>2.lock_guard</strong></p>
+</blockquote>
+<p> 虽然std::mutex可以对多线程编程中的共享变量提供保护，但是直接使用std::mutex的情况不多，因为仅使用std::mutex有时候会发生死锁。考虑这样一个情况：假设线程1上锁成功，线程2上锁等待，但是线程1上锁成功后，抛出异常并退出，没有来得及释放锁，导致线程2"永久的等待下去"。</p>
+<pre><code class="language-cpp">#include &lt;iostream&gt;
+#include &lt;thread&gt;
+#include &lt;vector&gt;
+#include &lt;mutex&gt;
+#include &lt;chrono&gt;
+#include &lt;stdexcept&gt;
+
+int counter = 0;
+std::mutex mtx;
+
+void increase_proxy(int time, int id){
+	for(int i=0;i&lt;time;i++){
+	mtx.lock();
+	//线程1上锁成功后，抛出异常，未释放锁
+	if(id == 1){
+		throw std::runtime_error("throw exception....");
+	}
+	//当前线程休眠1ms
+	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	counter++;
+	mtx.unlock(); //利用锁来保护共享变量
+	}
+}
+
+void increase(int time, int id){
+	try{
+		increase_proxy(time, id);
+	}
+	catch(const std::exception&amp; e){
+		std::cout&lt;&lt;"id:" &lt;&lt; id &lt;&lt; "," &lt;&lt; e.what() &lt;&lt; std::endl;
+	}
+}
+
+int main(int argc, char** argv){
+	std::thread t1(increase, 10000, 1);
+	std::thread t2(increase, 10000, 2);
+	t1.join();
+	t2.join();
+	std::cout&lt;&lt;"counter:"&lt;&lt;counter&lt;&lt; std::endl;
+	return 0;
+}</code></pre>
+<p>程序执行后，并没有退出，而是永远的“卡”在那里了，也就是发生了死锁，这个时候就需要lock_guard(),lock_guard只有构造函数和析构函数，当调用构造函数时，会自动调用传入的对象的lock()函数，而当调用析构函数时，自动调用unlock()函数</p>
+<pre><code class="language-cpp">#include &lt;iostream&gt;
+#include &lt;thread&gt;
+#include &lt;vector&gt;
+#include &lt;mutex&gt;
+#include &lt;chrono&gt;
+#include &lt;stdexcept&gt;
+
+int counter = 0;
+std::mutex mtx;
+
+void increase_proxy(int time, int id){
+	for(int i=0;i&lt;time;i++){
+	//std::lock_guard对象构造时，自动调用mtx_lock()进行上锁
+	//std::lock_guard对象析构时，自动调用mtx.unlock()释放锁
+	std::lock_guard&lt;std::mutex&gt; lk(mtx);
+	//线程1上锁成功后，抛出异常，未释放锁
+	if(id == 1){
+		throw std::runtime_error("throw exception....");
+	}
+	//当前线程休眠1ms
+	std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	counter++;
+	}
+}
+
+void increase(int time, int id){
+	try{
+		increase_proxy(time, id);
+	}
+	catch(const std::exception&amp; e){
+		std::cout&lt;&lt;"id:" &lt;&lt; id &lt;&lt; "," &lt;&lt; e.what() &lt;&lt; std::endl;
+	}
+}
+
+int main(int argc, char** argv){
+	std::thread t1(increase, 10000, 1);
+	std::thread t2(increase, 10000, 2);
+	t1.join();
+	t2.join();
+	std::cout&lt;&lt;"counter:"&lt;&lt;counter&lt;&lt; std::endl;
+	return 0;
+}</code></pre>
+<p>std::lock_guard有两个构造函数，具体</p>
+<pre><code class="language-cpp">explicit lock_guard(mutex_type&amp; m);  (1)
+lock_guard(mutex_type&amp; m,std::adopt_lock_tt);  (2)
+lock_guard(const lock_guard&amp; ) = delete;    (3)
+</code></pre>
+<p>上个例子中，使用(1)构造函数，第(3)个为拷贝构造函数，定义为删除函数。</p>
+<p>第(2)个构造函数有两个参数，其中第二个参数类型为std::adopt_lock_t。这个构造函数假定：当前线程已经上锁成功，所以不再调用lock()函数，c++还提供了std::lock_guard()的加强版std::unique_lock,提供了更多的接口，使用更加灵活，但性能方面也会有些受损。</p>
+</div>
+</div>

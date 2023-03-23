@@ -1,0 +1,204 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>背景：虚实结合的模拟训练器，需要从串口接收单片机采集的传感器数据，然后到网页版的Cocos网页h5界面。</p>
+<p>从单片机上传到串口，可以用C#的串口类，MScomm32.ocx，串口文件等等；</p>
+<p>串口测试工具，有串口助手，串口精灵等</p>
+<p>如果使用unity或者vsC# VC++、LabWindowsCVI，读取串口数据都不是问题。</p>
+<p>可惜，Cocos的JavaScript（JS），无法直接访问串口等硬件，好像最好的办法就是搭建一个服务器！</p>
+<p><img alt="" height="957" src="image\26d89f76b9284662a9cf683853f8e40d.png" width="1200"/></p>
+<p>开工：</p>
+<p></p>
+<h1>第一步：使用c#搭建一个网页服务器</h1>
+<h2>1、首先要在NuGet导入“Fleck”包，需 .NET Framework 4.5及以上。</h2>
+<p>这里使用的是vs2017, .NET Framework 4.6</p>
+<p>运行VS2017 打开工程，依次点击"工具"-&gt;"NuGet包管理器"-&gt;"管理解决方案的NuGet包"</p>
+<p><img alt="" height="504" src="image\4ecd7683493c4dc4be68639889df785a.png" width="1081"/></p>
+<p>如果，“已安装”显示有 fleck，恭喜你，已经准备好。</p>
+<p>否则，到“浏览”栏，输入 “fleck”，你应该看到这个</p>
+<p><img alt="" height="334" src="image\c47f5547dbae4833892ecacdac18183b.png" width="994"/></p>
+<p>双击第一个 Fleck，然后“<strong>安装</strong>”，成功即可。</p>
+<p>参考：<a href="https://www.cnblogs.com/egger/archive/2013/03/19/2970138.html" title="NuGet添加本地包(Package) - Hejin.Wong - 博客园">NuGet添加本地包(Package) - Hejin.Wong - 博客园</a></p>
+<h2>2、建立一个c# 的控制台WebSocket服务器</h2>
+<p>不啰嗦，免费版的VS2017，上图：</p>
+<p> 框架是指.net框架，4以及4以下的.NET框架可以在xp上运行，4以上可以在win7/8/10上运行，鉴于当前大多数操作系统都是win7或win10，可选择4.5版本。</p>
+<p>现在都到win11了，就取默认4.6.1吧。</p>
+<p><img alt="" height="660" src="image\5ad9c7cb831f4fa4af03fa4ef6abb140.png" width="955"/></p>
+<p> 把下面代码覆盖自动生成的代码：</p>
+<p></p>
+<p>using Fleck;<br/> using System;<br/> using System.Collections.Generic;<br/> using System.Linq;<br/> using System.Text;<br/> using System.Threading.Tasks;</p>
+<p>namespace WebScoket<br/> {<!-- --><br/>     class Program<br/>     {<!-- --><br/>         static void Main(string[] args)<br/>         {<!-- --><br/>             var allScokets = new List&lt;IWebSocketConnection&gt;();<br/>             var server = new WebSocketServer("ws://127.0.0.1:9898");    //创建webscoket服务端实例<br/>             server.Start(scoket =&gt; {<!-- --><br/>                 scoket.OnOpen = () =&gt;<br/>                 {<!-- --><br/>                     Console.WriteLine("Open");<br/>                     allScokets.Add(scoket);<br/>                 };<br/>                 scoket.OnClose = () =&gt;<br/>                 {<!-- --><br/>                     Console.WriteLine("Close");<br/>                     allScokets.Remove(scoket);<br/>                 };<br/>                 scoket.OnMessage = message =&gt; {<!-- --><br/>                     Console.WriteLine(message);<br/>                     allScokets.ToList().ForEach(s =&gt; s.Send(message));<br/>                 };<br/>             });</p>
+<p>            var input = Console.ReadLine();<br/>             while (input != "exit")<br/>             {<!-- --><br/>                 foreach (var socket in allScokets.ToList())<br/>                 {<!-- --><br/>                     socket.Send("服务端：" + input);<br/>                 }<br/>                 input = Console.ReadLine();<br/>             }</p>
+<p>        }<br/>     }<br/> }</p>
+<p>保存，运行：</p>
+<p><img alt="" height="224" src="image\b72849a119ea470c9baecc3b54088992.png" width="776"/></p>
+<p></p>
+<p>参考：[1]<a href="https://www.cnblogs.com/swjian/p/10553689.html" title="C# 实现WebSocket通信 - 没事儿写个bug - 博客园">C# 实现WebSocket通信 - 没事儿写个bug - 博客园</a></p>
+<p><a href="https://www.cnblogs.com/liaocheng/p/9144317.html" title="[]2c#串口编程（转） - 廖先生 - 博客园">[]2c#串口编程（转） - 廖先生 - 博客园</a>2<a href="https://www.cnblogs.com/liaocheng/p/9144317.html" title="[]2c#串口编程（转） - 廖先生 - 博客园">[]2c#串口编程（转） - 廖先生 - 博客园</a></p>
+<h2>3、建立Js网页客户端</h2>
+<p>新建一个 index.txt文件，改名为index.html</p>
+<p>&lt;!DOCTYPE html&gt;<br/> &lt;html&gt;<br/>     &lt;head&gt;<br/>         &lt;meta charset="utf-8" /&gt;<br/>         &lt;title&gt;&lt;/title&gt;<br/>     &lt;/head&gt;<br/>     &lt;body &gt;<br/>         &lt;div style="margin-left: 650px;"&gt;<br/>             &lt;form id="Form"&gt; <br/>                 &lt;input type="input" name="" id="SendInfo" value="" /&gt;<br/>                 &lt;button type="submit"&gt;提交&lt;/button&gt;<br/>             &lt;/form&gt;<br/>     <br/>             &lt;div id="hello" style="border: dashed 1px black;height: 500px;width: 500px;margin-top: 10px;"&gt;<br/>             <br/>             &lt;/div&gt;<br/>         &lt;/div&gt;<br/>         <br/>     &lt;/body&gt;<br/>     &lt;script type="text/javascript"&gt;<br/>         var test=function(){<!-- --><br/>             <br/>             var print=document.getElementById('hello');<br/>             var form = document.getElementById('Form');<br/>             var input = document.getElementById('SendInfo');<br/>             print.innerHTML += "connecting to server ..&lt;br/&gt;";        <br/>             window.ws = new WebSocket('ws://localhost:9898/');      //监听webscoket服务端口<br/>         <br/>             //监听消息状态<br/>             ws.onmessage=function(eve){<!-- --><br/>                 print.innerHTML+=eve.data+'&lt;br/&gt;'<br/>             }<br/>             <br/>             //监听链接状态<br/>             ws.onopen=function(){<!-- --><br/>                 print.innerHTML+='connection open &lt;br/&gt;'<br/>             }<br/>             <br/>             //监听关闭状态<br/>             ws.onclose = function () {<!-- --><br/>                 print.innerHTML += 'connection closed&lt;br/&gt;';<br/>             }<br/>  <br/>                //向服务器端发送消息<br/>                form.addEventListener('submit',function(e){<!-- --><br/>                    e.preventDefault();<br/>                    var val="客户端："+input.value;<br/>                    ws.send(val);<br/>                    input.value="";<br/>                })<br/>                <br/>         }<br/>         <br/>         window.οnlοad=test();<br/>     &lt;/script&gt;</p>
+<p>保存，浏览器运行。360浏览器、IE、Edge均测试通过。</p>
+<p><img alt="" height="145" src="image\a6bc5f6e3205479f8b872ba603ea2b5c.png" width="305"/></p>
+<p></p>
+<p><img alt="" height="224" src="image\25d4caf46ed349f181e3348ad1314af4.png" width="776"/></p>
+<p></p>
+<p>分别在，服务和客户端输入Server、Client等文字，如上图所示。So far so good.</p>
+<p></p>
+<h1> 第二步：使用c# 里打开串口读写</h1>
+<h2>1、引用串口类</h2>
+<p>C#有一个封装良好的串口类 System.IO.Ports.SerialPort;</p>
+<p>它的关键参数有 串口号，波特率，数据位长，是否校验，低速设备习惯上的都用“9600,n,8,1”，至于串口编号，则用设备管理器观察一下串口，一般台式机会有一个COM1，使用U转串的话，则串口号有可能随插口不同而变化，可以用通讯超时自动查找策略自动配置。</p>
+<p>这里采用协议帧格式，FIFO读取模式<br/>  将下列串口操作代码复制同一个文件里，新建的命名空间 namespace SerialPortHere 。      </p>
+<p>using Fleck;<br/> using System;<br/> using System.Collections.Generic;<br/> using System.Linq;<br/> using System.IO.Ports;</p>
+<p>using System.Text;<br/> using System.Threading.Tasks;<br/> using System.Threading;<br/> namespace SerialPortHere<br/> {<!-- --></p>
+<p>    partial class mySerial<br/>     {<!-- --><br/>         public string portName = "COM1";//串口名<br/>         public int baudRate = 9600;//波特率<br/>         public Parity parity = Parity.None;//效验位<br/>         public int dataBits = 8;//数据位<br/>         public StopBits stopBits = StopBits.One;//停止位<br/>         SerialPort sp = null;<br/>         Thread dataReceiveThread;</p>
+<p>        //发送的消息<br/>         string message = "";<br/>         public List&lt;byte&gt; listReceive = new List&lt;byte&gt;();<br/>         char[] strchar = new char[100];//接收的字符信息转换为字符数组信息<br/>         string str;<br/>         //接收的数据<br/>         public int btButton1, btButton2, swSwitch1, swSwitch2, adAd1;</p>
+<p>        public bool serialChaned = false;</p>
+<p>        public void Start()<br/>         {<!-- --><br/>             OpenPort();<br/>             dataReceiveThread = new Thread(new ThreadStart(DataReceiveFunction));<br/>             dataReceiveThread.Start();<br/>         }<br/>         void Update()<br/>         {<!-- --></p>
+<p>        }<br/>         public void OpenPort()<br/>         {<!-- --><br/>             //创建串口<br/>             sp = new SerialPort(portName, baudRate, parity, dataBits, stopBits);<br/>             sp.ReadTimeout = 400;<br/>             try<br/>             {<!-- --><br/>                 sp.Open();<br/>             }<br/>             catch (Exception ex)<br/>             {<!-- --><br/>                 Logger(ex.Message);<br/>             }<br/>         }</p>
+<p>        private void Logger(string message)<br/>         {<!-- --><br/>             throw new NotImplementedException();<br/>         }</p>
+<p>        void OnApplicationQuit()<br/>         {<!-- --><br/>             ClosePort();<br/>         }<br/>         public void ClosePort()<br/>         {<!-- --><br/>             try<br/>             {<!-- --><br/>                 sp.Close();<br/>                 dataReceiveThread.Abort();<br/>             }<br/>             catch (Exception ex)<br/>             {<!-- --><br/>                 Logger(ex.Message);</p>
+<p>            }<br/>         }</p>
+<p>        /// 打印接收的信息<br/>         /// &lt;/summary&gt;<br/>         void PrintData()<br/>         {<!-- --><br/>             for (int i = 0; i &lt; listReceive.Count; i++)<br/>             {<!-- --><br/>                 strchar[i] = (char)(listReceive[i]);<br/>                 str = new string(strchar);<br/>             }<br/>             Logger(str);<br/>         }<br/>         //<br/>         void DataReceiveFunction()<br/>         {<!-- --><br/>             //#region 按单个字节发送处理信息，不能接收中文<br/>             //while (sp != null &amp;&amp; sp.IsOpen)<br/>             //{<!-- --><br/>             //    Thread.Sleep(1);<br/>             //    try<br/>             //    {<!-- --><br/>             //        byte addr = Convert.ToByte(sp.ReadByte());<br/>             //        sp.DiscardInBuffer();<br/>             //        listReceive.Add(addr);<br/>             //        PrintData();<br/>             //    }<br/>             //    catch<br/>             //    {<!-- --><br/>             //        //listReceive.Clear();<br/>             //    }<br/>             //}<br/>             //#endregion</p>
+<p><br/>             // 按字节数组发送处理信息，信息缺失<br/>             byte[] buffer = new byte[1024];<br/>             int bytes = 0;<br/>             byte[] CommandBuffer = new byte[50];//存储串口命令，其中10为串口数据帧长度，根据协议调整<br/>             byte[] CommandBufferRevert = new byte[50];<br/>             int i, j, CommandLength = 6;</p>
+<p><br/>             while (true)<br/>             {<!-- --><br/>                 if (sp != null &amp;&amp; sp.IsOpen)<br/>                 {<!-- --><br/>                     try<br/>                     {<!-- --><br/>                         bytes = sp.Read(buffer, 0, buffer.Length);//接收字节<br/>                         if (bytes == 0)<br/>                         {<!-- --><br/>                             continue;<br/>                         }<br/>                         else<br/>                         {<!-- --><br/>                             //Console.WriteLine("Get:"+ buffer+"" );//监控串口输入<br/>                             //string strbytes = Encoding.Default.GetString(buffer);<br/>                             //Logger(strbytes);<br/>                             //Debug.Log(strbytes);</p>
+<p>                            for (j = 0; j &lt; bytes; j++)<br/>                             {<!-- --><br/>                                 for (i = 0; i &lt; CommandLength - 1; i++) CommandBuffer[i] = CommandBuffer[i + 1]; //FIFO 向左移动一个位置<br/>                                 CommandBuffer[CommandLength - 1] = buffer[j];   //填充新的数据<br/>                                 //消息帧格式0xAA bs adH AdL C3 3C<br/>                                 if (CommandBuffer[0] == 0xAA &amp;&amp; CommandBuffer[CommandLength - 1] == 0x3C)//收到一帧数据，开始解析命令<br/>                                 {<!-- --></p>
+<p><br/>                                     if ((CommandBuffer[1] &amp; 0x10) != 0) btButton1 = 1;//按钮1<br/>                                     else btButton1 = 0;</p>
+<p>                                    if ((CommandBuffer[1] &amp; 0x40) != 0) btButton2 = 1;//按钮2<br/>                                     else btButton2 = 0;<br/>                                     //......若干 位 开关量 </p>
+<p>                                    if ((CommandBuffer[1] &amp; 0x02) != 0) swSwitch1 = 1;//钮子开关1<br/>                                     else swSwitch1 = 0;<br/>                                     if ((CommandBuffer[1] &amp; 0x01) != 0) swSwitch2 = 1;//钮子开关2<br/>                                     else swSwitch1 = 0;</p>
+<p>                                    //若干个模拟量 unsigned short...                                   <br/>                                     CommandBufferRevert[2] = CommandBuffer[3];//下位机上传数据高字节在前Big，PC机处理低字节在前little，所以要交换位置<br/>                                     CommandBufferRevert[3] = CommandBuffer[2];</p>
+<p>                                    adAd1 = BitConverter.ToInt16(CommandBufferRevert, 2);//</p>
+<p><br/>                                     //CRC 校验暂时不用，后期换成异或校验和的方式<br/>                                     Console.WriteLine("Bt1:" + btButton1 + " Bt2:" + btButton2 + " Sw1:" + swSwitch1 + " Sw2:" + swSwitch2 + " Ad1:" + adAd1 + "");</p>
+<p>serialChaned = true;</p>
+<p>                                }</p>
+<p><br/>                             }<br/>                             //for (i = 0; i &lt; bytes; i++) buffer[i] = 0;//简单清零策略。更好的是循环队列或者FIFO</p>
+<p><br/>                             //Debug.Log("SerialSpeedMoveV "+SerialSpeedMoveV);</p>
+<p>                        }<br/>                     }<br/>                     catch (Exception ex)<br/>                     {<!-- --><br/>                         if (ex.GetType() != typeof(ThreadAbortException))<br/>                         {<!-- --><br/>                         }<br/>                     }<br/>                 }<br/>                 Thread.Sleep(10);<br/>             }</p>
+<p>        }<br/>         //发送数据<br/>         public void WriteData(string dataStr)<br/>         {<!-- --><br/>             if (sp.IsOpen)<br/>             {<!-- --><br/>                 sp.Write(dataStr);<br/>             }<br/>         }<br/>     }</p>
+<p>}</p>
+<h2>2、在主程序里创建串口对象</h2>
+<p> //下面是webSocket服务器主程序<br/>         static void Main(string[] args)<br/>         {<!-- --><br/>             SerialPortHere.mySerial _myserial1 = new SerialPortHere.mySerial();<br/>            <br/>             _myserial1.Start();//创建串口对象并启动<br/>  </p>
+<h2>3、运行串口调试程序和c#服务器程序</h2>
+<p>      这里使用了虚拟串口工具，生成成对串口 com1&lt;--&gt; com5</p>
+<p>     其中COM1在机器上是物理存在的。当然完全虚拟也可以，比如COM2-》COM3.</p>
+<p>在串口调试助手上按照自定义的串口通讯协议发送 AA 01 10 01 C3 3C, C#服务器程序应该本地打印出来，如图所示。这就快成功了。</p>
+<p><img alt="" height="159" src="image\c2679b83e72b4800a4a5bcac104cdac5.png" width="383"/></p>
+<p></p>
+<p><img alt="" height="433" src="image\be565528ae384d61b5d78d24c13135f1.png" width="546"/></p>
+<p></p>
+<p><img alt="" height="354" src="image\9acbee0a15234efe8dc9f11a19fbdb13.png" width="769"/></p>
+<p></p>
+<p></p>
+<p></p>
+<h1>第三步：将串口数据转发到web端</h1>
+<p>既然c#程序可以读取串口数据，也可以读取按键的输入，那么，串口数据转发顺理成章了。</p>
+<p> 将服务主程序的死循环改写一下，主要实现按键提示，不按键一直循环。</p>
+<p>当有串口数据变化时，输出到网口</p>
+<p><br/>        </p>
+<p>//下面是webSocket服务器主程序<br/>         static void Main(string[] args)<br/>         {<!-- --><br/>             SerialPortHere.mySerial _myserial1 = new SerialPortHere.mySerial();<br/>            <br/>             _myserial1.Start();//创建串口对象并启动<br/>            <br/>             var allScokets = new List&lt;IWebSocketConnection&gt;();<br/>             var server = new WebSocketServer("ws://127.0.0.1:9898");    //创建webscoket服务端实例<br/>             server.Start(scoket =&gt; {<!-- --><br/>                 scoket.OnOpen = () =&gt;<br/>                 {<!-- --><br/>                     Console.WriteLine("Open");<br/>                     allScokets.Add(scoket);<br/>                 };<br/>                 scoket.OnClose = () =&gt;<br/>                 {<!-- --><br/>                     Console.WriteLine("Close");<br/>                     allScokets.Remove(scoket);<br/>                 };<br/>                 scoket.OnMessage = message =&gt; {<!-- --><br/>                     Console.WriteLine(message);<br/>                     allScokets.ToList().ForEach(s =&gt; s.Send(message));<br/>                 };<br/>             });</p>
+<p><br/>             Console.WriteLine("Press ESC to exit...");//提示ESC 退出</p>
+<p>           <br/>             while (true)<br/>             {<!-- --><br/>                 ConsoleKey InputKey;<br/>                 //若有键按下，且是 ESC 键，则退出循环<br/>                 if (Console.KeyAvailable)<br/>                 {<!-- --><br/>                     InputKey = Console.ReadKey(true).Key;<br/>                     if (InputKey == ConsoleKey.Escape)<br/>                     {<!-- --><br/>                         _myserial1.ClosePort();<br/>                         break;<br/>                     }<br/>                     else<br/>                         foreach (var socket in allScokets.ToList())<br/>                         {<!-- --><br/>                             socket.Send("服务端：" + InputKey);<br/>                         }</p>
+<p>                }</p>
+<p>                if (_myserial1.serialChaned)<br/>                 {<!-- --><br/>                    </p>
+<p>                    foreach (var socket in allScokets.ToList())<br/>                     {<!-- --><br/>                         socket.Send("服务端：button1: " + _myserial1.btButton1);<br/>                         socket.Send("服务端：button2: " + _myserial1.btButton2);<br/>                         socket.Send("服务端：switch1: " + _myserial1.swSwitch1);<br/>                         socket.Send("服务端：switch2: " + _myserial1.swSwitch2);<br/>                         socket.Send("服务端：ADC1: " + _myserial1.adAd1);<br/>                     }<br/>                     _myserial1.serialChaned = false;</p>
+<p>                }                             </p>
+<p>                //input = Console.ReadLine();<br/>               <br/>             }</p>
+<p>        } </p>
+<p></p>
+<p>运行服务器程序，刷新网页 index.html</p>
+<p><img alt="" height="259" src="image\d3c035bca86b457aaec4d9fee40ed175.png" width="275"/></p>
+<p>当服务器获取整帧数据时，上传到网页端。当ESC按键可以退出服务器程序。</p>
+<p>对了，退出前别忘了把串口关掉：</p>
+<p> if (InputKey == ConsoleKey.Escape)<br/>                     {<!-- --><br/>                         _myserial1.ClosePort();<br/>                         break;<br/>                     }</p>
+<p>还有，服务器起来后，需要刷新网页，先后顺序不能错。</p>
+<h1>第四步：移植到Cocos creator网页游戏场景</h1>
+<p>Cocos Creator  3.4.2</p>
+<p>建立一个场景，随便放一个组件，比如button1</p>
+<p>建立一个typescrpit文件，命名为WebSocketSerial.js</p>
+<p>将该文件挂在button1上</p>
+<p>然后用下列文本替换原文件</p>
+<p>import { _decorator, Component, Node } from 'cc';</p>
+<p>const { ccclass, property } = _decorator;</p>
+<p></p>
+<p>/**</p>
+<p> * Predefined variables</p>
+<p> * Name = WebSocketSerial</p>
+<p> * DateTime = Thu Apr 28 2022 20:19:03 GMT+0800 (中国标准时间)</p>
+<p> * Author = liuzhongren81</p>
+<p> * FileBasename = WebSocketSerial.ts</p>
+<p> * FileBasenameNoExtension = WebSocketSerial</p>
+<p> * URL = db://assets/Scripts/WebSocketSerial.ts</p>
+<p> * ManualUrl = https://docs.cocos.com/creator/3.4/manual/zh/</p>
+<p> *</p>
+<p> */</p>
+<p></p>
+<p>@ccclass('WebSocketSerial')</p>
+<p>export class WebSocketSerial extends Component {<!-- --></p>
+<p>    // [1]</p>
+<p>    // dummy = '';</p>
+<p>    ws= new WebSocket("ws://localhost:9898/")</p>
+<p>   </p>
+<p></p>
+<p>    // [2]</p>
+<p>    // @property</p>
+<p>    // serializableDummy = 0;</p>
+<p></p>
+<p>   </p>
+<p></p>
+<p>    // serializableDummy = 0;</p>
+<p>       </p>
+<p></p>
+<p>    //let ws= new WebSocket("ws://localhost:9898/");</p>
+<p>    start () {<!-- --></p>
+<p>        //let self =this;</p>
+<p>        //let ws= new WebSocket("ws://localhost:9898/")</p>
+<p>        this.ws.onopen=function(enent){<!-- --></p>
+<p>            console.log("连接成功")</p>
+<p>        }        </p>
+<p>        // [3]</p>
+<p>    }</p>
+<p></p>
+<p>   </p>
+<p></p>
+<p>     update (deltaTime: number) {<!-- --></p>
+<p></p>
+<p>        this.ws.onmessage=function(enent)</p>
+<p>        {<!-- --></p>
+<p>            console.log("Msg:"+enent.data);</p>
+<p>            console.log("get message:"+enent.data );</p>
+<p>           </p>
+<p>        }</p>
+<p></p>
+<p>        this.ws.οnerrοr=function(enent)</p>
+<p>        {<!-- --></p>
+<p>            console.log("Send text fired an error");</p>
+<p>        }</p>
+<p>        this.ws.onclose=function(enent)</p>
+<p>        {<!-- --></p>
+<p>            console.log("WebSocket closed");</p>
+<p>        }</p>
+<p></p>
+<p>        /*  这个超时处理总报错，原因未知</p>
+<p>        setTimeout(function(){<!-- --></p>
+<p>            if(this.ws.readyState==WebSocket.OPEN){<!-- --></p>
+<p>                console.log("WebSocket start send message");</p>
+<p>            }</p>
+<p>            else{<!-- --></p>
+<p>                console.log("WebSocket instance wasn't ready");</p>
+<p>            }</p>
+<p>        },</p>
+<p>        3000</p>
+<p>        );</p>
+<p>        */   </p>
+<p>     }</p>
+<p>}</p>
+<p>网页预览场景，打开调试功能：</p>
+<p>哇，串口数据已经传到游戏中啦！</p>
+<p><img alt="" height="786" src="image\58cc81760137445abc13da32bb681355.png" width="1200"/></p>
+<p></p>
+<p>一路顺风！</p>
+<p></p>
+<p></p>
+</div>
+</div>

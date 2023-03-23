@@ -1,0 +1,136 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="Spark_SQL_0"></a>Spark SQL简介</h2>
+<h4><a id="Shark_2"></a>一、从Shark说起</h4>
+<p><strong>1</strong>、在这之前我们要先理解Hive的工作原理：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b8f68cabe1f44e34b928699bf82e5cdc.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>Hive是一个基于Hadoop的数据仓库工具，提供了类似于关系数据库SQL的查询语言——HiveSQL，用户可以通过HiveSQL语句快速实现简单的MapReduce统计，Hive自身可以自动将HiveSQL语句快速转换成MapReduce任务进行运行。</p>
+<p><strong>2</strong>、Shark提供了类似于Hive的功能，与Hive不同的是，Shark把SQL语句转换成Spark作业，而不是MapReduce作业。</p>
+<p><em><strong>可以近似地认为：Shark仅将物理执行计划从MapReduce作业替换成了Spark作业，也就是通过Hive的HiveSQL解析功能，把HiveSQL翻译成Spark上的RDD操作。</strong></em></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a85f679fba9f4f95ae9cd6a58445b282.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<blockquote>
+<p><strong>Shark的设计导致了两个问题</strong>：<br/> 一、是执行计划优化完全依赖于Hive，不方便添加新的优化策略。</p>
+<p>二、是因为Spark是线程级并行，而MapReduce是进程级并行，因此，Spark在兼容Hive的实现上存在线程安全问题，导致Shark不得不使用另外一套独立维护的打了补丁的Hive源码分支。</p>
+</blockquote>
+<p><strong>3</strong>、Spark SQL架构如下：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/14072c01a4734c15b2e6e19276ebd569.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>Spark SQL在Hive兼容层面仅依赖HiveQL解析、Hive元数据，<strong>也就是说，从HQL被解析成抽象语法树（AST）起，就全部由Spark SQL接管了。Spark SQL执行计划生成和优化都由Catalyst（函数式关系查询优化框架）负责。</strong></p>
+<p><strong>Spark SQL增加了DataFrame（即带有Schema信息的RDD）</strong>，使用户可以在Spark SQL中执行SQL语句，数据既可以来自RDD，也可以是Hive、HDFS、Cassandra等外部数据源，还可以是JSON格式的数据。<br/> Spark SQL目前支持Scala、Java、Python三种语言，支持SQL-92规范。</p>
+<h4><a id="DataFrame_34"></a>二、DataFrame概述</h4>
+<p><strong>1</strong>、DataFrame的推出，让Spark具备了处理大规模结构化数据的能力，不仅比原有的RDD转化方式更加简单易用，而且获得了更高的计算性能。<br/> Spark能够轻松实现从MySQL到DataFrame的转化，并且支持SQL查询。</p>
+<p><strong>RDD是分布式的 Java对象的集合，但是，对象内部结构对于RDD而言却是不可知的。</strong><br/> <strong>DataFrame是一种以RDD为基础的分布式数据集，提供了详细的结构信息。</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f725e7ddf8e8418dab306919b51d0e91.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_18,color_FFFFFF,t_70,g_se,x_16#pic_center"/><br/> 从Spark2.0以上版本开始，Spark使用全新的SparkSession接口替代Spark1.6中的SQLContext及HiveContext接口来实现其对数据加载、转换、处理等功能。SparkSession实现了SQLContext及HiveContext所有功能。</p>
+<p><strong>SparkSession支持从不同的数据源加载数据，并把数据转换DataFrame，并且支持把DataFrame转换成SQLContext自身中的表，然后使用SQL语句来操作数据</strong>。SparkSession亦提供了HiveQL以及其他依赖于Hive的功能的支持。</p>
+<p>在编写独立应用程序时，可以通过如下语句创建一个SparkSession对象</p>
+<pre><code class="prism language-python"><span class="token keyword">from</span> pyspark <span class="token keyword">import</span> SparkContext<span class="token punctuation">,</span>SparkConf
+<span class="token keyword">from</span> pyspark<span class="token punctuation">.</span>sql <span class="token keyword">import</span> SparkSession
+spark <span class="token operator">=</span> SparkSession<span class="token punctuation">.</span>builder<span class="token punctuation">.</span>config<span class="token punctuation">(</span>conf <span class="token operator">=</span> SparkConf<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span>getOrCreate<span class="token punctuation">(</span><span class="token punctuation">)</span>
+</code></pre>
+<p><strong>实际上，在启动进入pyspark以后，pyspark就默认提供了一个SparkContext对象（名称为sc）和一个SparkSession对象（名称为spark）</strong></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ad522fa0f42540beaaad809ed655edcc.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p><strong>2</strong>、从不同类型的文件中加载数据创建DataFrame</p>
+<pre><code class="prism language-python"><span class="token comment">#从不同类型的文件中加载数据创建DataFrame</span>
+df1 <span class="token operator">=</span> spark<span class="token punctuation">.</span>read<span class="token punctuation">.</span>text<span class="token punctuation">(</span><span class="token string">"file:///home/hadoop/program1/people.txt"</span><span class="token punctuation">)</span>
+df1<span class="token punctuation">.</span>show<span class="token punctuation">(</span><span class="token punctuation">)</span>
+df2 <span class="token operator">=</span> spark<span class="token punctuation">.</span>read<span class="token punctuation">.</span>json<span class="token punctuation">(</span><span class="token string">"file:///home/hadoop/program1/people.json"</span><span class="token punctuation">)</span>
+df2<span class="token punctuation">.</span>show<span class="token punctuation">(</span><span class="token punctuation">)</span>
+df1_1 <span class="token operator">=</span> spark<span class="token punctuation">.</span>read<span class="token punctuation">.</span><span class="token builtin">format</span><span class="token punctuation">(</span><span class="token string">"text"</span><span class="token punctuation">)</span><span class="token punctuation">.</span>load<span class="token punctuation">(</span><span class="token string">"file:///home/hadoop/program1/people.txt"</span><span class="token punctuation">)</span>
+df1_1<span class="token punctuation">.</span>show<span class="token punctuation">(</span><span class="token punctuation">)</span>
+df2_1 <span class="token operator">=</span> spark<span class="token punctuation">.</span>read<span class="token punctuation">.</span><span class="token builtin">format</span><span class="token punctuation">(</span><span class="token string">"json"</span><span class="token punctuation">)</span><span class="token punctuation">.</span>load<span class="token punctuation">(</span><span class="token string">"file:///home/hadoop/program1/people.json"</span><span class="token punctuation">)</span>
+df2_1<span class="token punctuation">.</span>show<span class="token punctuation">(</span><span class="token punctuation">)</span>
+</code></pre>
+<p>结果：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9fac9377e77d4e47b197dbea5cc1c430.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/><br/> <strong>3</strong>、DataFrame的保存</p>
+<pre><code class="prism language-python"><span class="token comment">#DataFrame的保存</span>
+<span class="token comment">#例：把上面名称为df1的文件保存到不同格式文件中</span>
+df1<span class="token punctuation">.</span>write<span class="token punctuation">.</span>text<span class="token punctuation">(</span><span class="token string">"df1.txt"</span><span class="token punctuation">)</span>
+df1<span class="token punctuation">.</span>write<span class="token punctuation">.</span>json<span class="token punctuation">(</span><span class="token string">"df1.json"</span><span class="token punctuation">)</span>
+df1<span class="token punctuation">.</span>write<span class="token punctuation">.</span><span class="token builtin">format</span><span class="token punctuation">(</span><span class="token string">"text"</span><span class="token punctuation">)</span><span class="token punctuation">.</span>save<span class="token punctuation">(</span><span class="token string">"df1.txt"</span><span class="token punctuation">)</span>
+df1<span class="token punctuation">.</span>write<span class="token punctuation">.</span><span class="token builtin">format</span><span class="token punctuation">(</span><span class="token string">"json"</span><span class="token punctuation">)</span><span class="token punctuation">.</span>save<span class="token punctuation">(</span><span class="token string">"df1.json"</span><span class="token punctuation">)</span>
+df2<span class="token punctuation">.</span>select<span class="token punctuation">(</span><span class="token string">"name"</span><span class="token punctuation">,</span><span class="token string">"age"</span><span class="token punctuation">)</span><span class="token punctuation">.</span>write<span class="token punctuation">.</span><span class="token builtin">format</span><span class="token punctuation">(</span><span class="token string">"json"</span><span class="token punctuation">)</span><span class="token punctuation">.</span>save<span class="token punctuation">(</span><span class="token string">"file:///home/hadoop/program1/df2.json"</span><span class="token punctuation">)</span> <span class="token comment">#选取指定的列保存</span>
+</code></pre>
+<p><strong>另一种存储方式Parquet。详细见下面链接。</strong></p>
+<p><a href="http://t.csdn.cn/wQIZA">很详细的Parquet存储讲解</a></p>
+<p><strong>当把该数据保存到一个文本文件中会新生成一个名称为df1.json的目录（不是文件）和一个名称df1.txt的目录（不是文件）</strong></p>
+<p>如果再次读取json或text文件生成DataFrame，可以直接用这个目录名称，不需要使用part-00000-093d3250-a36a-4ca4-affc-5144b2a2759a-c000.txt文件（当然，使用这个文件也可以）。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c475610b4a504bc3a6277735c54dfbee.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h4><a id="DataFrame_103"></a>三、DataFrame的常用操作</h4>
+<blockquote>
+<ul><li>printSchema()</li></ul>
+<p>打印出DataFrame的模式（Schema）信息。</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1422cfab53104c5388acc04a9d6a4d36.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_19,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<blockquote>
+<ul><li>select()</li></ul>
+<p>从DataFrame中选取部分列的数据。</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f083b32c33da4875ab6da647c3e0ff73.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<blockquote>
+<ul><li>filter()</li></ul>
+<p>实现条件查询，找到满足条件要求的记录。</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3c523f1847bc41f7ba7aba892de399ce.png#pic_center"/></p>
+<blockquote>
+<ul><li>groupBy()</li></ul>
+<p>用于对记录进行分组。</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c26b8c579ca6451996626fa6e4ddc97c.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<blockquote>
+<ul><li>sort()</li></ul>
+<p>用于对记录进行排序。</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a4d4ac92ca074232abf8558c974ddbe7.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h4><a id="RDDDataFrame_144"></a>四、从RDD转换得到DataFrame</h4>
+<p>Spark提供了如下<em><strong>两种</strong></em>方法实现从RDD转换得到DataFrame</p>
+<p><strong>1.利用反射机制推断RDD模式</strong></p>
+<blockquote>
+<p>利用反射机制来推断包含特定类型对象的RDD的模式（Schema），适用于数据结构已知时的RDD转换。</p>
+</blockquote>
+<p>例：现在要把people.txt加载到内存中生成一个DataFrame，并查询其中的数据：</p>
+<pre><code class="prism language-python"><span class="token keyword">from</span> pyspark<span class="token punctuation">.</span>sql <span class="token keyword">import</span> Row
+people <span class="token operator">=</span> sc<span class="token punctuation">.</span>textFile<span class="token punctuation">(</span><span class="token string">"file:///home/hadoop/program1/people.txt"</span><span class="token punctuation">)</span>      <span class="token comment">#生成RDD文件</span>
+people1 <span class="token operator">=</span> people<span class="token punctuation">.</span><span class="token builtin">map</span><span class="token punctuation">(</span><span class="token keyword">lambda</span> x<span class="token punctuation">:</span>x<span class="token punctuation">.</span>split<span class="token punctuation">(</span><span class="token string">" "</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token builtin">map</span><span class="token punctuation">(</span><span class="token keyword">lambda</span> x<span class="token punctuation">:</span>Row<span class="token punctuation">(</span>name<span class="token operator">=</span>x<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span>age<span class="token operator">=</span>x<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span>   <span class="token comment">#得到新的RDD，每个元素都是Row对象</span>
+schemaPeople <span class="token operator">=</span> spark<span class="token punctuation">.</span>createDataFrame<span class="token punctuation">(</span>people1<span class="token punctuation">)</span>         <span class="token comment">#转换成DataFrame</span>
+schemaPeople<span class="token punctuation">.</span>createOrReplaceTempView<span class="token punctuation">(</span><span class="token string">"people"</span><span class="token punctuation">)</span>      <span class="token comment">#注册为临时表,临时表名字为people</span>
+personsDF <span class="token operator">=</span> spark<span class="token punctuation">.</span>sql<span class="token punctuation">(</span><span class="token string">"select name,age from people where age&gt;20"</span><span class="token punctuation">)</span>  <span class="token comment">#SQL语句查询</span>
+personsRDD <span class="token operator">=</span> personsDF<span class="token punctuation">.</span>rdd<span class="token punctuation">.</span><span class="token builtin">map</span><span class="token punctuation">(</span><span class="token keyword">lambda</span> x<span class="token punctuation">:</span><span class="token string">"Name: "</span><span class="token operator">+</span>x<span class="token punctuation">.</span>name<span class="token operator">+</span><span class="token string">","</span><span class="token operator">+</span><span class="token string">"Age "</span><span class="token operator">+</span>x<span class="token punctuation">.</span>age<span class="token punctuation">)</span>   <span class="token comment">#格式化输出</span>
+personsRDD<span class="token punctuation">.</span>collect<span class="token punctuation">(</span><span class="token punctuation">)</span>
+</code></pre>
+<p>结果：</p>
+<pre><code class="prism language-python"><span class="token punctuation">[</span><span class="token string">'Name: Michael,Age 40'</span><span class="token punctuation">,</span> <span class="token string">'Name: Andy,Age 30'</span><span class="token punctuation">]</span>
+</code></pre>
+<p><strong>2.使用编程方式定义RDD模式</strong></p>
+<blockquote>
+<p>使用编程接口构造一个模式（Schema），并将其应用在已知的RDD上，适用于数据结构未知时的RDD转换。</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/27697948ae1e4eb1a3c407feb596f25f.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5rex5aSc55qE54yrMjEz,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<pre><code class="prism language-python"><span class="token keyword">from</span> pyspark<span class="token punctuation">.</span>sql<span class="token punctuation">.</span>types <span class="token keyword">import</span> <span class="token operator">*</span>
+<span class="token keyword">from</span> pyspark<span class="token punctuation">.</span>sql <span class="token keyword">import</span> Row
+<span class="token comment">#下面生成“表头”</span>
+schemaString <span class="token operator">=</span> <span class="token string">"name age"</span>
+fields <span class="token operator">=</span> <span class="token punctuation">[</span>StructField<span class="token punctuation">(</span>field_name<span class="token punctuation">,</span> StringType<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token boolean">True</span><span class="token punctuation">)</span> <span class="token keyword">for</span> field_name <span class="token keyword">in</span> schemaString<span class="token punctuation">.</span>split<span class="token punctuation">(</span><span class="token string">" "</span><span class="token punctuation">)</span><span class="token punctuation">]</span>
+schema <span class="token operator">=</span> StructType<span class="token punctuation">(</span>fields<span class="token punctuation">)</span>
+<span class="token comment">#下面生成“表中的记录”</span>
+lines <span class="token operator">=</span> sc<span class="token punctuation">.</span>textFile<span class="token punctuation">(</span><span class="token string">"file:///home/hadoop/program1/people.txt"</span><span class="token punctuation">)</span>
+parts <span class="token operator">=</span> lines<span class="token punctuation">.</span><span class="token builtin">map</span><span class="token punctuation">(</span><span class="token keyword">lambda</span> x<span class="token punctuation">:</span> x<span class="token punctuation">.</span>split<span class="token punctuation">(</span><span class="token string">" "</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+people <span class="token operator">=</span> parts<span class="token punctuation">.</span><span class="token builtin">map</span><span class="token punctuation">(</span><span class="token keyword">lambda</span> x<span class="token punctuation">:</span> Row<span class="token punctuation">(</span>x<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span> x<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">.</span>strip<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+<span class="token comment">#下面把“表头”和“表中的记录”拼装在一起</span>
+schemaPeople <span class="token operator">=</span> spark<span class="token punctuation">.</span>createDataFrame<span class="token punctuation">(</span>people<span class="token punctuation">,</span> schema<span class="token punctuation">)</span>
+schemaPeople<span class="token punctuation">.</span>createOrReplaceTempView<span class="token punctuation">(</span><span class="token string">"people"</span><span class="token punctuation">)</span>
+results <span class="token operator">=</span> spark<span class="token punctuation">.</span>sql<span class="token punctuation">(</span><span class="token string">"select name,age from people"</span><span class="token punctuation">)</span>
+results<span class="token punctuation">.</span>show<span class="token punctuation">(</span><span class="token punctuation">)</span>
+</code></pre>
+<p>结果</p>
+<pre><code class="prism language-python"><span class="token operator">+</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">+</span>
+<span class="token operator">|</span>   name<span class="token operator">|</span>age<span class="token operator">|</span>
+<span class="token operator">+</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">+</span>
+<span class="token operator">|</span>Michael<span class="token operator">|</span> <span class="token number">40</span><span class="token operator">|</span>
+<span class="token operator">|</span>   Andy<span class="token operator">|</span> <span class="token number">30</span><span class="token operator">|</span>
+<span class="token operator">|</span> Justin<span class="token operator">|</span> <span class="token number">19</span><span class="token operator">|</span>
+<span class="token operator">+</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">+</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">-</span><span class="token operator">+</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

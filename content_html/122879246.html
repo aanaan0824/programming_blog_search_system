@@ -1,0 +1,81 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>今天同事反馈，阿里打电话说“网站要变更不然今天就关停。”</p>
+<p>这个事情去年年底就说了。不知道是什么原因。我们来解决这个问题。下面以testweb.com域名为例来讲讲。</p>
+<p>阿里短信内容如下：</p>
+<p><strong>testweb.com域名网站内容与备案信息不符，请修改网站内容，保持与备案主体一致，符合最新备案规则。testweb.com网站下方未显示正确备案编号或者编号未指向工信部，请尽快添加，可参考操作指南。https://help.aliyun.com/knowledge_detail/137270.html</strong></p>
+<p>也是巧了，同事把这个短信发到我的微信，我就点开那个域名，确实是跳转到了我们公司的另外一个网站去了。这就很明显了，我跟同事说不要着急，这个问题简单，它不是备案问题，技术上可以轻松处理。做个域名跳转就OK，就是网上说的服务器做301跳转，301重定向，域名重定向。</p>
+<p>那么nginx下的一级域名跳转到二级域名的配置，要怎么操作呢？我们分两步搞定。</p>
+<p>第一步进入nginx虚拟主机配置目录，编辑相应站点的配置文件<br/> [root@xxxxxxxxxxxxxxxxxxxxxxx sbin]# cd /usr/local/nginx/conf/vhost/<br/> [root@xxxxxxxxxxxxxxxxxxxxxxx vhost]# vi testweb.conf</p>
+<p>在server里面添加如下代码即可：</p>
+<p>if ($host = 'testweb.com' ) {<!-- --><br/>                 rewrite ^/(.*)$ http://www.testweb.com/$1 permanent;<br/> }</p>
+<p>完整的如下</p>
+<pre><code>server
+    {
+        listen 80;
+        server_name  www.testweb.com testweb.com;
+        index index.html index.htm index.php;
+        root /data/www/testweb/public;
+
+        location / {
+          index  index.php index.html index.htm;
+          #如果请求既不是一个文件，也不是一个目录，则执行一下重写规则
+          if (!-e $request_filename)
+          {
+             #地址作为将参数rewrite到index.php上。
+             rewrite ^/(.*)$ /index.php?s=$1;
+             #若是子目录则使用下面这句，将subdir改成目录名称即可。
+             #rewrite ^/subdir/(.*)$ /subdir/index.php?s=$1;
+          }
+        }
+        #这里就是nginx下的一级域名跳转到二级域名的配置，效果是访问testweb.com跳转到www.testweb.com
+        if ($host = 'testweb.com' ) {
+                rewrite ^/(.*)$ http://www.testweb.com/$1 permanent;
+        }
+        location /api/ {
+                index  index.php index.html index.htm;
+                #如果请求既不是一个文件，也不是一个目录，则执行一下重写规则
+                if (!-e $request_filename)
+                {
+                #若是子目录则使用下面这句，将subdir改成目录名称即可。
+                rewrite ^/api/(.*)$ /api.php?s=$1;
+                 }
+        }
+        location ~ \.php(.*)$ {
+            fastcgi_pass   unix:/usr/local/php/var/run/php-cgi.sock;
+            fastcgi_index  index.php;
+            #fastcgi_split_path_info ^(.+\.php)(.*)$;
+            #fastcgi_param   PATH_INFO $fastcgi_path_info;
+            fastcgi_param  SCRIPT_FILENAME   $document_root$fastcgi_script_name;
+            include        fastcgi_params;
+        }
+
+        location ~ .*\.(gif|jpg|jpeg|png|bmp|swf|json|swg)$
+        {
+            expires      30d;
+        }
+
+        location ~ .*\.(js|css)?$
+        {
+            expires      12h;
+        }
+
+        location ~ /.well-known {
+            allow all;
+        }
+
+        location ~ /\.
+        {
+            #deny all;
+        }
+
+        access_log  /data/www/nginx_log/testweb.log access;
+}</code></pre>
+<p>编辑完按esc，再按shift+：号，输入wq保存退出。</p>
+<p>第二步重启nginx<br/> [root@xxx vhost]# cd /usr/local/nginx/sbin/<br/> [root@xxxxxxxxxxxxxxxxxxxxxxx sbin]# ./nginx -s reload</p>
+<p>到此nginx下的一级域名跳转到二级域名的配置就搞定了。</p>
+<p>刷新testweb.com看效果，可以看到已经跳转到了www.testweb.com。</p>
+<p>完工。</p>
+</div>
+</div>

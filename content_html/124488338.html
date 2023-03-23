@@ -1,0 +1,168 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#_4">前言</a></li><li><a href="#_10">一、缩短数据库操作耗时</a></li><li><ul><li><a href="#1localhost127001_72">优化利器1：数据库连接不要使用localhost，改成127.0.0.1</a></li></ul>
+</li><li><a href="#php_138">二、php性能优化</a></li><li><ul><li><a href="#_162">总结</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<hr/>
+<h1><a id="_4"></a>前言</h1>
+<p>中医讲对症下药，我们也需要定位到哪个位置消耗了多长时间，具体到每个位置去进行优化，这样我们就需要知道请求某个接口，每个流程所需要的时间，这样一般都是由日志来查看的。</p>
+<hr/>
+<h1><a id="_10"></a>一、缩短数据库操作耗时</h1>
+<p>本文以TP5框架为例，TP5开启日志的情况，会很详细的记录程序运行所使用的时间，来看下一个很常见的请求接口日志：</p>
+<pre><code>[运行时间：1.207150s] [吞吐率：0.83req/s] [内存消耗：2,881.48kb] [文件加载：68]
+[ info ] [ LANG ] D:\webroot\www\thinkphp\lang\zh-cn.php
+[ info ] [ ROUTE ] array (
+  'type' =&gt; 'module',
+  'module' =&gt; 
+  array (
+    0 =&gt; 'admin',
+    1 =&gt; 'Order',
+    2 =&gt; 'getConfirmOrder',
+  ),
+)
+[ info ] [ HEADER ] array (
+  'content-type' =&gt; '',
+  'content-length' =&gt; '0',
+  'x-original-url' =&gt; '/admin/Order/getConfirmOrder',
+  'origin' =&gt; 'http://www.***.com',
+  'x-requested-with' =&gt; 'XMLHttpRequest',
+  'user-agent' =&gt; 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.84 Safari/537.36',
+  'referer' =&gt; 'http://www.***.com/admin/baby/index.html',
+  'host' =&gt; 'www.***.com',
+  'cookie' =&gt; 'security_session_verify=d66a8d5d0b34e8c6431d6bc554fbf24c; PHPSESSID=c2nph8nll013k9cu95l3a6d8h1',
+  'accept-language' =&gt; 'zh-CN,zh;q=0.9',
+  'accept-encoding' =&gt; 'gzip, deflate',
+  'accept' =&gt; 'application/json, text/javascript, */*; q=0.01',
+  'connection' =&gt; 'keep-alive',
+)
+[ info ] [ PARAM ] array (
+)
+[ info ] [ SESSION ] INIT array (
+  'prefix' =&gt; 'admin',
+  'type' =&gt; '',
+  'auto_start' =&gt; true,
+)
+[ info ] [ DB ] INIT mysql
+[ info ] [ RUN ] app\admin\controller\Order-&gt;getConfirmOrder[ D:\webroot\www.***.com\application\admin\controller\Order.php ]
+[ info ] [ LOG ] INIT File
+[ sql ] [ DB ] CONNECT:[ UseTime:1.056759s ] mysql:host=localhost;port=3306;dbname=***;charset=utf8
+[ sql ] [ SQL ] SHOW COLUMNS FROM `gmy_kanban` [ RunTime:0.011518s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` ORDER BY `kan_id` DESC [ RunTime:0.000676s ]
+[ sql ] [ SQL ] SHOW COLUMNS FROM `gmy_auth` [ RunTime:0.009073s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_auth` [ RunTime:0.002334s ]
+[ sql ] [ SQL ] SHOW COLUMNS FROM `gmy_admin` [ RunTime:0.010282s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_admin` WHERE  `user_name` = 'admin99sj' LIMIT 1 [ RunTime:0.001304s ]
+[ sql ] [ SQL ] SHOW COLUMNS FROM `gmy_role` [ RunTime:0.010645s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_role` WHERE  `role_id` IN (91) LIMIT 1 [ RunTime:0.000684s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_role` WHERE  `role_id` IN (196) LIMIT 1 [ RunTime:0.000588s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/yingxiao' LIMIT 1 [ RunTime:0.000677s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/xingzheng' LIMIT 1 [ RunTime:0.000469s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/kefu' LIMIT 1 [ RunTime:0.000447s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/yanguangshi' LIMIT 1 [ RunTime:0.000519s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/shichang' LIMIT 1 [ RunTime:0.000443s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/wangluo' LIMIT 1 [ RunTime:0.000463s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/table' LIMIT 1 [ RunTime:0.000506s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_auth` WHERE  `auth_des` LIKE '%order/getconfirmorder%'  AND (  fen_id&lt;&gt;9 ) LIMIT 1 [ RunTime:0.001173s ]
+</code></pre>
+<p>从运行时间来看1.2秒左右，1秒左右的时间对于人的正常感应来说已经能够感知到慢了，往下看，我们会看到具体的每个流程所使用的时间，首先是数据库连接时间：1.056759s，接下来是一些数据表查询所用的时间都很少，都在1毫秒左右，可以忽略不计。那么这里最主要的症结就是连接时间，为什么数据库连接要这么久呢？来看一下连接的参数：</p>
+<pre><code>mysql:host=localhost;port=3306;dbname=***;charset=utf8。
+</code></pre>
+<h2><a id="1localhost127001_72"></a>优化利器1：数据库连接不要使用localhost，改成127.0.0.1</h2>
+<p>我们试下把数据库主机host改成127.0.0.1，再来测试下，看日志</p>
+<pre><code>[运行时间：0.115078s] [吞吐率：8.69req/s] [内存消耗：481.07kb] [文件加载：66]
+[ info ] [ LANG ] D:\webroot\www.***.com\thinkphp\lang\zh-cn.php
+[ info ] [ ROUTE ] array (
+  'type' =&gt; 'module',
+  'module' =&gt; 
+  array (
+    0 =&gt; 'admin',
+    1 =&gt; 'order',
+    2 =&gt; 'getConfirmOrder',
+  ),
+)
+[ info ] [ HEADER ] array (
+  'content-type' =&gt; '',
+  'content-length' =&gt; '0',
+  'x-original-url' =&gt; '/admin/order/getConfirmOrder',
+  'sec-fetch-dest' =&gt; 'document',
+  'sec-fetch-user' =&gt; '?1',
+  'sec-fetch-mode' =&gt; 'navigate',
+  'sec-fetch-site' =&gt; 'none',
+  'upgrade-insecure-requests' =&gt; '1',
+  'sec-ch-ua-platform' =&gt; '"Android"',
+  'sec-ch-ua-mobile' =&gt; '?1',
+  'sec-ch-ua' =&gt; '" Not A;Brand";v="99", "Chromium";v="100", "Google Chrome";v="100"',
+  'user-agent' =&gt; 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Mobile Safari/537.36',
+  'host' =&gt; 'www.***.com',
+  'cookie' =&gt; 'security_session_verify=435345dacd7ada35e3d0ef60f48a169f; PHPSESSID=687tptp9lbd3aip2gph1uth450',
+  'accept-language' =&gt; 'zh-CN,zh;q=0.9',
+  'accept-encoding' =&gt; 'gzip, deflate, br',
+  'accept' =&gt; 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+  'connection' =&gt; 'keep-alive',
+  'cache-control' =&gt; 'max-age=0',
+)
+[ info ] [ PARAM ] array (
+)
+[ info ] [ SESSION ] INIT array (
+  'prefix' =&gt; 'admin',
+  'type' =&gt; '',
+  'auto_start' =&gt; true,
+)
+[ info ] [ DB ] INIT mysql
+[ info ] [ RUN ] app\admin\controller\Order-&gt;getConfirmOrder[ D:\webroot\www.***.com\application\admin\controller\Order.php ]
+[ info ] [ LOG ] INIT File
+[ sql ] [ DB ] CONNECT:[ UseTime:0.001759s ] mysql:host=127.0.0.1;port=3306;dbname=***;charset=utf8
+[ sql ] [ SQL ] SHOW COLUMNS FROM `gmy_kanban` [ RunTime:0.014265s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` ORDER BY `kan_id` DESC [ RunTime:0.000765s ]
+[ sql ] [ SQL ] SHOW COLUMNS FROM `gmy_auth` [ RunTime:0.009900s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_auth` [ RunTime:0.001970s ]
+[ sql ] [ SQL ] SHOW COLUMNS FROM `gmy_admin` [ RunTime:0.012493s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_admin` WHERE  `user_name` = 'admin99sj' LIMIT 1 [ RunTime:0.000990s ]
+[ sql ] [ SQL ] SHOW COLUMNS FROM `gmy_role` [ RunTime:0.008893s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_role` WHERE  `role_id` IN (91) LIMIT 1 [ RunTime:0.000611s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_role` WHERE  `role_id` IN (196) LIMIT 1 [ RunTime:0.000652s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/yingxiao' LIMIT 1 [ RunTime:0.000524s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/xingzheng' LIMIT 1 [ RunTime:0.000387s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/kefu' LIMIT 1 [ RunTime:0.000376s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/yanguangshi' LIMIT 1 [ RunTime:0.000338s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/shichang' LIMIT 1 [ RunTime:0.000346s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/wangluo' LIMIT 1 [ RunTime:0.000362s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_kanban` WHERE  `auth_des` = 'index/table' LIMIT 1 [ RunTime:0.000337s ]
+[ sql ] [ SQL ] SELECT * FROM `gmy_auth` WHERE  `auth_des` LIKE '%order/getconfirmorder%'  AND (  fen_id&lt;&gt;9 ) LIMIT 1 [ RunTime:0.000816s ]
+</code></pre>
+<p>再看运行时间只有0.11秒，大约快了10倍，我们看下具体哪里快了，看连接数据库的时间0.001759s，这比改之前快了几百倍！</p>
+<h1><a id="php_138"></a>二、php性能优化</h1>
+<p>接下来我们来看下php性能的优化，Opcache和JIT，JIT在我的实际项目中体验是，开启JIT可以大略缩短100ms的时间，也就是0.1秒，现在php8都说性能很好，但是如果你不开启JIT，那么性能是体会不到的。<br/> 我们来看下，php5.6下如何开启Opcache，php5.6版本默认是安装过Opcache扩展的，在ext下找到php_opcache.dll，php8是需要自己手动下载安装这个扩展的，具体方法需要你自己去百度，接下来就是php.ini配置了，这里不做深入的研究，只是把opcache跑起来，配置如下：</p>
+<pre><code>zend_extension = "D:\webroot\zzidcconf\php\php5.6\ext\php_opcache.dll"
+; Determines if Zend OPCache is enabled
+opcache.enable=1
+
+; Determines if Zend OPCache is enabled for the CLI version of PHP
+opcache.enable_cli=1
+
+; The OPcache shared memory storage size.
+opcache.memory_consumption=128
+
+; The amount of memory for interned strings in Mbytes.
+opcache.interned_strings_buffer=8
+
+; The maximum number of keys (scripts) in the OPcache hash table.
+; Only numbers between 200 and 100000 are allowed.
+opcache.max_accelerated_files=2000
+</code></pre>
+<p>把上边的配置项该开启的开启，该添加的添加，有的需要修改的修改下，然后重启服务器web环境，测试phpinfo，如果看到下图，则代表opcache启动成功。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/866f4463ab5e471a805d5bb56e8cb2e0.png#pic_center"/><br/> <a href="https://gateway.pinata.cloud/ipfs/QmSQvNFrmv1ATnWrwg7BueLDQeoSfAFP19KbSYX6QS5YAs">如果图片显示失败，请手动访问</a></p>
+<h2><a id="_162"></a>总结</h2>
+<p>本篇文章从两个方面谈了下如何提升接口响应速度，一个是数据库时间，一个是php自身的运行时间，不是特别复杂的点，如果你碰到了同样的情况，可以立马使用改善。最后，告诫自己和你，写代码的时候，一定要尽可能的一遍成，不要想着后期再来完善。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

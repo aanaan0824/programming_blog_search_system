@@ -1,0 +1,863 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h3><strong>一、宝塔安装Swoole环境</strong></h3>
+<p><img alt="" height="802" src="image\396dd29291b048128374620273bfcc17.png" width="1171"/></p>
+<h3>二、自定义安装swoole环境</h3>
+<pre><code>mkdir /src
+
+cd /src
+
+# 下载
+wget https://pecl.php.net/get/swoole-4.4.4.tgz
+
+# 解压
+
+tar zxf swoole-4.4.4.tgz
+
+# 编译安装扩展
+
+# 进入目录
+
+cd swoole-4.4.4 
+
+# 执行phpize命令，产生出configure可执行文件
+
+/usr/bin/phpize  
+
+# 进行配置
+
+./configure --with-php-config=/usr/bin/php-config   
+
+# 编译和安装
+
+make &amp;&amp; make install 
+
+vi /etc/php.ini
+
+复制如下代码
+
+extension=swoole.so
+
+放到你所打开或新建的文件中即可，无需重启任何服务
+
+# 查看扩展是否安装成功
+
+php -m|grep swoole</code></pre>
+<h3> 三、宝塔配置nginx反向代理</h3>
+<pre><code>upstream websocket{
+ hash $remote_addr consistent;
+ server 127.0.0.1:9501 weight=5 max_fails=3 fail_timeout=30s;
+}
+
+server {
+ listen 80;
+ server_name wss.51chow.com;
+ rewrite ^(.*)$ https://$host$1 permanent;
+}
+
+server
+{
+    listen 443 ssl;
+    server_name wss.51chow.com;
+    index index.php index.html index.htm default.php default.htm default.html;
+    root /www/wwwroot/swoole_1909a;
+    
+    ssl_certificate /www/server/keys/7248556_wss.51chow.com.pem;
+    ssl_certificate_key /www/server/keys/7248556_wss.51chow.com.key;
+    ssl_session_timeout 5m;
+    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE:ECDH:AES:HIGH:!NULL:!aNULL:!MD5:!ADH:!RC4;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_prefer_server_ciphers on;
+    ssl_verify_client off;
+   
+   location / {
+    	if (!-e $request_filename) {
+    	#一级目录
+    	rewrite ^(.*)$ /index.php?s=$1 last;
+    	break;
+    	}
+    	#wss配置
+    	client_max_body_size 100m;
+    	proxy_redirect off;
+    	proxy_set_header Host $host;# http请求的主机域名
+    	proxy_set_header X-Real-IP $remote_addr;# 远程真实IP地址
+    	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;#反向代理之后转发之前的IP地址
+    	proxy_read_timeout 604800s;#websocket心跳时间，默认是60s
+    	proxy_http_version 1.1;
+    	proxy_set_header Upgrade $http_upgrade;
+    	proxy_set_header Connection "Upgrade";
+    	
+    	proxy_pass http://websocket;#反向代理转发地址
+    }
+    #SSL-START SSL相关配置，请勿删除或修改下一行带注释的404规则
+    #error_page 404/404.html;
+    #SSL-END
+    
+    #ERROR-PAGE-START  错误页配置，可以注释、删除或修改
+    #error_page 404 /404.html;
+    #error_page 502 /502.html;
+    #ERROR-PAGE-END
+    
+    #PHP-INFO-START  PHP引用配置，可以注释或修改
+    include enable-php-00.conf;
+    #PHP-INFO-END
+    
+    #REWRITE-START URL重写规则引用,修改后将导致面板设置的伪静态规则失效
+    include /www/server/panel/vhost/rewrite/wss.51chow.com.conf;
+    #REWRITE-END
+    
+    #禁止访问的文件或目录
+    location ~ ^/(\.user.ini|\.htaccess|\.git|\.svn|\.project|LICENSE|README.md)
+    {
+        return 404;
+    }
+    
+    #一键申请SSL证书验证目录相关设置
+    location ~ \.well-known{
+        allow all;
+    }
+    
+    location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
+    {
+        expires      30d;
+        error_log /dev/null;
+        access_log /dev/null;
+    }
+    location ~ .*\.(js|css)?$
+    {
+        expires      12h;
+        error_log /dev/null;
+        access_log /dev/null;
+    }
+	access_log  /www/wwwlogs/wss.51chow.com.log;
+    error_log  /www/wwwlogs/wss.51chow.com.error.log;
+}</code></pre>
+<h3>四、小程序端配置</h3>
+<p>登录mp.weixin.qq.com </p>
+<p>开发=&gt;开发管理=&gt;开发设置，完成合法域名设置</p>
+<p><img alt="" height="688" src="image\9f7ff09abb5b4989b138b7d21636cfac.png" width="1200"/></p>
+<h3>五、小程序端代码</h3>
+<p>/pages/chat/chat.js</p>
+<pre><code>const app = getApp()
+var websocket = require('../../utils/websocket.js');
+var utils = require('../../utils/util.js');
+
+import {HTTP_REQUEST_URL, HEADER, USER_ID, OPEN_ID} from "../../utils/config.js"
+
+Page({
+  /**
+  * 页面的初始数据
+  */
+  data: {
+    newslist: [],
+    userInfo: {},
+    scrollTop: 0,
+    increase: false,//图片添加区域隐藏
+    aniStyle: true,//动画效果
+    message: "",
+    previewImgList: []
+  },
+  /**
+  * 生命周期函数--监听页面加载
+  */
+  onLoad: function () {
+    var that = this
+    if (app.globalData.userInfo) {
+      this.setData({
+        userInfo: app.globalData.userInfo
+      })
+    }
+    //调通接口
+    websocket.connect(this.data.userInfo, function (res) {
+      console.log(res)
+      var list = []
+      list = that.data.newslist
+      let data = JSON.parse(res.data)
+      if(data.type == 'open') {
+        list = data.content
+      } else {
+        list.push(data)
+      }
+      that.setData({
+        newslist: list
+      })
+      that.bottom()
+    })
+  },
+  // 页面卸载
+  onUnload() {
+    wx.closeSocket();
+    wx.showToast({
+      title: '连接已断开~',
+      icon: "none",
+      duration: 2000
+    })
+  },
+  //事件处理函数
+  send: function () {
+    var flag = this
+    let uid = wx.getStorageSync(USER_ID)
+    if (this.data.message.trim() == "") {
+      wx.showToast({
+        title: '消息不能为空哦~',
+        icon: "none",
+        duration: 2000
+      })
+    } else {
+      setTimeout(function () {
+        flag.setData({
+          increase: false
+        })
+      }, 500)
+
+      let msg = {
+          content:this.data.message,
+          date:utils.formatTime(new Date()),
+          type:'ask',//咨询
+          fid:uid,
+          tid:100,
+          avatarUrl:this.data.userInfo.avatar,
+          nickName:this.data.userInfo.nickname
+      };
+      websocket.send(JSON.stringify(msg))
+      /*
+      websocket.send('{ "content": "' + this.data.message + '", "date": "' + utils.formatTime(new Date()) + '","type":"text", "nickName": "' + this.data.userInfo.nickName + '", "avatarUrl": "' + this.data.userInfo.avatarUrl + '" }')
+      */
+
+      this.bottom()
+    }
+  },
+  //监听input值的改变
+  bindChange(res) {
+    this.setData({
+      message: res.detail.value
+    })
+  },
+  cleanInput() {
+    //button会自动清空，所以不能再次清空而是应该给他设置目前的input值
+    this.setData({
+      message: this.data.message
+    })
+  },
+  increase() {
+    this.setData({
+      increase: true,
+      aniStyle: true
+    })
+  },
+  //点击空白隐藏message下选框
+  outbtn() {
+    this.setData({
+      increase: false,
+      aniStyle: true
+    })
+  },
+  //发送图片
+  chooseImage() {
+    var that = this
+    wx.chooseImage({
+      count: 1, // 默认9
+      sizeType: ['original', 'compressed'], // 可以指定是原图还是压缩图，默认二者都有
+      sourceType: ['album', 'camera'], // 可以指定来源是相册还是相机，默认二者都有
+      success: function (res) {
+        // 返回选定照片的本地文件路径列表，tempFilePath可以作为img标签的src属性显示图片
+        var tempFilePaths = res.tempFilePaths
+        // console.log(tempFilePaths)
+        wx.uploadFile({
+          url: 'wss://www.xxx.cn', //服务器地址
+          filePath: tempFilePaths[0],
+          name: 'file',
+          headers: {
+            'Content-Type': 'form-data'
+          },
+          success: function (res) {
+            if (res.data) {
+              that.setData({
+                increase: false
+              })
+              websocket.send('{"images":"' + res.data + '","date":"' + utils.formatTime(new Date()) + '","type":"image","nickName":"' + that.data.userInfo.nickName + '","avatarUrl":"' + that.data.userInfo.avatarUrl + '"}')
+              that.bottom()
+            }
+          }
+        })
+      }
+    })
+  },
+  //图片预览
+  previewImg(e) {
+    var that = this
+    //必须给对应的wxml的image标签设置data-set=“图片路径”，否则接收不到
+    var res = e.target.dataset.src
+    var list = this.data.previewImgList //页面的图片集合数组
+    //判断res在数组中是否存在，不存在则push到数组中, -1表示res不存在
+    if (list.indexOf(res) == -1) {
+      this.data.previewImgList.push(res)
+    }
+    wx.previewImage({
+      current: res, // 当前显示图片的http链接
+      urls: that.data.previewImgList // 需要预览的图片http链接列表
+    })
+  },
+  //聊天消息始终显示最底端
+  bottom: function () {
+    var query = wx.createSelectorQuery()
+    query.select('#flag').boundingClientRect()
+    query.selectViewport().scrollOffset()
+    query.exec(function (res) {
+      wx.pageScrollTo({
+        scrollTop: res[0].bottom // #the-id节点的下边界坐标
+      })
+      res[1].scrollTop // 显示区域的竖直滚动位置
+    })
+  }
+})</code></pre>
+<p> /pages/chat/chat.wxml</p>
+<pre><code>&lt;view class="news" bindtap='outbtn'&gt;
+  &lt;view class="chat-notice" wx:if="{<!-- -->{userInfo}}"&gt;系统消息: 欢迎 {<!-- -->{ userInfo.nickname }} 加入聊天室&lt;/view&gt;
+  &lt;view class="historycon"&gt;
+    &lt;scroll-view scroll-y="true" class="history" scroll-top="{<!-- -->{scrollTop}}"&gt;
+      &lt;block wx:for="{<!-- -->{newslist}}" wx:key="index"&gt;
+        &lt;!-- 历史消息 --&gt;
+        &lt;!-- &lt;view class="chat-news"&gt;
+&lt;view style="text-align: left;padding-left: 20rpx;"&gt;
+&lt;image class='new_img' src="{<!-- -->{item.avatarUrl? item.avatarUrl:'images/avator.png'}}"&gt;&lt;/image&gt;
+&lt;text class="name"&gt;{<!-- -->{ item.nickName }}{<!-- -->{item.date}}&lt;/text&gt;
+&lt;/view&gt;
+&lt;view class='you_left'&gt;
+&lt;block wx:if="{<!-- -->{item.type=='text'}}"&gt;
+&lt;view class='new_txt'&gt;{<!-- -->{item.content}}&lt;/view&gt;
+&lt;/block&gt;
+&lt;block wx:if="{<!-- -->{item.type=='image'}}"&gt;
+&lt;image class="selectImg" src="{<!-- -->{item.images}}"&gt;&lt;/image&gt;
+&lt;/block&gt;
+&lt;/view&gt;
+&lt;/view&gt; --&gt;
+        &lt;view&gt;{<!-- -->{item.date}}&lt;/view&gt;
+        &lt;!--自己的消息 --&gt;
+        &lt;view class="chat-news" wx:if="{<!-- -->{item.fid == userInfo.id}}"&gt;
+          &lt;view style="text-align: right;padding-right: 20rpx;"&gt;
+            &lt;text class="name"&gt;{<!-- -->{ item.nickName }}&lt;/text&gt;
+            &lt;image class='new_img' src="{<!-- -->{item.avatarUrl?item.avatarUrl:'/images/avator.png'}}"&gt;&lt;/image&gt;
+          &lt;/view&gt;
+          &lt;view class='my_right'&gt;
+            &lt;view class='new_txt'&gt;{<!-- -->{item.content}}&lt;/view&gt;
+            &lt;!--block wx:if="{<!-- -->{item.type=='text'}}"&gt;
+              &lt;view class='new_txt'&gt;{<!-- -->{item.content}}&lt;/view&gt;
+            &lt;/block&gt;
+            &lt;block wx:if="{<!-- -->{item.type=='image'}}"&gt;
+              &lt;image class="selectImg" src="{<!-- -->{item.images}}" data-src="{<!-- -->{item.images}}" lazy-load="true" bindtap="previewImg"&gt;&lt;/image&gt;
+            &lt;/block--&gt;
+          &lt;/view&gt;
+        &lt;/view&gt;
+        &lt;!-- 别人的消息 --&gt;
+        &lt;view class="chat-news" wx:else&gt;
+          &lt;view style="text-align: left;padding-left: 20rpx;"&gt;
+            &lt;image class='new_img' src="{<!-- -->{item.avatarUrl? item.avatarUrl:'/images/avator.png'}}"&gt;&lt;/image&gt;
+            &lt;text class="name"&gt;{<!-- -->{ item.nickName }}&lt;/text&gt;
+          &lt;/view&gt;
+          &lt;view class='you_left'&gt;
+            &lt;view class='new_txt'&gt;{<!-- -->{item.content}}&lt;/view&gt;
+            &lt;!--block wx:if="{<!-- -->{item.type=='text'}}"&gt;
+              &lt;view class='new_txt'&gt;{<!-- -->{item.content}}&lt;/view&gt;
+            &lt;/block&gt;
+            &lt;block wx:if="{<!-- -->{item.type=='image'}}"&gt;
+              &lt;image class="selectImg" src="{<!-- -->{item.images}}" data-src="{<!-- -->{item.images}}" lazy-load="true" bindtap="previewImg"&gt;&lt;/image&gt;
+            &lt;/block--&gt;
+          &lt;/view&gt;
+        &lt;/view&gt;
+      &lt;/block&gt;
+    &lt;/scroll-view&gt;
+  &lt;/view&gt;
+&lt;/view&gt;
+&lt;view id="flag"&gt;&lt;/view&gt;
+&lt;!-- 聊天输入 --&gt;
+&lt;view class="message"&gt;
+  &lt;form bindreset="cleanInput" class="sendMessage"&gt;
+    &lt;input type="text" placeholder="请输入聊天内容.." value="{<!-- -->{massage}}" bindinput='bindChange'&gt;&lt;/input&gt;
+    &lt;!--view class="add" bindtap='increase'&gt;+&lt;/view--&gt;
+    &lt;button type="primary" bindtap='send' formType="reset" size="small" button-hover="blue"&gt;发送&lt;/button&gt;
+  &lt;/form&gt;
+  &lt;!--view class='increased {<!-- -->{aniStyle?"slideup":"slidedown"}}' wx:if="{<!-- -->{increase}}"&gt;
+    &lt;view class="image" bindtap='chooseImage'&gt;相册 &lt;/view&gt;
+  &lt;/view--&gt;
+&lt;/view&gt;</code></pre>
+<p><br/> /pages/chat/chat.wxss</p>
+<pre><code>/* pages/socks/socks.wxss */
+page {
+  background-color: #f7f7f7;
+  height: 100%;
+}
+
+/* 聊天内容 */
+.news {
+  padding-top: 30rpx;
+  text-align: center;
+  /* height:100%; */
+  box-sizing: border-box;
+}
+
+#flag {
+  margin-bottom: 100rpx;
+  height: 30rpx;
+}
+
+.chat-notice {
+  text-align: center;
+  font-size: 30rpx;
+  padding: 10rpx 0;
+  color: #666;
+}
+
+.historycon {
+  height: 100%;
+  width: 100%;
+  /* flex-direction: column; */
+  display: flex;
+  border-top: 0px;
+}
+
+/* 聊天 */
+.chat-news {
+  width: 100%;
+  overflow: hidden;
+}
+
+.chat-news .my_right {
+  float: right;
+  /* right: 40rpx; */
+  padding: 10rpx 10rpx;
+}
+
+.chat-news .name {
+  margin-right: 10rpx;
+}
+
+.chat-news .you_left {
+  float: left;
+  /* left: 5rpx; */
+  padding: 10rpx 10rpx;
+}
+
+.selectImg {
+  display: inline-block;
+  width: 150rpx;
+  height: 150rpx;
+  margin-left: 50rpx;
+}
+
+.my_right .selectImg {
+  margin-right: 80rpx;
+}
+
+.new_img {
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 10rpx;
+}
+
+.new_txt {
+  max-width: 300rpx;
+  display: inline-block;
+  border-radius: 6rpx;
+  line-height: 60rpx;
+  background-color: #95d4ff;
+  padding: 5rpx 20rpx;
+  margin: 0 10rpx;
+  margin-left: 50rpx;
+}
+
+.my_right .new_txt {
+  margin-right: 60rpx;
+}
+
+.you {
+  background-color: lightgreen;
+}
+
+.my {
+  border-color: transparent transparent transparent #95d4ff;
+}
+
+.you {
+  border-color: transparent #95d4ff transparent transparent;
+}
+
+.hei {
+  margin-top: 50px;
+  height: 20rpx;
+}
+
+.history {
+  height: 100%;
+  margin-top: 15px;
+  padding: 10rpx;
+  font-size: 14px;
+  line-height: 40px;
+  word-break: break-all;
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  color: transparent;
+  z-index: -1;
+}
+
+/* 信息输入区域 */
+.message {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+}
+
+.sendMessage {
+  
+  height: 80rpx;
+  padding: 10rpx 10rpx;
+  background-color: #fff;
+  border-top: 2rpx solid #eee;
+  border-bottom: 2rpx solid #eee;
+  /*z-index: 3;*/
+}
+
+.sendMessage input {
+  float: left;
+  height: 42px;
+  line-height: 100%;
+  border-bottom: 1rpx solid #ccc;
+  padding: 0 10rpx;
+  font-size: 35rpx;
+  color: #666;
+}
+
+.sendMessage button {
+  float: right;
+  font-size: 35rpx;
+}
+
+.sendMessage view {
+  display: inline-block;
+  width: 80rpx;
+  height: 80rpx;
+  line-height: 80rpx;
+  font-size: 60rpx;
+  text-align: center;
+  color: #999;
+  border: 1rpx solid #ccc;
+  border-radius: 50%;
+  margin-left: 10rpx;
+}
+
+
+
+.increased {
+  width: 100%;
+  /* height: 150rpx; */
+  padding: 40rpx 30rpx;
+  background-color: #fff;
+}
+
+.increased .image {
+  width: 100rpx;
+  height: 100rpx;
+  border: 3rpx solid #ccc;
+  line-height: 100rpx;
+  text-align: center;
+  border-radius: 8rpx;
+  font-size: 35rpx;
+}
+
+@keyframes slidedown {
+  from {
+    transform: translateY(0);
+  }
+
+  to {
+    transform: translateY(100%);
+  }
+}
+
+.slidedown {
+  animation: slidedown 0.5s linear;
+}
+
+.slideup {
+  animation: slideup 0.5s linear;
+}
+
+@keyframes slideup {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}</code></pre>
+<p>/utils/websocket.js</p>
+<pre><code>import {WSS_SERVER_URL} from "config.js"
+
+//定时标识
+let timing = false
+
+function connect(user, func) {
+  wx.connectSocket({
+    url: `${WSS_SERVER_URL}?type=ask&amp;fid=${user.id}&amp;tid=100`,
+    header: { 'content-type': 'application/json' },
+    success: function () {
+      console.log('websocket连接成功~')
+    },
+    fail: function () {
+      console.log('websocket连接失败~')
+    }
+  })
+ wx.onSocketOpen(function (res) {
+    wx.showToast({
+      title: 'websocket已开通~',
+      icon: "success",
+      duration: 2000
+    })
+    //接受服务器消息
+    wx.onSocketMessage(func);//func回调可以拿到服务器返回的数据
+ });
+
+ //启动心跳包
+ linkWebsocketXin(40000, true)
+
+ wx.onSocketError(function (res) {
+    wx.showToast({
+      title: 'websocket连接失败，请检查！',
+      icon: "none",
+      duration: 2000
+    })
+ })
+}
+//心跳包
+function linkWebsocketXin(time, status) {
+  if (status == true) {
+    timing = setInterval(function () {
+      console.log("当前心跳已重新连接");
+      //循环执行代码
+      wx.sendSocketMessage({
+        data: JSON.stringify({
+          type: 'active'
+        }),
+        fail(res) {
+          // console.log(res)
+        }
+      });
+    }, time) //循环时间，注意不要超过1分钟  
+  } else {
+    //关闭定时器
+    clearInterval(timing);
+    console.log("当前心跳已关闭");
+  }
+}
+//发送消息
+function send(msg) {
+  //关闭心跳包定时器
+  linkWebsocketXin(40000, false)
+  wx.sendSocketMessage({
+    data: msg,
+    success:res=&gt;{
+      //重启心跳包
+      linkWebsocketXin(40000, true)
+    }
+  });
+}
+module.exports = {
+ connect: connect,
+ send: send,
+ linkWebsocketXin:linkWebsocketXin
+}</code></pre>
+<p>/utils/config.js</p>
+<pre><code>module.exports =  {
+
+    // 请求域名 格式： https://您的域名
+    HTTP_REQUEST_URL:'http://www.skill.com',
+    // Socket链接 暂不做配置
+    WSS_SERVER_URL:'wss://wss.51chow.com',
+    //JWT token 名称
+    TOKEN_NAME:'token',
+    //用户注册id 名称
+    USER_ID:'uid',
+    //用户注册openid 名称
+    OPEN_ID:'openid',
+    // 以下配置非开发者，无需修改
+    // 请求头
+    HEADER:{
+      'content-type': 'application/json'
+    },
+
+}</code></pre>
+<p>/utils/util.js</p>
+<pre><code>const formatTime = date =&gt; {
+  const year = date.getFullYear()
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const hour = date.getHours()
+  const minute = date.getMinutes()
+  const second = date.getSeconds()
+
+  return `${[year, month, day].map(formatNumber).join('/')} ${[hour, minute, second].map(formatNumber).join(':')}`
+}
+
+const formatNumber = n =&gt; {
+  n = n.toString()
+  return n[1] ? n : `0${n}`
+}
+
+module.exports = {
+  formatTime
+}
+</code></pre>
+<h3>六、服务端PHP代码</h3>
+<p>chat.php</p>
+<pre><code>&lt;?php
+
+require_once __DIR__ . '/libs/RedisLib.php';
+
+//聊天内容
+$chatMessagesKey = "swoole:message:%s";
+//房间用户
+$roomUserKey = "swoole:room:%s";
+//所有在线用户
+$roomOnlinesKey = "swoole:onlines";
+
+//实例化一个swoole的websocket服务监听本机的9501端口
+$server = new swoole_websocket_server("0.0.0.0", 9501);
+
+$server-&gt;set([
+    // 虚拟目录的只想位置，只针对静态的资源  html css js 图片 视频
+    'document_root' =&gt; '/www/wwwroot/swoole_1909a/web', // v4.4.0以下版本, 此处必须为绝对路径
+    'enable_static_handler' =&gt; true,
+]);
+
+$server-&gt;on('Request', function ($request, $response) {
+    $response-&gt;header('Content-Type', 'text/html; charset=utf-8');
+    $response-&gt;end('&lt;h1&gt;Hello Swoole. #' . rand(1000, 9999) . '&lt;/h1&gt;');
+});
+
+//只需要绑定要监听的ip和端口。如果ip指定为127.0.0.1，则表示客户端只能位于本机才能连接，其他计算机无法连接。
+//端口这里指定为9501，可以通过netstat查看下该端口是否被占用。如果该端口被占用，可更改为其他端口，如9502，9503等。
+$server-&gt;on('open', function (swoole_websocket_server $server, $request) use ($chatMessagesKey, $roomUserKey, $roomOnlinesKey) {
+    $fid = $request-&gt;get['fid'];
+    $tid = $request-&gt;get['tid'];
+    $type = $request-&gt;get['type'];
+
+    if($fid &amp;&amp; $type) {
+
+        //存储在线用户
+        RedisLib::getInstance()-&gt;getRedis()-&gt;hSet($roomOnlinesKey, $request-&gt;fd, $fid);
+
+        //咨询问题
+        if($type == 'ask') {
+            $roomUserKey = sprintf($roomUserKey, $fid);
+            $chatMessagesKey = sprintf($chatMessagesKey, $fid);
+            //上线进入某个房间
+            RedisLib::getInstance()-&gt;getRedis()-&gt;hSet($roomUserKey, $fid, $request-&gt;fd);
+            //历史聊天内容
+            $data = [];
+            $contents = RedisLib::getInstance()-&gt;getRedis()-&gt;lRange($chatMessagesKey, 0, -1);
+
+            if($contents) {
+                foreach ($contents as $content) {
+                    $data[] = json_decode($content, true);
+                }
+            }
+            $msg = [
+                'type' =&gt; 'open',
+                'fid' =&gt; $fid,
+                'tid' =&gt; $tid,
+                'content' =&gt; $data
+            ];
+
+            $server-&gt;push($request-&gt;fd, json_encode($msg));
+        }
+        //回复问题
+        elseif ($type == 'reply') {
+            //上线进入某个房间
+            $roomUserKey = sprintf($roomUserKey, $tid);
+            $chatMessagesKey = sprintf($chatMessagesKey, $tid);
+            RedisLib::getInstance()-&gt;getRedis()-&gt;hSet($roomUserKey, $tid, $request-&gt;fd);
+
+            //历史聊天内容
+            $contents = RedisLib::getInstance()-&gt;getRedis()-&gt;lRange($chatMessagesKey, 0, -1);
+            $data = [];
+            if($contents) {
+                foreach ($contents as $content) {
+                    $data[] = json_decode($content, true);
+                }
+            }
+            $msg = [
+                'type' =&gt; 'open',
+                'fid' =&gt; $fid,
+                'tid' =&gt; $tid,
+                'content' =&gt; $data
+            ];
+
+            $server-&gt;push($request-&gt;fd, json_encode($msg));
+        }
+
+        echo "你好连接成功{$request-&gt;fd}\n";
+
+    } else {
+        echo "非法请求，连接成功{$request-&gt;fd}\n";
+    }
+
+});
+
+$server-&gt;on('message', function (swoole_websocket_server $server, $frame) use ($chatMessagesKey, $roomUserKey) {
+
+    echo $frame-&gt;data, "\r\n";
+
+    $msg = json_decode($frame-&gt;data, true);
+    if(!empty($msg) &amp;&amp; isset($msg['fid'])) {
+        //咨询问题
+        if($msg['type'] == 'ask') {
+            $chatMessagesKey = sprintf($chatMessagesKey, $msg['fid']);
+        }
+        //回复问题
+        elseif ($msg['type'] == 'reply') {
+            $chatMessagesKey = sprintf($chatMessagesKey, $msg['tid']);
+        }
+
+        //保存聊天记录
+        RedisLib::getInstance()-&gt;getRedis()-&gt;rPush($chatMessagesKey, $frame-&gt;data);
+
+        foreach ($server-&gt;connections as $key =&gt; $fd) {
+            if($fd) {
+                $server-&gt;push($fd, $frame-&gt;data);
+            }
+        }
+    }
+
+    if($msg['type'] == 'active') {
+        echo '我是心跳包, 我还活着', $frame-&gt;fd, "\r\n";
+    }
+
+});
+
+$server-&gt;on('close', function ($ser, $fd) use($roomOnlinesKey) {
+
+    //用户下线了
+    if(RedisLib::getInstance()-&gt;getRedis()-&gt;hExists($roomOnlinesKey, $fd)) {
+        RedisLib::getInstance()-&gt;getRedis()-&gt;hdel($roomOnlinesKey, $fd);
+    }
+
+    /*$is_websocket = $ser-&gt;getClientInfo($fd)['websocket_status'];
+    if($is_websocket) {
+        echo "client {$fd} closed  websocket status is {$is_websocket}\n";
+    } else {
+        echo "client {$fd} closed  is not valid websocket connection\n";
+    }*/
+});
+
+$server-&gt;start();
+</code></pre>
+<p>可以通过nohup php chat.php &gt;&gt; chat.log &amp; 来常驻</p>
+</div>
+</div>

@@ -1,0 +1,800 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1>一、简介</h1>
+<p>java.util.concurrent.locks.Lock 是一个类似于synchronized 块的<a href="https://so.csdn.net/so/search?q=%E7%BA%BF%E7%A8%8B%E5%90%8C%E6%AD%A5%E6%9C%BA%E5%88%B6&amp;spm=1001.2101.3001.7020" title="线程同步机制">线程同步机制</a>。但是 Lock比 synchronized 块更加灵活。Lock是个接口，有个实现类是ReentrantLock。</p>
+<h1>二、Lock和syncronized的区别</h1>
+<ul><li>synchronized是Java语言的关键字。Lock是一个类。</li><li>synchronized不需要用户去手动释放锁，发生异常或者线程结束时自动释放锁;Lock则必须要用户去手动释放锁，如果没有主动释放锁，就有可能导致出现死锁现象。</li><li>lock可以配置公平策略,实现线程按照先后顺序获取锁。</li><li>提供了trylock方法 可以试图获取锁，获取到或获取不到时，返回不同的返回值 让程序可以灵活处理。</li><li>lock()和unlock()可以在不同的方法中执行,可以实现同一个线程在上一个方法中lock()在后续的其他方法中unlock(),比syncronized灵活的多。</li></ul>
+<h1>三、Lock接口<a href="https://so.csdn.net/so/search?q=%E6%8A%BD%E8%B1%A1%E6%96%B9%E6%B3%95&amp;spm=1001.2101.3001.7020" title="抽象方法">抽象方法</a> </h1>
+<ul><li>void lock()：获取锁，如果锁不可用，则出于线程调度的目的，当前线程将被禁用，并且在获取锁之前处于休眠状态。</li></ul>
+<pre><code>Lock lock = ...;
+lock.lock();
+try{
+    //处理任务
+}catch(Exception ex){
+     
+}finally{
+    lock.unlock();   //释放锁
+}</code></pre>
+<ul><li>boolean tryLock()：如果锁可用立即返回true，如果锁不可用立即返回false；</li><li>boolean tryLock(long time, TimeUnit unit) throws InterruptedException：如果锁可用，则此方法立即返回true。 如果该锁不可用，则当前线程将出于线程调度目的而被禁用并处于休眠状态，直到发生以下三种情况之一为止：①当前线程获取到该锁；②当前线程被其他线程中断，并且支持中断获取锁；③经过指定的等待时间如果获得了锁，则返回true，没获取到锁返回false。</li></ul>
+<pre><code>Lock lock = ...;
+if(lock.tryLock()) {
+     try{
+         //处理任务
+     }catch(Exception ex){
+         
+     }finally{
+         lock.unlock();   //释放锁
+     } 
+}else {
+    //如果不能获取锁，则直接做其他事情
+}
+</code></pre>
+<p></p>
+<ul><li>void unlock()：释放锁。释放锁的操作放在finally块中进行，以保证锁一定被被释放，防止死锁的发生。</li></ul>
+<h1>四、ReentrantLock</h1>
+<p><strong>重入锁也叫做递归锁，指的是同一线程 外层函数获得锁之后 ，内层递归函数仍然有获取该锁的代码，但不受影响。避免死锁问题的,synchronized也可重入。</strong></p>
+<h2>4.1、synchronized重入测试</h2>
+<pre><code>public class ReentrantDemo {
+    public synchronized  void method1() {
+        System.out.println("synchronized method1");
+        method2();
+    }
+    public synchronized void method2() {
+        System.out.println("synchronized method2");
+    }
+    public static void main(String[] args) {
+        ReentrantDemo reentrantDemo = new ReentrantDemo();
+        reentrantDemo.method1();
+    }
+}
+</code></pre>
+<p>执行结果</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/20200708103458799.png"/></p>
+<h2>4.2、ReentrantLock重入测试 </h2>
+<pre><code>public class ReentrantDemo implements Runnable {
+    Lock lock = new ReentrantLock();
+    @Override
+    public void run() {
+        set();
+    }
+    public void set() {
+        try {
+            lock.lock();
+            System.out.println("set 方法");
+            get();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();// 必须在finally中释放
+        }
+    }
+
+    public void get() {
+
+        try {
+            lock.lock();
+            System.out.println("get 方法");
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+    }
+    public static void main(String[] args) {
+        ReentrantDemo reentrantDemo = new ReentrantDemo();
+        new Thread(reentrantDemo).start();
+    }
+}
+</code></pre>
+<p>测试结果：同一个线程，首先在set方法中获取锁，然后调用get方法，get方法中重复获取同一个锁。两个方法都执行成功。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/20200708103823719.png"/></p>
+<h1>五、ReentrantReadWriteLock（读写锁） </h1>
+<p><strong>读写锁</strong>，可以分别获取读锁或写锁。也就是说将数据的读写操作分开，分成2个锁来分配给线程，从而使得多个线程可以同时进行读操作。<strong>读锁使用共享模式；写锁使用独占模式</strong>；<strong>读锁可以在没有写锁的时候被多个线程同时持有，写锁是独占的。当有读锁时，写锁就不能获得</strong>；<strong>而当有写锁时，除了获得写锁的这个线程可以获得读锁外，其他线程不能获得读锁</strong></p>
+<ul><li>writeLock()：获取写锁。</li><li>readLock()：获取读锁。<br/> 执行三个线程进行读写操作，并设置一个屏障，线程依次准备就绪后未获取锁之前都在等待，当第三个线程执行 cyclicBarrier.await();后屏障解除，三个线程同时执行。</li></ul>
+<pre><code>public class WriteAndReadLockTest {
+    private static ReentrantReadWriteLock reentrantReadWriteLock = new ReentrantReadWriteLock();
+    private static ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(10, 10,
+            60L, TimeUnit.SECONDS, new LinkedBlockingQueue&lt;Runnable&gt;());
+    private static CyclicBarrier cyclicBarrier = new CyclicBarrier(3);
+    private static int i = 100;
+    public static void main(String[] args) {
+        threadPoolExecutor.execute(()-&gt;{
+            read(Thread.currentThread());
+        });
+        threadPoolExecutor.execute(()-&gt;{
+            write(Thread.currentThread());
+        });
+        threadPoolExecutor.execute(()-&gt;{
+            read(Thread.currentThread());
+        });
+        threadPoolExecutor.shutdown();
+    }
+
+    private static void read(Thread thread) {
+        try {
+            cyclicBarrier.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (BrokenBarrierException e) {
+            e.printStackTrace();
+        }
+        reentrantReadWriteLock.readLock().lock();
+        try {
+            System.out.println("读线程 "+ thread.getName() + " 开始执行, i=" + i);
+            Thread.sleep(1000);
+            System.out.println(thread.getName() +" is over!");
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            reentrantReadWriteLock.readLock().unlock();
+
+        }
+    }
+    private static void write(Thread thread) {
+        try {
+            cyclicBarrier.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (BrokenBarrierException e) {
+            e.printStackTrace();
+        }
+        reentrantReadWriteLock.writeLock().lock();
+        try {
+            i++;
+            System.out.println("写线程 "+ thread.getName() + " is doing, i=" + i);
+            System.out.println(thread.getName() +" is over!");
+        } finally {
+            reentrantReadWriteLock.writeLock().unlock();
+        }
+    }
+}
+</code></pre>
+<p> 执行结果：线程1先获取到了读锁，因为读锁时可以共享的，所有线程3也可以获取到读锁，线程1、3读操作完成后将读锁释放后，线程2才能获取到写锁并开始执行写操作。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/202007081149512.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L20wXzM3OTIzMzE2,size_16,color_FFFFFF,t_70"/></p>
+<h1>六、公平锁与非公平锁 </h1>
+<ul><li>公平锁：就是很公平，在并发环境中，每个线程在获取锁时会先查看此锁维护的等待队列，如果为空，或者当前线程线程是等待队列的第一个，就占有锁，否则就会加入到等待队列中，以后会按照FIFO的规则从队列中取到自己</li><li>非公平锁：比较粗鲁，上来就直接尝试占有锁，如果尝试失败，就再采用类似公平锁那种方式</li></ul>
+<h2>6.1、如何实现 </h2>
+<ul><li>ReentrantLock：模式是非公平锁。也可通过构造方法创建公平锁；</li></ul>
+<pre><code>public ReentrantLock() {
+	sync = new NonfairSync();
+}
+public ReentrantLock(boolean fair) {
+    sync = fair ? new FairSync() : new NonfairSync();
+}
+</code></pre>
+<ul><li>ReentrantReadWriteLock：默认是非公平锁，也可以通过构造方法创建公平锁；</li></ul>
+<pre><code>public ReentrantReadWriteLock() {
+	this(false);
+}
+public ReentrantReadWriteLock(boolean fair) {
+    sync = fair ? new FairSync() : new NonfairSync();
+    readerLock = new ReadLock(this);
+    writerLock = new WriteLock(this);
+}
+</code></pre>
+<h2>6.2<strong>、</strong>优缺点</h2>
+<p>非公平锁性能高于公平锁性能。首先，在恢复一个被挂起的线程与该线程真正运行之间存在着严重的延迟。而且，非公平锁能更充分的利用cpu的时间片，尽量的减少cpu空闲的状态时间。</p>
+<h1><strong>七、Condition的使用</strong></h1>
+<p>当满足一定条件时，调用Condition的await()方法使当前线程进入休眠状态进行等待。调用Condition的signalAll()方法唤醒因await()进入休眠的线程。</p>
+<p>Lock锁实现同步时需要使用者手动控制锁的获取和释放，其灵活性使得可以实现更复杂的多线程同步和更高的性能，但同时，使用者一定要在获取锁后及时捕获代码运行过程中的异常并在finally代码块中释放锁。</p>
+<p>使用Lock锁及其同步条件来实现一个生产者-消费者模型：</p>
+<pre><code>public class MessageStorageByLock {  
+    private int maxSize;  
+    private List&lt;String&gt; messages;  
+  
+    private final ReentrantLock lock;  
+    private final Condition conditionWrite;//声明两个锁条件  
+    private final Condition conditionRead;  
+    public MessageStorageByLock(int maxSize) {  
+        this.maxSize = maxSize;  
+        messages = new LinkedList&lt;String&gt;();  
+        lock = new ReentrantLock(true);//true修改锁的公平性，为true时，使用lifo队列来顺序获得锁  
+        conditionWrite = lock.newCondition();//调用newCondition()方法，即new ConditionObject();  
+        conditionRead = lock.newCondition();  
+  
+    }  
+    public void set(String message){  
+        //使用锁实现同步，获取所得操作，当锁被其他线程占用时，当前线程将进入休眠  
+        lock.lock();  
+        try{  
+            while(messages.size() == maxSize){  
+                    System.out.print("the message buffer is full now,start into wait()\n");  
+                    conditionWrite.await();//满足条件时，线程休眠并释放锁。当调用 signalAll()时。线程唤醒并重新获得锁  
+            }  
+            Thread.sleep(100);  
+            messages.add(message);  
+            System.out.print("add message:"+message+" success\n");  
+            conditionRead.signalAll();//唤醒因conditionRead.await()休眠的线程  
+        }catch (InterruptedException e){  
+            e.printStackTrace();  
+        }finally {  
+            lock.unlock();  
+        }  
+    }  
+    public String get(){  
+        String message = null;  
+        lock.lock();  
+        try{  
+            while(messages.size() == 0){  
+                conditionRead.await();  
+                System.out.print("the message buffer is empty now,start into wait()\n");  
+            }  
+            Thread.sleep(100);  
+            message = ((LinkedList&lt;String&gt;)messages).poll();  
+            System.out.print("get message:"+message+" success\n");  
+            conditionWrite.signalAll();  
+        }catch (InterruptedException e){  
+            e.printStackTrace();  
+        }finally {  
+            lock.unlock();  
+        }  
+        return message;  
+    }  
+}  </code></pre>
+<table border="1" cellpadding="1" cellspacing="1" style="width:500px;"><tbody><tr><td>Modifier and Type</td><td>Method and Description</td></tr><tr><td>void</td><td> <p>lock()</p> <p>获得锁</p> </td></tr><tr><td>void</td><td><code><a href="https://blog.csdn.net/java/util/concurrent/locks/Lock.html#lockInterruptibly--" title="lockInterruptibly">lockInterruptibly</a>()</code> <p>获取锁定，除非当前线程是 <a href="https://blog.csdn.net/java/lang/Thread.html#interrupt--" title="interrupted">interrupted</a> 。</p> </td></tr><tr><td>Condition</td><td><code><a href="https://blog.csdn.net/java/util/concurrent/locks/Lock.html#newCondition--" title="newCondition">newCondition</a>()</code> <p>返回一个新Condition绑定到该实例<code>Lock</code>实例。</p> </td></tr><tr><td>boolean</td><td><code><a href="https://blog.csdn.net/java/util/concurrent/locks/Lock.html#tryLock--" title="tryLock">tryLock</a>()</code> <p>只有在调用时才可以获得锁。</p> </td></tr><tr><td>boolean</td><td><code><a href="https://blog.csdn.net/java/util/concurrent/locks/Lock.html#tryLock-long-java.util.concurrent.TimeUnit-" title="tryLock">tryLock</a>(long time, <a href="https://blog.csdn.net/java/util/concurrent/TimeUnit.html" title="TimeUnit">TimeUnit</a> unit)</code> <p>如果在给定的等待时间内是空闲的，并且当前的线程尚未得到 <a href="https://blog.csdn.net/java/lang/Thread.html#interrupt--" title="interrupted，">interrupted，</a>则获取该锁。</p> </td></tr><tr><td>void</td><td> <p>unlock();</p> <p>释放锁</p> </td></tr></tbody></table>
+<pre><code>package java.util.concurrent.locks;
+import java.util.concurrent.TimeUnit;
+ 
+public interface Lock {
+    void lock();
+ 
+    void lockInterruptibly() throws InterruptedException;
+ 
+    boolean tryLock();
+ 
+    boolean tryLock(long time, TimeUnit unit) throws InterruptedException;
+ 
+    void unlock();
+ 
+    Condition newCondition();
+}</code></pre>
+<p><img alt="" height="629" src="image\cd5405f53f6d46c4bca78ca99d0ac5a9.png" width="1193"/></p>
+<pre><code>package java.util.concurrent.locks;
+import java.util.concurrent.TimeUnit;
+import java.util.Date;
+ 
+public interface Condition {
+ 
+    void await() throws InterruptedException;
+ 
+    void awaitUninterruptibly();
+ 
+    long awaitNanos(long nanosTimeout) throws InterruptedException;
+ 
+    boolean await(long time, TimeUnit unit) throws InterruptedException;
+ 
+    boolean awaitUntil(Date deadline) throws InterruptedException;
+ 
+    void signal();
+ 
+    void signalAll();
+}</code></pre>
+<h1>八<strong>、代码举例</strong></h1>
+<h2>8.1<strong>、</strong>Demo1（先演示一下锁的可重入性）</h2>
+<pre><code>package com.szh.lock;
+ 
+/**
+ * 演示锁的可重入性
+ */
+public class Test01 {
+ 
+    public synchronized void metthod1() {
+        System.out.println("同步方法1");
+        //线程执行 metthod1() 方法,默认 this 作为锁对象,
+        //在 metthod1() 方法中调用了 method2() 方法,注意当前线程还是持有 this 锁对象的
+        //method2() 同步方法默认的锁对象也是 this 对象, 要执行 method2() 必须先获得 this 锁对象,
+        //当前 this 对象被当前线程持有,可以 再次获得 this 对象, 这就是锁的可重入性.
+        //假设锁不可重入的话,可能会造成死锁
+        method2();
+    }
+ 
+    public synchronized void method2() {
+        System.out.println("同步方法2");
+        method3();
+    }
+ 
+    public synchronized void method3() {
+        System.out.println("同步方法3");
+    }
+ 
+    public static void main(String[] args) {
+        Test01 obj=new Test01();
+ 
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                obj.metthod1();
+            }
+        }).start();
+    }
+}</code></pre>
+<p><strong>运行结果 </strong></p>
+<h2><img alt="" src="image\20210609121913162.png"/></h2>
+<h2>8.2<strong>、</strong>Demo2（ReentrantLock的基本使用）</h2>
+<pre><code>package com.szh.lock;
+ 
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+ 
+/**
+ * ReentrantLock 的基本使用
+ */
+public class Test02 {
+ 
+    //定义一个显示锁
+    static Lock lock=new ReentrantLock();
+ 
+    public static void method() {
+        //先获得锁
+        lock.lock();
+        //for循环此时就是同步代码块
+        for (int i = 0; i &lt; 3; i++) {
+            System.out.println(Thread.currentThread().getName() + " ---&gt; " + i);
+        }
+        //释放锁
+        lock.unlock();
+    }
+ 
+    public static void main(String[] args) {
+        Runnable r=new Runnable() {
+            @Override
+            public void run() {
+                method();
+            }
+        };
+        //启动三个线程
+        new Thread(r).start();
+        new Thread(r).start();
+        new Thread(r).start();
+    }
+}</code></pre>
+<p><strong>运行结果</strong></p>
+<p><img alt="" src="image\2021060912225235.png"/></p>
+<h2>8.3<strong>、</strong>Demo3（使用Lock锁同步不同方法中的代码块）</h2>
+<pre><code>package com.szh.lock;
+ 
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+ 
+/**
+ * 使用 Lock 锁同步不同方法中的同步代码块
+ */
+public class Test03 {
+    //定义锁对象
+    static Lock lock=new ReentrantLock();
+ 
+    public static void method1() {
+        //经常在 try 代码块中获得 Lock 锁, 在 finally 子句中释放锁
+        try {
+            lock.lock(); //获得锁
+            System.out.println(Thread.currentThread().getName() + " ---method1--- " + System.currentTimeMillis());
+            Thread.sleep(1000);
+            System.out.println(Thread.currentThread().getName() + " ---method1--- " + System.currentTimeMillis());
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }finally {
+            lock.unlock(); //释放锁
+        }
+    }
+ 
+    public static void method2() {
+        //经常在 try 代码块中获得 Lock 锁, 在 finally 子句中释放锁
+        try {
+            lock.lock(); //获得锁
+            System.out.println(Thread.currentThread().getName() + " ---method2--- " + System.currentTimeMillis());
+            Thread.sleep(1000);
+            System.out.println(Thread.currentThread().getName() + " ---method2--- " + System.currentTimeMillis());
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }finally {
+            lock.unlock(); //释放锁
+        }
+    }
+ 
+    public static void main(String[] args) {
+ 
+        Runnable r1=new Runnable() {
+            @Override
+            public void run() {
+                method1();
+            }
+        };
+ 
+        Runnable r2=new Runnable() {
+            @Override
+            public void run() {
+                method2();
+            }
+        };
+ 
+        new Thread(r1).start();
+        new Thread(r1).start();
+ 
+        new Thread(r2).start();
+        new Thread(r2).start();
+    }
+}</code></pre>
+<p><strong>运行结果</strong></p>
+<p><img alt="" src="image\20210609122559493.png"/></p>
+<h2>8.4<strong>、</strong>Demo4（ReentrantLock锁的可重入性） </h2>
+<pre><code>package com.szh.lock;
+ 
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+ 
+/**
+ * ReentrantLock 锁的可重入性
+ */
+public class Test04 {
+ 
+    static class SubThread extends Thread {
+        //定义锁对象
+        private static Lock lock=new ReentrantLock();
+ 
+        //定义变量
+        private static int num=0;
+ 
+        @Override
+        public void run() {
+            for (int i = 0; i &lt; 10000; i++) {
+                try {
+                    //可重入锁指可以反复获得该锁
+                    lock.lock();
+                    lock.lock();
+                    num++;
+                }finally {
+                    lock.unlock();
+                    lock.unlock();
+                }
+            }
+        }
+    }
+ 
+    public static void main(String[] args) throws InterruptedException {
+ 
+        SubThread t1=new SubThread();
+        SubThread t2=new SubThread();
+ 
+        t1.start();
+        t2.start();
+ 
+        t1.join();
+        t2.join();
+ 
+        System.out.println(SubThread.num);
+    }
+}</code></pre>
+<p><strong>运行结果</strong></p>
+<p><img alt="" src="image\20210609123303813.png"/></p>
+<h2>8.5<strong>、</strong>Demo5（ReentrantLock的lockInterruptibly()方法）</h2>
+<pre><code>package com.szh.lock;
+ 
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+ 
+/**
+ * lockInterruptibly()方法
+ *  如果当前线程未被中断则获得锁,
+ *  如果当前线程被中断则出现异常.
+ */
+public class Test05 {
+ 
+    static class Service {
+        private Lock lock=new ReentrantLock(); //定义锁对象
+        public void serviceMethod() {
+            try {
+                //lock.lock();  获得锁, 即使调用了线程的 interrupt() 方法, 也没有真正的中断线程
+                //如果线程被中断了, 不会获得锁, 会产生异常
+                lock.lockInterruptibly();
+                System.out.println(Thread.currentThread().getName() + " --- begin lock");
+                //执行一段耗时的操作
+                for (int i = 0; i &lt; Integer.MAX_VALUE; i++) {
+                    new StringBuilder();
+                }
+                System.out.println(Thread.currentThread().getName() + " --- end lock");
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                System.out.println(Thread.currentThread().getName() + " === 释放锁");
+                lock.unlock(); //释放锁
+            }
+        }
+    }
+ 
+    public static void main(String[] args) throws InterruptedException {
+        Service s=new Service();
+ 
+        Runnable r=new Runnable() {
+            @Override
+            public void run() {
+                s.serviceMethod();
+            }
+        };
+ 
+        Thread t1=new Thread(r);
+        t1.start();
+        Thread.sleep(50);
+ 
+        Thread t2=new Thread(r);
+        t2.start();
+        Thread.sleep(50);
+ 
+        t2.interrupt(); //中断 t2 线程
+    }
+}</code></pre>
+<p><strong>运行结果</strong> </p>
+<p><img alt="" src="image\20210609123933335.png"/></p>
+<h2>8.6<strong>、</strong>Demo6（lockInterruptibly()方法可以避免死锁） </h2>
+<pre><code>package com.szh.lock;
+ 
+import java.util.concurrent.locks.ReentrantLock;
+ 
+/**
+ * 通过 ReentrantLock 锁的 lockInterruptibly() 方法避免死锁的产生
+ */
+public class Test06 {
+ 
+    static class MyLock implements Runnable {
+ 
+        //创建两个ReentrantLock等锁对象
+        private static ReentrantLock lock1=new ReentrantLock();
+        private static ReentrantLock lock2=new ReentrantLock();
+ 
+        int lockNum; //定义整数变量,决定使用哪个锁,偶数用lock1,奇数用lock2
+ 
+        public MyLock(int lockNum) {
+            this.lockNum=lockNum;
+        }
+ 
+        @Override
+        public void run() {
+            try {
+                if (lockNum % 2 == 1) { //奇数, 先锁 1, 再锁 2
+                    lock1.lockInterruptibly();
+                    System.out.println(Thread.currentThread().getName() + "获得锁1，还需要获得锁2");
+                    Thread.sleep(1000);
+                    lock2.lockInterruptibly();
+                    System.out.println(Thread.currentThread().getName() + "同时获得了锁1与锁2");
+                }else { //偶数, 先锁 2, 再锁 1
+                    lock2.lockInterruptibly();
+                    System.out.println(Thread.currentThread().getName() + "获得了锁2，还需要获得锁1");
+                    Thread.sleep(1000);
+                    lock1.lockInterruptibly();
+                    System.out.println(Thread.currentThread().getName() + "同时获得了锁1与锁2");
+                }
+            }catch (InterruptedException e) {
+                e.printStackTrace();
+            }finally {
+                if (lock1.isHeldByCurrentThread()) { //判断当前线程是否持有该锁
+                    lock1.unlock();
+                }
+                if (lock2.isHeldByCurrentThread()) {
+                    lock2.unlock();
+                }
+                System.out.println(Thread.currentThread().getName() + "线程退出");
+            }
+        }
+    }
+ 
+    public static void main(String[] args) throws InterruptedException {
+        MyLock myLock1=new MyLock(11);
+        MyLock myLock2=new MyLock(22);
+ 
+        Thread t1=new Thread(myLock1);
+        Thread t2=new Thread(myLock2);
+        t1.start();
+        t2.start();
+ 
+        //在 main 线程, 等待 3000 ms, 如果还有线程没有结束就中断该线程
+        Thread.sleep(1000 * 3);
+        //可以中断任何一个线程来解决死锁, t2 线程会放弃对锁 1 的申请, 同时释放锁 2, t1 线程会完成它的任务
+        if (t2.isAlive()) {
+            t2.interrupt();
+        }
+    }
+}</code></pre>
+<p><strong>运行结果</strong></p>
+<h2><img alt="" src="image\20210609124757280.png"/></h2>
+<h2>8.7<strong>、</strong>Demo7（ReentrantLock的tryLock(long time, TimeUnit unit)方法） </h2>
+<pre><code>package com.szh.lock;
+ 
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+ 
+/**
+ * tryLock(long time, TimeUnit unit) 的作用在给定等待时长内,
+ * 锁没有被另外的线程持有, 并且当前线程也没有被中断, 则获得该锁.
+ * 通过该方法可以实现锁对象的限时等待.
+ */
+public class Test07 {
+ 
+    static class TimeLock implements Runnable {
+        private static ReentrantLock lock=new ReentrantLock(); //定义锁对象
+ 
+        @Override
+        public void run() {
+            try {
+                //假设 t1 线程先持有锁, 完成任务需要 4 秒钟,
+                //这个时候 t2 线程尝试获得锁, t2 线程在 3 秒内还没有获得锁的话, 那么它就不再等了，直接放弃
+                if (lock.tryLock(3, TimeUnit.SECONDS)) {
+                    System.out.println(Thread.currentThread().getName() + "获得锁，执行耗时任务");
+                    Thread.sleep(1000 * 4);
+                    /*
+                        假设 t1 线程先持有锁, 完成任务需要 2 秒钟
+                        这个时候t2 线程尝试获得锁, t2 线程会一直尝试
+                        在它约定尝试的 3 秒内可以获得锁对象
+                     */
+                    //Thread.sleep(1000 * 2);
+                }else {
+                    System.out.println(Thread.currentThread().getName() + "没有获得锁");
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
+            }
+        }
+    }
+ 
+    public static void main(String[] args) {
+        TimeLock timeLock=new TimeLock();
+ 
+        Thread t1=new Thread(timeLock);
+        Thread t2=new Thread(timeLock);
+ 
+        t1.setName("t1");
+        t2.setName("t2");
+ 
+        t1.start();
+        t2.start();
+    }
+}</code></pre>
+<p><strong>运行结果 </strong></p>
+<p><img alt="" src="image\20210609124901607.png"/></p>
+<h2>8.8<strong>、</strong>Demo8（ReentrantLock的tryLock()方法）</h2>
+<pre><code>package com.szh.lock;
+ 
+import java.util.concurrent.locks.ReentrantLock;
+ 
+/**
+ * tryLock() 当锁对象没有被其他线程持有的情况下, 才会获得该锁定
+ */
+public class Test08 {
+ 
+    static class Service {
+        private ReentrantLock lock=new ReentrantLock();
+ 
+        public void serviceMethod() {
+            try {
+                if (lock.tryLock()) {
+                    System.out.println(Thread.currentThread().getName() + "获得锁定");
+                    Thread.sleep(1000 * 3); //模拟执行任务的时长
+                }else {
+                    System.out.println(Thread.currentThread().getName() + "没有获得锁定");
+                }
+            }catch (InterruptedException e) {
+                e.printStackTrace();
+            }finally {
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
+            }
+        }
+    }
+ 
+    public static void main(String[] args) throws InterruptedException {
+        Service service=new Service();
+ 
+        Runnable r=new Runnable() {
+            @Override
+            public void run() {
+                service.serviceMethod();
+            }
+        };
+ 
+        Thread t1=new Thread(r);
+        t1.start();
+        Thread.sleep(100);
+        Thread t2=new Thread(r);
+        t2.start();
+    }
+}</code></pre>
+<p><strong>运行结果</strong></p>
+<p><img alt="" src="image\20210609124933193.png"/></p>
+<h2>8.9<strong>、</strong>Demo9（tryLock()方法可以避免死锁）</h2>
+<pre><code>package com.szh.lock;
+ 
+import java.util.concurrent.locks.ReentrantLock;
+ 
+/**
+ * 使用 tryLock() 可以避免死锁
+ */
+public class Test09 {
+ 
+    static class MyLock implements Runnable {
+ 
+        private static ReentrantLock lock1=new ReentrantLock();
+        private static ReentrantLock lock2=new ReentrantLock();
+ 
+        private int lockNum;
+ 
+        public MyLock(int lockNum) {
+            this.lockNum=lockNum;
+        }
+ 
+        @Override
+        public void run() {
+            if (lockNum % 2 == 0) { //偶数先锁 1, 再锁 2
+                while (true) {
+                    try {
+                        if (lock1.tryLock()) {
+                            System.out.println(Thread.currentThread().getName() + "获得了锁1，还想获得锁2");
+                            Thread.sleep(50);
+                            try {
+                                if (lock2.tryLock()) {
+                                    System.out.println(Thread.currentThread().getName() + "同时获得了锁1与锁2，完成任务了");
+                                    return;
+                                }
+                            } finally {
+                                if (lock2.isHeldByCurrentThread()) {
+                                    lock2.unlock();
+                                }
+                            }
+                        }
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } finally {
+                        if (lock1.isHeldByCurrentThread()) {
+                            lock1.unlock();
+                        }
+                    }
+                }
+            }else { //奇数就先锁 2, 再锁 1
+                while (true) {
+                    try {
+                        if (lock2.tryLock()) {
+                            System.out.println(Thread.currentThread().getName() + "获得了锁2，还想获得锁1");
+                            Thread.sleep(50);
+                            try {
+                                if (lock1.tryLock()) {
+                                    System.out.println(Thread.currentThread().getName() + "同时获得了锁1与锁2，完成任务了");
+                                    return;
+                                }
+                            } finally {
+                                if (lock1.isHeldByCurrentThread()) {
+                                    lock1.unlock();
+                                }
+                            }
+                        }
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } finally {
+                        if (lock2.isHeldByCurrentThread()) {
+                            lock2.unlock();
+                        }
+                    }
+                }
+            }
+        }
+    }
+ 
+    public static void main(String[] args) {
+        MyLock lock1=new MyLock(11);
+        MyLock lock2=new MyLock(22);
+ 
+        Thread t1=new Thread(lock1);
+        Thread t2=new Thread(lock2);
+ 
+        t1.start();
+        t2.start();
+        //运行后, 使用 tryLock() 尝试获得锁, 不会傻傻的等待, 通过循环不停的再次尝试, 如果等待的时间足够长, 线程总是会获得想要的资源
+    }
+}</code></pre>
+<p><strong>运行结果</strong> </p>
+<p><img alt="" src="image\2021060912500771.png"/></p>
+<p></p>
+</div>
+</div>

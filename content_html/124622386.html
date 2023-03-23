@@ -1,0 +1,256 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="QTTCP_0"></a>QT中的TCP通信原理及实现</h1>
+<p><strong>（如果看着繁琐，可直接定位到文章末尾，有源码连接）</strong></p>
+<p>QT中可以通过TCP协议让服务器和客户端之间行通信。服务器和客户端的具体流程：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c7320b67417a405ea2ed17c32b1734cd.png"/></p>
+<p>A、服务器：</p>
+<pre><code>     1.创建QTcpServer对象
+     2.启动服务器（监听）调用成员方法listen（QHostAddress::Any,端口号）
+     3.当有客户端链接时候会发送newConnection信号，触发槽函数接受链接（得到一个与客户端通信的套接字QTcpSocket）
+     4.QTcpsocket发送数据用成员方法write，
+     5.读数据当客户端有数据来，QTcpSocket对象就会发送readyRead信号，关联槽函数读取数据
+</code></pre>
+<p>B、客户端 ：</p>
+<pre><code>    1.创建QTcpSocket对象
+    2.链接服务器connectToHost(QHostAddress("ip"),端口号)
+    3.QTcpsocket发送数据用成员方法write，
+    4.读数据当对方有数据来，QTcpSocket对象就会发送readyRead信号，关联槽函数读取数据
+</code></pre>
+<p><strong>代码中都有详细的注释，方便读者理解，希望对你们有所帮助！</strong></p>
+<h1><a id="1_24"></a>1.服务器端</h1>
+<p>首先为避免C++版本不一致，不能识别TCP协议中，我们得在工程文件(工程文件.pro)中的第一行添加network（若客户端与服务器端不在同一个工程文件中，两个工程文件都需要添加）</p>
+<pre><code class="prism language-bash">QT       <span class="token operator">+=</span> core gui network  //network是添加之后的
+</code></pre>
+<p>服务器需要两个套接字（监听套接字和通信套接字），所在的头文件</p>
+<pre><code class="prism language-bash"><span class="token comment">#include&lt;QTcpServer&gt;//监听套接字</span>
+<span class="token comment">#include&lt;QTcpSocket&gt;//通信套接字</span>
+</code></pre>
+<p>作为代码的搬运工，下面直接给出服务器的 .<strong>h</strong>代码和.<strong>cpp</strong>代码，具体的通信原理大家可以参考<a href="https://www.bilibili.com/video/BV1Wq4y1L7Mo?spm_id_from=333.999.0.0">QT中的TCP文本通信。</a></p>
+<h2><a id="1serverwidgeth_37"></a><strong>1</strong>.<strong>serverwidget.h</strong></h2>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifndef</span> <span class="token expression">SERVERWIDGET_H</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">SERVERWIDGET_H</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QWidget&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;QTcpServer&gt;</span><span class="token comment">//监听套接字</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;QTcpSocket&gt;</span><span class="token comment">//通信套接字</span></span>
+QT_BEGIN_NAMESPACE
+<span class="token keyword">namespace</span> Ui <span class="token punctuation">{<!-- --></span> <span class="token keyword">class</span> <span class="token class-name">serverWidget</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+QT_END_NAMESPACE
+
+<span class="token keyword">class</span> <span class="token class-name">serverWidget</span> <span class="token operator">:</span> <span class="token base-clause"><span class="token keyword">public</span> <span class="token class-name">QWidget</span></span>
+<span class="token punctuation">{<!-- --></span>
+    Q_OBJECT
+
+<span class="token keyword">public</span><span class="token operator">:</span>
+    <span class="token function">serverWidget</span><span class="token punctuation">(</span>QWidget <span class="token operator">*</span>parent <span class="token operator">=</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token operator">~</span><span class="token function">serverWidget</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">private</span> slots<span class="token operator">:</span>
+    <span class="token keyword">void</span> <span class="token function">on_buttonsend_clicked</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">void</span> <span class="token function">on_buttonclose_clicked</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">private</span><span class="token operator">:</span>
+    Ui<span class="token double-colon punctuation">::</span>serverWidget <span class="token operator">*</span>ui<span class="token punctuation">;</span>
+    <span class="token comment">//声明两种套接字</span>
+    QTcpServer <span class="token operator">*</span>tcpserver<span class="token punctuation">;</span>
+    QTcpSocket <span class="token operator">*</span>tcpsocket<span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span> <span class="token comment">// SERVERWIDGET_H</span></span>
+</code></pre>
+<h2><a id="2serverwidgetcpp_70"></a><strong>2</strong>.<strong>serverwidget.cpp</strong></h2>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"serverwidget.h"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"ui_serverwidget.h"</span></span>
+
+serverWidget<span class="token double-colon punctuation">::</span><span class="token function">serverWidget</span><span class="token punctuation">(</span>QWidget <span class="token operator">*</span>parent<span class="token punctuation">)</span>
+    <span class="token operator">:</span> <span class="token function">QWidget</span><span class="token punctuation">(</span>parent<span class="token punctuation">)</span>
+    <span class="token punctuation">,</span> <span class="token function">ui</span><span class="token punctuation">(</span><span class="token keyword">new</span> Ui<span class="token double-colon punctuation">::</span>serverWidget<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    ui<span class="token operator">-&gt;</span><span class="token function">setupUi</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    tcpserver<span class="token operator">=</span><span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+    tcpsocket<span class="token operator">=</span><span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+    <span class="token comment">//创建监听套接字</span>
+    tcpserver<span class="token operator">=</span><span class="token keyword">new</span> <span class="token function">QTcpServer</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//指定父对象 回收空间</span>
+
+    <span class="token comment">//bind+listen</span>
+    tcpserver<span class="token operator">-&gt;</span><span class="token function">listen</span><span class="token punctuation">(</span>QHostAddress<span class="token double-colon punctuation">::</span>Any<span class="token punctuation">,</span><span class="token number">8888</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//绑定当前网卡所有的ip 绑定端口 也就是设置服务器地址和端口号</span>
+
+    <span class="token comment">//服务器建立连接</span>
+    <span class="token function">connect</span><span class="token punctuation">(</span>tcpserver<span class="token punctuation">,</span><span class="token operator">&amp;</span>QTcpServer<span class="token double-colon punctuation">::</span>newConnection<span class="token punctuation">,</span><span class="token punctuation">[</span><span class="token operator">=</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//取出连接好的套接字</span>
+        tcpsocket<span class="token operator">=</span>tcpserver<span class="token operator">-&gt;</span><span class="token function">nextPendingConnection</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//获得通信套接字的控制信息</span>
+        QString ip<span class="token operator">=</span>tcpsocket<span class="token operator">-&gt;</span><span class="token function">peerAddress</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">toString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//获取连接的 ip地址</span>
+        quint16 port<span class="token operator">=</span>tcpsocket<span class="token operator">-&gt;</span><span class="token function">peerPort</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//获取连接的 端口号</span>
+        QString temp<span class="token operator">=</span><span class="token function">QString</span><span class="token punctuation">(</span><span class="token string">"[%1:%2] 客服端连接成功"</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">arg</span><span class="token punctuation">(</span>ip<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">arg</span><span class="token punctuation">(</span>port<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//显示连接成功</span>
+        ui<span class="token operator">-&gt;</span>textEditRead<span class="token operator">-&gt;</span><span class="token function">setText</span><span class="token punctuation">(</span>temp<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//接收信息  必须放到连接中的槽函数 不然tcpsocket就是一个野指针</span>
+        <span class="token function">connect</span><span class="token punctuation">(</span>tcpsocket<span class="token punctuation">,</span><span class="token operator">&amp;</span>QTcpSocket<span class="token double-colon punctuation">::</span>readyRead<span class="token punctuation">,</span><span class="token punctuation">[</span><span class="token operator">=</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token comment">//从通信套接字中取出内容</span>
+            QString str<span class="token operator">=</span>tcpsocket<span class="token operator">-&gt;</span><span class="token function">readAll</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+             <span class="token comment">//在编辑区域显示</span>
+            ui<span class="token operator">-&gt;</span>textEditRead<span class="token operator">-&gt;</span><span class="token function">append</span><span class="token punctuation">(</span><span class="token string">"客户端："</span><span class="token operator">+</span>str<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//不用settext 这样会覆盖之前的消息</span>
+        <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token punctuation">}</span>
+
+<span class="token class-name">serverWidget</span><span class="token double-colon punctuation">::</span><span class="token operator">~</span><span class="token function">serverWidget</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">delete</span> ui<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+
+<span class="token keyword">void</span> serverWidget<span class="token double-colon punctuation">::</span><span class="token function">on_buttonsend_clicked</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span>tcpsocket<span class="token operator">==</span><span class="token keyword">nullptr</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> <span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//获取编辑区域的内容</span>
+    QString str<span class="token operator">=</span>ui<span class="token operator">-&gt;</span>textEditWrite<span class="token operator">-&gt;</span><span class="token function">toPlainText</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">//写入通信套接字 协议栈自动发送</span>
+    tcpsocket<span class="token operator">-&gt;</span><span class="token function">write</span><span class="token punctuation">(</span>str<span class="token punctuation">.</span><span class="token function">toUtf8</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">//在编辑区域显示</span>
+   ui<span class="token operator">-&gt;</span>textEditRead<span class="token operator">-&gt;</span><span class="token function">append</span><span class="token punctuation">(</span><span class="token string">"服务器端："</span><span class="token operator">+</span>str<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//不用settext 这样会覆盖之前的消息</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> serverWidget<span class="token double-colon punctuation">::</span><span class="token function">on_buttonclose_clicked</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//通信套接字主动与服务端断开连接</span>
+    tcpsocket<span class="token operator">-&gt;</span><span class="token function">disconnectFromHost</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//结束聊天</span>
+
+    <span class="token comment">//关闭 通信套接字</span>
+    tcpsocket<span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    tcpsocket<span class="token operator">=</span><span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="3serverwidgetui_144"></a><strong>3</strong>.<strong>serverwidget.ui</strong></h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/fff019523ae440de926a61acce7cd6ef.png"/></p>
+<h1><a id="2_146"></a>2.客户端</h1>
+<h2><a id="1clientwidgeth_147"></a><strong>1</strong>.<strong>clientwidget.h</strong></h2>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifndef</span> <span class="token expression">CLIENTWIDGET_H</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">CLIENTWIDGET_H</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QWidget&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;QTcpSocket&gt;</span></span>
+
+QT_BEGIN_NAMESPACE
+<span class="token keyword">namespace</span> Ui <span class="token punctuation">{<!-- --></span> <span class="token keyword">class</span> <span class="token class-name">ClientWidget</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+QT_END_NAMESPACE
+
+<span class="token keyword">class</span> <span class="token class-name">ClientWidget</span> <span class="token operator">:</span> <span class="token base-clause"><span class="token keyword">public</span> <span class="token class-name">QWidget</span></span>
+<span class="token punctuation">{<!-- --></span>
+    Q_OBJECT
+
+<span class="token keyword">public</span><span class="token operator">:</span>
+    <span class="token function">ClientWidget</span><span class="token punctuation">(</span>QWidget <span class="token operator">*</span>parent <span class="token operator">=</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token operator">~</span><span class="token function">ClientWidget</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">private</span> slots<span class="token operator">:</span>
+    <span class="token keyword">void</span> <span class="token function">on_buttonconnect_clicked</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">void</span> <span class="token function">on_buttonsend_clicked</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">void</span> <span class="token function">on_buttonclose_clicked</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">private</span><span class="token operator">:</span>
+    Ui<span class="token double-colon punctuation">::</span>ClientWidget <span class="token operator">*</span>ui<span class="token punctuation">;</span>
+    QTcpSocket <span class="token operator">*</span>tcpsocket<span class="token punctuation">;</span><span class="token comment">//声明套接字 客户端只有一个通信套接字</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span> <span class="token comment">// CLIENTWIDGET_H</span></span>
+
+</code></pre>
+<h2><a id="2clientwidgetcpp_182"></a><strong>2</strong>.<strong>clientwidget.cpp</strong></h2>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"clientwidget.h"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"ui_clientwidget.h"</span></span>
+
+<span class="token class-name">ClientWidget</span><span class="token double-colon punctuation">::</span><span class="token function">ClientWidget</span><span class="token punctuation">(</span>QWidget <span class="token operator">*</span>parent<span class="token punctuation">)</span>
+    <span class="token operator">:</span> <span class="token function">QWidget</span><span class="token punctuation">(</span>parent<span class="token punctuation">)</span>
+    <span class="token punctuation">,</span> <span class="token function">ui</span><span class="token punctuation">(</span><span class="token keyword">new</span> Ui<span class="token double-colon punctuation">::</span>ClientWidget<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    ui<span class="token operator">-&gt;</span><span class="token function">setupUi</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    tcpsocket<span class="token operator">=</span><span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+    <span class="token function">setWindowTitle</span><span class="token punctuation">(</span><span class="token string">"客户端"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    tcpsocket<span class="token operator">=</span><span class="token keyword">new</span> <span class="token function">QTcpSocket</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">connect</span><span class="token punctuation">(</span>tcpsocket<span class="token punctuation">,</span><span class="token operator">&amp;</span>QTcpSocket<span class="token double-colon punctuation">::</span>connected<span class="token punctuation">,</span><span class="token punctuation">[</span><span class="token operator">=</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        ui<span class="token operator">-&gt;</span>textEditRead<span class="token operator">-&gt;</span><span class="token function">setText</span><span class="token punctuation">(</span><span class="token string">"服务器连接成功！"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token function">connect</span><span class="token punctuation">(</span>tcpsocket<span class="token punctuation">,</span><span class="token operator">&amp;</span>QTcpSocket<span class="token double-colon punctuation">::</span>readyRead<span class="token punctuation">,</span><span class="token punctuation">[</span><span class="token operator">=</span><span class="token punctuation">]</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+       <span class="token comment">//获取通信套接字的内容</span>
+        QString str<span class="token operator">=</span>tcpsocket<span class="token operator">-&gt;</span><span class="token function">readAll</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//在显示编辑区域显示</span>
+       ui<span class="token operator">-&gt;</span>textEditRead<span class="token operator">-&gt;</span><span class="token function">append</span><span class="token punctuation">(</span><span class="token string">"服务器端："</span><span class="token operator">+</span>str<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//不用settext 这样会覆盖之前的消息</span>
+    <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token punctuation">}</span>
+
+<span class="token class-name">ClientWidget</span><span class="token double-colon punctuation">::</span><span class="token operator">~</span><span class="token function">ClientWidget</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">delete</span> ui<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+
+<span class="token keyword">void</span> <span class="token class-name">ClientWidget</span><span class="token double-colon punctuation">::</span><span class="token function">on_buttonconnect_clicked</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token operator">==</span>ui<span class="token operator">-&gt;</span>lineEditIP <span class="token operator">||</span> <span class="token keyword">nullptr</span><span class="token operator">==</span>ui<span class="token operator">-&gt;</span>lineEditPort<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> <span class="token punctuation">;</span>
+    <span class="token comment">//获取IP地址和端口号</span>
+    QString IP<span class="token operator">=</span>ui<span class="token operator">-&gt;</span>lineEditIP<span class="token operator">-&gt;</span><span class="token function">text</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    quint16 Port<span class="token operator">=</span>ui<span class="token operator">-&gt;</span>lineEditPort<span class="token operator">-&gt;</span><span class="token function">text</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">toInt</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">//与服务器连接</span>
+    tcpsocket<span class="token operator">-&gt;</span><span class="token function">connectToHost</span><span class="token punctuation">(</span>IP<span class="token punctuation">,</span>Port<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> <span class="token class-name">ClientWidget</span><span class="token double-colon punctuation">::</span><span class="token function">on_buttonsend_clicked</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token operator">==</span>tcpsocket<span class="token punctuation">)</span><span class="token comment">//连接失败则不发送</span>
+        <span class="token keyword">return</span><span class="token punctuation">;</span>
+
+    <span class="token comment">//获取发送的信息</span>
+    QString str<span class="token operator">=</span>ui<span class="token operator">-&gt;</span>textEditWrite<span class="token operator">-&gt;</span><span class="token function">toPlainText</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">//将信息写入到通信套接字</span>
+    tcpsocket<span class="token operator">-&gt;</span><span class="token function">write</span><span class="token punctuation">(</span>str<span class="token punctuation">.</span><span class="token function">toUtf8</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">//将自己的信息显示在聊天窗口</span>
+    ui<span class="token operator">-&gt;</span>textEditRead<span class="token operator">-&gt;</span><span class="token function">append</span><span class="token punctuation">(</span><span class="token string">"客服端："</span><span class="token operator">+</span>str<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//不用settext 这样会覆盖之前的消息</span>
+<span class="token punctuation">}</span>
+
+
+<span class="token keyword">void</span> <span class="token class-name">ClientWidget</span><span class="token double-colon punctuation">::</span><span class="token function">on_buttonclose_clicked</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token operator">==</span>tcpsocket<span class="token punctuation">)</span>
+        <span class="token keyword">return</span><span class="token punctuation">;</span>
+    tcpsocket<span class="token operator">-&gt;</span><span class="token function">disconnectFromHost</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//断开与服务器的连接</span>
+    tcpsocket<span class="token operator">-&gt;</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//关闭通信套接字</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<h2><a id="3clientwidgetui_253"></a><strong>3</strong>.<strong>clientwidget.ui</strong></h2>
+<p><img alt="UI界面" src="https://img-blog.csdnimg.cn/7206594457244a69a5423bcf8a9f1951.png"/></p>
+<h1><a id="_255"></a>效果展示</h1>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/105960abaa424cc391cc378bac29152a.png"/><br/> </p>
+<div class="csdn-video-box">
+<iframe allowfullscreen="true" data-mediaembed="csdn" id="svegXNXw-1651862283858" src="https://live.csdn.net/v/embed/205534"></iframe>
+<p>效果展示</p>
+</div>
+<p></p>
+<p>参考：<br/> <a href="https://www.bilibili.com/video/BV1Wq4y1L7Mo?spm_id_from=333.999.0.0">QT中TCP通信过程</a><br/> 本博客源码：<br/> 连接1；<a href="https://download.csdn.net/download/mitongxue/85306383">CSDN资源</a>（不需要积分）<br/> 链接2:<a href="https://pan.baidu.com/s/1LBlAZzmxHLnXhG1ZH8hK-A?pwd=n7aj">提取码：n7aj</a></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

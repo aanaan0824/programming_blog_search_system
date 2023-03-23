@@ -1,0 +1,170 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="_0"></a>简单介绍：</h2>
+<p>消息队列中间件是大型系统中的重要组件，已经逐渐成为企业系统内部通信的核心手段。它具有松耦合、异步消息、流量削峰、可靠投递、广播、流量控制、最终一致性等一系列功能，已经成为异步RPC的主要手段之一。</p>
+<p> </p>
+<h2><a id="_6"></a>大白话：</h2>
+<p>消息队列有两个角色和一个容器，角色分别为生产者（负责发布任务）和消费者（负责执行任务），容器这是用来存放/堆积生产者发布的任务，将发布和执行两个步骤分开且互不影响。</p>
+<p> </p>
+<h2><a id="_12"></a>消息队列的大致流程为：</h2>
+<p>生产者发布任务存放/堆积在消息队列中，由消费者主动去消息队列中取出任务并执行，先发布的先执行（队列：先进先出），在没有消费者的情况下任务会堆积在队列中等待被取出执行。</p>
+<p> </p>
+<h2><a id="_18"></a>优点：</h2>
+<p>消息队列适用于大并发或者处理时间长并需要批量操作的第三方接口，可用于但不仅限于短信发送、邮件发送、APP推送等，支持跨系统，即本系统发布的消息队列可以由自己或者给其他系统执行任务，同理本系统也可以作为消费者执行自己或者其他系统发布的消息队列任务。</p>
+<hr/>
+<h2><a id="_thinkqueue__24"></a>接下来主要介绍一下 think-queue 的使用</h2>
+<p>ThinkPHP的Queue内置了 Redis、Database、Topthink、Sync四种驱动，这里使用的是 Redis，也推荐使用 Redis</p>
+<p>think-queue 队列消息可以进行任务的发布、获取、执行、删除、重新发布、延迟发布、超时控制等操作</p>
+<p> </p>
+<h2><a id="_32"></a>消息队列基本配置</h2>
+<p>在 extra 目录下创建 queue.php 配置文件</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+
+<span class="token keyword">return</span> <span class="token punctuation">[</span>
+    <span class="token string single-quoted-string">'connector'</span>  <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'Redis'</span><span class="token punctuation">,</span>
+    <span class="token string single-quoted-string">'expire'</span>     <span class="token operator">=&gt;</span> <span class="token constant">null</span><span class="token punctuation">,</span>   <span class="token comment">// 任务过期时间，默认为60秒，若要禁用，则设置为 null</span>
+    <span class="token string single-quoted-string">'default'</span>    <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'REDIS_QUEUE'</span><span class="token punctuation">,</span>  <span class="token comment">// 默认的队列名</span>
+    <span class="token string single-quoted-string">'host'</span>       <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'127.0.0.1'</span><span class="token punctuation">,</span>   <span class="token comment">// redis 主机ip</span>
+    <span class="token string single-quoted-string">'port'</span>       <span class="token operator">=&gt;</span> <span class="token number">6379</span><span class="token punctuation">,</span>   <span class="token comment">// redis 端口</span>
+    <span class="token string single-quoted-string">'password'</span>   <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">''</span><span class="token punctuation">,</span>   <span class="token comment">// redis 密码</span>
+    <span class="token string single-quoted-string">'select'</span>     <span class="token operator">=&gt;</span> <span class="token number">0</span><span class="token punctuation">,</span>   <span class="token comment">// 使用哪里一个 db，默认为 db0</span>
+    <span class="token string single-quoted-string">'timeout'</span>    <span class="token operator">=&gt;</span> <span class="token number">0</span><span class="token punctuation">,</span>   <span class="token comment">// redis 连接的超时时间</span>
+    <span class="token string single-quoted-string">'persistent'</span> <span class="token operator">=&gt;</span> <span class="token constant boolean">false</span><span class="token punctuation">,</span>   <span class="token comment">// 是否是长连接</span>
+<span class="token punctuation">]</span><span class="token punctuation">;</span>
+</code></pre>
+<p> </p>
+<p>至于为什么放在这里，是因为 Queue 源代码默认从 extra 读取 queue 文件获取配置信息，如果想要将配置文件放置其他地方，则需要对应去修改源代码中的默认获取配置，如下图所示</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/157cecb7dbd64c15a803aafaeb5b3111.png#pic_center"/></p>
+<p> </p>
+<h2><a id="_60"></a>生产者</h2>
+<p>创建一个测试类，写入生产者方法</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+
+<span class="token keyword">namespace</span> <span class="token package">app<span class="token punctuation">\</span>api<span class="token punctuation">\</span>controller</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">think<span class="token punctuation">\</span>Controller</span><span class="token punctuation">;</span>
+<span class="token keyword">use</span> <span class="token package">think<span class="token punctuation">\</span>Queue</span><span class="token punctuation">;</span>
+
+<span class="token keyword">class</span> <span class="token class-name-definition class-name">Test</span> <span class="token keyword">extends</span> <span class="token class-name">Controller</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// 生产者，添加消息队列</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function-definition function">addQueue</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 参数</span>
+        <span class="token variable">$data</span> <span class="token operator">=</span> <span class="token punctuation">[</span>
+            <span class="token string single-quoted-string">'id'</span> <span class="token operator">=&gt;</span> <span class="token function">rand</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">99</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token string single-quoted-string">'userName'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'一起摸鱼'</span>
+        <span class="token punctuation">]</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 消息队列名</span>
+        <span class="token variable">$queueName</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'testQueue'</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 推入消息队列，注意这里的 ::class 是PHP5.5才有的写法</span>
+        <span class="token variable">$isPushed</span> <span class="token operator">=</span> <span class="token class-name static-context">Queue</span><span class="token operator">::</span><span class="token function">push</span><span class="token punctuation">(</span><span class="token class-name static-context">TestQueue</span><span class="token operator">::</span><span class="token keyword">class</span><span class="token punctuation">,</span> <span class="token variable">$data</span><span class="token punctuation">,</span> <span class="token variable">$queueName</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token comment">// PHP5.5以下的可以直接写命名空间</span>
+        <span class="token comment">// $isPushed = Queue::push('app\common\queue\TestQueue', $data, $queueName);</span>
+        
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token variable">$isPushed</span> <span class="token operator">!==</span> <span class="token constant boolean">false</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// 成功之后的业务</span>
+            <span class="token keyword">echo</span> <span class="token string single-quoted-string">'队列加入成功'</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// 失败之后的业务</span>
+            <span class="token keyword">echo</span> <span class="token string single-quoted-string">'队列加入失败'</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p> </p>
+<h2><a id="_104"></a>消费者</h2>
+<p>创建一个 TestQueue 类，用做消费者，执行消息队列中的任务</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+
+<span class="token keyword">namespace</span> <span class="token package">app<span class="token punctuation">\</span>common<span class="token punctuation">\</span>queue</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">think<span class="token punctuation">\</span>Log</span><span class="token punctuation">;</span>
+<span class="token keyword">use</span> <span class="token package">think<span class="token punctuation">\</span>queue<span class="token punctuation">\</span>Job</span><span class="token punctuation">;</span>
+
+<span class="token keyword">class</span> <span class="token class-name-definition class-name">TestQueue</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// 消费者执行入口</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function-definition function">fire</span><span class="token punctuation">(</span><span class="token class-name type-declaration">Job</span> <span class="token variable">$job</span><span class="token punctuation">,</span> <span class="token variable">$data</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 具体执行业务</span>
+        <span class="token variable">$isJobDone</span> <span class="token operator">=</span> <span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token function">doJob</span><span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token variable">$isJobDone</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// 消息队列执行成功，删除队列，否则会一直执行</span>
+            <span class="token variable">$job</span><span class="token operator">-&gt;</span><span class="token function">delete</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// 消息队列执行失败</span>
+            <span class="token comment">// 获取消息队列已经重试了几遍</span>
+            <span class="token variable">$attempts</span> <span class="token operator">=</span> <span class="token variable">$job</span><span class="token operator">-&gt;</span><span class="token function">attempts</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token variable">$attempts</span> <span class="token operator">==</span> <span class="token number">0</span> <span class="token operator">||</span> <span class="token variable">$attempts</span> <span class="token operator">==</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token comment">// 重新发布，参数 delay 是延时发布的时间</span>
+                <span class="token variable">$job</span><span class="token operator">-&gt;</span><span class="token function">release</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// 消息队列执行失败后会自动执行该方法</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function-definition function">failed</span><span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name static-context">Log</span><span class="token operator">::</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'消息队列达到最大重复执行次数后失败：'</span> <span class="token operator">.</span> <span class="token function">json_encode</span><span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// 消息队列执行方法</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function-definition function">doJob</span><span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 具体执行业务</span>
+        
+        
+        <span class="token variable">$data</span> <span class="token operator">=</span> <span class="token function">json_encode</span><span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">echo</span> <span class="token string single-quoted-string">'消息队列：'</span> <span class="token operator">.</span> <span class="token variable">$data</span><span class="token punctuation">;</span>
+        <span class="token comment">// 这里的判断条件以具体业务是否执行成功进行判断</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token variable">$data</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">echo</span> <span class="token string double-quoted-string">"执行成功"</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token constant boolean">true</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">echo</span> <span class="token string double-quoted-string">"执行失败"</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token constant boolean">false</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p> </p>
+<h2><a id="_166"></a>运行结果</h2>
+<p>请求接口，生产者发布任务</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/34f0ac3973c34d1680a2e2d18af53574.png#pic_center"/><br/>  </p>
+<p>redis 队列存放任务</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/0dab72bf89c74d659b08afdfe4bc25a9.png#pic_center"/></p>
+<p> </p>
+<p>接下来就是启用队列的监听模式了，因为不可能每次一有任务加进来就去手动执行一次队列。队列的监听模式有两种，配置参数如下：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f8567809380c460b9038161d7cc03bba.png#pic_center"/></p>
+<p> </p>
+<p>项目根目录执行</p>
+<blockquote>
+<p>php think queue:work --queue 队列名</p>
+</blockquote>
+<p> </p>
+<p>开启消费者，执行任务<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/682a93629d964fea941a1f555dd19e28.png#pic_left"/></p>
+<p> </p>
+<p>redis 队列中的任务执行后也被删除</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1b438b77dc8f4352bb33d4dea395049c.png#pic_center"/></p>
+<p> </p>
+<p>但是由于需要，我们还要将消费者挂起守护进程执行，以确保关掉终端还能够启动队列。</p>
+<blockquote>
+<p>nohup php think queue:listen --queue 队列名 &amp;</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7f5b8785e7c947f1b5f856a6a47bd77c.png#pic_left"/></p>
+<p> </p>
+<p><mark><strong>PS：shell中输入exit来退出终端</strong></mark><br/> <mark><strong>PS：shell中输入exit来退出终端</strong></mark><br/> <mark><strong>PS：shell中输入exit来退出终端</strong></mark></p>
+<p>因为在nohup执行成功后直接点关闭程序按钮关闭终端时会断掉该命令所对应的session，导致 nohup 对应的进程被通知需要一起关掉。</p>
+<p> <br/> 至此，整个消息队列流程就结束了。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

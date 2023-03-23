@@ -1,0 +1,178 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p></p>
+<p>第一步：下载phpMQTT扩展<a class="link-info" href="https://github.com/bluerhinos/phpMQTT" title="下载地址">下载地址</a>，然后放在了扩展文件夹中</p>
+<p><img alt="" height="320" src="image\28c19a37b1fb4618bd61cf297d2951d1.png" width="476"/></p>
+<p>第二步：下载  workerman/mqtt <a class="link-info" href="https://github.com/walkor/mqtt" title="官方地址 ">官方地址 </a></p>
+<p>通过composer进行安装</p>
+<p>composer require workerman/mqtt</p>
+<p>因为我是之前有用workerman做websocket做硬件做了一份与门禁设备进行连接使用，因为是全双工的，设备相当于一直都在给服务器发送，然后通过心跳数据给设备返回数据，现在用MQTT就不会有心跳监测</p>
+<p>好了原归正题下载好了之后</p>
+<p><img alt="" height="619" src="image\bbc95003716a44e998dfb652d3eba4be.png" width="567"/></p>
+<p>这里头有两个demo,一个是订阅，一个是发布我们只用到了订阅</p>
+<p>然后再worker_server.php文件中配置这里红色方块中的红色线是我的MQTT订阅控制器</p>
+<p><img alt="" height="598" src="image\0b351f6ed8294fba8de3079d96b96ddd.png" width="1200"/> </p>
+<p> 各位老铁要注意的是，window只能跑一个，linux能多个worker，注意一下。</p>
+<p>第三步、给老铁看下代码</p>
+<pre><code>&lt;?php
+namespace app\http;
+use think\worker\Server;
+use Workerman\Lib\Timer;
+use think\facade\Cache;
+use Workerman\Worker;
+use app\door\model\Device;
+class Mqtt extends Server
+{
+	protected $socket = 'http://0.0.0.0:8002';
+	public function onWorkerStart($worker)
+	{	
+		$mqtt = new \Workerman\Mqtt\Client('mqtt://服务器ID或者域名:1883');
+        $mqtt-&gt;onConnect = function($mqtt) {
+            $list=Device::where(['is_delete'=&gt;0])-&gt;column('device_sn');
+            foreach($list as $device_sn){
+                 //'/dataUpload/'.$device_sn 跟发送方的一致就可以发送
+                 $mqtt-&gt;subscribe('/dataUpload/'.$device_sn);
+            }
+        };
+        $mqtt-&gt;onMessage = function($topic, $content){
+            $data = json_decode($content,true);
+            //这里是你的业务代码下面是我的业务代码，给铁子们看下
+            if(isset($data['cmd'])){
+                
+                if($data['cmd']==34){
+                    Device::where('device_sn',$data['device_sn'])-&gt;update(['status'=&gt;1]);
+                }
+                //var_dump($data);
+                Cache::set('MQTT_XSJ_SN_'.$data['device_sn'],$data);
+            }
+        };
+        $mqtt-&gt;connect();
+	}
+	
+}</code></pre>
+<p></p>
+<p>第四步、运行</p>
+<p>命令为  php think worker:server</p>
+<p>跟这个同级文件下运行上面命令即可</p>
+<p><img alt="" height="438" src="image\daeb676463e14124b7f9fa46b864f6e2.png" width="466"/></p>
+<p><img alt="" height="133" src="image\55148dc6356a4444981a07599493d12c.png" width="540"/></p>
+<p>window差不多就是上面的样子。</p>
+<p>然后现在来说下phpMQTT用API接口去调用去发布消息</p>
+<p>就以这个函数为例吧</p>
+<pre><code>&lt;?php
+namespace app\api\controller;
+use think\facade\Cache;
+use Workerman\Worker;
+use Bluerhinos\phpMQTT;
+use app\door\model\Device;
+class Mqtt
+{
+    public function opendoorList($device_sn_list=[]){
+        require_once (app()-&gt;getRootPath() .'/extend/phpMQTT-master/phpMQTT.php');
+        $server = "我是服务器IP或者域名";       // change if necessary 服务器IP
+        $port = 1883;                            端口 一般是1883
+        $username = "LOVE";                    // mosquitto设置的用户名
+        $password = "123456";                    //mosquitto设置的密码
+        foreach($device_sn_list as $device_sn){
+            $client_id='/sendCmd/'.$device_sn;  //我是客户ID
+            $mqtt = new phpMQTT($server, $port, $client_id);    //进行连接
+            //连接
+            if ($mqtt-&gt;connect(false, NULL, $username, $password)) {
+                $mqtt-&gt;publish($client_id,'{"cmd":34,"cmd_reply":1,"cmd_reply_id":1}');
+                $mqtt-&gt;close(); //关闭
+            }
+        }
+    }
+}</code></pre>
+<p> 上面就是MQTT的与ThinkPHP6.0的使用了。</p>
+<p>还没完，肯定有人说啥是MQTT，我window要怎么用，我一脸懵逼。下面我给您介绍下</p>
+<p><br/> 一、下载mosquitto<br/><a class="link-info" href="https://mosquitto.org/download/" title="点击下载安装程序 下载地址">点击下载安装程序 下载地址</a></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/78b2b89a0d12490498f1499fc23cd63e.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAbm9faG90,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 二、配置mosquitto<br/> 1. 安装路径打开命令行界面</p>
+<p> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/bfaf91314f474a44a113058a01c3da49.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAbm9faG90,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p> </p>
+<p><br/> 2. 设置user及password<br/>     </p>
+<pre><code>执行：mosquitto_passwd.exe -c pwfile.example -u vic
+    设置用户名：vic      设置密码：123456</code></pre>
+<p><br/> 3. 配置文件检查<br/>   </p>
+<pre><code>	mosquitto.exe -c mosquitto.conf 
+	未报错说明配置正常
+</code></pre>
+<p><br/> 4. 设置端口<br/>   </p>
+<pre><code> 默认端口：1883
+    打开power shell ，cd到安装路径 cd D:\software\mosquitto
+    启动：.\mosquitto.exe
+    
+    指定端口启动：mosquitto.exe -p 10086</code></pre>
+<p><br/> 5. 订阅者<br/>   </p>
+<pre><code> mosquitto_sub.exe -h 127.0.0.1 -p 10086 -t topicTest01 -u vic -P 123456</code></pre>
+<p><br/> 6. 发布者<br/>   </p>
+<pre><code> mosquitto_pub.exe -h 127.0.0.1 -p 10086 -u admin -P 111 -t topicTest01 -m "hello world"</code></pre>
+<p><br/> 7. 命令行测试</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/fd4d2ff6455a4a188e2c9ac9ae06206e.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAbm9faG90,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 三、MQTTX<br/> 1. 连接服务器</p>
+<p> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/bf2c4d31411c445eac75d338ec165a9f.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAbm9faG90,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p> </p>
+<p><br/> 2. 订阅topic</p>
+<p><img alt="" src="image\eedb90c01d1a4724b7f108236389c6d7.png"/><br/> 3. 发布消息</p>
+<p> <img alt="" src="image\213577d81fec4f12b746f9f6622a156d.png"/></p>
+<p> </p>
+<p>————————————————<br/> 这几个图是一位作者的</p>
+<p>根据上面的运行你也可以得到上面的效果，这边额外再补充一下，因为设备连接的是局域网，那我改怎么调试呢，在配置文件中加入</p>
+<p><img alt="" height="835" src="image\68e20a865df444d8b40cf491913bfd5b.png" width="1200"/></p>
+<pre><code>
+allow_anonymous true
+listener 1883 0.0.0.0</code></pre>
+<p><br/> ————————————————<br/> 其中window上的mosquitto安装为https://blog.csdn.net/no_hot/article/details/122540087  复制</p>
+<p>我给大家来个linux吧</p>
+<p>下面由<a href="https://www.liye5.com/btmbxzma.html" title="宝塔">宝塔</a>教程栏目给大家介绍宝塔面板下安装Mosquitto-php扩展方法，希望对需要的朋友有所帮助！</p>
+<p class="img-center"><img alt="" src="image\bab9b394123d2c374b0c63f7e8f39255.png"/></p>
+<p><strong>宝塔面板下安装Mosquitto-php扩展</strong></p>
+<p>MQTT 是物联网的消息传送协议标准。</p>
+<p>在 CentOS 7上常用的开源 MQTT 消息服务器就是 Mosquitto。</p>
+<p>我们用 PECL 来安装 Mosquitto 的 PHP 实现。</p>
+<p>首先要确保 php-devel 已经安装：</p>
+<pre># yum install -y php-devel</pre>
+<p>然后确保 mosquitto-devel 也已经安装：</p>
+<h1>yum install -y mosquitto-devel</h1>
+<p>由于宝塔是多环境共存，以下以PHP7.1为例<br/> 再用 pecl 来安装 Mosquitto-PHP</p>
+<p># /www/server/php/71/bin/pecl install Mosquitto-alpha</p>
+<p>然后去 /www/server/php/71/etc/php.ini 添加一行：</p>
+<p>extension=mosquitto.so</p>
+<p>重启 服务后，运行 php -i|grep mosquitto 可以看到<br/> mosquitto<br/> libmosquitto version =&gt; 1.4.13</p>
+<p>表明 PHP 可以使用 mosquitto 的 MQTT 库了。</p>
+<p>下面是用 PHP 来发送消息的示例代码 mosquitto-test.php：</p>
+<pre>&lt;?php  
+2  
+3  
+4 $c = new Mosquitto\\Client;  
+5  
+6 $topic = 'test';  
+7 $msg = 'hello你好';  
+8 $qos = 2;  
+9  
+10 $username = '用户名';  
+11 $password = '密码';  
+12  
+13 $c-&gt;setCredentials($username, $password);  
+14 $c-&gt;onConnect(function() use ($c) {  
+15 global $topic,$msg,$qos;  
+16 $c-&gt;publish($topic, $msg, $qos);  
+17 });  
+18  
+19 $host = '192.168.1.16';  
+20  
+21 $c-&gt;connect($host);  
+22 for ($i = 0; $i &lt; 100; $i++) {  
+23 // Loop around to permit the library to do its work  
+24 $c-&gt;loop(1);  
+25 }  
+26  
+27 echo "结束\\n";</pre>
+<p>然后运行 php mosqitto-test.php</p>
+<p>另外开启一个终端，用</p>
+<pre># mosquitto_sub -h 192.168.1.16 -u username -P Passw0rd -t test</pre>
+<p>可以看到 PHP 程序发送的消息: "hello你好".</p>
+<p>以上就是宝塔面板下怎么安装Mosquitto-php扩展的详细内容</p>
+<p> </p>
+</div>
+</div>

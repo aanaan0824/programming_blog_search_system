@@ -1,0 +1,174 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>我最近偶然发现了一个标准的SQL特性，令我惊讶的是，这个特性在<a href="https://link.juejin.cn?target=http%3A%2F%2Fhsqldb.org%2F" title="HSQLDB">HSQLDB</a>中实现了。这个关键字是<code>CORRESPONDING</code> ，它可以和所有的集合操作一起使用，包括<code>UNION</code> 、<code>INTERSECT</code> 、和<code>EXCEPT</code> 。</p>
+<p>让我们来看看<a href="https://link.juejin.cn?target=https%3A%2F%2Fwww.jooq.org%2Fsakila" title="sakila数据库">sakila数据库</a>。它有3个表，里面都是人:</p>
+<pre><code>CREATE TABLE actor (
+    actor_id integer NOT NULL PRIMARY KEY,
+    first_name varchar(45) NOT NULL,
+    last_name varchar(45) NOT NULL,
+    last_update timestamp
+);
+
+CREATE TABLE customer (
+    customer_id integer NOT NULL PRIMARY KEY,
+    store_id smallint NOT NULL,
+    first_name varchar(45) NOT NULL,
+    last_name varchar(45) NOT NULL,
+    email varchar(50),
+    address_id smallint NOT NULL,
+    create_date date NOT NULL,
+    last_update timestamp,
+    active boolean
+);
+
+CREATE TABLE staff (
+    staff_id integer NOT NULL PRIMARY KEY,
+    first_name varchar(45) NOT NULL,
+    last_name varchar(45) NOT NULL,
+    address_id smallint NOT NULL,
+    email varchar(50),
+    store_id smallint NOT NULL,
+    active boolean NOT NULL,
+    username varchar(16) NOT NULL,
+    password varchar(40),
+    last_update timestamp,
+    picture blob
+);
+
+复制代码</code></pre>
+<p>相似，但不相同。如果我们想从我们的数据库中获得所有的 "人 "呢？在任何普通的数据库产品中，有一种方法可以做到这一点:</p>
+<pre><code>SELECT first_name, last_name
+FROM actor
+UNION ALL
+SELECT first_name, last_name
+FROM customer
+UNION ALL
+SELECT first_name, last_name
+FROM staff
+ORDER BY first_name, last_name
+
+复制代码</code></pre>
+<p>结果可能看起来像这样:</p>
+<pre><code>|first_name|last_name|
+|----------|---------|
+|AARON     |SELBY    |
+|ADAM      |GOOCH    |
+|ADAM      |GRANT    |
+|ADAM      |HOPPER   |
+|ADRIAN    |CLARY    |
+|AGNES     |BISHOP   |
+|AL        |GARLAND  |
+|ALAN      |DREYFUSS |
+|...       |...      |
+复制代码</code></pre>
+<h2>使用CORRESPONDING</h2>
+<p>现在，在HSQLDB中，以及在标准SQL中，你可以使用<code>CORRESPONDING</code> 来完成这种任务。比如说:</p>
+<pre><code>SELECT *
+FROM actor
+UNION ALL CORRESPONDING
+SELECT *
+FROM customer
+UNION ALL CORRESPONDING
+SELECT *
+FROM staff
+ORDER BY first_name, last_name
+
+复制代码</code></pre>
+<p>其结果是这样的:</p>
+<pre><code>|first_name|last_name|last_update            |
+|----------|---------|-----------------------|
+|AARON     |SELBY    |2006-02-15 04:57:20.000|
+|ADAM      |GOOCH    |2006-02-15 04:57:20.000|
+|ADAM      |GRANT    |2006-02-15 04:34:33.000|
+|ADAM      |HOPPER   |2006-02-15 04:34:33.000|
+|ADRIAN    |CLARY    |2006-02-15 04:57:20.000|
+|AGNES     |BISHOP   |2006-02-15 04:57:20.000|
+|AL        |GARLAND  |2006-02-15 04:34:33.000|
+|ALAN      |DREYFUSS |2006-02-15 04:34:33.000|
+|...       |...      |...                    |
+复制代码</code></pre>
+<p>那么，发生了什么？列<code>FIRST_NAME</code>,<code>LAST_NAME</code>, 和<code>LAST_UPDATE</code> 是这三个表所共有的。换句话说，如果你针对HSQLDB中的<code>INFORMATION_SCHEMA</code> ，运行这个查询:</p>
+<pre><code>SELECT column_name
+FROM information_schema.columns
+WHERE table_name = 'ACTOR'
+INTERSECT
+SELECT column_name
+FROM information_schema.columns
+WHERE table_name = 'CUSTOMER'
+INTERSECT
+SELECT column_name
+FROM information_schema.columns
+WHERE table_name = 'STAFF'
+
+复制代码</code></pre>
+<p>你得到的正是这3个列:</p>
+<pre><code>|COLUMN_NAME|
+|-----------|
+|FIRST_NAME |
+|LAST_NAME  |
+|LAST_UPDATE|
+
+复制代码</code></pre>
+<p>换句话说，<code>CORRESPONDING</code> ，在集合操作的子查询中创建列的交集（即 "共享列"），投影这些，并应用该投影的集合操作。在某种程度上，这类似于一个 <code>[NATURAL JOIN](https://blog.jooq.org/impress-your-coworkers-with-a-sql-natural-full-outer-join/)</code>，后者也试图找到列的交集以产生一个连接谓词。然而，<code>NATURAL JOIN</code> ，然后投影所有的列（或列的联合），而不仅仅是共享的列。</p>
+<h2>使用CORRESPONDING BY</h2>
+<p>就像<code>NATURAL JOIN</code> ，这是个有风险的操作。只要一个子查询改变了它的投影（例如，由于表的列重命名），所有这些查询的结果也会改变，甚至可能不会产生语法错误，只是结果不同。</p>
+<p>事实上，在上面的例子中，我们可能根本不关心那个<code>LAST_UPDATE</code> 列。它被意外地包含在<code>UNION ALL</code> 的集合操作中，就像<code>NATURAL JOIN</code> 会意外地使用<code>LAST_UPDATE</code> 来连接一样。</p>
+<p>对于连接，我们可以使用<code>JOIN .. USING (first_name, last_name)</code> ，至少指定我们想通过哪一个共享列名来连接这两个表。使用<code>CORRESPONDING</code> ，我们可以为同样的目的提供可选的<code>BY</code> 子句:</p>
+<pre><code>SELECT *
+FROM actor
+UNION ALL CORRESPONDING BY (first_name, last_name)
+SELECT *
+FROM customer
+UNION ALL CORRESPONDING BY (first_name, last_name)
+SELECT *
+FROM staff
+ORDER BY first_name, last_name;
+
+复制代码</code></pre>
+<p>现在，这只产生了两个想要的列:</p>
+<pre><code>|first_name|last_name|
+|----------|---------|
+|AARON     |SELBY    |
+|ADAM      |GOOCH    |
+|ADAM      |GRANT    |
+|ADAM      |HOPPER   |
+|ADRIAN    |CLARY    |
+|AGNES     |BISHOP   |
+|AL        |GARLAND  |
+|ALAN      |DREYFUSS |
+|...       |...      |
+复制代码</code></pre>
+<p>事实上，这样一来，我们甚至可以有意义地使用INTERSECT和EXCEPT的语法，例如，找到与某个演员共享名字的客户:</p>
+<pre><code>SELECT *
+FROM actor
+INTERSECT CORRESPONDING BY (first_name, last_name)
+SELECT *
+FROM customer
+ORDER BY first_name, last_name;
+
+复制代码</code></pre>
+<p>制作:</p>
+<pre><code>|first_name|last_name|
+|----------|---------|
+|JENNIFER  |DAVIS    |
+
+复制代码</code></pre>
+<h2>其他方言</h2>
+<p>我以前没有在其他方言中多次遇到过这种语法。也许，它在将来会运到PostgreSQL中。Vik Fearing已经在做一个分支了:</p>
+<p><strong>小伙伴们有兴趣想了解内容和更多相关学习资料的请点赞收藏+评论转发+关注我，后面会有很多干货。<br/> 我有一些面试题、架构、设计类资料可以说是程序员面试必备！所有资料都整理到网盘了，需要的话欢迎下载！私信我回复【07】即可免费获取</strong></p>
+<p style="text-align:center;"><img alt="" src="image\091803863b9047168b96f043d84e9820.png"/></p>
+<p> </p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p><br/> 链接：https://juejin.cn/post/7126351838349099022<br/>  </p>
+</div>
+</div>

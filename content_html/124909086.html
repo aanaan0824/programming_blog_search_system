@@ -1,0 +1,147 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>前面讲了那么多，都是微信用户主动向公众号发送信息或某个操作触发公众号响应并给予用户回复。如果在微信用户没有主动发起互动的情况下，公众号应该如何向微信用户发送消息呢？</p>
+<p>本篇给出一种解决方案：模板消息。先来看看官方文档：</p>
+<p><span style="color:#1c7331;">模板消息仅用于公众号向用户发送重要的服务通知，只能用于符合其要求的服务场景中，如信用卡刷卡通知，商品购买成功通知等。</span><span style="color:#fe2c24;">不支持广告等营销类消息以及其它所有可能对用户造成骚扰的消息。</span></p>
+<p><span style="color:#1c7331;">关于使用规则，请注意：</span></p>
+<ol><li><span style="color:#1c7331;">所有服务号都可以在功能-&gt;添加功能插件处看到申请模板消息功能的入口，但只有</span><span style="color:#fe2c24;"><strong>认证后</strong></span><span style="color:#1c7331;">的服务号才可以申请模板消息的使用权限并获得该权限；</span></li><li><span style="color:#1c7331;">需要选择公众账号服务所处的</span><strong><span style="color:#fe2c24;">2个</span></strong><span style="color:#1c7331;">行业，每月可更改1次所选行业；</span></li><li><span style="color:#1c7331;">在所选择行业的模板库中选用已有的模板进行调用；</span></li><li><span style="color:#1c7331;">每个账号可以同时使用</span><span style="color:#fe2c24;">25个</span><span style="color:#1c7331;">模板。</span></li><li><span style="color:#1c7331;">当前每个账号的模板消息的日调用上限为</span><span style="color:#fe2c24;">10万次</span><span style="color:#1c7331;">，单个模板没有特殊限制。【2014年11月18日将接口调用频率从默认的日1万次提升为日10万次，可在 MP 登录后的开发者中心查看】。当账号粉丝数超过10W/100W/1000W时，模板消息的日调用上限会相应提升，以公众号 MP 后台开发者中心页面中标明的数字为准。</span></li></ol>
+<p><span style="color:#1c7331;">关于接口文档，请注意：</span></p>
+<ol><li><span style="color:#1c7331;">模板消息调用时主要需要模板 ID 和模板中各参数的赋值内容；</span></li><li><span style="color:#1c7331;">模板中参数内容必须以".DATA"结尾，否则视为保留字；</span></li><li><span style="color:#1c7331;">模板保留符号""。</span></li></ol>
+<p>注意上面标红的字样，都是使用要点，首先公众号要认证才能启用模板消息功能，还有不能随意给微信用户发信息，特别是发营销类消息以及带敏感字眼的消息，否则首先是模板消息失效，严重的还会导致公众号被封号，使用前一定要详细了解规则。</p>
+<p>现在来看看实现步骤。</p>
+<p><strong>一、公众号认证</strong></p>
+<p>登录微信公众号后台，按提示完成公众号认证，每年有300元服务费。</p>
+<p style="text-align:center;"><img alt="" src="image\92cab29f9a1645e3b3a431ad4acc19ff.png"/></p>
+<p> </p>
+<p><strong>二、选择模板消息</strong></p>
+<p>认证后，到微信公众号内选择想用的模板消息类型，操作图如下：</p>
+<p style="text-align:center;"><img alt="" src="image\dd0f6c73e0654bbcb3e7f687462597d4.png"/></p>
+<p style="text-align:center;"><img alt="" src="image\0526f69a3e41496cb59b2759b4b58562.png"/> </p>
+<p style="text-align:center;"><img alt="" src="image\d5c8be9b9d864986acb363f2d67bc000.png"/> </p>
+<p style="text-align:center;"><img alt="" src="image\69cb4f7c8f644d32a1742a9e030ad0f5.png"/> </p>
+<p style="text-align:center;"><img alt="" src="image\413a55d2685c452ba9be66541771a83f.png"/> </p>
+<p> </p>
+<p><strong>三、编写常用模板消息类</strong></p>
+<p>准备以上内容，现在可以把常用的模板消息写到一个专用类里，我放在QinMing.WeixinTemplateMessage命名空间的SendTemplateMessage类中，保存为QinMingWeixinTemplateMessage.cs文件，放在App_Code目录中，源码如下（仅演示其中两个）：</p>
+<pre><code class="language-cs">using System;
+using System.Web;
+using System.Web.Security;
+using System.Web.UI;
+using System.Web.UI.HtmlControls;
+using System.Web.UI.WebControls;
+using System.Web.UI.WebControls.WebParts;
+using System.Data;
+using System.Data.SqlClient;
+using System.Text;
+using System.Text.RegularExpressions;
+using LitJson;
+using System.Net;
+using System.IO;
+using QinMing.WeixinContainer;
+using QinMing.Config;
+
+namespace QinMing.WeixinTemplateMessage
+{
+    public class SendTemplateMessage
+    {
+
+		/// &lt;summary&gt;
+        /// 模板消息：派单成功提醒，用于对公众号管理员发送各类提醒信息
+        /// &lt;/summary&gt;
+		public static void SendRemindMsg(string open_id, string msg_title, string redirect_url) 
+		{  
+			QinMingWeixinContainer gt=new QinMingWeixinContainer();
+			string access_token = gt.GetAccessToken();
+			string msgid = "";  
+
+			string poster = "{\"touser\": \"" + open_id + "\",\"template_id\":\"Y3-mTYsfrPBA_SzTqQraaaaaaaKH_9eF_kMGE3o0\", "
+				+ "\"url\":\"" + redirect_url + "\"," 
+				+ "\"data\":{\"first\":{\"value\":\"" + msg_title + "\",\"color\":\"#ff0000\"},"
+				+ "\"keyword1\":{\"value\":\"" + DateTime.Now.ToString("yyyyMMddHHmmssms") + "\",\"color\":\"#ff0000\"},"
+				+ "\"keyword2\":{\"value\":\"" + DateTime.Now.ToString("yyyy:MM:dd HH:mm:ss") + "\",\"color\":\"#ff0000\"},"
+				+ "\"remark\":{\"value\":\"点击这里查看详情。\",\"color\":\"#0000ff\"}"
+				+ " } }";  
+			string resultStr = GetPage("https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=" + access_token, poster);  
+
+		}
+
+		/// &lt;summary&gt;
+        /// 模板消息：新会员或新合伙人注册成功提醒，用于对公众号管理员发送提醒信息
+        /// &lt;/summary&gt;
+		public static void SendNewMemberMsg(string open_id, string mobile, string msg_title, string redirect_url) 
+		{  
+			QinMingWeixinContainer gt=new QinMingWeixinContainer();
+			string access_token = gt.GetAccessToken();
+			string msgid = "";  
+
+			string poster = "{\"touser\": \"" + open_id + "\",\"template_id\":\"tQ_vHnFzPSl5TLbbbbbbbb8yroNhJw2713SMF0\", "
+				+ "\"url\":\"" + redirect_url + "\"," 
+				+ "\"data\":{\"first\":{\"value\":\"" + msg_title + "\",\"color\":\"#ff0000\"},"
+				+ "\"keyword1\":{\"value\":\"" + open_id + "\",\"color\":\"#ff0000\"},"
+				+ "\"keyword2\":{\"value\":\"" + mobile + "\",\"color\":\"#ff0000\"},"
+				+ "\"keyword3\":{\"value\":\"" + DateTime.Now.ToString("yyyy:MM:dd HH:mm:ss") + "\",\"color\":\"#ff0000\"},"
+				+ "\"remark\":{\"value\":\"点击这里查看详情。\",\"color\":\"#0000ff\"}"
+				+ " } }";  
+			string resultStr = GetPage("https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=" + access_token, poster);  
+
+		}
+		
+        public static string GetPage(string posturl, string postData)  
+        {  
+			Stream outstream = null;  
+			Stream instream = null;  
+			StreamReader sr = null;  
+			HttpWebResponse response = null;  
+			HttpWebRequest request = null;  
+			Encoding encoding = Encoding.UTF8;  
+			byte[] data = encoding.GetBytes(postData);  
+			// 准备请求...  
+			try  
+			{  
+				// 设置参数  
+				request = WebRequest.Create(posturl) as HttpWebRequest;  
+				CookieContainer cookieContainer = new CookieContainer();  
+				request.CookieContainer = cookieContainer;  
+				request.AllowAutoRedirect = true;  
+				request.Method = "POST";  
+				request.ContentType = "application/x-www-form-urlencoded";  
+				request.ContentLength = data.Length;  
+				outstream = request.GetRequestStream();  
+				outstream.Write(data, 0, data.Length);  
+				outstream.Close();  
+				//发送请求并获取相应回应数据  
+				response = request.GetResponse() as HttpWebResponse;  
+				//直到request.GetResponse()程序才开始向目标网页发送Post请求  
+				instream = response.GetResponseStream();  
+				sr = new StreamReader(instream, encoding);  
+				//返回结果网页（html）代码  
+				string content = sr.ReadToEnd();  
+				string err = string.Empty;  
+				return content;  
+			}  
+			catch (Exception ex)  
+			{  
+				string err = ex.Message;  
+				return string.Empty;  
+			}  
+        }  
+
+
+    }
+
+}</code></pre>
+<p>上面代码中用到的QinMing.Config、QinMing.WeixinContainer命名空间及其类实现，在前面的第（1）、第（4）篇文章中已经给出。<br/> 模板消息具体使用举例：</p>
+<pre><code class="language-cs">//给管理员发送粉丝点击菜单通知
+QinMing.WeixinTemplateMessage.SendTemplateMessage.SendRemindMsg("指定openid", "粉丝点击菜单信息提醒" + FromUserName, "http://www.yourweb.com/OneUser.aspx?open_id=" + FromUserName);  </code></pre>
+<p>因为用了静态类和静态方法，无需事先创建对象，每次直接使用即可。</p>
+<p><strong>四、使用演示</strong></p>
+<p style="text-align:center;"><img alt="" src="image\3f59d6b1871346e6afc9c6f730057dbb.png"/></p>
+<p>用起来是不是很方便？关键是免费的！！！记住一定要按官方规则来，不然模板消息功能很容易被封停。 </p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

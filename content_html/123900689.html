@@ -1,0 +1,87 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>       作为一个半路出家的linuc用户，coredump这个问题太让人抓狂了，网上找了好多都是不全面，不适应或者看不懂；现在终于解决了，记录一下防止以后出现还是无解，同时也分享给大家，希望大家能少踩一些坑。</p>
+<p id="main-toc"><strong>目录</strong></p>
+<p id="1.%E4%BB%80%E4%B9%88%E6%98%AF%E6%AE%B5%E9%94%99%E8%AF%AF-toc" style="margin-left:0px;"><a href="#1.%E4%BB%80%E4%B9%88%E6%98%AF%E6%AE%B5%E9%94%99%E8%AF%AF">1.什么是段错误</a></p>
+<p id="2.%20%E8%A7%A3%E5%86%B3%E6%96%B9%E6%A1%88-toc" style="margin-left:0px;"><a href="#2.%20%E8%A7%A3%E5%86%B3%E6%96%B9%E6%A1%88">2. 解决方案</a></p>
+<p id="3.%E8%A7%A3%E5%86%B3%E8%BF%87%E7%A8%8B-toc" style="margin-left:0px;"><a href="#3.%E8%A7%A3%E5%86%B3%E8%BF%87%E7%A8%8B">3.解决过程</a></p>
+<p id="3.1%20%E7%94%9F%E6%88%90Core%E6%96%87%E4%BB%B6-toc" style="margin-left:40px;"><a href="#3.1%20%E7%94%9F%E6%88%90Core%E6%96%87%E4%BB%B6">3.1 生成Core文件</a></p>
+<p id="3.1.1%20%E4%BD%BF%E7%94%A8ulimit%20-a%E5%91%BD%E4%BB%A4%E6%9F%A5%E7%9C%8Bcore%E6%96%87%E4%BB%B6%E5%A4%A7%E5%B0%8F%E9%99%90%E5%88%B6-toc" style="margin-left:80px;"><a href="#3.1.1%20%E4%BD%BF%E7%94%A8ulimit%20-a%E5%91%BD%E4%BB%A4%E6%9F%A5%E7%9C%8Bcore%E6%96%87%E4%BB%B6%E5%A4%A7%E5%B0%8F%E9%99%90%E5%88%B6">3.1.1 使用ulimit -a命令查看core文件大小限制</a></p>
+<p id="3.1.2%20%E5%9C%A8%E7%BB%88%E7%AB%AF%E8%BE%93%E5%85%A5%20cat%20%2Fproc%2Fsys%2Fkernel%2Fcore_pattern%20%E6%9F%A5%E7%9C%8Bcore%E7%9A%84%E7%94%9F%E6%88%90%E8%B7%AF%E5%BE%84%E3%80%82-toc" style="margin-left:80px;"><a href="#3.1.2%20%E5%9C%A8%E7%BB%88%E7%AB%AF%E8%BE%93%E5%85%A5%20cat%20%2Fproc%2Fsys%2Fkernel%2Fcore_pattern%20%E6%9F%A5%E7%9C%8Bcore%E7%9A%84%E7%94%9F%E6%88%90%E8%B7%AF%E5%BE%84%E3%80%82">3.1.2 在终端输入 cat /proc/sys/kernel/core_pattern 查看core的生成路径。</a></p>
+<p id="%C2%A03.1.3%20%E4%BF%AE%E6%94%B9core%E6%96%87%E4%BB%B6%E7%94%9F%E6%88%90%E8%B7%AF%E5%BE%84-toc" style="margin-left:80px;"><a href="#%C2%A03.1.3%20%E4%BF%AE%E6%94%B9core%E6%96%87%E4%BB%B6%E7%94%9F%E6%88%90%E8%B7%AF%E5%BE%84"> 3.1.3 修改core文件生成路径</a></p>
+<p id="3.2%20GDB%E6%B5%8B%E8%AF%95-toc" style="margin-left:40px;"><a href="#3.2%20GDB%E6%B5%8B%E8%AF%95">3.2 GDB测试</a></p>
+<p id="3.2.1%C2%A0%E5%90%AF%E5%8A%A8gdb-toc" style="margin-left:80px;"><a href="#3.2.1%C2%A0%E5%90%AF%E5%8A%A8gdb">3.2.1 启动gdb</a></p>
+<p id="3.2.2%20%E8%BE%93%E5%85%A5bt%E5%9B%9E%E6%BA%AF%E5%AE%9A%E4%BD%8D-toc" style="margin-left:80px;"><a href="#3.2.2%20%E8%BE%93%E5%85%A5bt%E5%9B%9E%E6%BA%AF%E5%AE%9A%E4%BD%8D">3.2.2 输入bt回溯定位</a></p>
+<p id="%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99%EF%BC%9A-toc" style="margin-left:0px;"><a href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99%EF%BC%9A">参考资料：</a></p>
+<hr id="hr-toc"/>
+<p></p>
+<h1 id="1.%E4%BB%80%E4%B9%88%E6%98%AF%E6%AE%B5%E9%94%99%E8%AF%AF">1.什么是段错误</h1>
+<p>        core dump又叫核心转储, 当程序运行过程中发生异常, 程序异常退出时, 由操作系统把程序当前的内存状况存储在一个core文件中, 叫core dump. (linux中如果内存越界会收到SIGSEGV信号，然后就会core dump)。产生段错误的原因大致上有三类：<strong>访问不存在的内存地址、访问系统保护的内存地址和访问只读的内存地址</strong>。</p>
+<h1 id="2.%20%E8%A7%A3%E5%86%B3%E6%96%B9%E6%A1%88">2. 解决方案</h1>
+<p>网上的资料虽然比较乱，但是也提供了一个解决问题的思路：</p>
+<p>(1)设置core文件，找到段错误生成的core文件</p>
+<p>(2)利用core文件，使用GDB测试找到问题所在</p>
+<h1 id="3.%E8%A7%A3%E5%86%B3%E8%BF%87%E7%A8%8B">3.解决过程</h1>
+<p>先看问题：</p>
+<p class="img-center"><img alt="" height="144" src="image\e0188170a69b41708f454e9ca472ac06.png" width="354"/></p>
+<h2 id="3.1%20%E7%94%9F%E6%88%90Core%E6%96%87%E4%BB%B6">3.1 生成Core文件</h2>
+<h3 id="3.1.1%20%E4%BD%BF%E7%94%A8ulimit%20-a%E5%91%BD%E4%BB%A4%E6%9F%A5%E7%9C%8Bcore%E6%96%87%E4%BB%B6%E5%A4%A7%E5%B0%8F%E9%99%90%E5%88%B6">3.1.1 使用ulimit -a命令查看core文件大小限制</h3>
+<p class="img-center"><img alt="" height="307" src="image\0086c27597e24f5196e0c7201be5193e.png" width="455"/></p>
+<p></p>
+<p>可以看到core file size的大小为0，文件根本装不进，需要使用 ulimit -c unlimited 修改这个文件的大小</p>
+<p class="img-center"><img alt="" height="327" src="image\3758b3c185d242dea8b1e1368ebd73f0.png" width="525"/></p>
+<p> 修改成功后，按照网上的说法，再运行程序就会生成core文件，一般路径和可执行程序一个路径。但是在ubuntu20.04下，怎么也找不到去哪里了（反正我的是这样），因此需要查看core文件的生成路径。</p>
+<h3 id="3.1.2%20%E5%9C%A8%E7%BB%88%E7%AB%AF%E8%BE%93%E5%85%A5%20cat%20%2Fproc%2Fsys%2Fkernel%2Fcore_pattern%20%E6%9F%A5%E7%9C%8Bcore%E7%9A%84%E7%94%9F%E6%88%90%E8%B7%AF%E5%BE%84%E3%80%82">3.1.2 在终端输入 cat /proc/sys/kernel/core_pattern 查看core的生成路径。</h3>
+<p class="img-center"><img alt="" height="40" src="image\3376a64badf04191802aab76f2b8426a.png" width="400"/></p>
+<p> 转到这个路径下去找是找不到core文件，这是因为ubuntu的服务apport.service。自动生成崩溃报告，官方为了自动收集错误的。我们肯定想到修改路径的办法，那就演示一下会怎么样。</p>
+<p>core的设置主要有两个命令：</p>
+<pre><code class="language-cpp"> //控制core文件的文件名中是否添加pid作为扩展
+echo "1" &gt; /proc/sys/kernel/core_uses_pid  
+//设置core文件的输出路径和输出文件名，这里我的路径是/home/boy/corefile，文件名就是后面的部分
+echo "/home/boy/corefile/core-%e-%p-%t"&gt; /proc/sys/kernel/core_pattern 
+
+//参数说明
+%p - insert pid into filename 添加pid
+%u - insert current uid into filename 添加当前uid
+%g - insert current gid into filename 添加当前gid
+%s - insert signal that caused the coredump into the filename 添加导致产生core的信号
+%t - insert UNIX time that the coredump occurred into filename 添加core文件生成时的unix时间
+%h - insert hostname where the coredump happened into filename 添加主机名
+%e - insert coredumping executable name into filename 添加程序名</code></pre>
+<p>我直接用echo "/home/boy/corefile/core-%e-%p-%t"&gt; /proc/sys/kernel/core_pattern 进行修改，结果如图</p>
+<p><img alt="" height="38" src="image\78856ffcea844e34b6d63026b14d2d16.png" width="931"/></p>
+<h3 id="%C2%A03.1.3%20%E4%BF%AE%E6%94%B9core%E6%96%87%E4%BB%B6%E7%94%9F%E6%88%90%E8%B7%AF%E5%BE%84"> 3.1.3 修改core文件生成路径</h3>
+<p>因为我们修改的core_pattern文件是只读文件，没法这样修改。所以要换一种思路，修改不了就先停掉apport.service，这个服务对我们来说基本没用。</p>
+<p>错误报告的部分操作命令如下：</p>
+<pre><code>//1.启用错误报告
+sudo systemctl enable apport.service
+//或
+sudo service apport start
+
+//2.关闭错误报告
+sudo systemctl disable apport.service
+//或
+sudo service apport stop</code></pre>
+<p>所以，用sudo service apport stop关闭错误报告后我们再看core文件的路径会怎么样</p>
+<p class="img-center"><img alt="" height="95" src="image\1b96014c36de474884171937cf3430c2.png" width="406"/></p>
+<p> 可以看到，路径发生了变化，再运行一次试试，看现在能不能生成core</p>
+<p class="img-center"><img alt="" height="298" src="image\fecca8e710e446f28292a0f024e815e7.png" width="537"/></p>
+<p> 可以看到，运行完后用ll查看生成了core文件，方法有限，下面就是GDB调试找到错误的位置了。</p>
+<h2 id="3.2%20GDB%E6%B5%8B%E8%AF%95">3.2 GDB测试</h2>
+<p>GDB详细说明请看参考资料大佬的整理，这里只记录一下我怎么测试的</p>
+<h3 id="3.2.1%C2%A0%E5%90%AF%E5%8A%A8gdb">3.2.1 启动gdb</h3>
+<p>输入gdb 运行文件  core文件,例如：</p>
+<pre><code>gdb  bin/run_vo  core</code></pre>
+<p>结果如下：</p>
+<p><img alt="" height="597" src="image\0f52f0a5173e43ff9c8efa5e8227e1da.png" width="885"/></p>
+<p> 可以看到<strong>对内存出现非法访问时将收到段错误信号SIGSEGV</strong>下面就是出错的位置，我们还可以使用backtrace回溯定位问题。</p>
+<h3 id="3.2.2%20%E8%BE%93%E5%85%A5bt%E5%9B%9E%E6%BA%AF%E5%AE%9A%E4%BD%8D">3.2.2 输入bt回溯定位</h3>
+<p><img alt="" height="363" src="image\053994faed194393b100280805b3547d.png" width="872"/></p>
+<p> 可以看到现在的报告更加详细。</p>
+<p>到此，coredump问题已经解决，输入q,即可退出gdb,剩下就是修改问题部分了。</p>
+<h1 id="%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99%EF%BC%9A">参考资料：</h1>
+<p><a class="has-card" href="https://blog.csdn.net/Jqivin/article/details/121908435?ops_request_misc=&amp;request_id=&amp;biz_id=102&amp;utm_term=ubuntu20.04%E6%89%BE%E4%B8%8D%E5%88%B0core%E6%96%87%E4%BB%B6&amp;utm_medium=distribute.pc_search_result.none-task-blog-2~all~sobaiduweb~default-4-121908435.142%5Ev5%5Earticle_score_rank&amp;spm=1018.2226.3001.4187" title="(69条消息) ubuntu20.04 如何生成core文件_Jqivin的博客-CSDN博客"><span class="link-card-box"><span class="link-title">(69条消息) ubuntu20.04 如何生成core文件_Jqivin的博客-CSDN博客</span><span class="link-link"><img alt="icon-default.png?t=M276" class="link-link-icon" src="https://csdnimg.cn/release/blog_editor_html/release2.0.8/ckeditor/plugins/CsdnLink/icons/icon-default.png?t=M276"/>https://blog.csdn.net/Jqivin/article/details/121908435?ops_request_misc=&amp;request_id=&amp;biz_id=102&amp;utm_term=ubuntu20.04%E6%89%BE%E4%B8%8D%E5%88%B0core%E6%96%87%E4%BB%B6&amp;utm_medium=distribute.pc_search_result.none-task-blog-2~all~sobaiduweb~default-4-121908435.142^v5^article_score_rank&amp;spm=1018.2226.3001.4187</span></span></a><a class="has-card" href="https://blog.csdn.net/sz76211822/article/details/112181664?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522164879853216782248562235%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fall.%2522%257D&amp;request_id=164879853216782248562235&amp;biz_id=0&amp;utm_medium=distribute.pc_search_result.none-task-blog-2~all~first_rank_ecpm_v1~rank_v31_ecpm-3-112181664.142%5Ev5%5Earticle_score_rank&amp;utm_term=%E4%BF%AE%E6%94%B9%2Fetc%2Fdefault%2Fapport&amp;spm=1018.2226.3001.4187" title="(69条消息) Ubuntu18.04 产生不了core文件之解决办法_qq76211822的博客-CSDN博客_/usr/share/apport/apport"><span class="link-card-box"><span class="link-title">(69条消息) Ubuntu18.04 产生不了core文件之解决办法_qq76211822的博客-CSDN博客_/usr/share/apport/apport</span><span class="link-link"><img alt="icon-default.png?t=M276" class="link-link-icon" src="https://csdnimg.cn/release/blog_editor_html/release2.0.8/ckeditor/plugins/CsdnLink/icons/icon-default.png?t=M276"/>https://blog.csdn.net/sz76211822/article/details/112181664?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522164879853216782248562235%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fall.%2522%257D&amp;request_id=164879853216782248562235&amp;biz_id=0&amp;utm_medium=distribute.pc_search_result.none-task-blog-2~all~first_rank_ecpm_v1~rank_v31_ecpm-3-112181664.142^v5^article_score_rank&amp;utm_term=%E4%BF%AE%E6%94%B9%2Fetc%2Fdefault%2Fapport&amp;spm=1018.2226.3001.4187</span></span></a><a class="has-card" href="https://blog.csdn.net/niyaozuozuihao/article/details/91802994" title="(69条消息) linux下gdb调试方法与技巧整理_花开蝶自来-liu的博客-CSDN博客_gdb调试"><span class="link-card-box"><span class="link-title">(69条消息) linux下gdb调试方法与技巧整理_花开蝶自来-liu的博客-CSDN博客_gdb调试</span><span class="link-link"><img alt="icon-default.png?t=M276" class="link-link-icon" src="https://csdnimg.cn/release/blog_editor_html/release2.0.8/ckeditor/plugins/CsdnLink/icons/icon-default.png?t=M276"/>https://blog.csdn.net/niyaozuozuihao/article/details/91802994</span></span></a> <a class="has-card" href="https://blog.csdn.net/weixin_44991673/article/details/118030855" title="(69条消息) c++如何解决段错误 (核心已转储)_肥鼠路易的博客-CSDN博客_核心已转储"><span class="link-card-box"><span class="link-title">(69条消息) c++如何解决段错误 (核心已转储)_肥鼠路易的博客-CSDN博客_核心已转储</span><span class="link-link"><img alt="icon-default.png?t=M276" class="link-link-icon" src="https://csdnimg.cn/release/blog_editor_html/release2.0.8/ckeditor/plugins/CsdnLink/icons/icon-default.png?t=M276"/>https://blog.csdn.net/weixin_44991673/article/details/118030855</span></span></a></p>
+<p></p>
+</div>
+</div>

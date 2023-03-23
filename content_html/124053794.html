@@ -1,0 +1,348 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>1、问题描述</p>
+<p>今天，我们编写了一个窗体应用程序，我们要将其设置成开机自动启动，上篇文章介绍有两种方式。</p>
+<p>一种，开机启动目录下创建应有程序的快捷方式；另一种，写Windows服务；我们现在采用“服务方式自启程序”，因为用户不具备管理员权限，服务安全，我们也方便监控管理。</p>
+<p>好了，方案确认好了，先说说我们面临的问题，或者说是待解决的问题：</p>
+<p>①安装服务，通过咱新开发的C#应用软件安装，不希望借助第三方工具（installutil.exe），因为面向人群非科班出身，操作越简单越好。</p>
+<p>②开启、停止服务，不希望出现【黑色命令框】弹窗，看着就烦，用户体验不好。</p>
+<p>③不希望出现Windows权限不够的提示框，因为用户是普通用户，不具备“管理员操作权限”，本程序有一些敏感操作，有需要最高权限，不要出现“权限不够，哪怕是否确认授权”消息提示框。</p>
+<p></p>
+<p>怎么样？需求是不是很变态，需要同时满足以上三点，网上很多技术教程已经不适用。变态需求即是挑战，下面我将介绍本文解决方案，彻底解决以上问题，希望可以帮助面临同样困状的你们。</p>
+<p></p>
+<p>2、问题解决</p>
+<p>点击【是否开机自启】，安装Windows service服务，并实现服务启停。</p>
+<p><img alt="" height="475" src="image\ab7b8d48d80746729262a1e182ae55b7.png" width="456"/></p>
+<p>（1）Main()主方法改写，Program.cs文件下启动窗体，改成服务形式仿照我的代码改写吧。</p>
+<pre><code class="language-cs"> static void Main(string[] args)
+        {
+            //ProcessExec processExec = new ProcessExec();
+            //string aa = "";
+            //processExec.MediaServiceStart("", out aa);
+
+            if (args.Length &gt; 0)
+            {
+                var serviceName = Const.ct_strServiceName;
+                var host = HostFactory.New(x =&gt;
+                {
+                    x.EnableShutdown();
+                    x.Service&lt;ServiceCtrl&gt;();
+                    x.RunAsLocalSystem();
+                    x.SetDescription(Const.ct_strProjName);
+                    x.SetDisplayName(serviceName);
+                    x.SetServiceName(serviceName);
+                });
+                LogHelper.Info("***********主程序运行(服务方式)**********");
+                host.Run();
+            }
+            else
+            {
+                bool createNew;
+                //使用用互斥量(System.Threading.Mutex)只运行一个实列
+                using (System.Threading.Mutex mutex = new System.Threading.Mutex(true, Application.ProductName, out createNew))
+                {
+                    if (createNew)
+                    {
+                        Application.EnableVisualStyles();
+                        Application.SetCompatibleTextRenderingDefault(false);
+                        LogHelper.Info("***********主程序运行(客户端方式)**********");
+                        Application.Run(new FormMain());
+                    }
+                    else
+                    {
+                        System.Threading.Thread.Sleep(1000);
+                        System.Environment.Exit(1);
+                    }
+                }
+            }
+            
+    }</code></pre>
+<p>（2）安装service服务方式</p>
+<p>①添加新项--&gt;Windows服务--AutoPlayerService.cs</p>
+<p><img alt="" height="607" src="image\325fd54c61e34f78aa4993a3be7fff9e.png" width="1200"/></p>
+<p> ②右键空白处，【添加安装程序】，它会自动创建ProjectInstaller.cs文件，打开该文件有两个组件serviceProcessInstaller1、serviceInstaller1</p>
+<p>网上大部分方式，教你们在属性中填写 服务信息，我不叫你们这种方式，如下图所示：</p>
+<p><img alt="" height="236" src="image\169cc42e2fc14d79b9ae65f3f9ff54b4.png" width="346"/><img alt="" height="160" src="image\6e0b54bdb3d1467489d32ccaf154b6ce.png" width="318"/></p>
+<p> ③我的方式，通过使用底层入口实现。</p>
+<p>添加以下4行代码。</p>
+<pre><code class="language-cs">        [DllImport("kernel32.dll")]
+        public static extern int WinExec(string CmdLine, int ShowCmd);
+
+        [DllImport("shell32.dll")]
+        public static extern int ShellExecute(IntPtr hWnd, string Operation, string FileName,
+                                              string Parameters, string Directory, int ShowCmd);</code></pre>
+<p> ④实现方法</p>
+<p>安装服务</p>
+<pre><code class="language-cs">                string cmd = Application.ExecutablePath;
+                cmd += " install";
+                WinExec(cmd, 1);
+                MessageBox.Show("服务安装完毕！");
+                ShellExecute(this.Handle, "open", "Services.msc", "", "", 1);</code></pre>
+<p>卸载方法</p>
+<pre><code class="language-cs">                    ServiceStop(Const.ct_strServiceName);//停止服务
+                    string cmd = Application.ExecutablePath;
+                    cmd += " uninstall";
+                    WinExec(cmd, 1);
+                    MessageBox.Show("服务卸载完毕！");</code></pre>
+<p>（3）服务启停</p>
+<p>①创建服务类ServiceCtrl.cs ，实现接口ServiceControl。</p>
+<pre><code class="language-cs">  public class ServiceCtrl : ServiceControl
+    {
+        MainTimer m_MainTimer;
+
+        public ServiceCtrl()
+        {
+            try
+            {
+                m_MainTimer = new MainTimer(21600);//6小时检查一次
+                m_MainTimer.InitTimer();
+            }
+            catch (Exception err)
+            {
+                LogHelper.Error("初始化服务发生错误：" + err.ToString());
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 服务启动时执行
+        /// &lt;/summary&gt;
+        /// &lt;param name="c"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool Start(Topshelf.HostControl c)
+        {
+            try
+            {
+                m_MainTimer.StartTimer();
+                string l_strMsgError = "";
+                if (SysParameter.shutdown_tag == "T")
+                {
+                    ProcessExec exec = new ProcessExec();
+                    exec.StartShutDown(out l_strMsgError);
+                }
+                return true;
+            }
+            catch (Exception err)
+            {
+                LogHelper.Error("启动服务发生错误：" + err.ToString());
+                return false;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 服务关闭时执行
+        /// &lt;/summary&gt;
+        /// &lt;param name="c"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool Stop(Topshelf.HostControl c)
+        {
+            try
+            {
+                m_MainTimer.StopTimer();
+                return true;
+            }
+            catch (Exception err)
+            {
+                LogHelper.Error("停止服务发生错误：" + err.ToString());
+                return false;
+            }
+        }
+    }</code></pre>
+<p>②服务启动</p>
+<pre><code class="language-cs">        //启动服务
+        public static void ServiceStart(string serviceName)
+        {
+            using (ServiceController control = new ServiceController(serviceName))
+            {
+                if (control.Status == ServiceControllerStatus.Stopped)
+                {
+                    control.Start();
+                }
+            }
+        }</code></pre>
+<p>③服务停止</p>
+<pre><code class="language-cs">      //停止服务
+        public static void ServiceStop(string serviceName)
+        {
+            using (ServiceController control = new ServiceController(serviceName))
+            {
+                if (control.Status == ServiceControllerStatus.Running)
+                {
+                    control.Stop();
+                }
+            }
+        }</code></pre>
+<p>④服务判断是否在运行状态，可选</p>
+<pre><code class="language-cs">        //判断服务状态
+        public static bool IsServiceRuning(string serviceName)
+        {
+            ServiceController[] services = ServiceController.GetServices();
+            foreach (ServiceController sc in services)
+            {
+                if (sc.ServiceName.ToLower() == serviceName.ToLower())
+                {
+                    if (sc.Status == ServiceControllerStatus.Running)
+                    {
+                        return true;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }</code></pre>
+<p>此刻服务启停代码已经实现了，关于调用，我给一个案例。</p>
+<pre><code class="language-cs"> //启动服务（Windows服务运行）
+        private void BTN_ServiceRun_Click(object sender, EventArgs e)
+        {
+            m_service.Start(null);
+            try
+            {
+                BTN_ServiceRun.Enabled = false;
+
+                //ToDo：采用服务式，无dos黑框
+                //string cmd = Const.ct_strServiceName;
+                //cmd = "net start " + cmd;
+                //FormSet.WinExec(cmd, 1);
+
+                FormSet.ServiceStart(Const.ct_strServiceName);
+                if (DataOperation.UpdateStateType("正在运行"))
+                {
+                    GC_Main.DataSource = DataOperation.SelectData();
+                    GC_Main.RefreshDataSource();
+                }
+            }
+            finally
+            {
+                BTN_ServiceStop.Enabled = true;
+            }
+        }
+
+        //停止服务（Windows服务停止）
+        private void BTN_ServiceStop_Click(object sender, EventArgs e)
+        {
+            m_service.Stop(null);
+            try
+            {
+                BTN_ServiceStop.Enabled = false;
+
+                FormSet.ServiceStop(Const.ct_strServiceName);
+                if (DataOperation.UpdateStateType("已停止"))
+                {
+                    GC_Main.DataSource = DataOperation.SelectData();
+                    GC_Main.RefreshDataSource();
+                }
+            }
+            finally
+            {
+                BTN_ServiceRun.Enabled = true;
+            }
+        }</code></pre>
+<p>（4）此刻你会发现，每次服务操作都会有“权限不足”的弹窗提示，我们要升级管理员权限</p>
+<p>创建app.manifest应用程序清单文件。</p>
+<pre><code class="language-html">&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1"&gt;
+  &lt;assemblyIdentity version="1.0.0.0" name="MyApplication.app"/&gt;
+  &lt;trustInfo xmlns="urn:schemas-microsoft-com:asm.v2"&gt;
+    &lt;security&gt;
+      &lt;requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3"&gt;
+        &lt;!-- UAC 清单选项
+             如果想要更改 Windows 用户帐户控制级别，请使用
+             以下节点之一替换 requestedExecutionLevel 节点。n
+        &lt;requestedExecutionLevel  level="asInvoker" uiAccess="false" /&gt;
+        &lt;requestedExecutionLevel  level="requireAdministrator" uiAccess="false" /&gt;
+        &lt;requestedExecutionLevel  level="highestAvailable" uiAccess="false" /&gt;
+
+            指定 requestedExecutionLevel 元素将禁用文件和注册表虚拟化。
+            如果你的应用程序需要此虚拟化来实现向后兼容性，则删除此
+            元素。
+        --&gt;
+        &lt;requestedExecutionLevel  level="requireAdministrator" uiAccess="false" /&gt;
+      &lt;/requestedPrivileges&gt;
+    &lt;/security&gt;
+  &lt;/trustInfo&gt;
+
+  &lt;compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1"&gt;
+    &lt;application&gt;
+      &lt;!-- 设计此应用程序与其一起工作且已针对此应用程序进行测试的
+           Windows 版本的列表。取消评论适当的元素，
+           Windows 将自动选择最兼容的环境。 --&gt;
+
+      &lt;!-- Windows Vista --&gt;
+      &lt;!--&lt;supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}" /&gt;--&gt;
+
+      &lt;!-- Windows 7 --&gt;
+      &lt;!--&lt;supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}" /&gt;--&gt;
+
+      &lt;!-- Windows 8 --&gt;
+      &lt;!--&lt;supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}" /&gt;--&gt;
+
+      &lt;!-- Windows 8.1 --&gt;
+      &lt;!--&lt;supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}" /&gt;--&gt;
+
+      &lt;!-- Windows 10 --&gt;
+      &lt;!--&lt;supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" /&gt;--&gt;
+
+    &lt;/application&gt;
+  &lt;/compatibility&gt;
+
+  &lt;!-- 指示该应用程序可以感知 DPI 且 Windows 在 DPI 较高时将不会对其进行
+       自动缩放。Windows Presentation Foundation (WPF)应用程序自动感知 DPI，无需
+       选择加入。选择加入此设置的 Windows 窗体应用程序(目标设定为 .NET Framework 4.6 )还应
+       在其 app.config 中将 "EnableWindowsFormsHighDpiAutoResizing" 设置设置为 "true"。--&gt;
+  &lt;!--
+  &lt;application xmlns="urn:schemas-microsoft-com:asm.v3"&gt;
+    &lt;windowsSettings&gt;
+      &lt;dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings"&gt;true&lt;/dpiAware&gt;
+    &lt;/windowsSettings&gt;
+  &lt;/application&gt;
+  --&gt;
+
+  &lt;!-- 启用 Windows 公共控件和对话框的主题(Windows XP 和更高版本) --&gt;
+  &lt;!--
+  &lt;dependency&gt;
+    &lt;dependentAssembly&gt;
+      &lt;assemblyIdentity
+          type="win32"
+          name="Microsoft.Windows.Common-Controls"
+          version="6.0.0.0"
+          processorArchitecture="*"
+          publicKeyToken="6595b64144ccf1df"
+          language="*"
+        /&gt;
+    &lt;/dependentAssembly&gt;
+  &lt;/dependency&gt;
+  --&gt;
+
+&lt;/assembly&gt;
+</code></pre>
+<p>&lt;requestedExecutionLevel  level="requireAdministrator" uiAccess="false" /&gt;这句代码帮你以管理员身份运行。其它东西自己慢慢研究吧</p>
+<p></p>
+<p>3、链接分享</p>
+<p>你需要引入最强大的组件库 Geyc.Utils.dll，里面封装了大量实战项目的帮助、操作类，实时更新补充。</p>
+<p>倘若你在项目引用过程中，发现组件中的错误，或是库不支持，或是组件适配环境性问题，请联系我修改封装底层库文件。</p>
+<p>链接：https://pan.baidu.com/s/1sEO9aH2_re7Xwa-WDL_V7w?pwd=l6d0 <br/> 提取码：l6d0</p>
+<p></p>
+<p><img alt="" height="509" src="image\00182a438d6343308ff73c3aedcdc1e0.png" width="1200"/></p>
+<p>3、新手使用</p>
+<p>是的，和往常一样，我已将方法封装，你也只需要几行代码就可以实现高大尚的功能。</p>
+<pre><code class="language-cs">//判断服务是否运行
+IsServiceRuning(string serviceName)
+
+//安装服务
+InstallService(string serviceFilePath)
+
+//卸载服务
+UninstallService(string serviceFilePath)
+
+//启动服务
+ServiceStart(string serviceName)
+
+//停止服务
+ServiceStop(string serviceName)</code></pre>
+<p></p>
+<p></p>
+</div>
+</div>

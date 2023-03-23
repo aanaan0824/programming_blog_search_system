@@ -1,0 +1,150 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>最近需要使用Python调用C/C++功能，于是进行了一些相关调研。总体来说，Python调用C功能还算是相对比较简单，主要涉及ctypes这个函数库。</p>
+<p><a href="https://docs.python.org/zh-cn/3.7/library/ctypes.html#module-ctypes" title="ctypes">ctypes</a> 是 Python 的外部函数库。它提供了与 C 兼容的数据类型，并允许调用C共享库中的函数。可使用该模块以纯 Python 形式对这些库进行封装。</p>
+<h3>基本数据类型的使用</h3>
+<p>ctypes定义了一些与C兼容的数据类型：</p>
+<p><img alt="" height="755" src="image\bdcab88e61e94f74a898323e2d11aec5.png" width="722"/></p>
+<p>本篇主要关注跨语言调用时指针的处理方法，对于更全面的介绍，可参考：<a href="https://docs.python.org/zh-cn/3.7/library/ctypes.html#module-ctypes" title="ctypes --- Python 的外部函数库 — Python 3.7.13 文档">ctypes --- Python 的外部函数库 — Python 3.7.13 文档</a></p>
+<p>下面用一个小例子来介绍Python调用C/C++动态库的方法。</p>
+<p>C代码：</p>
+<pre><code class="language-cpp">#include "stdio.h"
+#include &lt;iostream&gt;
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+using namespace std;
+
+// test for input char pointer
+void print_string(char* str)
+{
+    printf("This is c code: print_string().\n");
+    printf("%s\n", str);
+}
+
+// test for input integers and return an integer
+int add_func(int a, int b)
+{
+    printf("This is c code: add_func()\n");
+    return a + b;
+}
+
+// test for pointer as return value
+int* get_array()
+{
+    int *pa = new int[10];
+	for(int i = 0; i &lt; 10; i++)
+	{
+			pa[i] = i;
+	}
+	return pa;
+}
+
+void free_array(int *pa)
+{
+	if(pa)
+		delete [] pa;
+
+}
+
+#ifdef __cplusplus
+}
+#endif
+</code></pre>
+<p>上面测试代码定义了普通整数的计算并返回整数、输入字符指针并打印、输出整型指针、释放指针等操作。需要注意的是，由于ctypes只与C兼容，而C++因为支持函数重载而在编译时修改函数名，因此，对于C++代码，需要使用C的方式编译。不了解的同学可自行搜索extern "C"的用法，本篇不做过多展开。</p>
+<p>将以上代码编译成动态链接库：</p>
+<pre><code>g++ -std=c++11 test_c.c -shared -fPIC -o test_c.so</code></pre>
+<p>接着，我们使用Python来调用该动态库。Python代码：</p>
+<pre><code class="language-python">#!/usr/bin/python
+
+from ctypes import *
+import os
+
+# Load dynamic library
+#lib_path = os.getcwd() + '/test_c.so'
+lib_path = './test_c.so'
+solib = cdll.LoadLibrary(lib_path)
+
+# Indicate the function arguments type and return value type
+solib.print_string.argtypes = [c_char_p]
+solib.print_string.restype = c_void_p
+
+# Call print_string function in C library
+solib.print_string(b"Hello Python!")
+
+# Call add function in C library
+solib.add_func.argtypes = [c_int, c_int]
+solib.add_func.restype = c_int
+sum = solib.add_func(100,200)
+print('Python code: sum = {}'.format(sum))
+
+
+# Call get_array function in C library, the return value is a pointer of integer
+solib.get_array.restype = POINTER(c_int)
+p_array = solib.get_array()
+int_array = [p_array[i] for i in range(10)]
+
+print("Python code: ")
+for x in int_array:
+    print(x, end = ' ')
+
+# Free the pointer
+solib.free_array.argtypes = [POINTER(c_int)]
+solib.free_array.restype = c_void_p
+solib.free_array(p_array)
+
+print('\nEnd Python')</code></pre>
+<p>运行结果：</p>
+<p><img alt="" height="198" src="image\01b587c822b74477ac51d55115a2cf42.png" width="638"/></p>
+<p>在Python代码调用C动态库时，C库函数的参数和返回值必须是ctypes类型，参数类型使用关键字argtypes定义，对参数的定义必须是以序列的形式，如上面代码中的参数类型定义：</p>
+<p>solib.add_func.argtypes = [c_int, c_int]</p>
+<p>solib.print_string.argtypes = [c_char_p]</p>
+<p>返回值参数类型使用restype定义，如上面代码中的语句：</p>
+<p>solib.add_func.restype = c_int</p>
+<p>solib.get_array.restype = POINTER(c_int)</p>
+<p>其中，get_array函数的返回值使用POINTER(c_int)关键字定义成了int型的指针。</p>
+<h3><strong>用户自定义类型的使用</strong></h3>
+<p>除了基本数据类型，用户还可以使用自定义类型，下面给出一个自定义结构体的测试例子：</p>
+<p>C代码：</p>
+<pre><code class="language-cpp">typedef struct _point
+{
+        int x;
+        int y;
+        char desc[50];
+}Point;
+
+int get_point(Point point)
+{
+        printf("x = %d, y = %d, desc = %s\n", point.x, point.y, point.desc);
+        return 0;
+}
+</code></pre>
+<p>Python代码：</p>
+<pre><code class="language-python">class Point(Structure):
+        _fields_ = [
+                ("x", c_int),
+                ("y", c_int),
+                ("desc", c_char * 50)
+        ]
+
+
+pt = Point(5, 10, b'I am a point.')
+print(pt.x, pt.y, pt.desc)
+
+solib.get_point.argtypes = [Point]
+solib.get_point.restype = c_int
+
+
+solib.get_point(pt)
+</code></pre>
+<p>Python中定义结构体时，必须继承Structure类，其成员的定义必须使用_fields_属性，否则无法调用C结构体。_fields_属性是一个list，其成员均为2个值的tuple，分别对应结构体成员的名称(C结构体成员名称)和类型，类型为ctypes类型，或者是由ctypes组合而成的新类型(如自己定义的结构体)。</p>
+<p>以上代码的运行结果：</p>
+<p><img alt="" height="59" src="image\0f03a826d1e44a7781db14e3c8ed9d85.png" width="440"/></p>
+<p> </p>
+<p></p>
+</div>
+</div>

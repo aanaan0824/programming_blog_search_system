@@ -1,0 +1,294 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p><a class="link-info" href="https://github.com/focus-creative-games/hybridclr" title="HybridCLR">HybridCLR</a>的推广已经做得相当好了，而且热更领域突然杀出一匹黑马，热度很高，不再多做介绍，可以点击进入HybridCLR开源地址了解详情。</p>
+<p>在此之前用过tolua和xlua热更框架, 因为C#开发方式实在太爽，想支持热更又不想使用弱类型语言，于是对ILRuntime和HybridCLR进行了评估，了解后毫不犹豫选择了HybridCLR方案，尽管它还比较新。选它的原因很简单，它最接近于原生C#开发方式，虽然性能相比原生AOT还有一定差距，但是与其它热更方案相比，绝对是热更领域颠覆性的存在，尤其是近期解决了泛型元数据补充、桥接函数生成的痛点，非常的好用！</p>
+<p>感谢HybridCLR作者让我赶上了一个好时代，远离lua屎山😂</p>
+<p>下面记录一下Windows Unity2021.3.7f1环境下UGF + HybridCLR热更接入过程。</p>
+<h3>0. 环境准备</h3>
+<p>① git环境，用于下载更新hybridclr</p>
+<p>② C++编译库，在VisualStudio Install面板勾选C++开发</p>
+<h3>1. 下载<a class="link-info" href="https://github.com/focus-creative-games/hybridclr_trial" title="hybridclr_trial">hybridclr_trial</a>示例工程并导入UGF框架</h3>
+<p>HybridCLR目前还不是以Unity插件的形式提供，需要下载hybridclr_trial示例工程提取提供的Dll生成工具和桥接函数生成工具, 以及HybridCLR Runtime接口。</p>
+<h3>2. 安装配置HybridCLR环境</h3>
+<p>首先找到hybridclr_trial\HybridCLRData\init_local_il2cpp_data.bat, 以文本方式打开,并做如下配置。</p>
+<pre><code>@echo off
+
+set IL2CPP_BRANCH=2021.3.1    //这里Unity2020.3.x填2020.3.33; Unity2021.3.x填2021.3.1
+...
+...
+set IL2CPP_PATH=C:\Program Files\Unity\Hub\Editor\2021.3.1f1\Editor\Data\il2cpp  //填自己Unity安装目录下的il2cpp文件夹所在路径
+
+......</code></pre>
+<p>目前HybridCLR支持的Unity版本为Unity2020.3系列和2021.3系列，即Unity2020.3.x使用il2cpp 2020.3.33分支，Unity2021.3.x使用il2cpp 2021.3.1分支。然后把IL2CPP_PATH配置为自己Unity安装目录下il2cpp所在路径。</p>
+<p>对应关系：</p>
+<p>Unity 2020.x =&gt; 使用HybridCLR il2cpp 2020.3.33分支；IL2CPP_PATH配置为Unity2020.3.33安装目录下的il2cpp</p>
+<p>Unity 2021.x =&gt; 使用HybridCLR il2cpp 2021.3.1分支；L2CPP_PATH配置为Unity2021.3.1安装目录下的il2cpp</p>
+<p><strong><span style="color:#fe2c24;">强烈建议：</span></strong></p>
+<p><strong><span style="color:#fe2c24;">HybridCLR魔改了Unity 2020.3.33和Unity 2021.3.1两个版本的il2cpp，分别兼容Unity 2020.x和Unity 2021.x.  </span></strong></p>
+<p><strong><span style="color:#fe2c24;">强烈建议il2cpp和HybridCLR魔改版il2cpp的Unity版本保持一致，即如果你是用Unity2020.x开发，就把IL2CPP_PATH设置为Unity2020.3.33安装目录下的il2cpp，使用Unity2021.x开发就把</span></strong><strong><span style="color:#fe2c24;">IL2CPP_PATH设置为Unity2021.3.1安装目录下的il2cpp. il2cpp版本不一致否则很有可能遇到奇怪的bug.</span></strong></p>
+<p><span style="color:#fe2c24;"><strong>为了方便可以把Unity2020.3.33和Unity2021.3.1的il2cpp文件夹提取出来放到项目里。</strong></span></p>
+<p><strong>修改完成后右键以管理员方式运行init_local_il2cpp_data.bat</strong>，win11下先右键打开Windows PowerShell终端，然后在终端中运行。.bat会自动从git下载hybridclr和魔改后支持dll动态加载的il2cpp库，并将IL2CPP_PATH配置的Unity原生il2cpp库与魔改后的il2cpp文件合并。Unity使用魔改过的il2cpp编译也就从底层支持了C#热更新。</p>
+<p class="img-center"><img alt="" height="545" src="image\fca237124406475f9632d91f051cfc1a.png" width="500"/></p>
+<h3> 3. 程序集分离，划分为Builtin.Runtime(内置)程序集和Hotfix(热更)程序集。</h3>
+<p>为什么要分离程序集？</p>
+<p>正如你不能自己把自己举起来，所以需要一个起到桥梁作用的内置程序负责初始化一些比较靠前的逻辑，比如启动游戏后需要先把热更新逻辑Hotfix.dll从资源服务器下载下来，并加载程序集。加载完成后通过反射调用Hotfix.dll中的入口函数切换到热更新逻辑。</p>
+<p>程序集拆分为Builtin.Runtime和Hitfix，即内置程序集和热更新程序集两个即可，把内置程序和热更新程序分离到不同的文件夹，在两个文件夹下创建分别创建Assembly Definition. 然后将热更新程序集引用内置程序集。</p>
+<p class="img-center"><img alt="" height="286" src="image\86526b2818a04d5686910ac3e58cb105.png" width="480"/></p>
+<h3> 4. 热更逻辑入口HotfixEntry</h3>
+<p>由于Hotfix程序集是以热更资源的形式存在，不会被编译成.so进入安装包，所以Builtin程序集不能直接调用Hotfix程序集，否则编译时会报错。这就需要一个HotfixEntry作为进入热更逻辑的入口，使用反射的方式进入Hotfix程序集。</p>
+<p>为了尽可能把逻辑放到热更新以达到更大可控性，Builtin程序集只处理比较靠前的逻辑，比如更新资源和热更dll，初始化热更dll. 热更dll初始化完成后就进入热更程序集把所有逻辑交由热更新程序集完成。由于GF不支持动态追加Procedure，所以进入热更程序集流程时需要重新为热更新Procedure创建有限状态机，并切换到热更新流程。在Builtin程序集初始化完热更dll后通过反射调用HotfixEntry.StartHotfixLogic()进入热更新逻辑。</p>
+<pre><code class="language-cs">        //加载热更新Dll完成,进入热更逻辑
+        if (loadedProgress &gt;= totalProgress)
+        {
+            Log.Info("热更dll加载完成, 开始进入HotfixEntry");
+            loadedProgress = -1;
+#if !DISABLE_HYBRIDCLR
+            var hotfixDll = GFBuiltin.Hotfix.GetHotfixClass("HotfixEntry");
+            if (hotfixDll == null)
+            {
+                Log.Error("获取热更入口类HotfixEntry失败!");
+                return;
+            }
+            hotfixDll.GetMethod("StartHotfixLogic").Invoke(null, new object[] { true });
+#else
+            HotfixEntry.StartHotfixLogic(false);
+#endif</code></pre>
+<pre><code class="language-cs">using GameFramework;
+using GameFramework.Fsm;
+using GameFramework.Procedure;
+using UnityGameFramework.Runtime;
+/// &lt;summary&gt;
+/// 热更逻辑入口
+/// &lt;/summary&gt;
+public class HotfixEntry
+{
+    public static void StartHotfixLogic(bool enableHotfix)
+    {
+        Log.Info("Hotfix Enable:{0}", enableHotfix);
+        GFBuiltin.Fsm.DestroyFsm&lt;IProcedureManager&gt;();
+        var fsmManager = GameFrameworkEntry.GetModule&lt;IFsmManager&gt;();
+        var procManager = GameFrameworkEntry.GetModule&lt;IProcedureManager&gt;();
+        //手动把热更新程序集的流程添加进来
+        ProcedureBase[] procedures = new ProcedureBase[]
+        {
+            new PreloadProcedure(),
+            new ChangeSceneProcedure(),
+            new MenuProcedure(),
+            new GameProcedure(),
+            new GameOverProcedure()
+        };
+        procManager.Initialize(fsmManager, procedures);
+        procManager.StartProcedure&lt;PreloadProcedure&gt;();//默认启动热更新程序集的预加载流程
+    }
+}
+</code></pre>
+<h3>5. 打包流程及注意事项</h3>
+<p>0.通过HybridCLR内置工具生成桥接函数(MethodBridge)、生成dll(CompileDll)：</p>
+<p><img alt="" height="198" src="image\38edf72c57bb435b817961204b12735f.png" width="344"/></p>
+<p></p>
+<p>1. HybridCLR必须要先Build工程，目的是Build时生成代码裁剪后的dll以供HybridCLR进行AOT元数据补充。</p>
+<p>由于il2cpp编译后泛型函数的原始函数体元数据会丢失，无法创建出AOT泛型函数的实例就会导致报错。AOT有泛型共享机制，利用这一特性，我们只需要在内置程序集中实例化的类中添加泛型函数的调用，该泛型函数的元数据就会建立并共享。</p>
+<p><s>HybridCLR已经默认在RefTypes.cs中补充了常用的泛型元数据：</s></p>
+<p>（最新版HybridCLR做了优化，已经没了）</p>
+<p class="img-center"><img alt="" height="736" src="image\0c2fe7a8cb684eeca8b3db8da76b1f5d.png" width="480"/></p>
+<p><s> 泛型函数在开发中使用非常频繁，自己写的泛型值类型函数必须提前注册到AOT以泛型共享, 如下示例，只需在会实例化的类中添加这些泛型函数调用，RefBuiltinAOT()和RefLitJson()无需有任何地方调用。泛型元数据问题也是目前HybridCLR最大的痛点，HybridCLR官方RoadMap不久后就会出一个自动扫描添加泛型函数的工具以解决这一痛点。</s>（官方已经解决了这个痛点)</p>
+<p>HybridCLR还支持通过dll自动补充元数据, 例如, 我项目里内置了LitJson插件，可以通过HybridCLR.RuntimeApi.LoadMetadataForAOTAssembly() 从LitJson.dll自动补充AOT元数据</p>
+<pre><code class="language-cs">#region 提前把热更新使用到的值类型泛型注册到AOT,否则报错
+    /// &lt;summary&gt;
+    /// 注册元数据到AOT
+    /// &lt;/summary&gt;
+    void RefBuiltinAOT()
+    {
+        var param = RefParams.Acquire();
+        param.GetValue&lt;bool&gt;(default, default);
+        param.GetValue&lt;int&gt;(default, default);
+        param.GetValue&lt;float&gt;(default, default);
+        param.GetValue&lt;double&gt;(default, default);
+        param.GetValue&lt;Vector2&gt;(default, default);
+        param.GetValue&lt;Vector3&gt;(default, default);
+        param.GetValue&lt;Vector4&gt;(default, default);
+        param.GetValue&lt;Vector2Int&gt;(default, default);
+        param.GetValue&lt;Vector3Int&gt;(default, default);
+        param.GetValue&lt;Quaternion&gt;(default, default);
+        param.GetValue&lt;Rect&gt;(default, default);
+        param.GetValue&lt;Bounds&gt;(default, default);
+        param.GetValue&lt;Color&gt;(default, default);
+        param.GetValue&lt;Color32&gt;(default, default);
+
+
+        param.TryGetValue&lt;bool&gt;(default, out bool _);
+        param.TryGetValue&lt;int&gt;(default, out int _);
+        param.TryGetValue&lt;float&gt;(default, out float _);
+        param.TryGetValue&lt;double&gt;(default, out double _);
+        param.TryGetValue&lt;Vector2&gt;(default, out Vector2 _);
+        param.TryGetValue&lt;Vector3&gt;(default, out Vector3 _);
+        param.TryGetValue&lt;Vector4&gt;(default, out Vector4 _);
+        param.TryGetValue&lt;Vector2Int&gt;(default, out Vector2Int _);
+        param.TryGetValue&lt;Vector3Int&gt;(default, out Vector3Int _);
+        param.TryGetValue&lt;Quaternion&gt;(default, out Quaternion _);
+        param.TryGetValue&lt;Rect&gt;(default, out Rect _);
+        param.TryGetValue&lt;Bounds&gt;(default, out Bounds _);
+        param.TryGetValue&lt;Color&gt;(default, out Color _);
+        param.TryGetValue&lt;Color32&gt;(default, out Color32 _);
+    }
+    void RefLitJson()
+    {
+        LitJson.JsonMapper.RegisterExporter&lt;Vector2&gt;(default);
+        LitJson.JsonMapper.RegisterExporter&lt;Vector3&gt;(default);
+        LitJson.JsonMapper.RegisterExporter&lt;Vector2Int&gt;(default);
+        LitJson.JsonMapper.RegisterExporter&lt;Vector3Int&gt;(default);
+        LitJson.JsonMapper.RegisterExporter&lt;Vector4&gt;(default);
+        LitJson.JsonMapper.RegisterExporter&lt;Quaternion&gt;(default);
+        LitJson.JsonMapper.RegisterExporter&lt;Color&gt;(default);
+        LitJson.JsonMapper.RegisterExporter&lt;Color32&gt;(default);
+        LitJson.JsonMapper.RegisterExporter&lt;Bounds&gt;(default);
+        LitJson.JsonMapper.RegisterExporter&lt;Rect&gt;(default);
+    }
+    #endregion</code></pre>
+<p>2. 桥接函数丢失</p>
+<p>如果运行时遇到报错ExecutionEngineException: GetManaged2NativeMethodPointer not support. signature:xxx(签名)，需要把手动补充到HybridCLR\Editor\HybridCLR\Generators\GeneratorConfig.cs中，这也是HybridCLR最大的痛点之一，好在官方刚刚完善了桥接函数的问题，后续还会完善桥接函数生成工具以彻底消除此问题。</p>
+<pre><code class="language-cs">/// &lt;summary&gt;
+        /// 如果提示缺失桥接函数，将提示缺失的签名加入到下列列表是简单的做法。
+        /// 这里添加64位App缺失的桥接函数签名
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public static List&lt;string&gt; PrepareCustomMethodSignatures64()
+        {
+            return new List&lt;string&gt;
+            {
+                "vi8i8",
+                "i4i8i8i4i4i8i8",
+                "i8i8S12",
+                "S12i8S12",
+                "S12i8S12S12",
+                "i16i8i16i16",
+            };
+        }
+
+        /// &lt;summary&gt;
+        /// 如果提示缺失桥接函数，将提示缺失的签名加入到下列列表是简单的做法。
+        /// 这里添加32位App缺失的桥接函数签名
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public static List&lt;string&gt; PrepareCustomMethodSignatures32()
+        {
+            return new List&lt;string&gt;
+            {
+                "vi4i4",
+                "S12i4S12S12",
+            };
+        }</code></pre>
+<p>3. 把Build后生成的Strip(裁剪)过的dll打包成AssetBundle</p>
+<p>Build后HybridCLR会将Strip后的dll复制到项目根目录的HybridCLRData\AssembliesPostIl2CppStrip下。</p>
+<p>可以写个工具监听Build进程，Build完成后自动把Strip后的dll复制到Assets指定目录，并修改为Unity支持的资源扩展名以供打包AB：</p>
+<pre><code class="language-cs">#if UNITY_EDITOR
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEditor;
+using UnityEditor.Build;
+using UnityEditor.Build.Reporting;
+using HybridCLR;
+using System.IO;
+using GameFramework;
+
+public class BuildAppListener : IPostprocessBuildWithReport, IPreprocessBuildWithReport, IPostBuildPlayerScriptDLLs
+{
+    public int callbackOrder =&gt; 100;
+
+    public void OnPostBuildPlayerScriptDLLs(BuildReport report)
+    {
+        //Debug.LogFormat("OnPostBuildPlayerScriptDLLs:{0}", report.name);
+
+    }
+
+    public void OnPostprocessBuild(BuildReport report)
+    {
+        Debug.Log("OnPostprocessBuild:");
+        BuildTarget target = report.summary.platform;
+        //CompileDllHelper.CompileDll(target);
+        var hotfixDllDir = UtilityExt.Path.GetCombinePath(Application.dataPath, ConstBuiltin.HOT_FIX_DLL_DIR);
+        try
+        {
+            if (!Directory.Exists(hotfixDllDir))
+            {
+                Directory.CreateDirectory(hotfixDllDir);
+            }
+            else
+            {
+                var dllFils = Directory.GetFiles(hotfixDllDir);
+                for (int i = dllFils.Length - 1; i &gt;= 0; i--)
+                {
+                    File.Delete(dllFils[i]);
+                }
+            }
+            CopyHotfixDllTo(target, hotfixDllDir);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogErrorFormat("生成热更新dll文件失败:{0}", e.Message);
+            throw;
+        }
+
+    }
+
+    public void OnPreprocessBuild(BuildReport report)
+    {
+
+        Debug.Log("OnPreprocessBuild:");
+    }
+    public static void CopyHotfixDllTo(BuildTarget target, string desDir, bool copyAotMeta = true)
+    {
+        string hotfixDllSrcDir = BuildConfig.GetHotFixDllsOutputDirByTarget(target);
+        foreach (var dll in BuildConfig.AllHotUpdateDllNames)
+        {
+            string dllPath = UtilityExt.Path.GetCombinePath(hotfixDllSrcDir, dll);
+            if (File.Exists(dllPath))
+            {
+                string dllBytesPath = UtilityExt.Path.GetCombinePath(desDir, Utility.Text.Format("{0}.bytes", dll));
+                File.Copy(dllPath, dllBytesPath, true);
+            }
+        }
+        if (copyAotMeta)
+        {
+            string aotDllDir = BuildConfig.GetAssembliesPostIl2CppStripDir(target);
+            foreach (var dll in BuildConfig.AOTMetaDlls)
+            {
+                string dllPath = UtilityExt.Path.GetCombinePath(aotDllDir, dll);
+                if (!File.Exists(dllPath))
+                {
+                    Debug.LogError($"ab中添加AOT补充元数据dll:{dllPath} 时发生错误,文件不存在。裁剪后的AOT dll在BuildPlayer时才能生成，因此需要你先构建一次游戏App后再打包。");
+                    continue;
+                }
+                string dllBytesPath = UtilityExt.Path.GetCombinePath(desDir, Utility.Text.Format("{0}.bytes", dll));
+                File.Copy(dllPath, dllBytesPath, true);
+            }
+        }
+        AssetDatabase.Refresh();
+    }
+}
+#endif</code></pre>
+<p>3. 把热更dll添加到GF的AB打包工具并打包AB</p>
+<p>4. Build项目并测试。</p>
+<p></p>
+<h3><a class="link-info" href="https://github.com/sunsvip/GF_HybridCLR" title="GF_HybridCLR">GF_HybridCLR</a></h3>
+<p><a href="https://github.com/sunsvip/GF_HybridCLR" title="https://github.com/sunsvip/GF_HybridCLR">https://github.com/sunsvip/GF_HybridCLR</a></p>
+<p>GF_HybridCLR是已经集成好的GameFramework + HybridCLR开发框架，有着一整套完善的工作流。包含对GameFramework的扩展，数据表生成工具、代码生成工具、热更新工作流，AssetBundle加密解密。并且针对HybridCLR增加了傻瓜式的安装、更新工具，支持一键开关HybridCLR热更新。</p>
+<p>使用方法：</p>
+<p>1. 首先要确保安装了git环境: <a class="link-info" href="https://git-scm.com/download/win" title="Git下载">Git下载</a></p>
+<p><s>2. 下载GF_HybridCLR工程，点击Unity菜单栏HybridCLR-&gt;Setup 自动配置HybridCLR环境；</s></p>
+<p><s>3. 点击HybridCLR-&gt;Update一键更新HybridCLR到最新版本</s></p>
+<p> 2022.8.21更新：</p>
+<p>官方也新增了一键安装HybridCLR功能，我直接移植过来了。另外为了使用方便，提取了Unity 2021.3.1版本的il2cpp放在项目里，增加了一键从il2cpp压缩文件安装HybridCLR的功能。</p>
+<p>使用方法如图：</p>
+<p class="img-center"><img alt="" height="136" src="image\2d325e5fb7cd48ec8868953f0036c8d5.png" width="500"/></p>
+<p>工具默认会根据当前Unity版本去查找匹配的HybridCLR il2cpp版本(2020.3.3或2021.3.1)，如果你没有安装这两个版本就会使用当前Unity安装目录下的il2cpp, 但是il2cpp版本不匹配很有可能出现兼容问题。</p>
+<p>所以我以压缩包的形式内置了Unity 2021.3.1版本的il2cpp，点击Use Buitin il2cpp程序会自动解压并使用，然后点击install安装即可。(注，如果用的是Unity 2020.x，需要自行提取Unity 2020.3.33版本的il2cpp，压缩为il2cpp_Unity2020_3_33.zip放到项目的HybridCLRData目录下)</p>
+<p> </p>
+<p> </p>
+<p>手机端热更实测：</p>
+<p><img alt="" height="1200" src="image\ec60e00e18114e85897869d2d84f8aea.jpeg" width="1080"/></p>
+<p></p>
+</div>
+</div>

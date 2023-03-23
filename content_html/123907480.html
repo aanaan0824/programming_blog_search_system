@@ -1,0 +1,96 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="ffplay_1"></a>ffplay自定义系列</h1>
+<p><a href="https://blog.csdn.net/u013113678/article/details/114266843">第一章 自定义播放器接口</a><br/> <a href="https://blog.csdn.net/u013113678/article/details/124742856">第二章 倍速播放</a><br/> <a href="https://blog.csdn.net/u013113678/article/details/124773187">第三章 dxva2硬解渲染</a><br/> <a href="https://blog.csdn.net/u013113678/article/details/124759757">第四章 提供C#接口</a><br/> <a href="https://blog.csdn.net/u013113678/article/details/123907480">第五章 制作wpf播放器(本章)</a></p>
+<hr color="#000000" size='1"'/>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#ffplay_1">ffplay自定义系列</a></li><li><a href="#_13">前言</a></li><li><a href="#_18">一、播放模块</a></li><li><a href="#_23">二、界面</a></li><li><ul><li><a href="#1_26">1、关键实现</a></li><li><ul><li><a href="#1_27">(1)、圆角边框</a></li><li><a href="#2_30">(2)、拖动移动调整大小</a></li><li><a href="#3_34">(3)、播放</a></li><li><a href="#4_55">(4)、停止</a></li><li><a href="#4_68">(4)、进度条</a></li><li><a href="#5_70">(5)、关闭播放</a></li></ul>
+</li><li><a href="#2_90">2、效果预览</a></li></ul>
+</li><li><a href="#_100">三、下载</a></li><li><a href="#_109">总结</a></li></ul>
+</div>
+<p></p>
+<hr color="#000000" size='1"'/>
+<h1><a id="_13"></a>前言</h1>
+<p><font color="#666666">有了<a href="https://blog.csdn.net/u013113678/article/details/121275982">《WPF视频渲染系列》</a>的视频渲染方法，再结合笔者已有的一个定制化ffplay播放器<a href="https://blog.csdn.net/u013113678/article/details/114266843">《基于ffplay改造成自定义多开播放器》</a>，我们可以很容易的在wpf中实现一个播放器软件，这个播放器可以支持本地播放、摄像头播放、网络点播、rtmp和rtsp拉流。</font></p>
+<hr color="#000000" size='1"'/>
+<h1><a id="_18"></a>一、播放模块</h1>
+<p>参考<a href="https://blog.csdn.net/u013113678/article/details/124759757">第四章 提供C#接口</a></p>
+<hr/>
+<h1><a id="_23"></a>二、界面</h1>
+<p>由于使用wpf制作界面所以很多酷炫的效果都可以做，界面可以做的比较好看。</p>
+<h2><a id="1_26"></a>1、关键实现</h2>
+<h3><a id="1_27"></a>(1)、圆角边框</h3>
+<p>圆角边框需要设置窗口透明，如果使用AllowsTransparency=“True”,会严重<strong>影响性能</strong>，可能导致渲染视频卡顿。我使用的是WindowChrome.WindowChrome实现圆角边框。具体代码就不贴出了，网上可以找到解决方案。<br/> 还有一个关键点是不能使用窗口阴影，会影响d3dImage渲染性能。</p>
+<h3><a id="2_30"></a>(2)、拖动移动调整大小</h3>
+<p>由于使用了WindowChrome.WindowChrome实现无边框圆角窗口，所有移动和调整大小功能基本要自己实现了。参考<a href="https://blog.csdn.net/u013113678/article/details/121397550">《C# wpf 附加属性实现任意控件（包括窗口）拖动》</a>、<a href="https://blog.csdn.net/u013113678/article/details/121719278">《C# wpf 附加属性实现任意控件拖动调整大小》</a></p>
+<h3><a id="3_34"></a>(3)、播放</h3>
+<p>由于在界面上渲染视频，且播放中再次Start内部会先调用Stop,Stop是同步实现的，在渲染或停止事件有Invoke时停止容易造成死锁，所以需要判断播放中时异步Stop后再Start。</p>
+<pre><code class="prism language-csharp"> <span class="token keyword">async</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">StartPlay</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> url<span class="token punctuation">)</span>
+ <span class="token punctuation">{<!-- --></span>   
+     <span class="token keyword">if</span> <span class="token punctuation">(</span>_isStarted<span class="token punctuation">)</span>
+     <span class="token punctuation">{<!-- --></span>
+         <span class="token keyword">await</span> Task<span class="token punctuation">.</span><span class="token function">Run</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+         <span class="token punctuation">{<!-- --></span>
+             _play<span class="token punctuation">.</span><span class="token function">Stop</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+         <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+         _play<span class="token punctuation">.</span><span class="token function">Start</span><span class="token punctuation">(</span>url<span class="token punctuation">)</span><span class="token punctuation">;</span>
+         _isStarted <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>    
+     <span class="token punctuation">}</span>
+     <span class="token keyword">else</span>
+     <span class="token punctuation">{<!-- --></span>
+         _play<span class="token punctuation">.</span><span class="token function">Start</span><span class="token punctuation">(</span>url<span class="token punctuation">)</span><span class="token punctuation">;</span>
+         _isStarted <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>    
+     <span class="token punctuation">}</span>
+ <span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="4_55"></a>(4)、停止</h3>
+<p>与上面相同，停止的时候需要异步停止。</p>
+<pre><code class="prism language-csharp"><span class="token keyword">private</span> <span class="token keyword">async</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Stop_Button_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">RoutedEventArgs</span> e<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">await</span> Task<span class="token punctuation">.</span><span class="token function">Run</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+  <span class="token punctuation">{<!-- --></span>
+      _play<span class="token punctuation">.</span><span class="token function">Stop</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  _isStarted <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>  
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="4_68"></a>(4)、进度条</h3>
+<p>参考<a href="https://blog.csdn.net/u013113678/article/details/123832482">《C# wpf slider实现显示进度、拖动定位、点击定位功能》</a></p>
+<h3><a id="5_70"></a>(5)、关闭播放</h3>
+<p>关闭窗口时，使用同步接口停止播放器会导致死锁：主线程等待渲染线程结束，同时渲染线程等待主线程invoke。所以我们需要异步停止来防止死锁。</p>
+<p>示例代码如下：</p>
+<pre><code class="prism language-csharp"><span class="token keyword">private</span> <span class="token keyword">async</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Window_Closing</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">System<span class="token punctuation">.</span>ComponentModel<span class="token punctuation">.</span>CancelEventArgs</span> e<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>_play <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+        <span class="token keyword">return</span><span class="token punctuation">;</span>
+    e<span class="token punctuation">.</span>Cancel <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+    <span class="token comment">//异步退出，防止死锁</span>
+    <span class="token keyword">await</span> Task<span class="token punctuation">.</span><span class="token function">Run</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+    <span class="token punctuation">{<!-- --></span>
+        _play<span class="token punctuation">.</span><span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    _play <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+    <span class="token function">Close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="2_90"></a>2、效果预览</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6a8b855cf60240ada98523b9bd6d8e2c.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQWxmcmVkLU4=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9d6b49ca5cbf41d68e3cdb0671dfc73f.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQWxmcmVkLU4=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9353f00fd7b04820b40ce76546d9a6b6.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQWxmcmVkLU4=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ab61f0e4e770444ea1147b40acf6690c.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAQWxmcmVkLU4=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<hr/>
+<h1><a id="_100"></a>三、下载</h1>
+<p><a href="https://download.csdn.net/download/u013113678/85437645">https://download.csdn.net/download/u013113678/85437645</a></p>
+<p><strong>注：资源只包含C#源码，C语言播放器模块只提供x86dll，请根据需要下载。C#源码包含了<a href="https://blog.csdn.net/u013113678/article/details/121275982">《WPF视频渲染系列》</a>的所有内容，切勿重复下载。</strong></p>
+<hr/>
+<h1><a id="_109"></a>总结</h1>
+<p><font color="#666666">实现一个视频播放器基于ffplay，功能是很强大的同时也具有足够的稳定性，但是其内部实现代码庞杂，改造起来还是不太容易的，而且其功能也不是绝对完善的很多地方需要拓展和优化，比如精准定位、倍速播放、硬解渲染。有一个定制化的底层播放器后，利用wpf的界面优势很容易的就做出一个可以日常使用的播放器。当前版本的播放器功能相对简单，还不足以当成日常使用，还缺少平滑拖动定位、音轨选择、字幕播放以及声音放大等功能。</font></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

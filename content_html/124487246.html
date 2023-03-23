@@ -1,0 +1,78 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>创建这个服务端需要先开启sockets扩展，没有开启的话，无论如何都会报错</p>
+<p>只需要在php.ini文件中找到sockets扩展并将其前面的分号删除能将其开启</p>
+<p>开启前：</p>
+<div>
+<pre><code>;extension=sockets</code></pre>
+</div>
+<p>开启后：</p>
+<div>
+<pre><code>extension=sockets</code></pre>
+</div>
+<p>开启完毕，接下来我们就可以进入正题了；首先，我们了解几个函数：</p>
+<p>socket_create(AF_INET, SOCK_STREAM, SOL_TCP);//用于创建套接字</p>
+<p>socket_bind( $this-&gt;master,$ip,$port);//用于绑定ip和端口</p>
+<p>socket_listen( $this-&gt;master,1000);//用于调用connect连接的套接字和监听相关端口</p>
+<p>socket_accept($this-&gt;master);//负责握手连接</p>
+<p>socket_recv($socket, $buffer, 1024, 0);//从已连接的socket（客户端）接收数据</p>
+<p>socket_write($socket,$upgrade,strlen($upgrade));//给单独客户端发送数据</p>
+<p>send($message)//发送数据</p>
+<p>socket_close($socket);//断开连接</p>
+<p>很多步骤和PHP创建socket差不多，</p>
+<p>不同主要在于socket_write使用和数据需要解、封帧，我们需要将http升级为websocket</p>
+<p><strong>http升级为websocket</strong></p>
+<div>
+<pre><code class="language-php">if(preg_match("/Sec-WebSocket-Key: (.*)\r\n/",$buffer,$match)){
+        	$responseKey=base64_encode(sha1($match[1] . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11',true));
+        	$upgrade="HTTP/1.1 101 Switching Protocol\r\n".
+        	         "Upgrade: websocket\r\n".
+        	         "Connection: Upgrade\r\n".
+        	         "Sec-WebSocket-Accept:".$responseKey."\r\n\r\n";
+        	         socket_write($socket,$upgrade,strlen($upgrade));
+        }</code></pre>
+</div>
+<p>$socket是我们创建的连接，$buffer是客户端第一次连接时发送的数据</p>
+<p>注意：Sec-WebSocket-Key: (.*)//括号和冒号之间是要有空格的</p>
+<p><strong>解帧</strong></p>
+<div>
+<pre><code class="language-php">        $len=$masks=$data=$decoded=null;
+		$len=ord($buffer[1]) &amp; 127;
+
+		if($len === 126){
+			$masks=substr($buffer,4,4);
+			$data=substr($buffer, 8);
+		}else if($len === 127){
+			$masks=substr($buffer,10,4);
+			$data=substr($buffer, 14);
+		}else{
+			$masks=substr($buffer,2,4);
+			$data=substr($buffer, 6);
+		}
+
+		for($index = 0;$index&lt;strlen($data);$index++){
+			$decoded.=$data[$index] ^ $masks[$index % 4];
+		}
+		return $decoded;</code></pre>
+</div>
+<p>$buffer是客户端第一次连接时发送的数据</p>
+<p><strong>封帧</strong></p>
+<div>
+<pre><code class="language-php">        $len=strlen($message);
+		if($len&lt;=125){
+			return "\x81".chr($len).$message;
+		}else if($len&lt;=65535){
+			return "\x81".chr(126).pack("n",$len).$message;
+		}else{
+			return "\x81".chr(127).pack("xxxxN",$len).$message;
+		}</code></pre>
+</div>
+<p>$message是我们需要发送的数据</p>
+<p>前端连接前记得运行服务端，运行方式：</p>
+<p>在cmd输入</p>
+<pre><code>php 你的服务端PHP文件路径</code></pre>
+<p>运行前先配置环境变量：将你的PHP安装路径添加到Path中</p>
+<p><a class="link-info has-card" href="https://bianxiezhe.com/" title="这是我的个人小站  （未开通，仅做宣传）"><span class="link-card-box"><span class="link-title">这是我的个人小站 （未开通，仅做宣传）</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon-default.png"/>https://zhiqinzhe.com</span></span></a></p>
+</div>
+</div>

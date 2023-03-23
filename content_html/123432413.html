@@ -1,0 +1,626 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>要实现串口通信，需要知道串口通信需要的信息</p>
+<p>主要参数有：波特率、校验位、数据位、停止位、控制流</p>
+<p>主要操作有：串口的打开和关闭、刷新设备串口、接发数据、开关显示灯等。</p>
+<p>实现效果如图：</p>
+<p><img alt="" height="792" src="image\0aef672b71244da98899255353f0be34.png" width="1002"/></p>
+<p>界面设计如下：</p>
+<p><img alt="" height="1200" src="image\d2ec4013d32844d8ba4b61f31689446b.png" width="1200"/></p>
+<p>每个控件类名如下：</p>
+<p><img alt="" height="855" src="image\c25fa2847e95404292460a514d42baad.png" width="1200"/></p>
+<p><img alt="" height="876" src="image\6b687d31b1e748ffb713e412d5bdb8ef.png" width="1200"/> </p>
+<p><img alt="" height="844" src="image\3067ddf8ede44957b924947c39de3f50.png" width="1200"/></p>
+<p><img alt="" height="481" src="image\1efa48502ef6429998874d9a936b43a3.png" width="1200"/> </p>
+<p> LED灯是QLable控件，设置它的长宽都是24px，然后鼠标右击，选择“样式表”，在样式表中添加代码。</p>
+<p><img alt="" height="1200" src="image\e3c4cdc3ea114afaa4233c1a9d4fe919.png" width="1200"/></p>
+<p> </p>
+<p><img alt="" height="892" src="image\9aad2f172f32482ba4729cdfdb1c3ba5.png" width="1200"/></p>
+<p><img alt="" height="309" src="image\b46e6e166ebe413fb9b38c83f852fddf.png" width="404"/> </p>
+<p>最后附赠完整源码。</p>
+<p>第一步：在头文件中引入 QtSerialPort 类的两个头文件（必须引入）</p>
+<pre><code>// 引入串口通信的两个头文件(第一步)
+#include &lt;QtSerialPort/QSerialPort&gt;         // 提供访问串口的功能
+#include &lt;QtSerialPort/QSerialPortInfo&gt;     // 提供系统中存在的串口信息</code></pre>
+<p>第二步：在工程文件中添加以下代码</p>
+<pre><code># 引入串口工程类型（第二步）
+QT       += serialport</code></pre>
+<p>第三步：在头文件中定义全局的串口对象</p>
+<pre><code>QSerialPort     *serial;                            // 定义全局的串口对象（第三步）</code></pre>
+<p>第四步：参数设置，在头文件中定义初始化参数的函数和参数变量名，在.cpp文件中实现函数</p>
+<pre><code>public:
+void        SerialPortInit();                      // 串口初始化（参数配置）
+
+private:
+// 参数配置
+    QStringList     baudList;                           //波特率
+    QStringList     parityList;                         //校验位
+    QStringList     dataBitsList;                       //数据位
+    QStringList     stopBitsList;                       //停止位
+    QStringList     flowControlList;                    //控制流</code></pre>
+<pre><code>// 串口初始化（参数配置）
+void MainWindow::SerialPortInit()
+{
+    serial = new QSerialPort;                       //申请内存,并设置父对象
+
+    // 获取计算机中有效的端口号，然后将端口号的名称给端口选择控件
+    foreach(const QSerialPortInfo &amp;info,QSerialPortInfo::availablePorts())
+    {
+        serial-&gt;setPort(info);                      // 在对象中设置串口
+        if(serial-&gt;open(QIODevice::ReadWrite))      // 以读写方式打开串口
+        {
+            ui-&gt;PortBox-&gt;addItem(info.portName());  // 添加计算机中的端口
+            serial-&gt;close();                        // 关闭
+        } else
+        {
+            qDebug() &lt;&lt; "串口打开失败，请重试";
+        }
+    }
+
+    // 参数配置
+    // 波特率，波特率默认选择57600 ，禁止用户点击
+    ui-&gt;BaudBox-&gt;addItem("57600");
+    serial-&gt;setBaudRate(QSerialPort::Baud57600);
+    ui-&gt;BaudBox-&gt;setDisabled(true);
+
+    // 校验，校验默认选择无
+    ui-&gt;ParityBox-&gt;addItem("无");
+    serial-&gt;setParity(QSerialPort::NoParity);
+
+    // 数据位，数据位默认选择8位
+    ui-&gt;BitBox-&gt;addItem("8");
+    serial-&gt;setDataBits(QSerialPort::Data8);
+
+    // 停止位，停止位默认选择1位
+    ui-&gt;StopBox-&gt;addItem("1");
+    serial-&gt;setStopBits(QSerialPort::OneStop);
+
+    // 控制流，默认选择无
+    ui-&gt;ControlBox-&gt;addItem("无");
+    serial-&gt;setFlowControl(QSerialPort::NoFlowControl);
+
+    // 刷新串口
+    RefreshSerialPort(0);
+
+    // 信号
+connect(serial,&amp;QSerialPort::readyRead,this,&amp;MainWindow::DataReceived);      // 接收数据
+connect(ui-&gt;SendWordOrder,&amp;QPushButton::clicked,this,&amp;MainWindow::DataSend); // 发送数据
+connect(ui-&gt;SendButton,&amp;QPushButton::clicked,this,&amp;MainWindow::DataSend);    // 发送数据
+connect(ui-&gt;SendEditBtn1,&amp;QPushButton::clicked,this,&amp;MainWindow::DataSend);  // 发送数据
+connect(ui-&gt;SendEditBtn2,&amp;QPushButton::clicked,this,&amp;MainWindow::DataSend);  // 发送数据
+connect(ui-&gt;SendEditBtn3,&amp;QPushButton::clicked,this,&amp;MainWindow::DataSend);  // 发送数据
+}</code></pre>
+<p>第五步：刷新串口，及时更新可用的串口</p>
+<pre><code>// 刷新串口
+void MainWindow::RefreshSerialPort(int index)
+{
+    QStringList portNameList;                                        // 存储所有串口名
+    if(index != 0)
+    {
+        serial-&gt;setPortName(ui-&gt;PortBox-&gt;currentText());             //设置串口号
+    }
+    else
+    {
+        ui-&gt;PortBox-&gt;clear();                                        //关闭串口号
+        ui-&gt;PortBox-&gt;addItem("刷新");                                //添加刷新
+        foreach(const QSerialPortInfo &amp;info,QSerialPortInfo::availablePorts()) //添加新串口
+        {
+            portNameList.append(info.portName());
+        }
+        ui-&gt;PortBox-&gt;addItems(portNameList);
+        ui-&gt;PortBox-&gt;setCurrentIndex(1);                             // 当前串口号为COM1
+        serial-&gt;setPortName(ui-&gt;PortBox-&gt;currentText());             //设置串口号
+   }
+}</code></pre>
+<p>第六步：发送数据和接收数据</p>
+<pre><code>// 接收数据,使用read () / readLine () / readAll ()
+void MainWindow::DataReceived()
+{
+    char BUF[512] = {0};                                       // 存储转换类型后的数据
+    QByteArray data = serial-&gt;readAll();                      // 读取数据
+
+    if(!data.isEmpty())                                 // 接收到数据
+    {
+        QString str = ui-&gt;DataReceived-&gt;toPlainText();  // 返回纯文本
+        str += tr(data);                         // 数据是一行一行传送的，要保存所有数据
+        ui-&gt;DataReceived-&gt;clear();                      // 清空之前的数据
+        ui-&gt;DataReceived-&gt;append(str);                  // 将数据放入控件中
+        qDebug() &lt;&lt; "str info: " &lt;&lt; ui-&gt;DataReceived-&gt;toPlainText();
+
+         // 清除之前的数据，防止追加，因为每次获取的数据不一样
+        int index = str.indexOf("\r\n");                // 找到，返回索引值，找不到，返回-1
+        if(index != -1)
+        {
+            snprintf(BUF,500,"%s", str.left(index + 2).toUtf8().data()); // QString转为char * 类型
+            qDebug() &lt;&lt; "BUF info: " &lt;&lt; BUF;        // 数据类型转换成功
+            str.remove(0,index + 2); 
+
+            // 处理获取到的数据，将其放入对应的控件中
+            // .....
+                             
+        }
+    }
+}
+
+// 发送数据，write ()
+void MainWindow::DataSend()
+{
+    serial-&gt;write(ui-&gt;DataSend-&gt;toPlainText().toLatin1());      // 串口发送数据
+}</code></pre>
+<p>第七步：打开串口和关闭串口，当打开串口后，显示绿灯；关闭串口后，显示红灯</p>
+<pre><code>// 串口开关
+void MainWindow::on_OpenSerialButton_clicked()
+{
+    if(serial-&gt;isOpen())                                  // 如果串口打开了，先给他关闭
+    {
+        serial-&gt;clear();
+        serial-&gt;close();
+        // 关闭状态，按钮显示“打开串口”
+        ui-&gt;OpenSerialButton-&gt;setText("打开串口");
+        // 关闭状态，允许用户操作
+        ui-&gt;BaudBox-&gt;setDisabled(false);
+        ui-&gt;ParityBox-&gt;setDisabled(false);
+        ui-&gt;BitBox-&gt;setDisabled(false);
+        ui-&gt;StopBox-&gt;setDisabled(false);
+        ui-&gt;ControlBox-&gt;setDisabled(false);
+        // 禁止操作“发送字符操作”
+        ui-&gt;SendWordOrder-&gt;setDisabled(true);
+        ui-&gt;SendButton-&gt;setDisabled(true);
+        // 关闭状态，颜色为绿色
+        ui-&gt;OpenSerialButton-&gt;setStyleSheet("color: green;");
+        // 关闭，显示灯为红色
+        LED(true);
+        // 清空数据
+        ui-&gt;DataReceived-&gt;clear();
+        ui-&gt;DataSend-&gt;clear();
+    }
+    else                                             // 如果串口关闭了，先给他打开
+    {
+        //当前选择的串口名字
+        serial-&gt;setPortName(ui-&gt;PortBox-&gt;currentText());
+        //用ReadWrite 的模式尝试打开串口，无法收发数据时，发出警告
+        if(!serial-&gt;open(QIODevice::ReadWrite))
+        {
+            QMessageBox::warning(this,tr("提示"),tr("串口打开失败!"),QMessageBox::Ok);
+            return;
+         }
+        // 打开状态，按钮显示“关闭串口”
+        ui-&gt;OpenSerialButton-&gt;setText("关闭串口");
+        // 打开状态，禁止用户操作
+        ui-&gt;BaudBox-&gt;setDisabled(true);
+        ui-&gt;ParityBox-&gt;setDisabled(true);
+        ui-&gt;BitBox-&gt;setDisabled(true);
+        ui-&gt;StopBox-&gt;setDisabled(true);
+        ui-&gt;ControlBox-&gt;setDisabled(true);
+        // 允许操作“发送字符操作”
+        ui-&gt;SendWordOrder-&gt;setDisabled(false);
+        ui-&gt;SendButton-&gt;setDisabled(false);
+        // 打开状态，颜色为红色
+        ui-&gt;OpenSerialButton-&gt;setStyleSheet("color: red;");
+        // 打开，显示灯为绿色
+        LED(false);
+    }
+}
+
+// 开关显示灯
+void  MainWindow::LED(bool changeColor)
+{
+    if(changeColor == false)
+    {
+        // 显示绿色
+        ui-&gt;LED-&gt;setStyleSheet("background-color: qradialgradient(spread:pad, cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 rgba(0, 229, 0, 255), stop:1 rgba(255, 255, 255, 255));border-radius:12px;");
+    }
+    else
+    {
+        // 显示红色
+        ui-&gt;LED-&gt;setStyleSheet("background-color: qradialgradient(spread:pad, cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 rgba(255, 0, 0, 255), stop:1 rgba(255, 255, 255, 255));border-radius:12px;");
+    }
+}</code></pre>
+<p>第八步：相关槽函数</p>
+<pre><code>// 控件中添加 #
+void MainWindow::on_SendButton_clicked()
+{
+    on_ClearButton_clicked();
+    ui-&gt;DataSend-&gt;append("#");
+}
+// 清空控件
+void MainWindow::on_ClearButton_clicked()
+{
+    ui-&gt;DataSend-&gt;setText("");
+}
+// 清空接收到的数据
+void MainWindow::on_ClearShowButton_clicked()
+{
+    ui-&gt;DataReceived-&gt;setText("");
+}
+// 点击发送后，获取串口信息并展示在接受控件中
+void MainWindow::on_SendEditBtn1_clicked()
+{
+    on_ClearButton_clicked();
+    QString EditText = ui-&gt;Edit1-&gt;text();               //获取发送框内容
+    ui-&gt;DataSend-&gt;setText(EditText);                     //将文本内容放在发送栏中
+}
+
+void MainWindow::on_SendEditBtn2_clicked()
+{
+    on_ClearButton_clicked();
+    QString EditText = ui-&gt;Edit2-&gt;text();               //获取发送框内容
+
+    // qDebug() &lt;&lt; "Edit1 text: " &lt;&lt; EditText;
+
+    ui-&gt;DataSend-&gt;append(EditText);                     //将文本内容放在发送栏中
+}
+
+void MainWindow::on_SendEditBtn3_clicked()
+{
+    on_ClearButton_clicked();
+    QString EditText = ui-&gt;Edit3-&gt;text();               //获取发送框内容
+
+    // qDebug() &lt;&lt; "Edit1 text: " &lt;&lt; EditText;
+
+    ui-&gt;DataSend-&gt;append(EditText);                     //将文本内容放在发送栏中
+}
+
+
+
+void MainWindow::on_SendWordOrder_clicked()
+{
+    on_SendButton_clicked();
+}
+</code></pre>
+<p>源码：</p>
+<p>工程文件.pro文件源码：</p>
+<pre><code>QT       += core gui
+# 引入串口工程类型（第二步）
+QT       += serialport
+
+greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+
+CONFIG += c++11
+
+# The following define makes your compiler emit warnings if you use
+# any Qt feature that has been marked deprecated (the exact warnings
+# depend on your compiler). Please consult the documentation of the
+# deprecated API in order to know how to port your code away from it.
+DEFINES += QT_DEPRECATED_WARNINGS
+
+# You can also make your code fail to compile if it uses deprecated APIs.
+# In order to do so, uncomment the following line.
+# You can also select to disable deprecated APIs only up to a certain version of Qt.
+#DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
+
+SOURCES += \
+    main.cpp \
+    mainwindow.cpp
+
+HEADERS += \
+    mainwindow.h
+
+FORMS += \
+    mainwindow.ui
+
+# Default rules for deployment.
+qnx: target.path = /tmp/$${TARGET}/bin
+else: unix:!android: target.path = /opt/$${TARGET}/bin
+!isEmpty(target.path): INSTALLS += target
+</code></pre>
+<p>头文件源码：</p>
+<pre><code>#ifndef MAINWINDOW_H
+#define MAINWINDOW_H
+
+#include &lt;QMainWindow&gt;
+// 引入串口通信的两个头文件(第一步)
+#include &lt;QtSerialPort/QSerialPort&gt;         // 提供访问串口的功能
+#include &lt;QtSerialPort/QSerialPortInfo&gt;     // 提供系统中存在的串口信息
+
+QT_BEGIN_NAMESPACE
+namespace Ui { class MainWindow; }
+QT_END_NAMESPACE
+
+class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow(QWidget *parent = nullptr);
+    ~MainWindow();
+
+    // 串口功能
+    void        SerialPortInit();                      // 串口初始化（参数配置）
+    void        RefreshSerialPort(int index);          // 刷新串口
+
+public slots:
+    // 串口槽函数
+    void        DataReceived();                        // 接收数据
+private slots:
+    // 串口槽函数
+    void        DataSend();                            // 发送数据
+
+    void        on_OpenSerialButton_clicked();         // 串口开关
+
+    void        on_SendButton_clicked();               // 控件中添加 #
+
+    void        on_ClearButton_clicked();              // 清空控件中的所有 #
+
+    void        on_ClearShowButton_clicked();          // 清空接收到的数据
+
+    void        LED(bool changeColor);                 // 开关显示灯
+
+    // 点击发送，接收数据
+    void        on_SendEditBtn1_clicked();
+
+    void        on_SendEditBtn2_clicked();
+
+    void        on_SendEditBtn3_clicked();
+
+
+    void on_SendWordOrder_clicked();
+
+private:
+    Ui::MainWindow *ui;
+
+    // 串口变量
+    QSerialPort     *serial;                            // 定义全局的串口对象（第三步）
+    // 参数配置
+    QStringList     baudList;                           //波特率
+    QStringList     parityList;                         //校验位
+    QStringList     dataBitsList;                       //数据位
+    QStringList     stopBitsList;                       //停止位
+    QStringList     flowControlList;                    //控制流
+};
+#endif // MAINWINDOW_H
+</code></pre>
+<p>.cpp文件源码：</p>
+<pre><code>#include "mainwindow.h"
+#include "ui_mainwindow.h"
+#include &lt;QDebug&gt;
+#include &lt;QMessageBox&gt;
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+    , ui(new Ui::MainWindow)
+{
+    ui-&gt;setupUi(this);
+
+    SerialPortInit();
+}
+
+// 串口初始化（参数配置）
+void MainWindow::SerialPortInit()
+{
+    serial = new QSerialPort;                       //申请内存,并设置父对象
+
+    // 获取计算机中有效的端口号，然后将端口号的名称给端口选择控件
+    foreach(const QSerialPortInfo &amp;info,QSerialPortInfo::availablePorts())
+    {
+        serial-&gt;setPort(info);                      // 在对象中设置串口
+        if(serial-&gt;open(QIODevice::ReadWrite))      // 以读写方式打开串口
+        {
+            ui-&gt;PortBox-&gt;addItem(info.portName());  // 添加计算机中的端口
+            serial-&gt;close();                        // 关闭
+        } else
+        {
+            qDebug() &lt;&lt; "串口打开失败，请重试";
+        }
+    }
+
+    // 参数配置
+    // 波特率，波特率默认选择57600 ，禁止用户点击
+    ui-&gt;BaudBox-&gt;addItem("57600");
+    serial-&gt;setBaudRate(QSerialPort::Baud57600);
+    ui-&gt;BaudBox-&gt;setDisabled(true);
+
+    // 校验，校验默认选择无
+    ui-&gt;ParityBox-&gt;addItem("无");
+    serial-&gt;setParity(QSerialPort::NoParity);
+
+    // 数据位，数据位默认选择8位
+    ui-&gt;BitBox-&gt;addItem("8");
+    serial-&gt;setDataBits(QSerialPort::Data8);
+
+    // 停止位，停止位默认选择1位
+    ui-&gt;StopBox-&gt;addItem("1");
+    serial-&gt;setStopBits(QSerialPort::OneStop);
+
+    // 控制流，默认选择无
+    ui-&gt;ControlBox-&gt;addItem("无");
+    serial-&gt;setFlowControl(QSerialPort::NoFlowControl);
+
+    // 刷新串口
+    RefreshSerialPort(0);
+
+    // 信号
+    connect(serial,&amp;QSerialPort::readyRead,this,&amp;MainWindow::DataReceived);         // 接收数据
+    connect(ui-&gt;SendWordOrder,&amp;QPushButton::clicked,this,&amp;MainWindow::DataSend);    // 发送数据
+    connect(ui-&gt;SendButton,&amp;QPushButton::clicked,this,&amp;MainWindow::DataSend);       // 发送数据
+    connect(ui-&gt;SendEditBtn1,&amp;QPushButton::clicked,this,&amp;MainWindow::DataSend);    // 发送数据
+    connect(ui-&gt;SendEditBtn2,&amp;QPushButton::clicked,this,&amp;MainWindow::DataSend);    // 发送数据
+    connect(ui-&gt;SendEditBtn3,&amp;QPushButton::clicked,this,&amp;MainWindow::DataSend);    // 发送数据
+
+}
+// 刷新串口
+void MainWindow::RefreshSerialPort(int index)
+{
+    QStringList portNameList;                                        // 存储所有串口名
+    if(index != 0)
+    {
+        serial-&gt;setPortName(ui-&gt;PortBox-&gt;currentText());             //设置串口号
+    }
+    else
+    {
+        ui-&gt;PortBox-&gt;clear();                                        //关闭串口号
+        ui-&gt;PortBox-&gt;addItem("刷新");                                //添加刷新
+        foreach(const QSerialPortInfo &amp;info,QSerialPortInfo::availablePorts()) //添加新串口
+        {
+            portNameList.append(info.portName());
+        }
+       
+        ui-&gt;PortBox-&gt;addItems(portNameList);
+        ui-&gt;PortBox-&gt;setCurrentIndex(1);                             // 当前串口号为COM1
+        serial-&gt;setPortName(ui-&gt;PortBox-&gt;currentText());             //设置串口号
+   }
+}
+
+// 接收数据,使用read () / readLine () / readAll ()
+void MainWindow::DataReceived()
+{
+    char BUF[512] = {0};                                       // 存储转换类型后的数据
+    QByteArray data = serial-&gt;readAll();                      // 读取数据
+
+    if(!data.isEmpty())                                 // 接收到数据
+    {
+        QString str = ui-&gt;DataReceived-&gt;toPlainText();  // 返回纯文本
+        str += tr(data);                                // 数据是一行一行传送的，要保存所有数据
+        ui-&gt;DataReceived-&gt;clear();                      // 清空之前的数据
+        ui-&gt;DataReceived-&gt;append(str);                  // 将数据放入控件中
+        qDebug() &lt;&lt; "str info: " &lt;&lt; ui-&gt;DataReceived-&gt;toPlainText();
+
+         // 清除之前的数据，防止追加，因为每次获取的数据不一样
+        int index = str.indexOf("\r\n");                // 找到，返回索引值，找不到，返回-1
+        if(index != -1)
+        {
+            snprintf(BUF,500,"%s", str.left(index + 2).toUtf8().data()); // QString转为char * 类型
+            qDebug() &lt;&lt; "BUF info: " &lt;&lt; BUF;
+            str.remove(0,index + 2);
+
+            // 处理获取到的数据，将其放入对应的控件中
+            // ....
+        }
+    }
+}
+// 发送数据，write ()
+void MainWindow::DataSend()
+{
+    serial-&gt;write(ui-&gt;DataSend-&gt;toPlainText().toLatin1());      // 串口发送数据
+}
+
+// 开关显示灯
+void  MainWindow::LED(bool changeColor)
+{
+    if(changeColor == false)
+    {
+        // 显示绿色
+        ui-&gt;LED-&gt;setStyleSheet("background-color: qradialgradient(spread:pad, cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 rgba(0, 229, 0, 255), stop:1 rgba(255, 255, 255, 255));border-radius:12px;");
+    }
+    else
+    {
+        // 显示红色
+        ui-&gt;LED-&gt;setStyleSheet("background-color: qradialgradient(spread:pad, cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 rgba(255, 0, 0, 255), stop:1 rgba(255, 255, 255, 255));border-radius:12px;");
+    }
+}
+
+MainWindow::~MainWindow()
+{
+    delete ui;
+}
+
+// 串口开关
+void MainWindow::on_OpenSerialButton_clicked()
+{
+    if(serial-&gt;isOpen())                                        // 如果串口打开了，先给他关闭
+    {
+        serial-&gt;clear();
+        serial-&gt;close();
+        // 关闭状态，按钮显示“打开串口”
+        ui-&gt;OpenSerialButton-&gt;setText("打开串口");
+        // 关闭状态，允许用户操作
+        ui-&gt;BaudBox-&gt;setDisabled(false);
+        ui-&gt;ParityBox-&gt;setDisabled(false);
+        ui-&gt;BitBox-&gt;setDisabled(false);
+        ui-&gt;StopBox-&gt;setDisabled(false);
+        ui-&gt;ControlBox-&gt;setDisabled(false);
+        // 禁止操作“发送字符操作”
+        ui-&gt;SendWordOrder-&gt;setDisabled(true);
+        ui-&gt;SendButton-&gt;setDisabled(true);
+        // 关闭状态，颜色为绿色
+        ui-&gt;OpenSerialButton-&gt;setStyleSheet("color: green;");
+        // 关闭，显示灯为红色
+        LED(true);
+        // 清空数据
+        ui-&gt;DataReceived-&gt;clear();
+        ui-&gt;DataSend-&gt;clear();
+    }
+    else                                                        // 如果串口关闭了，先给他打开
+    {
+        //当前选择的串口名字
+        serial-&gt;setPortName(ui-&gt;PortBox-&gt;currentText());
+        //用ReadWrite 的模式尝试打开串口，无法收发数据时，发出警告
+        if(!serial-&gt;open(QIODevice::ReadWrite))
+        {
+            QMessageBox::warning(this,tr("提示"),tr("串口打开失败!"),QMessageBox::Ok);
+            return;
+         }
+        // 打开状态，按钮显示“关闭串口”
+        ui-&gt;OpenSerialButton-&gt;setText("关闭串口");
+        // 打开状态，禁止用户操作
+        ui-&gt;BaudBox-&gt;setDisabled(true);
+        ui-&gt;ParityBox-&gt;setDisabled(true);
+        ui-&gt;BitBox-&gt;setDisabled(true);
+        ui-&gt;StopBox-&gt;setDisabled(true);
+        ui-&gt;ControlBox-&gt;setDisabled(true);
+        // 允许操作“发送字符操作”
+        ui-&gt;SendWordOrder-&gt;setDisabled(false);
+        ui-&gt;SendButton-&gt;setDisabled(false);
+        // 打开状态，颜色为红色
+        ui-&gt;OpenSerialButton-&gt;setStyleSheet("color: red;");
+        // 打开，显示灯为绿色
+        LED(false);
+    }
+}
+// 控件中添加 #
+void MainWindow::on_SendButton_clicked()
+{
+    on_ClearButton_clicked();
+    ui-&gt;DataSend-&gt;append("#");
+}
+// 清空控件
+void MainWindow::on_ClearButton_clicked()
+{
+    ui-&gt;DataSend-&gt;setText("");
+}
+// 清空接收到的数据
+void MainWindow::on_ClearShowButton_clicked()
+{
+    ui-&gt;DataReceived-&gt;setText("");
+}
+// 点击发送后，获取串口信息并展示在接受控件中
+void MainWindow::on_SendEditBtn1_clicked()
+{
+    on_ClearButton_clicked();
+    QString EditText = ui-&gt;Edit1-&gt;text();               //获取发送框内容
+    ui-&gt;DataSend-&gt;setText(EditText);                     //将文本内容放在发送栏中
+}
+
+void MainWindow::on_SendEditBtn2_clicked()
+{
+    on_ClearButton_clicked();
+    QString EditText = ui-&gt;Edit2-&gt;text();               //获取发送框内容
+
+    // qDebug() &lt;&lt; "Edit1 text: " &lt;&lt; EditText;
+
+    ui-&gt;DataSend-&gt;append(EditText);                     //将文本内容放在发送栏中
+}
+
+void MainWindow::on_SendEditBtn3_clicked()
+{
+    on_ClearButton_clicked();
+    QString EditText = ui-&gt;Edit3-&gt;text();               //获取发送框内容
+
+    // qDebug() &lt;&lt; "Edit1 text: " &lt;&lt; EditText;
+
+    ui-&gt;DataSend-&gt;append(EditText);                     //将文本内容放在发送栏中
+}
+
+
+void MainWindow::on_SendWordOrder_clicked()
+{
+    on_SendButton_clicked();
+}
+</code></pre>
+<p>运行后效果：</p>
+<p><img alt="" height="792" src="image\abc0868183c44c9bbdf0c4169284ea08.png" width="1002"/></p>
+<p></p>
+<p></p>
+</div>
+</div>

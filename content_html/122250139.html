@@ -1,0 +1,175 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h3><strong>1.先上样图</strong></h3>
+<p style="text-align:center;"><strong><img alt="" src="https://img-blog.csdnimg.cn/8021487404a34ab498ae78db699cd543.gif"/></strong></p>
+<p> </p>
+<p>软件在用户交互方面未做完善 ，后续会逐步完善。</p>
+<p>代码已经同步到Github，欢迎下载使用，但是请注明出处。</p>
+<p>Github地址：<a class="link-info" href="https://github.com/zhouchen/zhouchen.chart" title="https://github.com/zhouchen/zhouchen.chart">https://github.com/zhouchen/zhouchen.chart</a></p>
+<h3>2.软件基本构想</h3>
+<p>软件加载图片后，先做计算，给matrix赋值，使得图片大小适合窗口，然后居中显示。图片大小适合窗口，是对图像进行第一次缩放，代码如下：</p>
+<pre><code class="language-cs">        // 缩放图片到窗口能刚好展示完全
+        public void AdaptView()
+        {
+            if (_bitmap == null)
+            {
+                return;
+            }
+
+            using (var graphPath = new GraphicsPath())
+            {
+                graphPath.AddRectangle(_rcImg);
+                graphPath.Transform(_matrix);
+                PointF[] pointFs = graphPath.PathPoints;
+                float fxmin = pointFs[0].X;
+                float fymin = pointFs[0].Y;
+                float fxmax = pointFs[0].X;
+                float fymax = pointFs[0].Y;
+
+                foreach (var pt in pointFs)
+                {
+                    if (pt.X &lt; fxmin)
+                    {
+                        fxmin = pt.X;
+                    }
+                    else if (pt.X &gt; fxmax)
+                    {
+                        fxmax = pt.X;
+                    }
+                    if (pt.Y &lt; fymin)
+                    {
+                        fymin = pt.Y;
+                    }
+                    else if (pt.Y &gt; fymax)
+                    {
+                        fymax = pt.Y;
+                    }
+                }
+
+                float fWidth = fxmax - fxmin;
+                float fHeight = fymax - fymin;
+
+                if (fWidth * rcBgArea.Height &lt; fHeight * rcBgArea.Width)
+                {
+                    DScale = rcBgArea.Height / fHeight;
+                }
+                else
+                {
+                    DScale = rcBgArea.Width / fWidth;
+                }
+                _matrix.Scale((float)DScale, (float)DScale, MatrixOrder.Append);
+            }
+        }</code></pre>
+<p>先计算图像进行矩阵变换后的最小外接矩形(图片刚加载的时候，其实外接矩形就是图片本身的尺寸，这里未了考虑之后图片进行矩阵变换后，想要重新恢复到能窗口显示，所以要进行矩阵变换的计算)，然后计算相应的缩放比例，并设置到变换矩阵中。</p>
+<p>缩放之后就要对图像进行第一次平移，这样能实现在窗口居中，代码如下：</p>
+<pre><code class="language-cs">        // 平移图片到窗口的中间
+        public void TranslationCenter()
+        {
+            if(_bitmap == null)
+            {
+                return;
+            }
+            Matrix matrixinv = _matrix.Clone();
+            matrixinv.Invert();
+
+            Point[] ptViewCenter = new Point[] { new Point(rcBgArea.Left + rcBgArea.Width / 2, rcBgArea.Top + rcBgArea.Height / 2) };
+            matrixinv.TransformPoints(ptViewCenter);
+
+            _matrix.Translate(ptViewCenter[0].X - _rcImg.Width / 2, ptViewCenter[0].Y - _rcImg.Height / 2);
+            this.Refresh();
+
+        }</code></pre>
+<p>这里的思路就要和缩放有点逆向，因为平移是平移图片，显示窗口的中心坐标要先换算成图片坐标系的点的坐标，所以要先将窗口中心点的坐标通过逆矩阵，计算出相对与图片坐标系的坐标，然后进行相应的计算赋值，才可以完成图像的平移。</p>
+<p>缩放平移后，就是需要展示。展示采用GDI+的双缓冲技术。代码如下：</p>
+<pre><code class="language-cs">        private void ChartView_Paint(object sender, PaintEventArgs e)
+        {
+            Graphics graph = e.Graphics;
+            graph.SmoothingMode = SmoothingMode.HighQuality;
+            // 双缓冲绘图
+            Bitmap bmpChartView = new Bitmap(this.Width, this.Height);
+            Graphics bmpChartView_g = Graphics.FromImage(bmpChartView);
+            bmpChartView_g.SmoothingMode = SmoothingMode.HighQuality;
+
+            DrawView(bmpChartView_g);
+            graph.DrawImage(bmpChartView, 0, 0);
+
+            bmpChartView_g.Dispose();
+            bmpChartView.Dispose();
+        }</code></pre>
+<p>因为之前设置好了_matrix,所以绘图就变得简单多了，只需要将矩阵设置到Graphics即可，代码如下：</p>
+<pre><code class="language-cs">        // 绘图
+        private void DrawView(Graphics graph)
+        {
+            DrawMainView(graph);
+            DrawScrollV(graph);
+            DrawScrollH(graph);
+        }
+
+        // 绘制图片展示区
+        private void DrawMainView(Graphics graph)
+        {
+            // 填充背景
+            graph.FillRectangle(_ImgBg, rcBgArea);
+            if (_bitmap == null)
+            {
+                return;
+            }
+
+            Bitmap bitImg = new Bitmap(_rcImg.Width, _rcImg.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            Graphics bitImg_g = Graphics.FromImage(bitImg);
+            bitImg_g.Transform = _matrix;
+            bitImg_g.DrawImage(_bitmap, 0, 0);
+
+            graph.DrawImage(bitImg, rcBgArea.Left, rcBgArea.Top);
+
+            foreach(var chart in LstChart)
+            {
+                chart.DrawChart(graph, _matrix);
+            }
+
+            bitImg_g.Dispose();
+            bitImg.Dispose();
+        }</code></pre>
+<p>值得注意的是，我还会在图片上绘制一些图形，如果在绘制图片之后，然后在图片上绘制图形，那么图形的线条宽度会随着图片的缩放进行相应的缩放，但是如果是在绘图Graphics上绘制的话，那就不会了，这个主要看实际的情况需要。比如PhotoShop就是要编辑图片，那么自然就是要对线条进行相应缩放，又比如Visio所画的图形，这就不要随着缩放而缩放。我在这里选择后者。</p>
+<h3>3.鼠标实现平移</h3>
+<p>这个比较简单，鼠标点击的时候，记录下点击的坐标(鼠标点击获取到的e.location是相对于视图窗口的坐标，需要通过逆矩阵换算出图片实际的坐标)，鼠标移动到新的坐标的时候，两两进行相减，然后把结果赋值到_matrix中即可</p>
+<pre><code class="language-cs"> _matrix.Translate((points[0].X - _LastPt.X), (points[0].Y - _LastPt.Y));</code></pre>
+<h3>4.鼠标实现旋转</h3>
+<p>这个和平移很相似，该有的换算都得算上，这里需要把平移需要的坐标，改成角度即可，角度的计算代码如下，这里都是相对于图像的中心点旋转，需要重新设置旋转点，修改对应的旋转中心点就可以了：</p>
+<pre><code class="language-cs">double corrb = Math.Atan2(_LastPt.Y - _rcImg.Height / 2, _LastPt.X - _rcImg.Width / 2);
+double corre = Math.Atan2(points[0].Y - _rcImg.Height / 2, points[0].X - _rcImg.Width / 2);
+_matrix.RotateAt((float)((corre -corrb) *180.0f/Math.PI), new Point(_rcImg.Width / 2, _rcImg.Height / 2));
+DRoute += (Double)((corre - corrb) * 180.0f / Math.PI);</code></pre>
+<h3>5.鼠标实现缩放</h3>
+<p>缩放实际上要实现两步，第一步是缩放，缩放后鼠标所在的坐标相对与图片来说发生了变化，所以还需要一步进行图像的平移，代码如下：</p>
+<pre><code class="language-cs">        private void ChartView_MouseWheel(object sender, MouseEventArgs e)
+        {
+            Point[] points = new Point[] { e.Location };
+            Matrix matrix_Invert = _matrix.Clone();
+            matrix_Invert.Invert();
+            matrix_Invert.TransformPoints(points);
+            Console.WriteLine(points[0]);
+            if (_rcImg.Contains(points[0]))
+            {
+                double step = 1.2;
+                if (e.Delta &lt; 0)
+                {
+                    step = 1.0 / 1.2;
+                }
+                DScale *= step;
+                _matrix.Scale((float)step, (float)step);
+
+                Point[] pointse = new Point[] { e.Location };
+                matrix_Invert = _matrix.Clone();
+                matrix_Invert.Invert();
+                matrix_Invert.TransformPoints(pointse);
+                _matrix.Translate((pointse[0].X - points[0].X), (pointse[0].Y - points[0].Y));
+
+                Refresh();
+            }
+        }</code></pre>
+<p></p>
+<p></p>
+</div>
+</div>

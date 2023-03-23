@@ -1,0 +1,547 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p><strong>什么是联邦学习？</strong></p>
+<p>简单来说就是在一个多方的环境中，数据集是零散的（在各个不同的客户端中），那么怎样实现机器学习算法呢？</p>
+<p>首先想到的就是将多个数据集合并合并起来，然后统一的使用传统的机器学习或者深度学习算法进行计算，但是如果有一方因为数据隐私问题不愿意提交自己的数据呢？</p>
+<p>那么就出现了联邦学习，核心就是“<strong>数据不动模型动，数据可用不可见</strong>”</p>
+<p>多个客户端不提交数据而是提交训练时的参数/梯度给中心服务器，中心服务器进行计算后再将参数/梯度返回多个客户端再学习的过程</p>
+<p>整个过程数据的所有权依然在用户手中，这就是联邦学习</p>
+<p>当然数据隐私方面，联邦学习还将结合<strong>同态加密、安全多方计算、查分隐私</strong>等隐私计算技术实现更安全的保障</p>
+<p>（ps：这里只是简单的介绍，详细的内容请多查阅其他资料）</p>
+<p>基本概念入门学习见：<a href="https://blog.csdn.net/weixin_43988498/article/details/115490939">《Federated_Machine_Learning:Concept_and_Applications》精读</a></p>
+<h1><a id="_20"></a>一、环境准备</h1>
+<p>实验基于机器学习库PyTorch, 所以需要一些基础的PyTorch使用</p>
+<p>（ps：不会也没事，下面代码有详细的注释，因为我也刚刚入门 😃 ）</p>
+<ul><li>anaconda、python3.7、PyTorch<br/> <code>pip install torch</code></li><li>GPU安装<code>CUDA</code>、<code>cuDNN</code></li></ul>
+<h1><a id="_30"></a>二、横向联邦图像分类</h1>
+<h2><a id="_32"></a>基本信息</h2>
+<p>数据集：<code>CIFAR10</code></p>
+<p>模型：<code>ResNet-18</code></p>
+<p>环境角色:</p>
+<ul><li>中心服务器</li><li>多个客户端</li></ul>
+<blockquote>
+<p><font color="#39b54a">为了简化，这里服务器客户端都是在单机上模拟，后面使用FATE会在真实多台机器上实现</font></p>
+</blockquote>
+<p><img alt="环境架构" src="https://img-blog.csdnimg.cn/img_convert/aa16381b81dcba98987c66d1bcb4175b.png"/></p>
+<p>基本的流程：</p>
+<ol><li>服务器按配置生成初始化模型，客户端按照顺序将数据集横向不重叠切割</li><li>服务器将全局模型发送给客户端</li><li>客户端接收全局模型（来自服务器）通过本地多次迭代计算本地参数差值返回给服务器</li><li>服务器聚合各个客户端差值更新模型，再评估当前模型性能</li><li>如果性能未达标，则重复2过程，否则结束</li></ol>
+<h2><a id="21__55"></a>2.1 配置文件</h2>
+<p>配置文件包含了整个项目的模型、数据集、epoch等核心训练参数</p>
+<p>需要注意的是，一般来说配置文件需要在所有的客户端与服务端之间<strong>同步一致</strong></p>
+<p>创建一个配置文件:</p>
+<p>项目文件夹下<code>./utils/conf.json</code>创建配置文件:</p>
+<pre><code class="prism language-json"><span class="token punctuation">{<!-- --></span>
+  <span class="token string">"model_name"</span> <span class="token operator">:</span> <span class="token string">"resnet18"</span><span class="token punctuation">,</span>
+  <span class="token string">"no_models"</span> <span class="token operator">:</span> <span class="token number">10</span><span class="token punctuation">,</span>
+  <span class="token string">"type"</span> <span class="token operator">:</span> <span class="token string">"cifar"</span><span class="token punctuation">,</span>
+  <span class="token string">"global_epochs"</span> <span class="token operator">:</span> <span class="token number">20</span><span class="token punctuation">,</span>
+  <span class="token string">"local_epochs"</span> <span class="token operator">:</span> <span class="token number">3</span><span class="token punctuation">,</span>
+  <span class="token string">"k"</span> <span class="token operator">:</span> <span class="token number">6</span><span class="token punctuation">,</span>
+  <span class="token string">"batch_size"</span> <span class="token operator">:</span> <span class="token number">32</span><span class="token punctuation">,</span>
+  <span class="token string">"lr"</span> <span class="token operator">:</span> <span class="token number">0.001</span><span class="token punctuation">,</span>
+  <span class="token string">"momentum"</span> <span class="token operator">:</span> <span class="token number">0.0001</span><span class="token punctuation">,</span>
+  <span class="token string">"lambda"</span> <span class="token operator">:</span> <span class="token number">0.1</span> 
+<span class="token punctuation">}</span>
+</code></pre>
+<ul><li>model_name：模型名称</li><li>no_models：客户端总数量</li><li>type：数据集信息</li><li>global_epochs：全局迭代次数，即<strong>服务端与客户端的通信迭代次数</strong></li><li>local_epochs：<strong>本地模型训练迭代次数</strong></li><li>k：每一轮迭代时，服务端会从所有客户端中挑选k个客户端参与训练。</li><li>batch_size：本地训练每一轮的样本数</li><li>lr，momentum，lambda：本地训练的超参数设置</li></ul>
+<h2><a id="21__89"></a>2.1 构建训练数据集</h2>
+<p>构建数据集代码如下:</p>
+<p><code>datasets.py</code></p>
+<pre><code class="prism language-python"><span class="token keyword">import</span> torchvision <span class="token keyword">as</span> tv
+
+<span class="token comment"># 获取数据集</span>
+<span class="token keyword">def</span> <span class="token function">get_dataset</span><span class="token punctuation">(</span><span class="token builtin">dir</span><span class="token punctuation">,</span> name<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">if</span> name <span class="token operator">==</span> <span class="token string">'mnist'</span><span class="token punctuation">:</span>
+        <span class="token comment"># root: 数据路径</span>
+        <span class="token comment"># train参数表示是否是训练集或者测试集</span>
+        <span class="token comment"># download=true表示从互联网上下载数据集并把数据集放在root路径中</span>
+        <span class="token comment"># transform：图像类型的转换</span>
+        train_dataset <span class="token operator">=</span> tv<span class="token punctuation">.</span>datasets<span class="token punctuation">.</span>MNIST<span class="token punctuation">(</span><span class="token builtin">dir</span><span class="token punctuation">,</span> train<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span> download<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span> transform<span class="token operator">=</span>tv<span class="token punctuation">.</span>transforms<span class="token punctuation">.</span>ToTensor<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        eval_dataset <span class="token operator">=</span> tv<span class="token punctuation">.</span>datasets<span class="token punctuation">.</span>MNIST<span class="token punctuation">(</span><span class="token builtin">dir</span><span class="token punctuation">,</span> train<span class="token operator">=</span><span class="token boolean">False</span><span class="token punctuation">,</span> transform<span class="token operator">=</span>tv<span class="token punctuation">.</span>transforms<span class="token punctuation">.</span>ToTensor<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token keyword">elif</span> name <span class="token operator">==</span> <span class="token string">'cifar'</span><span class="token punctuation">:</span>
+        <span class="token comment"># 设置两个转换格式</span>
+        <span class="token comment"># transforms.Compose 是将多个transform组合起来使用（由transform构成的列表）</span>
+        transform_train <span class="token operator">=</span> tv<span class="token punctuation">.</span>transforms<span class="token punctuation">.</span>Compose<span class="token punctuation">(</span><span class="token punctuation">[</span>
+            <span class="token comment"># transforms.RandomCrop： 切割中心点的位置随机选取</span>
+            tv<span class="token punctuation">.</span>transforms<span class="token punctuation">.</span>RandomCrop<span class="token punctuation">(</span><span class="token number">32</span><span class="token punctuation">,</span> padding<span class="token operator">=</span><span class="token number">4</span><span class="token punctuation">)</span><span class="token punctuation">,</span> tv<span class="token punctuation">.</span>transforms<span class="token punctuation">.</span>RandomHorizontalFlip<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            tv<span class="token punctuation">.</span>transforms<span class="token punctuation">.</span>ToTensor<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token comment"># transforms.Normalize： 给定均值：(R,G,B) 方差：（R，G，B），将会把Tensor正则化</span>
+            tv<span class="token punctuation">.</span>transforms<span class="token punctuation">.</span>Normalize<span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token number">0.4914</span><span class="token punctuation">,</span> <span class="token number">0.4822</span><span class="token punctuation">,</span> <span class="token number">0.4465</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token number">0.2023</span><span class="token punctuation">,</span> <span class="token number">0.1994</span><span class="token punctuation">,</span> <span class="token number">0.2010</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+        <span class="token punctuation">]</span><span class="token punctuation">)</span>
+        transform_test <span class="token operator">=</span> tv<span class="token punctuation">.</span>transforms<span class="token punctuation">.</span>Compose<span class="token punctuation">(</span><span class="token punctuation">[</span>
+            tv<span class="token punctuation">.</span>transforms<span class="token punctuation">.</span>ToTensor<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            tv<span class="token punctuation">.</span>transforms<span class="token punctuation">.</span>Normalize<span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token number">0.4914</span><span class="token punctuation">,</span> <span class="token number">0.4822</span><span class="token punctuation">,</span> <span class="token number">0.4465</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token number">0.2023</span><span class="token punctuation">,</span> <span class="token number">0.1994</span><span class="token punctuation">,</span> <span class="token number">0.2010</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+        <span class="token punctuation">]</span><span class="token punctuation">)</span>
+        train_dataset <span class="token operator">=</span> tv<span class="token punctuation">.</span>datasets<span class="token punctuation">.</span>CIFAR10<span class="token punctuation">(</span><span class="token builtin">dir</span><span class="token punctuation">,</span> train<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span> download<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span> transform<span class="token operator">=</span>transform_train<span class="token punctuation">)</span>
+        eval_dataset <span class="token operator">=</span> tv<span class="token punctuation">.</span>datasets<span class="token punctuation">.</span>CIFAR10<span class="token punctuation">(</span><span class="token builtin">dir</span><span class="token punctuation">,</span> train<span class="token operator">=</span><span class="token boolean">False</span><span class="token punctuation">,</span> transform<span class="token operator">=</span>transform_test<span class="token punctuation">)</span>
+    <span class="token keyword">return</span> train_dataset<span class="token punctuation">,</span> eval_dataset
+</code></pre>
+<h2><a id="22__126"></a>2.2 服务端</h2>
+<p>服务端的主要功能是<strong>模型的聚合、评估</strong>，最终的模型也是在服务器上生成</p>
+<p>首先创建一个服务类</p>
+<p>所有的程序放在<code>server.py</code></p>
+<h3><a id="_134"></a>构造函数</h3>
+<p>定义其构造函数：</p>
+<pre><code class="prism language-python"><span class="token comment"># 定义构造函数</span>
+<span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> conf<span class="token punctuation">,</span> eval_dataset<span class="token punctuation">)</span><span class="token punctuation">:</span>
+  <span class="token comment"># 导入配置文件</span>
+  self<span class="token punctuation">.</span>conf <span class="token operator">=</span> conf
+  <span class="token comment"># 根据配置获取模型文件</span>
+  self<span class="token punctuation">.</span>global_model <span class="token operator">=</span> models<span class="token punctuation">.</span>get_model<span class="token punctuation">(</span>self<span class="token punctuation">.</span>conf<span class="token punctuation">[</span><span class="token string">"model_name"</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+  <span class="token comment"># 生成一个测试集合加载器</span>
+  self<span class="token punctuation">.</span>eval_loader <span class="token operator">=</span> torch<span class="token punctuation">.</span>utils<span class="token punctuation">.</span>data<span class="token punctuation">.</span>DataLoader<span class="token punctuation">(</span>
+    eval_dataset<span class="token punctuation">,</span>
+    <span class="token comment"># 设置单个批次大小32</span>
+    batch_size<span class="token operator">=</span>self<span class="token punctuation">.</span>conf<span class="token punctuation">[</span><span class="token string">"batch_size"</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token comment"># 打乱数据集</span>
+    shuffle<span class="token operator">=</span><span class="token boolean">True</span>
+  <span class="token punctuation">)</span>
+</code></pre>
+<h3><a id="_155"></a>聚合函数</h3>
+<p>定义全局联邦平均FedAvg聚合函数：</p>
+<p>FedAvg算法的公式如下：</p>
+<p><span class="katex--inline"><span class="katex"><span class="katex-mathml">
+    
+     
+      
+       
+        
+         G
+        
+        
+         
+          t
+         
+         
+          +
+         
+         
+          1
+         
+        
+       
+       
+        =
+       
+       
+        
+         G
+        
+        
+         t
+        
+       
+       
+        +
+       
+       
+        λ
+       
+       
+        
+         ∑
+        
+        
+         
+          i
+         
+         
+          =
+         
+         
+          1
+         
+        
+        
+         m
+        
+       
+       
+        (
+       
+       
+        
+         L
+        
+        
+         i
+        
+        
+         
+          t
+         
+         
+          +
+         
+         
+          1
+         
+        
+       
+       
+        −
+       
+       
+        
+         G
+        
+        
+         i
+        
+        
+         t
+        
+       
+       
+        )
+       
+      
+      
+       G^{t+1} = G^{t} + \lambda \sum^m_{i=1}(L_i^{t+1}-G_i^t)
+      
+     
+    </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.8141079999999999em; vertical-align: 0em;"></span><span class="mord"><span class="mord mathdefault">G</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height: 0.8141079999999999em;"><span class="" style="top: -3.063em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathdefault mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right: 0.2777777777777778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.2777777777777778em;"></span></span><span class="base"><span class="strut" style="height: 0.8768859999999999em; vertical-align: -0.08333em;"></span><span class="mord"><span class="mord mathdefault">G</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height: 0.7935559999999999em;"><span class="" style="top: -3.063em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathdefault mtight">t</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right: 0.2222222222222222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right: 0.2222222222222222em;"></span></span><span class="base"><span class="strut" style="height: 1.153949em; vertical-align: -0.29971000000000003em;"></span><span class="mord mathdefault">λ</span><span class="mspace" style="margin-right: 0.16666666666666666em;"></span><span class="mop"><span class="mop op-symbol small-op" style="position: relative; top: -0.0000050000000000050004em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.804292em;"><span class="" style="top: -2.40029em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathdefault mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span class="" style="top: -3.2029em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">m</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.29971000000000003em;"><span class=""></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathdefault">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.854239em;"><span class="" style="top: -2.4231360000000004em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span><span class="" style="top: -3.1031310000000003em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathdefault mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.276864em;"><span class=""></span></span></span></span></span></span><span class="mspace" style="margin-right: 0.2222222222222222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right: 0.2222222222222222em;"></span></span><span class="base"><span class="strut" style="height: 1.05222em; vertical-align: -0.258664em;"></span><span class="mord"><span class="mord mathdefault">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.7935559999999999em;"><span class="" style="top: -2.441336em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span><span class="" style="top: -3.063em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.258664em;"><span class=""></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></span>​</p>
+<blockquote>
+<p><span class="katex--inline"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         
+          G
+         
+         
+          t
+         
+        
+       
+       
+        G^t
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.7935559999999999em; vertical-align: 0em;"></span><span class="mord"><span class="mord mathdefault">G</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height: 0.7935559999999999em;"><span class="" style="top: -3.063em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">t</span></span></span></span></span></span></span></span></span></span></span></span>表示第t轮更新的全局模型参数，<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         
+          L
+         
+         
+          i
+         
+         
+          
+           t
+          
+          
+           +
+          
+          
+           1
+          
+         
+        
+       
+       
+        L_i^{t+1}
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 1.131103em; vertical-align: -0.276864em;"></span><span class="mord"><span class="mord mathdefault">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.854239em;"><span class="" style="top: -2.4231360000000004em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span><span class="" style="top: -3.1031310000000003em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathdefault mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.276864em;"><span class=""></span></span></span></span></span></span></span></span></span></span>​表示第i个客户端在第t+1轮本地更新后的模型</p>
+</blockquote>
+<p>在模型聚合时，<code>weight_accumulator</code>就是<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+    
+     
+      
+       
+        (
+       
+       
+        
+         L
+        
+        
+         i
+        
+        
+         
+          t
+         
+         
+          +
+         
+         
+          1
+         
+        
+       
+       
+        −
+       
+       
+        
+         G
+        
+        
+         i
+        
+        
+         t
+        
+       
+       
+        )
+       
+       
+         
+       
+       
+        i
+       
+       
+        =
+       
+       
+        1
+       
+       
+        ,
+       
+       
+        2
+       
+       
+        ,
+       
+       
+        .
+       
+       
+        .
+       
+       
+        .
+       
+       
+        m
+       
+      
+      
+       (L_i^{t+1}-G_i^t) \ i = 1,2,...m
+      
+     
+    </span><span class="katex-html"><span class="base"><span class="strut" style="height: 1.131103em; vertical-align: -0.276864em;"></span><span class="mopen">(</span><span class="mord"><span class="mord mathdefault">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.854239em;"><span class="" style="top: -2.4231360000000004em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span><span class="" style="top: -3.1031310000000003em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathdefault mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.276864em;"><span class=""></span></span></span></span></span></span><span class="mspace" style="margin-right: 0.2222222222222222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right: 0.2222222222222222em;"></span></span><span class="base"><span class="strut" style="height: 1.05222em; vertical-align: -0.258664em;"></span><span class="mord"><span class="mord mathdefault">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.7935559999999999em;"><span class="" style="top: -2.441336em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">i</span></span></span><span class="" style="top: -3.063em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathdefault mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.258664em;"><span class=""></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace"> </span><span class="mord mathdefault">i</span><span class="mspace" style="margin-right: 0.2777777777777778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.2777777777777778em;"></span></span><span class="base"><span class="strut" style="height: 0.8388800000000001em; vertical-align: -0.19444em;"></span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right: 0.16666666666666666em;"></span><span class="mord">2</span><span class="mpunct">,</span><span class="mspace" style="margin-right: 0.16666666666666666em;"></span><span class="mord">.</span><span class="mord">.</span><span class="mord">.</span><span class="mord mathdefault">m</span></span></span></span></span>​部分，具体<code>weight_accumulator</code>的计算会在后面详细介绍其实现</p>
+<pre><code class="prism language-python"><span class="token comment"># 全局聚合模型</span>
+<span class="token comment"># weight_accumulator 存储了每一个客户端的上传参数变化值/差值</span>
+<span class="token keyword">def</span> <span class="token function">model_aggregate</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> weight_accumulator<span class="token punctuation">)</span><span class="token punctuation">:</span>
+  <span class="token comment"># 遍历服务器的全局模型</span>
+  <span class="token keyword">for</span> name<span class="token punctuation">,</span> data <span class="token keyword">in</span> self<span class="token punctuation">.</span>global_model<span class="token punctuation">.</span>state_dict<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>items<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token comment"># 更新每一层乘上学习率</span>
+    update_per_layer <span class="token operator">=</span> weight_accumulator<span class="token punctuation">[</span>name<span class="token punctuation">]</span> <span class="token operator">*</span> self<span class="token punctuation">.</span>conf<span class="token punctuation">[</span><span class="token string">"lambda"</span><span class="token punctuation">]</span>
+    <span class="token comment"># 累加和</span>
+    <span class="token keyword">if</span> data<span class="token punctuation">.</span><span class="token builtin">type</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">!=</span> update_per_layer<span class="token punctuation">.</span><span class="token builtin">type</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+      	<span class="token comment"># 因为update_per_layer的type是floatTensor，所以将起转换为模型的LongTensor（有一定的精度损失）</span>
+      	data<span class="token punctuation">.</span>add_<span class="token punctuation">(</span>update_per_layer<span class="token punctuation">.</span>to<span class="token punctuation">(</span>torch<span class="token punctuation">.</span>int64<span class="token punctuation">)</span><span class="token punctuation">)</span>
+      <span class="token keyword">else</span><span class="token punctuation">:</span>
+        data<span class="token punctuation">.</span>add_<span class="token punctuation">(</span>update_per_layer<span class="token punctuation">)</span>
+</code></pre>
+<h3><a id="_183"></a>评估函数</h3>
+<p>定义模型评估函数</p>
+<p>评估函数主要是不断的评估当前模型的性能，判断是否可以提前终止迭代或者是出现了发散退化等现象</p>
+<pre><code class="prism language-python">		<span class="token comment"># 评估函数</span>
+    <span class="token keyword">def</span> <span class="token function">model_eval</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        self<span class="token punctuation">.</span>global_model<span class="token punctuation">.</span><span class="token builtin">eval</span><span class="token punctuation">(</span><span class="token punctuation">)</span>    <span class="token comment"># 开启模型评估模式（不修改参数）</span>
+        total_loss <span class="token operator">=</span> <span class="token number">0.0</span>
+        correct <span class="token operator">=</span> <span class="token number">0</span>
+        dataset_size <span class="token operator">=</span> <span class="token number">0</span>
+        <span class="token comment"># 遍历评估数据集合</span>
+        <span class="token keyword">for</span> batch_id<span class="token punctuation">,</span> batch <span class="token keyword">in</span> <span class="token builtin">enumerate</span><span class="token punctuation">(</span>self<span class="token punctuation">.</span>eval_loader<span class="token punctuation">)</span><span class="token punctuation">:</span>
+            data<span class="token punctuation">,</span> target <span class="token operator">=</span> batch
+            <span class="token comment"># 获取所有的样本总量大小</span>
+            dataset_size <span class="token operator">+=</span> data<span class="token punctuation">.</span>size<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+            <span class="token comment"># 存储到gpu</span>
+            <span class="token keyword">if</span> torch<span class="token punctuation">.</span>cuda<span class="token punctuation">.</span>is_available<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+                data <span class="token operator">=</span> data<span class="token punctuation">.</span>cuda<span class="token punctuation">(</span><span class="token punctuation">)</span>
+                target <span class="token operator">=</span> target<span class="token punctuation">.</span>cuda<span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token comment"># 加载到模型中训练</span>
+            output <span class="token operator">=</span> self<span class="token punctuation">.</span>global_model<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+            <span class="token comment"># 聚合所有的损失 cross_entropy交叉熵函数计算损失</span>
+            total_loss <span class="token operator">+=</span> torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>functional<span class="token punctuation">.</span>cross_entropy<span class="token punctuation">(</span>
+                output<span class="token punctuation">,</span>
+                target<span class="token punctuation">,</span>
+                reduction<span class="token operator">=</span><span class="token string">'sum'</span>
+            <span class="token punctuation">)</span><span class="token punctuation">.</span>item<span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token comment"># 获取最大的对数概率的索引值， 即在所有预测结果中选择可能性最大的作为最终的分类结果</span>
+            pred <span class="token operator">=</span> output<span class="token punctuation">.</span>data<span class="token punctuation">.</span><span class="token builtin">max</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span>
+            <span class="token comment"># 统计预测结果与真实标签target的匹配总个数</span>
+            correct <span class="token operator">+=</span> pred<span class="token punctuation">.</span>eq<span class="token punctuation">(</span>target<span class="token punctuation">.</span>data<span class="token punctuation">.</span>view_as<span class="token punctuation">(</span>pred<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span>cpu<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token builtin">sum</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>item<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        acc <span class="token operator">=</span> <span class="token number">100.0</span> <span class="token operator">*</span> <span class="token punctuation">(</span><span class="token builtin">float</span><span class="token punctuation">(</span>correct<span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token builtin">float</span><span class="token punctuation">(</span>dataset_size<span class="token punctuation">)</span><span class="token punctuation">)</span>    <span class="token comment"># 计算准确率</span>
+        total_1 <span class="token operator">=</span> total_loss <span class="token operator">/</span> dataset_size                     <span class="token comment"># 计算损失值</span>
+        <span class="token keyword">return</span> acc<span class="token punctuation">,</span> total_1
+</code></pre>
+<h2><a id="23__222"></a>2.3 客户端</h2>
+<p>客户端的主要功能是：</p>
+<ul><li>接受服务器下发的指令和全局模型</li><li>利用本地数据进行局部模型训练</li></ul>
+<p>此部分所有程序都在<code>client.py</code>中</p>
+<h3><a id="_231"></a>构造函数</h3>
+<p>定义client类</p>
+<pre><code class="prism language-python"> 		<span class="token comment"># 构造函数</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> conf<span class="token punctuation">,</span> model<span class="token punctuation">,</span> train_dataset<span class="token punctuation">,</span> <span class="token builtin">id</span> <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token comment"># 配置文件</span>
+        self<span class="token punctuation">.</span>conf <span class="token operator">=</span> conf
+        <span class="token comment"># 客户端本地模型(一般由服务器传输)</span>
+        self<span class="token punctuation">.</span>local_model <span class="token operator">=</span> model
+        <span class="token comment"># 客户端ID</span>
+        self<span class="token punctuation">.</span>client_id <span class="token operator">=</span> <span class="token builtin">id</span>
+        <span class="token comment"># 客户端本地数据集</span>
+        self<span class="token punctuation">.</span>train_dataset <span class="token operator">=</span> train_dataset
+        <span class="token comment"># 按ID对训练集合的拆分</span>
+        all_range <span class="token operator">=</span> <span class="token builtin">list</span><span class="token punctuation">(</span><span class="token builtin">range</span><span class="token punctuation">(</span><span class="token builtin">len</span><span class="token punctuation">(</span>self<span class="token punctuation">.</span>train_dataset<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        data_len <span class="token operator">=</span> <span class="token builtin">int</span><span class="token punctuation">(</span><span class="token builtin">len</span><span class="token punctuation">(</span>self<span class="token punctuation">.</span>train_dataset<span class="token punctuation">)</span> <span class="token operator">/</span> self<span class="token punctuation">.</span>conf<span class="token punctuation">[</span><span class="token string">'no_models'</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+        indices <span class="token operator">=</span> all_range<span class="token punctuation">[</span><span class="token builtin">id</span> <span class="token operator">*</span> data_len<span class="token punctuation">:</span> <span class="token punctuation">(</span><span class="token builtin">id</span> <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">*</span> data_len<span class="token punctuation">]</span>
+        <span class="token comment"># 生成一个数据加载器</span>
+        self<span class="token punctuation">.</span>train_loader <span class="token operator">=</span> torch<span class="token punctuation">.</span>utils<span class="token punctuation">.</span>data<span class="token punctuation">.</span>DataLoader<span class="token punctuation">(</span>
+            <span class="token comment"># 制定父集合</span>
+            self<span class="token punctuation">.</span>train_dataset<span class="token punctuation">,</span>
+            <span class="token comment"># batch_size每个batch加载多少个样本(默认: 1)</span>
+            batch_size<span class="token operator">=</span>conf<span class="token punctuation">[</span><span class="token string">"batch_size"</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+            <span class="token comment"># 指定子集合</span>
+            <span class="token comment"># sampler定义从数据集中提取样本的策略</span>
+            sampler<span class="token operator">=</span>torch<span class="token punctuation">.</span>utils<span class="token punctuation">.</span>data<span class="token punctuation">.</span>sampler<span class="token punctuation">.</span>SubsetRandomSampler<span class="token punctuation">(</span>indices<span class="token punctuation">)</span>
+        <span class="token punctuation">)</span>
+</code></pre>
+<p>本案例中根据ID将数据集进行横向切分，每个客户端之间没有交集</p>
+<h3><a id="_264"></a>本地训练</h3>
+<p>本地模型训练函数：采用<strong>交叉熵</strong>作为本地训练的损失函数，并使用<strong>梯度下降</strong>来求解参数</p>
+<pre><code class="prism language-python">		<span class="token comment"># 模型本地训练函数</span>
+    <span class="token keyword">def</span> <span class="token function">local_train</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> model<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token comment"># 整体的过程：拉取服务器的模型，通过部分本地数据集训练得到</span>
+        <span class="token keyword">for</span> name<span class="token punctuation">,</span> param <span class="token keyword">in</span> model<span class="token punctuation">.</span>state_dict<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>items<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            <span class="token comment"># 客户端首先用服务器端下发的全局模型覆盖本地模型</span>
+            self<span class="token punctuation">.</span>local_model<span class="token punctuation">.</span>state_dict<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">[</span>name<span class="token punctuation">]</span><span class="token punctuation">.</span>copy_<span class="token punctuation">(</span>param<span class="token punctuation">.</span>clone<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token comment"># 定义最优化函数器用于本地模型训练</span>
+        optimizer <span class="token operator">=</span> torch<span class="token punctuation">.</span>optim<span class="token punctuation">.</span>SGD<span class="token punctuation">(</span>self<span class="token punctuation">.</span>local_model<span class="token punctuation">.</span>parameters<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> lr<span class="token operator">=</span>self<span class="token punctuation">.</span>conf<span class="token punctuation">[</span><span class="token string">'lr'</span><span class="token punctuation">]</span><span class="token punctuation">,</span> momentum<span class="token operator">=</span>self<span class="token punctuation">.</span>conf<span class="token punctuation">[</span><span class="token string">'momentum'</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+
+        <span class="token comment"># 本地训练模型</span>
+        self<span class="token punctuation">.</span>local_model<span class="token punctuation">.</span>train<span class="token punctuation">(</span><span class="token punctuation">)</span>        <span class="token comment"># 设置开启模型训练（可以更改参数）</span>
+        <span class="token comment"># 开始训练模型</span>
+        <span class="token keyword">for</span> e <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>self<span class="token punctuation">.</span>conf<span class="token punctuation">[</span><span class="token string">"local_epochs"</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            <span class="token keyword">for</span> batch_id<span class="token punctuation">,</span> batch <span class="token keyword">in</span> <span class="token builtin">enumerate</span><span class="token punctuation">(</span>self<span class="token punctuation">.</span>train_loader<span class="token punctuation">)</span><span class="token punctuation">:</span>
+                data<span class="token punctuation">,</span> target <span class="token operator">=</span> batch
+                <span class="token comment"># 加载到gpu</span>
+                <span class="token keyword">if</span> torch<span class="token punctuation">.</span>cuda<span class="token punctuation">.</span>is_available<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+                    data <span class="token operator">=</span> data<span class="token punctuation">.</span>cuda<span class="token punctuation">(</span><span class="token punctuation">)</span>
+                    target <span class="token operator">=</span> target<span class="token punctuation">.</span>cuda<span class="token punctuation">(</span><span class="token punctuation">)</span>
+                <span class="token comment"># 梯度</span>
+                optimizer<span class="token punctuation">.</span>zero_grad<span class="token punctuation">(</span><span class="token punctuation">)</span>
+                <span class="token comment"># 训练预测</span>
+                output <span class="token operator">=</span> self<span class="token punctuation">.</span>local_model<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+                <span class="token comment"># 计算损失函数 cross_entropy交叉熵误差</span>
+                loss <span class="token operator">=</span> torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>functional<span class="token punctuation">.</span>cross_entropy<span class="token punctuation">(</span>output<span class="token punctuation">,</span> target<span class="token punctuation">)</span>
+                <span class="token comment"># 反向传播</span>
+                loss<span class="token punctuation">.</span>backward<span class="token punctuation">(</span><span class="token punctuation">)</span>
+                <span class="token comment"># 更新参数</span>
+                optimizer<span class="token punctuation">.</span>step<span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"Epoch %d done"</span> <span class="token operator">%</span> e<span class="token punctuation">)</span>
+        <span class="token comment"># 创建差值字典（结构与模型参数同规格），用于记录差值</span>
+        diff <span class="token operator">=</span> <span class="token builtin">dict</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">for</span> name<span class="token punctuation">,</span> data <span class="token keyword">in</span> self<span class="token punctuation">.</span>local_model<span class="token punctuation">.</span>state_dict<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>items<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            <span class="token comment"># 计算训练后与训练前的差值</span>
+            diff<span class="token punctuation">[</span>name<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">(</span>data <span class="token operator">-</span> model<span class="token punctuation">.</span>state_dict<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">[</span>name<span class="token punctuation">]</span><span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"Client %d local train done"</span> <span class="token operator">%</span> self<span class="token punctuation">.</span>client_id<span class="token punctuation">)</span>
+        <span class="token comment"># 客户端返回差值</span>
+        <span class="token keyword">return</span> diff
+</code></pre>
+<h2><a id="24__309"></a>2.4 整合</h2>
+<p>所有程序代码在<code>main.py</code>中</p>
+<pre><code class="prism language-python"><span class="token keyword">import</span> argparse
+<span class="token keyword">import</span> json
+<span class="token keyword">import</span> random
+
+<span class="token keyword">import</span> datasets
+<span class="token keyword">from</span> client <span class="token keyword">import</span> <span class="token operator">*</span>
+<span class="token keyword">from</span> server <span class="token keyword">import</span> <span class="token operator">*</span>
+
+<span class="token keyword">if</span> __name__ <span class="token operator">==</span> <span class="token string">'__main__'</span><span class="token punctuation">:</span>
+
+    <span class="token comment"># 设置命令行程序</span>
+    parser <span class="token operator">=</span> argparse<span class="token punctuation">.</span>ArgumentParser<span class="token punctuation">(</span>description<span class="token operator">=</span><span class="token string">'Federated Learning'</span><span class="token punctuation">)</span>
+    parser<span class="token punctuation">.</span>add_argument<span class="token punctuation">(</span><span class="token string">'-c'</span><span class="token punctuation">,</span> <span class="token string">'--conf'</span><span class="token punctuation">,</span> dest<span class="token operator">=</span><span class="token string">'conf'</span><span class="token punctuation">)</span>
+    <span class="token comment"># 获取所有的参数</span>
+    args <span class="token operator">=</span> parser<span class="token punctuation">.</span>parse_args<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token comment"># 读取配置文件</span>
+    <span class="token keyword">with</span> <span class="token builtin">open</span><span class="token punctuation">(</span>args<span class="token punctuation">.</span>conf<span class="token punctuation">,</span> <span class="token string">'r'</span><span class="token punctuation">)</span> <span class="token keyword">as</span> f<span class="token punctuation">:</span>
+        conf <span class="token operator">=</span> json<span class="token punctuation">.</span>load<span class="token punctuation">(</span>f<span class="token punctuation">)</span>
+
+    <span class="token comment"># 获取数据集, 加载描述信息</span>
+    train_datasets<span class="token punctuation">,</span> eval_datasets <span class="token operator">=</span> datasets<span class="token punctuation">.</span>get_dataset<span class="token punctuation">(</span><span class="token string">"./data/"</span><span class="token punctuation">,</span> conf<span class="token punctuation">[</span><span class="token string">"type"</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+
+    <span class="token comment"># 开启服务器</span>
+    server <span class="token operator">=</span> Server<span class="token punctuation">(</span>conf<span class="token punctuation">,</span> eval_datasets<span class="token punctuation">)</span>
+    <span class="token comment"># 客户端列表</span>
+    clients <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+
+    <span class="token comment"># 添加10个客户端到列表</span>
+    <span class="token keyword">for</span> c <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>conf<span class="token punctuation">[</span><span class="token string">"no_models"</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        clients<span class="token punctuation">.</span>append<span class="token punctuation">(</span>Client<span class="token punctuation">(</span>conf<span class="token punctuation">,</span> server<span class="token punctuation">.</span>global_model<span class="token punctuation">,</span> train_datasets<span class="token punctuation">,</span> c<span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\n\n"</span><span class="token punctuation">)</span>
+
+    <span class="token comment"># 全局模型训练</span>
+    <span class="token keyword">for</span> e <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>conf<span class="token punctuation">[</span><span class="token string">"global_epochs"</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"Global Epoch %d"</span> <span class="token operator">%</span> e<span class="token punctuation">)</span>
+        <span class="token comment"># 每次训练都是从clients列表中随机采样k个进行本轮训练</span>
+        candidates <span class="token operator">=</span> random<span class="token punctuation">.</span>sample<span class="token punctuation">(</span>clients<span class="token punctuation">,</span> conf<span class="token punctuation">[</span><span class="token string">"k"</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"select clients is: "</span><span class="token punctuation">)</span>
+        <span class="token keyword">for</span> c <span class="token keyword">in</span> candidates<span class="token punctuation">:</span>
+            <span class="token keyword">print</span><span class="token punctuation">(</span>c<span class="token punctuation">.</span>client_id<span class="token punctuation">)</span>
+
+        <span class="token comment"># 权重累计</span>
+        weight_accumulator <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token punctuation">}</span>
+
+        <span class="token comment"># 初始化空模型参数weight_accumulator</span>
+        <span class="token keyword">for</span> name<span class="token punctuation">,</span> params <span class="token keyword">in</span> server<span class="token punctuation">.</span>global_model<span class="token punctuation">.</span>state_dict<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>items<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            <span class="token comment"># 生成一个和参数矩阵大小相同的0矩阵</span>
+            weight_accumulator<span class="token punctuation">[</span>name<span class="token punctuation">]</span> <span class="token operator">=</span> torch<span class="token punctuation">.</span>zeros_like<span class="token punctuation">(</span>params<span class="token punctuation">)</span>
+
+        <span class="token comment"># 遍历客户端，每个客户端本地训练模型</span>
+        <span class="token keyword">for</span> c <span class="token keyword">in</span> candidates<span class="token punctuation">:</span>
+            diff <span class="token operator">=</span> c<span class="token punctuation">.</span>local_train<span class="token punctuation">(</span>server<span class="token punctuation">.</span>global_model<span class="token punctuation">)</span>
+
+            <span class="token comment"># 根据客户端的参数差值字典更新总体权重</span>
+            <span class="token keyword">for</span> name<span class="token punctuation">,</span> params <span class="token keyword">in</span> server<span class="token punctuation">.</span>global_model<span class="token punctuation">.</span>state_dict<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>items<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+                weight_accumulator<span class="token punctuation">[</span>name<span class="token punctuation">]</span><span class="token punctuation">.</span>add_<span class="token punctuation">(</span>diff<span class="token punctuation">[</span>name<span class="token punctuation">]</span><span class="token punctuation">)</span>
+
+        <span class="token comment"># 模型参数聚合</span>
+        server<span class="token punctuation">.</span>model_aggregate<span class="token punctuation">(</span>weight_accumulator<span class="token punctuation">)</span>
+
+        <span class="token comment"># 模型评估</span>
+        acc<span class="token punctuation">,</span> loss <span class="token operator">=</span> server<span class="token punctuation">.</span>model_eval<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"Epoch %d, acc: %f, loss: %f\n"</span> <span class="token operator">%</span> <span class="token punctuation">(</span>e<span class="token punctuation">,</span> acc<span class="token punctuation">,</span> loss<span class="token punctuation">)</span><span class="token punctuation">)</span>
+</code></pre>
+<h2><a id="25__382"></a>2.5 测试</h2>
+<p>按照以上配置，(本人)运行后的准确度以及损失为：</p>
+<p><img alt="image-20210809155414356" src="https://img-blog.csdnimg.cn/img_convert/09cae0557778ce7ed484daa7bcc02b33.png"/></p>
+<p>官方的对比：</p>
+<p><strong>联邦学习与中心化训练的效果对比</strong></p>
+<p><img alt="c7a326" src="https://img-blog.csdnimg.cn/img_convert/42ad9128d7cf8528bbe5661e11851d5a.png"/></p>
+<ul><li>联邦训练配置：一共10台客户端设备（no_models=10），每一轮任意挑选其中的5台参与训练（k=5）， 每一次本地训练迭代次数为3次（local_epochs=3），全局迭代次数为20次（global_epochs=20）。</li><li>集中式训练配置：我们不需要单独编写集中式训练代码，只需要修改联邦学习配置既可使其等价于集中式训练。具体来说，我们将客户端设备no_models和每一轮挑选的参与训练设备数k都设为1即可。这样只有1台设备参与的联邦训练等价于集中式训练。其余参数配置信息与联邦学习训练一致。图中我们将局部迭代次数分别设置了1，2，3来进行比较。</li></ul>
+<p><strong>联邦学习在模型推断上的效果对比</strong></p>
+<p><img alt="hbSqJT" src="https://img-blog.csdnimg.cn/img_convert/790ec325d2e1ca52d18a3cd3db2948c6.png"/></p>
+<p>图中的单点训练只的是在某一个客户端下，利用本地的数据进行模型训练的结果。</p>
+<ul><li>我们看到单点训练的模型效果（蓝色条）明显要低于联邦训练 的效果（绿色条和红色条），这也说明了仅仅通过单个客户端的数据，不能够 很好的学习到数据的全局分布特性，模型的泛化能力较差。</li><li>此外，对于每一轮 参与联邦训练的客户端数目（k 值）不同，其性能也会有一定的差别，k 值越大，每一轮参与训练的客户端数目越多，其性能也会越好，但每一轮的完成时间也会相对较长。</li></ul>
+<blockquote>
+<p>学习资料来自于：</p>
+<p><a href="https://book.douban.com/subject/35436587/">杨强：《联邦学习实战》</a></p>
+<p>https://github.com/FederatedAI/Practicing-Federated-Learning/tree/main/chapter03_Python_image_classification</p>
+</blockquote>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,189 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="div_align__centerdiv_1"></a>
+<div align="center">
+  ----发现错误或遗漏，请联系本人更正----
+ </div></h1>
+<hr/>
+<h2><a id="_7"></a>一、前言</h2>
+<p>我有一台云服务器，一个公网IP，一个域名。目前准备搭建两个网站，分别使用Java和PHP开发。我想要这两个网站都部署在一台云服务器上，且别人可以通过域名访问这两个网站，不需要输入IP和端口号。</p>
+<p>本人是个菜鸟，很多东西都不懂。在百度、CSDN、B站搜了一整天，各种安装配置报错，怒而多次重装服务器。半夜不睡觉，搞到凌晨3点多，综合了好几处资料，才摸索成功，实现在云服务器上利用Nginx让Apache+PHP和Tomcat+Java同时运行，通过默认的80端口的访问请求都到了Nginx，Nginx根据子域名进行转发。这样别人使用子域名就能访问我在同一个服务器上部署的不同编程语言写的多个网站了，也不用使用我觉得碍眼的端口。</p>
+<h2><a id="_13"></a>二、准备</h2>
+<p>1.准备一台云服务器，一般云服务器会自带一个公网IP，我用的是腾讯云，操作系统是CentOS 7.6</p>
+<p>2.准备一个主域名，并解析子域名。比如主域名aaa.com，解析b.aaa.com与c.aaa.com两个子域名，每个子域名用来指向一个网站</p>
+<p>3.去云服务器后台放开端口号限制（只要保证跟后面配置文件设定的一致就行，我用的是8081,8082）</p>
+<p><img alt="image-20220403140210974" src="https://img-blog.csdnimg.cn/img_convert/b538fbb68b27186451798616f500654b.png"/></p>
+<p>4.准备Java与PHP网站代码，随便找个测试网页就行，后期做好网站再替换上去</p>
+<h2><a id="_25"></a>三、安装</h2>
+<p>1.安装Apache和PHP</p>
+<pre><code>yum -y install httpd
+yum -y install php
+</code></pre>
+<p>注意：使用此方法安装Apache，httpd.conf配置文件位置在/etc/httpd/conf目录下</p>
+<p>2.安装php的扩展</p>
+<pre><code>yum -y install php-gd php-xml php-mbstring php-ldap php-pear php-xmlrpc
+</code></pre>
+<p>3.安装java及tomcat</p>
+<pre><code>yum -y install java-1.8.0-openjdk
+yum -y install tomcat
+</code></pre>
+<p>注意：使用此方法安装Tomcat，server.xml配置文件位置在/etc/tomcat目录下</p>
+<p>4.安装Nginx</p>
+<pre><code>yum -y install nginx
+</code></pre>
+<p>注意：使用此方法安装Nginx，nginx.conf配置文件位置在/etc/nginx目录下</p>
+<p>安装Nginx时，若遇到缺少rpm包的情况，解决方法是先安装Nginx的yum源</p>
+<pre><code>rpm -Uvh http://nginx.org/packages/centos/7/noarch/RPMS/nginx-release-centos-7-0.el7.ngx.noarch.rpm
+</code></pre>
+<p>5.安装MySQL，参照这个帖子即可</p>
+<p>转载于：<a href="https://blog.csdn.net/Bb15070047748/article/details/106245223">https://blog.csdn.net/Bb15070047748/article/details/106245223</a></p>
+<p>安装MySQL时，若遇到GPG 密钥已过期的情况，解决方法是重新导入新的秘钥</p>
+<pre><code>rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022
+</code></pre>
+<p>6.常用操作命令（服务的启动、关闭与自启设置）</p>
+<p>6.1 Tomcat<br/> 启动Tomcat服务</p>
+<pre><code>systemctl start tomcat.service
+</code></pre>
+<p>关闭Tomcat服务</p>
+<pre><code>systemctl stop tomcat.service
+</code></pre>
+<p>设置开机自动启动</p>
+<pre><code>systemctl enable tomcat.service
+</code></pre>
+<p>6.2 Apache<br/> 启动Apache服务</p>
+<pre><code>systemctl start httpd.service
+</code></pre>
+<p>关闭Apache服务</p>
+<pre><code>systemctl stop httpd.service
+</code></pre>
+<p>设置开机自动启动</p>
+<pre><code>systemctl enable httpd.service
+</code></pre>
+<p>6.3 Nginx<br/> 启动Nginx服务</p>
+<pre><code>systemctl start nginx.service
+</code></pre>
+<p>关闭Nginx服务</p>
+<pre><code>systemctl stop nginx.service
+</code></pre>
+<p>设置开机自动启动</p>
+<pre><code>systemctl enable nginx.service
+</code></pre>
+<p>6.4 查看某服务的状态或报错信息</p>
+<pre><code>systemctl status tomcat.service
+systemctl status httpd.service
+systemctl status nginx.service
+</code></pre>
+<p>7.在开始端口修改之前先使用上面的命令关闭这三个服务</p>
+<pre><code>systemctl stop tomcat.service
+systemctl stop httpd.service
+systemctl stop nginx.service
+</code></pre>
+<h2><a id="_150"></a>四、配置</h2>
+<p>1.修改Tomcat端口号</p>
+<p>在/etc/tomcat目录下，将server.xml配置文件的默认端口号8080改为8081</p>
+<pre><code>cd /etc/tomcat
+vim server.xml
+</code></pre>
+<p><img alt="image-20220403144154478" src="https://img-blog.csdnimg.cn/img_convert/25ffb67a427303ca01fa099b56a46f49.png"/></p>
+<p>2.修改Apache端口号</p>
+<p>在/etc/httpd/conf目录下，将httpd.conf配置文件的默认端口号80改为8082</p>
+<pre><code>cd /etc/httpd/conf
+vim httpd.conf
+</code></pre>
+<p><img alt="image-20220403143613660" src="https://img-blog.csdnimg.cn/img_convert/78b149bd2ddfdb6fadc75c56557391cd.png"/></p>
+<p>3.修改Nginx</p>
+<p>在/etc/nginx/conf.d目录下，新建后缀名为.conf的配置文件，一个网站建一个配置文件。配置文件名称需要与下文要修改的nginx.conf配置文件保持一致，我写的是javablog.conf和phptest.conf</p>
+<pre><code>cd /etc/nginx/conf.d
+vim javablog.conf
+</code></pre>
+<pre><code>  upstream java {
+        server 127.0.0.1:8081;
+ #将127.0.0.1更换为云服务器的公网IP，8081是前面配置的Tomcat端口号，保持一致即可
+  }
+  server {
+          listen       80;
+          server_name b.aaa.com; 
+          #将b.aaa.com替换为自己准备的Java网站子域名
+         location /
+          {
+              proxy_next_upstream http_502 http_504 error timeout invalid_header;
+              proxy_set_header Host  $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_pass http://java;
+              index  index.html index.php;
+          }
+  }
+</code></pre>
+<pre><code>vim phptest.conf
+</code></pre>
+<pre><code>  upstream php {
+        server 127.0.0.1:8082;
+ #将127.0.0.1更换为云服务器的公网IP，8082是前面配置的Apache端口号，保持一致即可
+  }
+  server {
+          listen       80;
+          server_name c.aaa.com; 
+          #将c.aaa.com替换为自己准备的PHP网站子域名
+         location /
+          {
+              proxy_next_upstream http_502 http_504 error timeout invalid_header;
+              proxy_set_header Host  $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_pass http://php;
+              index  index.html index.php;
+          }
+  }
+</code></pre>
+<p>在/etc/nginx目录下，修改nginx.conf配置文件，将下图标出来的两行代码注释掉</p>
+<pre><code>cd /etc/nginx
+vim nginx.conf
+</code></pre>
+<p><img alt="image-20220403155735971" src="https://img-blog.csdnimg.cn/img_convert/23890c60a7a0a3572c2907f8ff5ca12b.png"/></p>
+<p>将下文两行信息放在自己注释的第一行代码下面</p>
+<pre><code>include /etc/nginx/conf.d/javablog.conf; #将javablog.conf替换为自己写的java网站配置文件名称
+include /etc/nginx/conf.d/phptest.conf; #将phptest.conf替换为自己写的PHP网站配置文件名称
+</code></pre>
+<p><img alt="image-20220403155753190" src="https://img-blog.csdnimg.cn/img_convert/4c32360b4363a42942d7c581bcbfbc4c.png"/></p>
+<p>每次修改nginx.conf配置文件，需要加载才能生效</p>
+<pre><code>nginx -c /etc/nginx/nginx.conf
+nginx -s reload
+</code></pre>
+<p>可能需要用到的命令（杀进程）</p>
+<pre><code>netstat -ntlp|grep 80
+kill -9 26136 #将26136替换为查询到的端口号
+</code></pre>
+<h2><a id="_261"></a>五、启动</h2>
+<p>1.将Java网站文件放在/var/lib/tomcat/webapps/ROOT目录下</p>
+<p><img alt="image-20220403161916389" src="https://img-blog.csdnimg.cn/img_convert/5b2ccf71c74b5357fa2ca0420e0f6879.png"/></p>
+<p>2.将PHP网站文件放在/var/www/html目录下</p>
+<p><img alt="image-20220403162053689" src="https://img-blog.csdnimg.cn/img_convert/685bad7d9279deba374c85f52ff5849d.png"/></p>
+<p>3.启动Tomcat、Apache、Nginx服务，Nginx服务必须最后启动</p>
+<pre><code>systemctl start tomcat.servic
+systemctl start httpd.service
+systemctl start nginx.service
+</code></pre>
+<p>4.设置各服务开机自动启动</p>
+<pre><code>systemctl enable tomcat.service
+systemctl enable httpd.service
+systemctl enable nginx.service
+</code></pre>
+<h2><a id="_287"></a>六、访问</h2>
+<p>1.在浏览器输入自己设置的子域名，即可进行访问。如果网页出现Welcome to Nginx 或Welcome to Centos，可能就是Nginx配置错误，配置不生效等问题。我的解决办法就在上文，按我写的操作方法，目前亲测未遇到问题。</p>
+<p><img alt="image-20220403163248097" src="https://img-blog.csdnimg.cn/img_convert/923aacd8918adfe0d4a236ca90e6964a.png"/></p>
+<p>2.顺便说一下，Nginx配置错误，配置不生效情况下，默认访问的是Nginx默认目录/usr/share/nginx/html，网页上展示的就是其中的index.html文件</p>
+<p><img alt="image-20220403164550593" src="https://img-blog.csdnimg.cn/img_convert/1e0dc4abf9c7644d82b8b1d3b3f9fd93.png"/></p>
+<hr/>
+<h1><a id="div_align__centerdiv_301"></a>
+<div align="center">
+  ----发现错误或遗漏，请联系本人更正----
+ </div></h1>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

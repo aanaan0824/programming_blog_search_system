@@ -1,0 +1,496 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>CompletableFuture是jdk8的新特性。CompletableFuture实现了CompletionStage接口和Future接口，前者是对后者的一个扩展，增加了异步会点、流式处理、多个Future组合处理的能力，使Java在处理多任务的协同工作时更加顺畅便利。</p>
+<h2>一、创建异步任务</h2>
+<h3>1. supplyAsync</h3>
+<p>supplyAsync是创建带有返回值的异步任务。它有如下两个方法，一个是使用默认线程池（ForkJoinPool.commonPool()）的方法，一个是带有自定义线程池的重载方法</p>
+<pre><code class="language-java">// 带返回值异步请求，默认线程池
+public static &lt;U&gt; CompletableFuture&lt;U&gt; supplyAsync(Supplier&lt;U&gt; supplier)
+
+// 带返回值的异步请求，可以自定义线程池
+public static &lt;U&gt; CompletableFuture&lt;U&gt; supplyAsync(Supplier&lt;U&gt; supplier, Executor executor)
+
+</code></pre>
+<p>测试代码：</p>
+<pre><code class="language-java">public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;String&gt; cf = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println("do something....");
+            return "result";
+        });
+
+        //等待任务执行完成
+        System.out.println("结果-&gt;" + cf.get());
+}
+
+
+public static void main(String[] args) throws ExecutionException, InterruptedException {
+        // 自定义线程池
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        CompletableFuture&lt;String&gt; cf = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println("do something....");
+            return "result";
+        }, executorService);
+
+        //等待子任务执行完成
+        System.out.println("结果-&gt;" + cf.get());
+}</code></pre>
+<p> 测试结果：</p>
+<p><img alt="" height="135" src="image\2554e01f6ab24c0181d55f5c5920533a.png" width="876"/></p>
+<h3> 2. runAsync</h3>
+<p>runAsync是创建没有返回值的异步任务。它有如下两个方法，一个是使用默认线程池（ForkJoinPool.commonPool()）的方法，一个是带有自定义线程池的重载方法</p>
+<pre><code class="language-java">// 不带返回值的异步请求，默认线程池
+public static CompletableFuture&lt;Void&gt; runAsync(Runnable runnable)
+
+// 不带返回值的异步请求，可以自定义线程池
+public static CompletableFuture&lt;Void&gt; runAsync(Runnable runnable, Executor executor)</code></pre>
+<p>测试代码：</p>
+<pre><code>public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Void&gt; cf = CompletableFuture.runAsync(() -&gt; {
+            System.out.println("do something....");
+        });
+
+        //等待任务执行完成
+        System.out.println("结果-&gt;" + cf.get());
+}
+
+
+public static void main(String[] args) throws ExecutionException, InterruptedException {
+        // 自定义线程池
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        CompletableFuture&lt;Void&gt; cf = CompletableFuture.runAsync(() -&gt; {
+            System.out.println("do something....");
+        }, executorService);
+
+        //等待任务执行完成
+        System.out.println("结果-&gt;" + cf.get());
+}</code></pre>
+<p>测试结果：</p>
+<p><img alt="" height="125" src="image\858ebfd1bb4d42e1834e475d2dc1a4a4.png" width="838"/></p>
+<h3>3.获取任务结果的方法</h3>
+<pre><code class="language-java">// 如果完成则返回结果，否则就抛出具体的异常
+public T get() throws InterruptedException, ExecutionException 
+
+// 最大时间等待返回结果，否则就抛出具体异常
+public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException
+
+// 完成时返回结果值，否则抛出unchecked异常。为了更好地符合通用函数形式的使用，如果完成此 CompletableFuture所涉及的计算引发异常，则此方法将引发unchecked异常并将底层异常作为其原因
+public T join()
+
+// 如果完成则返回结果值（或抛出任何遇到的异常），否则返回给定的 valueIfAbsent。
+public T getNow(T valueIfAbsent)
+
+// 如果任务没有完成，返回的值设置为给定值
+public boolean complete(T value)
+
+// 如果任务没有完成，就抛出给定异常
+public boolean completeExceptionally(Throwable ex) 
+
+</code></pre>
+<h2> 二、异步回调处理</h2>
+<h3 id="1%E3%80%81thenApply%20%2F%C2%A0thenApplyAsync">1.thenApply和thenApplyAsync</h3>
+<p> thenApply 表示某个任务执行完成后执行的动作，即回调方法，会将该任务的执行结果即方法返回值作为入参传递到回调方法中，带有返回值。</p>
+<p>测试代码：</p>
+<pre><code class="language-java">public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            return 1;
+        });
+
+        CompletableFuture&lt;Integer&gt; cf2 = cf1.thenApplyAsync((result) -&gt; {
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+            result += 2;
+            return result;
+        });
+        //等待任务1执行完成
+        System.out.println("cf1结果-&gt;" + cf1.get());
+        //等待任务2执行完成
+        System.out.println("cf2结果-&gt;" + cf2.get());
+}
+
+public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            return 1;
+        });
+
+        CompletableFuture&lt;Integer&gt; cf2 = cf1.thenApply((result) -&gt; {
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+            result += 2;
+            return result;
+        });
+        //等待任务1执行完成
+        System.out.println("cf1结果-&gt;" + cf1.get());
+        //等待任务2执行完成
+        System.out.println("cf2结果-&gt;" + cf2.get());
+}</code></pre>
+<p>测试结果：</p>
+<p><img alt="" height="182" src="image\1b4d3fd6b64c408fb08bbb12123bc1dd.png" width="857"/>   <img alt="" height="181" src="image\bf7eff437f11456984c1f5fa1a65494b.png" width="840"/></p>
+<p>从上面代码和测试结果我们发现thenApply和thenApplyAsync区别在于，使用thenApply方法时子任务与父任务使用的是同一个线程，而thenApplyAsync在子任务中是另起一个线程执行任务，并且thenApplyAsync可以自定义线程池，默认的使用ForkJoinPool.commonPool()线程池。</p>
+<h3>2.thenAccept和thenAcceptAsync</h3>
+<p> thenAccep表示某个任务执行完成后执行的动作，即回调方法，会将该任务的执行结果即方法返回值作为入参传递到回调方法中，无返回值。</p>
+<p>测试代码</p>
+<pre><code class="language-java">public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            return 1;
+        });
+
+        CompletableFuture&lt;Void&gt; cf2 = cf1.thenAccept((result) -&gt; {
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+        });
+
+        //等待任务1执行完成
+        System.out.println("cf1结果-&gt;" + cf1.get());
+        //等待任务2执行完成
+        System.out.println("cf2结果-&gt;" + cf2.get());
+}
+
+
+public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            return 1;
+        });
+
+        CompletableFuture&lt;Void&gt; cf2 = cf1.thenAcceptAsync((result) -&gt; {
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+        });
+
+        //等待任务1执行完成
+        System.out.println("cf1结果-&gt;" + cf1.get());
+        //等待任务2执行完成
+        System.out.println("cf2结果-&gt;" + cf2.get());
+}</code></pre>
+<p>测试结果：</p>
+<p><img alt="" height="177" src="image\e09614f117094276a80505ac3ddec84e.png" width="848"/> <img alt="" height="187" src="image\01ae9415985a41289002862093e8785e.png" width="859"/>从上面代码和测试结果我们发现thenAccep和thenAccepAsync区别在于，使用thenAccep方法时子任务与父任务使用的是同一个线程，而thenAccepAsync在子任务中可能是另起一个线程执行任务，并且thenAccepAsync可以自定义线程池，默认的使用ForkJoinPool.commonPool()线程池。</p>
+<h3>2.thenRun和thenRunAsync</h3>
+<p> thenRun表示某个任务执行完成后执行的动作，即回调方法，无入参，无返回值。</p>
+<p>测试代码：</p>
+<pre><code class="language-java">public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            return 1;
+        });
+
+        CompletableFuture&lt;Void&gt; cf2 = cf1.thenRun(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+        });
+
+        //等待任务1执行完成
+        System.out.println("cf1结果-&gt;" + cf1.get());
+        //等待任务2执行完成
+        System.out.println("cf2结果-&gt;" + cf2.get());
+}
+
+public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            return 1;
+        });
+
+        CompletableFuture&lt;Void&gt; cf2 = cf1.thenRunAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+        });
+
+        //等待任务1执行完成
+        System.out.println("cf1结果-&gt;" + cf1.get());
+        //等待任务2执行完成
+        System.out.println("cf2结果-&gt;" + cf2.get());
+}</code></pre>
+<p> 测试结果：</p>
+<p><img alt="" height="187" src="image\59c01a23b6534855bb73d9b347c091ee.png" width="857"/></p>
+<p><img alt="" height="184" src="image\ecb067f2d48244a8ac2bceac9bdc5081.png" width="942"/></p>
+<p>从上面代码和测试结果我们发现thenRun和thenRunAsync区别在于，使用thenRun方法时子任务与父任务使用的是同一个线程，而thenRunAsync在子任务中可能是另起一个线程执行任务，并且thenRunAsync可以自定义线程池，默认的使用ForkJoinPool.commonPool()线程池。</p>
+<h3>3.whenComplete和whenCompleteAsync</h3>
+<p> whenComplete是当某个任务执行完成后执行的回调方法，会将执行结果或者执行期间抛出的异常传递给回调方法，如果是正常执行则异常为null，回调方法对应的CompletableFuture的result和该任务一致，如果该任务正常执行，则get方法返回执行结果，如果是执行异常，则get方法抛出异常。</p>
+<p>测试代码：</p>
+<pre><code> public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            int a = 1/0;
+            return 1;
+        });
+
+        CompletableFuture&lt;Integer&gt; cf2 = cf1.whenComplete((result, e) -&gt; {
+            System.out.println("上个任务结果：" + result);
+            System.out.println("上个任务抛出异常：" + e);
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+        });
+
+//        //等待任务1执行完成
+//        System.out.println("cf1结果-&gt;" + cf1.get());
+//        //等待任务2执行完成
+        System.out.println("cf2结果-&gt;" + cf2.get());
+    }</code></pre>
+<p>测试结果：</p>
+<p><img alt="" height="359" src="image\06a453f55ad349ffb99cd0fb608541d9.png" width="1200"/> </p>
+<p> whenCompleteAsync和whenComplete区别也是whenCompleteAsync可能会另起一个线程执行任务，并且thenRunAsync可以自定义线程池，默认的使用ForkJoinPool.commonPool()线程池。</p>
+<h3>4.handle和handleAsync</h3>
+<p> 跟whenComplete基本一致，区别在于handle的回调方法有返回值。</p>
+<p>测试代码：</p>
+<pre><code class="language-java">public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            // int a = 1/0;
+            return 1;
+        });
+
+        CompletableFuture&lt;Integer&gt; cf2 = cf1.handle((result, e) -&gt; {
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+            System.out.println("上个任务结果：" + result);
+            System.out.println("上个任务抛出异常：" + e);
+            return result+2;
+        });
+
+        //等待任务2执行完成
+        System.out.println("cf2结果-&gt;" + cf2.get());
+}</code></pre>
+<p>测试结果 ：</p>
+<p><img alt="" height="219" src="image\6862664a43314e32905ab2272a745d73.png" width="903"/></p>
+<h1>三、多任务组合处理 </h1>
+<h3>1.thenCombine、thenAcceptBoth 和runAfterBoth</h3>
+<p>这三个方法都是将两个CompletableFuture组合起来处理，只有两个任务都正常完成时，才进行下阶段任务。</p>
+<p>区别：thenCombine会将两个任务的执行结果作为所提供函数的参数，且该方法有返回值；thenAcceptBoth同样将两个任务的执行结果作为方法入参，但是无返回值；runAfterBoth没有入参，也没有返回值。注意两个任务中只要有一个执行异常，则将该异常信息作为指定任务的执行结果。</p>
+<p>测试代码：</p>
+<pre><code class="language-java">public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            return 1;
+        });
+
+        CompletableFuture&lt;Integer&gt; cf2 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+            return 2;
+        });
+
+        CompletableFuture&lt;Integer&gt; cf3 = cf1.thenCombine(cf2, (a, b) -&gt; {
+            System.out.println(Thread.currentThread() + " cf3 do something....");
+            return a + b;
+        });
+
+        System.out.println("cf3结果-&gt;" + cf3.get());
+}
+
+ public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            return 1;
+        });
+
+        CompletableFuture&lt;Integer&gt; cf2 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+            return 2;
+        });
+        
+        CompletableFuture&lt;Void&gt; cf3 = cf1.thenAcceptBoth(cf2, (a, b) -&gt; {
+            System.out.println(Thread.currentThread() + " cf3 do something....");
+            System.out.println(a + b);
+        });
+
+        System.out.println("cf3结果-&gt;" + cf3.get());
+}
+
+public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;Integer&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf1 do something....");
+            return 1;
+        });
+
+        CompletableFuture&lt;Integer&gt; cf2 = CompletableFuture.supplyAsync(() -&gt; {
+            System.out.println(Thread.currentThread() + " cf2 do something....");
+            return 2;
+        });
+
+        CompletableFuture&lt;Void&gt; cf3 = cf1.runAfterBoth(cf2, () -&gt; {
+            System.out.println(Thread.currentThread() + " cf3 do something....");
+        });
+
+        System.out.println("cf3结果-&gt;" + cf3.get());
+}</code></pre>
+<p>测试结果：</p>
+<p><img alt="" height="181" src="image\b4adbd9376294821a623bc3a0dd333f0.png" width="945"/> </p>
+<p><img alt="" height="216" src="image\c05396dfb47f41fa8fb2218bceed606e.png" width="935"/></p>
+<h3><img alt="" height="185" src="image\2b39eb2a10b641b7b857ecf5b058e0ee.png" width="893"/> 2.applyToEither、acceptEither和runAfterEither</h3>
+<p>这三个方法和上面一样也是将两个CompletableFuture组合起来处理，当有一个任务正常完成时，就会进行下阶段任务。</p>
+<p>区别：applyToEither会将已经完成任务的执行结果作为所提供函数的参数，且该方法有返回值；acceptEither同样将已经完成任务的执行结果作为方法入参，但是无返回值；runAfterEither没有入参，也没有返回值。</p>
+<p>测试代码：</p>
+<pre><code class="language-java">public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;String&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf1 do something....");
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return "cf1 任务完成";
+        });
+
+        CompletableFuture&lt;String&gt; cf2 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf2 do something....");
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return "cf2 任务完成";
+        });
+
+        CompletableFuture&lt;String&gt; cf3 = cf1.applyToEither(cf2, (result) -&gt; {
+            System.out.println("接收到" + result);
+            System.out.println(Thread.currentThread() + " cf3 do something....");
+            return "cf3 任务完成";
+        });
+
+        System.out.println("cf3结果-&gt;" + cf3.get());
+}
+
+
+public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;String&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf1 do something....");
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return "cf1 任务完成";
+        });
+
+        CompletableFuture&lt;String&gt; cf2 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf2 do something....");
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return "cf2 任务完成";
+        });
+
+        CompletableFuture&lt;Void&gt; cf3 = cf1.acceptEither(cf2, (result) -&gt; {
+            System.out.println("接收到" + result);
+            System.out.println(Thread.currentThread() + " cf3 do something....");
+        });
+
+        System.out.println("cf3结果-&gt;" + cf3.get());
+}
+
+public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;String&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf1 do something....");
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println("cf1 任务完成");
+            return "cf1 任务完成";
+        });
+
+        CompletableFuture&lt;String&gt; cf2 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf2 do something....");
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println("cf2 任务完成");
+            return "cf2 任务完成";
+        });
+
+        CompletableFuture&lt;Void&gt; cf3 = cf1.runAfterEither(cf2, () -&gt; {
+            System.out.println(Thread.currentThread() + " cf3 do something....");
+            System.out.println("cf3 任务完成");
+        });
+
+        System.out.println("cf3结果-&gt;" + cf3.get());
+}</code></pre>
+<p>测试结果： </p>
+<p><img alt="" height="211" src="image\97a472d49f7741c78c7607fef86ba726.png" width="1016"/></p>
+<p><img alt="" height="183" src="image\79005884cd2e45e981098765bc3b9537.png" width="940"/>从上面可以看出cf1任务完成需要2秒，cf2任务完成需要5秒，使用applyToEither组合两个任务时，只要有其中一个任务完成时，就会执行cf3任务，显然cf1任务先完成了并且将自己任务的结果传值给了cf3任务，cf3任务中打印了接收到cf1任务完成，接着完成自己的任务，并返回cf3任务完成；acceptEither和runAfterEither类似，acceptEither会将cf1任务的结果作为cf3任务的入参，但cf3任务完成时并无返回值；runAfterEither不会将cf1任务的结果作为cf3任务的入参，它是没有任务入参，执行完自己的任务后也并无返回值。</p>
+<h3>3.allOf / anyOf </h3>
+<p>allOf：CompletableFuture是多个任务都执行完成后才会执行，只有有一个任务执行异常，则返回的CompletableFuture执行get方法时会抛出异常，如果都是正常执行，则get返回null。</p>
+<p>anyOf ：CompletableFuture是多个任务只要有一个任务执行完成，则返回的CompletableFuture执行get方法时会抛出异常，如果都是正常执行，则get返回执行完成任务的结果。</p>
+<p>测试代码：</p>
+<pre><code class="language-java">public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;String&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf1 do something....");
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println("cf1 任务完成");
+            return "cf1 任务完成";
+        });
+
+        CompletableFuture&lt;String&gt; cf2 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf2 do something....");
+                int a = 1/0;
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println("cf2 任务完成");
+            return "cf2 任务完成";
+        });
+
+        CompletableFuture&lt;String&gt; cf3 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf2 do something....");
+                Thread.sleep(3000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println("cf3 任务完成");
+            return "cf3 任务完成";
+        });
+
+        CompletableFuture&lt;Void&gt; cfAll = CompletableFuture.allOf(cf1, cf2, cf3);
+        System.out.println("cfAll结果-&gt;" + cfAll.get());
+}
+
+
+public static void main(String[] args) throws ExecutionException, InterruptedException {
+        CompletableFuture&lt;String&gt; cf1 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf1 do something....");
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println("cf1 任务完成");
+            return "cf1 任务完成";
+        });
+
+        CompletableFuture&lt;String&gt; cf2 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf2 do something....");
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println("cf2 任务完成");
+            return "cf2 任务完成";
+        });
+
+        CompletableFuture&lt;String&gt; cf3 = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                System.out.println(Thread.currentThread() + " cf2 do something....");
+                Thread.sleep(3000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println("cf3 任务完成");
+            return "cf3 任务完成";
+        });
+
+        CompletableFuture&lt;Object&gt; cfAll = CompletableFuture.anyOf(cf1, cf2, cf3);
+        System.out.println("cfAll结果-&gt;" + cfAll.get());
+}</code></pre>
+<p>测试结果：</p>
+<p><img alt="" height="399" src="image\1ab557584aae42cfadc7372fef7d9812.png" width="1200"/></p>
+<p> <img alt="" height="210" src="image\b7a92808458e47a08fad66c2641a1199.png" width="950"/></p>
+</div>
+</div>

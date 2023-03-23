@@ -1,0 +1,201 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="Istio_0"></a>基于Istio服务网格实现灰度发布机制</h1>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#Istio_0">基于Istio服务网格实现灰度发布机制</a></li><li><ul><li><a href="#1_2">1.应用程序主流发布方案</a></li><li><ul><li><a href="#11_4">1.1.蓝绿发布</a></li><li><a href="#12_22">1.2.滚动发布</a></li><li><a href="#13_38">1.3.灰度发布</a></li><li><a href="#14AB_56">1.4.A/B测试发布</a></li></ul>
+</li><li><a href="#2Istio_67">2.Istio灰度发布实现目标</a></li><li><a href="#3Istio_81">3.在Istio中部署多个版本的知识点系统</a></li><li><ul><li><a href="#31_85">3.1.创建程序所在的命名空间并开启自动注入</a></li><li><a href="#32Deployment_102">3.2.编写Deployment资源编排文件</a></li><li><a href="#33Service_160">3.3.编写Service资源编排文件</a></li><li><a href="#34GatewayVirtualService_180">3.4.编写Gateway以及VirtualService资源编排文件</a></li><li><a href="#35_218">3.5.创建所有资源完成部署</a></li><li><a href="#36_245">3.6.访问知识点系统</a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<h2><a id="1_2"></a>1.应用程序主流发布方案</h2>
+<h3><a id="11_4"></a>1.1.蓝绿发布</h3>
+<blockquote>
+<p>Web应用程序在逻辑上分为A、B两组，在升级过程中，首先将B组从负载均衡器中移除，然后在B组的Web服务器中进行V2版本的升级，A组V1版本依旧正常提供应用服务，当B组完成应用升级后，将B组重新挂载到负载均衡器中，然后将V1版本的A组从负载均衡器中移除，这种发布模式被称为蓝绿发布。</p>
+</blockquote>
+<p><strong>蓝绿发布的特点：</strong></p>
+<ul><li>策略简单，过程通过脚本来实现，只需要从负载均衡中移除相应的服务器。</li><li>升级/回滚的速度快，当B组升级完提供线上服务时，A组虽然被负载均衡器移除了，但是也不会立刻进行版本升级，而是当一段时间后，线上程序稳定了再进行版本升级，当线上程序异常了，也可以直接将B组移除，将A组重新添加，不管是升级还是回滚的速度都非常快，只需要调整负载均衡的配置即可。</li><li>用户无感知、平滑过渡，整个过程中用户是没有感知的。</li></ul>
+<p><strong>蓝绿发布的缺点：</strong></p>
+<ul><li>需要正常业务程序提供流量支撑的两倍及以上的服务器资源，较为浪费资源。</li><li>有问题影响的范围比较广，例如新版本的问题发现的比较晚，AB两组的服务器全部升级版本了，涉及回滚就会比较麻烦。</li></ul>
+<p><img alt="请添加图片描述" src="image\a6dcd97749b24de68c4265da194011bf.png"/></p>
+<h3><a id="12_22"></a>1.2.滚动发布</h3>
+<blockquote>
+<p>Kubernetes集群的Pod程序版本升级的默认方式就是滚动发布，先运行一个新版本的Pod，健康检查机制通过后才会将旧版本的Pod删除，不断的执行这个过程，直到所有的Pod全部升级成新的版本为止。</p>
+</blockquote>
+<p>**滚动发布的特点：**用户无感知、平滑过渡，新旧版本都存在于集群中，用户也不会感觉到程序进行了版本升级。</p>
+<p><strong>滚动发布的缺点：</strong></p>
+<ul><li>部署的周期比较长，当健康检查通过后才会进行下一个Pod的升级。</li><li>不易回滚，回滚的方式也是一个一个Pod进行回滚，周期长。</li><li>影响的范围很大。<br/> <img alt="在这里插入图片描述" src="image\995e66272b854ce8ae6ba7f978a53f9b.png"/></li></ul>
+<h3><a id="13_38"></a>1.3.灰度发布</h3>
+<blockquote>
+<p>灰度发布又称为金丝雀发布，灰度发布是通过只升级集群中的一部分WEB的版本，然后进行流量访问控制，将一批用户的请求转发到新版本的应用程序上，另外一批用户继续使用旧版本的应用程序，如果用户对新版本的程序没有异常问题的发生，那么会逐步扩大范围，最终将所有的WEB进行版本升级。</p>
+<p>灰度发布的例子：一个应用程序有2个版本，V1版本为线上生产环境的版本的，V2版本为即将上线的版，需要同时将两个版本的应用程序部署，并且全部接入到负载均衡中，通过灰度发布控制，V1版本承担90%的流量，V2版本承担10%的的流量，观察运行效果，循序渐进，最新V1版本下线，V2版本提供线上服务。</p>
+</blockquote>
+<p><strong>灰度发布的特点：</strong></p>
+<ul><li>影响范围略低，仅是某一批用户开始使用新的版本，即使存在问题也只是少数人。</li><li>保证整体系统的稳定性，可能只能20%的用户在使用新版本，剩下80%依旧是旧版本的程序。</li><li>用户无感知、平滑过渡。</li><li>新旧版本共存、实时观察反馈动态。</li></ul>
+<p>**灰度发布的缺点：**灰度发布设计相对复杂，对自动化的要求比较高，要精确控制。<br/> <img alt="在这里插入图片描述" src="image\ec1ddaa5a0314f93aa97b8e317c39979.png"/></p>
+<h3><a id="14AB_56"></a>1.4.A/B测试发布</h3>
+<blockquote>
+<p>A/B测试发布是灰度发布的另一种模式，主要是针对不同批次用户使用不同版本后的信息采样，对收到的反馈数据进行对比，也就相当于全部上线新版本之前，先要看看用户的使用反馈，该加功能的加功能，改修复的修复，当用户都比较满意时，再进行版本是否要升级。</p>
+<p>A/B测试的精确性更高，上线后的故障率也会相对降低，维护成本较高。</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="image\5764d3a0618a4f9cbc2f570c2201e56e.png"/></p>
+<h2><a id="2Istio_67"></a>2.Istio灰度发布实现目标</h2>
+<p>以知识点系统为例基于Istio实现灰度发布，知识点系统各个版本的镜像均托管在docker hub中。</p>
+<p><strong>灰度发布实现目标：</strong></p>
+<ul><li> <p>用户流量全部转发到V1版本。</p> </li><li> <p>90%的用户流量转发到V1版本 10%的流量转发到V2版本。</p> </li><li> <p>100%的流量转发到V2版本 下线V1版本。</p> </li></ul>
+<h2><a id="3Istio_81"></a>3.在Istio中部署多个版本的知识点系统</h2>
+<p>在Istio中部署多个版本的</p>
+<h3><a id="31_85"></a>3.1.创建程序所在的命名空间并开启自动注入</h3>
+<p>创建知识点系统所使用的命名空间并设置Sidecar自动注入。</p>
+<pre><code class="prism language-sh">1.创建一个目录存放使用的资源编排文件
+[root@k8s-master samples]# mkdir istio-knowsystem
+
+2.创建命名空间
+[root@k8s-master istio-knowsystem]# kubectl create ns prod-knowsystem
+namespace/prod-knowsystem created
+
+3.开启Sidecar自动注入
+[root@k8s-master istio-knowsystem]# kubectl label ns prod-knowsystem istio-injection=enabled
+namespace/prod-knowsystem labeled
+</code></pre>
+<h3><a id="32Deployment_102"></a>3.2.编写Deployment资源编排文件</h3>
+<p><strong>1）V1版本</strong></p>
+<pre><code class="prism language-yaml"><span class="token punctuation">[</span>root@k8s<span class="token punctuation">-</span>master istio<span class="token punctuation">-</span>knowsystem<span class="token punctuation">]</span><span class="token comment"># vim knowsystem-v1.yaml </span>
+<span class="token key atrule">apiVersion</span><span class="token punctuation">:</span> apps/v1
+<span class="token key atrule">kind</span><span class="token punctuation">:</span> Deployment
+<span class="token key atrule">metadata</span><span class="token punctuation">:</span>
+  <span class="token key atrule">name</span><span class="token punctuation">:</span> knowsystem<span class="token punctuation">-</span>v1
+  <span class="token key atrule">namespace</span><span class="token punctuation">:</span> prod<span class="token punctuation">-</span>knowsystem
+  <span class="token key atrule">labels</span><span class="token punctuation">:</span>
+    <span class="token key atrule">app</span><span class="token punctuation">:</span> knowsystem
+<span class="token key atrule">spec</span><span class="token punctuation">:</span>
+  <span class="token key atrule">replicas</span><span class="token punctuation">:</span> <span class="token number">1</span>
+  <span class="token key atrule">selector</span><span class="token punctuation">:</span>
+    <span class="token key atrule">matchLabels</span><span class="token punctuation">:</span>
+      <span class="token key atrule">app</span><span class="token punctuation">:</span> knowsystem
+      <span class="token key atrule">version</span><span class="token punctuation">:</span> v1						<span class="token comment">#关联pod的标签</span>
+  <span class="token key atrule">template</span><span class="token punctuation">:</span>
+    <span class="token key atrule">metadata</span><span class="token punctuation">:</span>
+      <span class="token key atrule">labels</span><span class="token punctuation">:</span>
+        <span class="token key atrule">app</span><span class="token punctuation">:</span> knowsystem
+        <span class="token key atrule">version</span><span class="token punctuation">:</span> v1			<span class="token comment">#通过配置一个version=v1的标签来声明程序的版本是V1</span>
+    <span class="token key atrule">spec</span><span class="token punctuation">:</span>
+      <span class="token key atrule">containers</span><span class="token punctuation">:</span>
+      <span class="token punctuation">-</span> <span class="token key atrule">image</span><span class="token punctuation">:</span> jiangxlrepo/know<span class="token punctuation">-</span>system<span class="token punctuation">:</span>v1
+        <span class="token key atrule">name</span><span class="token punctuation">:</span> knowsystem<span class="token punctuation">-</span>v1
+</code></pre>
+<p><strong>2）V2版本</strong></p>
+<pre><code class="prism language-yaml"><span class="token punctuation">[</span>root@k8s<span class="token punctuation">-</span>master istio<span class="token punctuation">-</span>knowsystem<span class="token punctuation">]</span><span class="token comment"># vim knowsystem-v2.yaml </span>
+<span class="token key atrule">apiVersion</span><span class="token punctuation">:</span> apps/v2
+<span class="token key atrule">kind</span><span class="token punctuation">:</span> Deployment
+<span class="token key atrule">metadata</span><span class="token punctuation">:</span>
+  <span class="token key atrule">name</span><span class="token punctuation">:</span> knowsystem<span class="token punctuation">-</span>v2
+  <span class="token key atrule">namespace</span><span class="token punctuation">:</span> prod<span class="token punctuation">-</span>knowsystem
+  <span class="token key atrule">labels</span><span class="token punctuation">:</span>
+    <span class="token key atrule">app</span><span class="token punctuation">:</span> knowsystem
+<span class="token key atrule">spec</span><span class="token punctuation">:</span>
+  <span class="token key atrule">replicas</span><span class="token punctuation">:</span> <span class="token number">1</span>
+  <span class="token key atrule">selector</span><span class="token punctuation">:</span>
+    <span class="token key atrule">matchLabels</span><span class="token punctuation">:</span>
+      <span class="token key atrule">app</span><span class="token punctuation">:</span> knowsystem
+      <span class="token key atrule">version</span><span class="token punctuation">:</span> v2					<span class="token comment">#关联pod的标签</span>
+  <span class="token key atrule">template</span><span class="token punctuation">:</span>
+    <span class="token key atrule">metadata</span><span class="token punctuation">:</span>
+      <span class="token key atrule">labels</span><span class="token punctuation">:</span>
+        <span class="token key atrule">app</span><span class="token punctuation">:</span> knowsystem
+        <span class="token key atrule">version</span><span class="token punctuation">:</span> v2					<span class="token comment">#通过配置一个version=v2的标签来声明程序的版本是V2</span>
+    <span class="token key atrule">spec</span><span class="token punctuation">:</span>
+      <span class="token key atrule">containers</span><span class="token punctuation">:</span>
+      <span class="token punctuation">-</span> <span class="token key atrule">image</span><span class="token punctuation">:</span> jiangxlrepo/know<span class="token punctuation">-</span>system<span class="token punctuation">:</span>v2
+        <span class="token key atrule">name</span><span class="token punctuation">:</span> knowsystem<span class="token punctuation">-</span>v2
+</code></pre>
+<h3><a id="33Service_160"></a>3.3.编写Service资源编排文件</h3>
+<pre><code class="prism language-yaml"><span class="token punctuation">[</span>root@k8s<span class="token punctuation">-</span>master istio<span class="token punctuation">-</span>knowsystem<span class="token punctuation">]</span><span class="token comment"># vim knowsystem-svc.yaml </span>
+<span class="token key atrule">apiVersion</span><span class="token punctuation">:</span> v1
+<span class="token key atrule">kind</span><span class="token punctuation">:</span> Service
+<span class="token key atrule">metadata</span><span class="token punctuation">:</span>
+  <span class="token key atrule">name</span><span class="token punctuation">:</span> knowsystem<span class="token punctuation">-</span>svc
+  <span class="token key atrule">namespace</span><span class="token punctuation">:</span> prod<span class="token punctuation">-</span>knowsystem<span class="token punctuation">-</span>svc
+  <span class="token key atrule">labels</span><span class="token punctuation">:</span>
+    <span class="token key atrule">app</span><span class="token punctuation">:</span> knowsystem
+<span class="token key atrule">spec</span><span class="token punctuation">:</span>
+  <span class="token key atrule">ports</span><span class="token punctuation">:</span>
+  <span class="token punctuation">-</span> <span class="token key atrule">port</span><span class="token punctuation">:</span> <span class="token number">80</span>
+    <span class="token key atrule">protocol</span><span class="token punctuation">:</span> TCP
+    <span class="token key atrule">targetPort</span><span class="token punctuation">:</span> <span class="token number">80</span>
+  <span class="token key atrule">selector</span><span class="token punctuation">:</span>
+    <span class="token key atrule">app</span><span class="token punctuation">:</span> knowsystem					<span class="token comment">#将标签app=knowsystem的pod全部关联进来，此时V1和V2版本的Pod就会都接入Service资源中</span>
+</code></pre>
+<h3><a id="34GatewayVirtualService_180"></a>3.4.编写Gateway以及VirtualService资源编排文件</h3>
+<pre><code class="prism language-yaml"><span class="token punctuation">[</span>root@k8s<span class="token punctuation">-</span>master istio<span class="token punctuation">-</span>knowsystem<span class="token punctuation">]</span><span class="token comment"># vim knowsystem-gw-vs.yaml </span>
+<span class="token key atrule">apiVersion</span><span class="token punctuation">:</span> networking.istio.io/v1alpha3
+<span class="token key atrule">kind</span><span class="token punctuation">:</span> Gateway
+<span class="token key atrule">metadata</span><span class="token punctuation">:</span>
+  <span class="token key atrule">name</span><span class="token punctuation">:</span> knowsystem<span class="token punctuation">-</span>gw
+  <span class="token key atrule">namespace</span><span class="token punctuation">:</span> prod<span class="token punctuation">-</span>knowsystem
+<span class="token key atrule">spec</span><span class="token punctuation">:</span>
+  <span class="token key atrule">selector</span><span class="token punctuation">:</span>
+    <span class="token key atrule">istio</span><span class="token punctuation">:</span> ingressgateway 
+  <span class="token key atrule">servers</span><span class="token punctuation">:</span>
+  <span class="token punctuation">-</span> <span class="token key atrule">port</span><span class="token punctuation">:</span>
+      <span class="token key atrule">number</span><span class="token punctuation">:</span> <span class="token number">80</span>
+      <span class="token key atrule">name</span><span class="token punctuation">:</span> http
+      <span class="token key atrule">protocol</span><span class="token punctuation">:</span> HTTP
+    <span class="token key atrule">hosts</span><span class="token punctuation">:</span>
+    <span class="token punctuation">-</span> <span class="token string">"knowsystem.jiangxl.com"</span>				<span class="token comment">#绑定程序使用的域名，支持泛域名，如*.jiangxl.com</span>
+<span class="token punctuation">---</span>
+<span class="token key atrule">apiVersion</span><span class="token punctuation">:</span> networking.istio.io/v1alpha3
+<span class="token key atrule">kind</span><span class="token punctuation">:</span> VirtualService
+<span class="token key atrule">metadata</span><span class="token punctuation">:</span>
+  <span class="token key atrule">name</span><span class="token punctuation">:</span> knowsystem<span class="token punctuation">-</span>vs
+  <span class="token key atrule">namespace</span><span class="token punctuation">:</span> prod<span class="token punctuation">-</span>knowsystem
+<span class="token key atrule">spec</span><span class="token punctuation">:</span>
+  <span class="token key atrule">hosts</span><span class="token punctuation">:</span>
+  <span class="token punctuation">-</span> <span class="token string">"knowsystem.jiangxl.com"</span>				<span class="token comment">#绑定程序使用的域名，支持泛域名，如*.jiangxl.com</span>
+  <span class="token key atrule">gateways</span><span class="token punctuation">:</span>
+  <span class="token punctuation">-</span> knowsystem<span class="token punctuation">-</span>gw
+  <span class="token key atrule">http</span><span class="token punctuation">:</span>
+  <span class="token punctuation">-</span> <span class="token key atrule">route</span><span class="token punctuation">:</span>
+    <span class="token punctuation">-</span> <span class="token key atrule">destination</span><span class="token punctuation">:</span>
+        <span class="token key atrule">host</span><span class="token punctuation">:</span> knowsystem<span class="token punctuation">-</span>svc
+        <span class="token key atrule">port</span><span class="token punctuation">:</span>
+          <span class="token key atrule">number</span><span class="token punctuation">:</span> <span class="token number">80</span>
+</code></pre>
+<h3><a id="35_218"></a>3.5.创建所有资源完成部署</h3>
+<pre><code class="prism language-sh">1.创建所有资源
+[root@k8s-master istio-knowsystem]# kubectl apply -f knowsystem-v1.yaml -f knowsystem-v2.yaml -f knowsystem-svc.yaml -f knowsystem-gw.yaml 
+deployment.apps/knowsystem-v1 created
+deployment.apps/knowsystem-v2 created
+service/knowsystem-svc created
+gateway.networking.istio.io/knowsystem-gw created
+virtualservice.networking.istio.io/knowsystem-vs created
+
+2.查看资源的状态
+
+[root@k8s-master istio-knowsystem]# kubectl get svc,pod -n prod-knowsystem
+NAME                     TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+service/knowsystem-svc   ClusterIP   10.108.224.124   &lt;none&gt;        80/TCP    29s
+
+NAME                                 READY   STATUS    RESTARTS   AGE
+pod/knowsystem-v1-96d57f6c-hkknr     2/2     Running   0          29s
+pod/knowsystem-v2-687b85db56-xmb88   2/2     Running   0          29s
+
+3.观察Service资源关联的Pod，分别是V1和V2版本的pod资源
+[root@k8s-master istio-knowsystem]# kubectl get ep -n prod-knowsystem
+NAME             ENDPOINTS                             AGE
+knowsystem-svc   100.64.169.151:80,100.64.169.153:80   37s
+</code></pre>
+<h3><a id="36_245"></a>3.6.访问知识点系统</h3>
+<p>绑定hosts解析。</p>
+<pre><code class="prism language-sh">192.168.20.15 knowsystem.jiangxl.com
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

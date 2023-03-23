@@ -1,0 +1,201 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>目录</h3>
+<ul><li><ul><li><ul><li><ul><li><a href="#_1">前情提要</a></li><li><a href="#_RSA__14">生成 RSA 私钥和公钥</a></li><li><a href="#_31">加密（公钥加密，私钥解密）</a></li><li><a href="#_107">签名（私钥签名，公钥验签）</a></li><li><a href="#_RSA2__183">使用 RSA2 的签名和验签说明</a></li><li><a href="#_202">结论</a></li></ul>
+</li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<h4><a id="_1"></a>前情提要</h4>
+<p>在网站或应用的业务开发中，往往会使用一些加密逻辑或者与第三方对接 API 时的签名逻辑，在当下繁杂的加密/签名算法中我相信 RSA 相对来说是比较适用的算法。</p>
+<p>那这里又有一个问题，很多人其实分不清楚 RSA 所属的公钥和私钥，到底哪个用来加密，哪个用来解密；或者说哪个用来签名，哪个用来验签。其实这个问题也是很好理解的。</p>
+<blockquote>
+<p>如果是用来加密，那么我作为开发者肯定是不希望别人知道我的消息，所以也就是说只有我才能解密，所以可以得出<strong>公钥负责加密，私钥负责解密</strong></p>
+</blockquote>
+<blockquote>
+<p>如果是用来签名，那么我作为开发者肯定不希望有人能冒充我的消息，只能由我去生成这个签名，也就可以得出<strong>私钥负责签名，公钥负责验证</strong></p>
+</blockquote>
+<p>那好，有了上述的结论，我们接下来去实现这个加密方法。</p>
+<h4><a id="_RSA__14"></a>生成 RSA 私钥和公钥</h4>
+<p>RSA是非对称加密，对加密内容长度有限制，生成 1024 位私钥的最多只能加密 127 位数据，如果加密字符串过长请生成 2048 位的秘钥</p>
+<pre><code class="prism language-shell"><span class="token comment"># 生成私钥，长度参数可不加，目前默认生成的就是2048 bit的秘钥</span>
+ openssl genrsa -out private_key.pem <span class="token number">2048</span>
+ 
+<span class="token comment"># 如果是Java开发者需要将私钥转换成PKCS8格式</span>
+openssl pkcs8 -topk8 -inform PEM -in private_key.pem -outform PEM -nocrypt -out private_key.pem
+
+<span class="token comment"># 生成对应的公钥</span>
+openssl rsa -in private_key.pem -pubout -out public_key.pem 
+</code></pre>
+<p>通过上述操作命令，将生成的公钥与秘钥拷贝到自己的项目目录，即可继续进行下面的开发工作（使用 Laravel8）。</p>
+<h4><a id="_31"></a>加密（公钥加密，私钥解密）</h4>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">namespace</span> <span class="token package">App<span class="token punctuation">\</span>Http<span class="token punctuation">\</span>Controllers</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">Illuminate<span class="token punctuation">\</span>Support<span class="token punctuation">\</span>Str</span><span class="token punctuation">;</span>
+
+<span class="token keyword">class</span> <span class="token class-name-definition class-name">RsaController</span> <span class="token keyword">extends</span> <span class="token class-name">Controller</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// 这里应直接从配置文件获取，为方便大家查阅直接定义在这里，</span>
+    <span class="token comment">// 公钥和私钥可以直接复制出来以字符串形式配置，也可以配置存放公钥秘钥文件的目录路径</span>
+    <span class="token keyword">private</span> <span class="token variable">$private_key</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'MIIEowIBAAKCAQEAyZGgkPRWyeGIlY'</span><span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token variable">$public_key</span> <span class="token operator">=</span> <span class="token function">storage_path</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'public_key.pem'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    
+    <span class="token comment">// 公钥加密</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function-definition function">encrypt</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 待加密字符串</span>
+       	<span class="token variable">$str</span> <span class="token operator">=</span> <span class="token number">123456789</span><span class="token punctuation">;</span>
+        
+       <span class="token comment">//验证公钥 拼装公钥，可以读文件也可以自行将字符串按64位长度分组拼装</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name static-context">Str</span><span class="token operator">::</span><span class="token function">endsWith</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">public_key</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'.pem'</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token variable">$public_key</span> <span class="token operator">=</span> <span class="token function">openssl_pkey_get_public</span><span class="token punctuation">(</span> <span class="token function">file_get_contents</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">public_key</span><span class="token punctuation">)</span> <span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token variable">$public_key</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"-----BEGIN PUBLIC KEY-----\n"</span><span class="token operator">.</span>
+                <span class="token function">wordwrap</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">public_key</span><span class="token punctuation">,</span> <span class="token number">64</span><span class="token punctuation">,</span> <span class="token string double-quoted-string">"\n"</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">)</span><span class="token operator">.</span>
+                <span class="token string double-quoted-string">"\n-----END PUBLIC KEY-----"</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+        <span class="token comment">// 加密</span>
+        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token function">openssl_public_encrypt</span><span class="token punctuation">(</span><span class="token variable">$str</span><span class="token punctuation">,</span><span class="token variable">$encrypted</span><span class="token punctuation">,</span> <span class="token variable">$public_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token comment">// base64_encode转码后的内容通常含有特殊字符，在浏览器通过url传输时要注意base64编码是否是url安全的，所以进行url转码</span>
+            <span class="token variable">$encrypted</span> <span class="token operator">=</span> <span class="token function">urlencode</span><span class="token punctuation">(</span><span class="token function">base64_encode</span><span class="token punctuation">(</span><span class="token variable">$encrypted</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+			<span class="token operator">!</span><span class="token function">is_resource</span><span class="token punctuation">(</span><span class="token variable">$public_key</span><span class="token punctuation">)</span> <span class="token operator">?</span><span class="token punctuation">:</span> <span class="token function">openssl_free_key</span><span class="token punctuation">(</span><span class="token variable">$public_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">return</span> <span class="token variable">$encrypted</span><span class="token punctuation">;</span>
+
+        <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name class-name-fully-qualified"><span class="token punctuation">\</span>Exception</span> <span class="token variable">$exception</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> <span class="token variable">$exception</span><span class="token operator">-&gt;</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    
+    <span class="token comment">// 私钥解密</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function-definition function">decrypt</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 公钥加密后的字符串</span>
+        <span class="token variable">$str</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'lj73ktX7FJWb534rbiE...'</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 验证私钥 拼装私钥</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name static-context">Str</span><span class="token operator">::</span><span class="token function">endsWith</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">private_key</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'.pem'</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token variable">$private_key</span> <span class="token operator">=</span> <span class="token function">openssl_pkey_get_private</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">private_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token variable">$private_key</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"-----BEGIN RSA PRIVATE KEY-----\n"</span><span class="token operator">.</span>
+                <span class="token function">wordwrap</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">private_key</span><span class="token punctuation">,</span> <span class="token number">64</span><span class="token punctuation">,</span> <span class="token string double-quoted-string">"\n"</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">)</span><span class="token operator">.</span>
+                <span class="token string double-quoted-string">"\n-----END RSA PRIVATE KEY-----"</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+        <span class="token comment">// 解密</span>
+        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token function">openssl_private_decrypt</span><span class="token punctuation">(</span><span class="token function">base64_decode</span><span class="token punctuation">(</span><span class="token function">urldecode</span><span class="token punctuation">(</span><span class="token variable">$str</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token variable">$decrypted</span><span class="token punctuation">,</span> <span class="token variable">$private_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+			<span class="token operator">!</span><span class="token function">is_resource</span><span class="token punctuation">(</span><span class="token variable">$private_key</span><span class="token punctuation">)</span> <span class="token operator">?</span><span class="token punctuation">:</span> <span class="token function">openssl_free_key</span><span class="token punctuation">(</span><span class="token variable">$private_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+			
+            <span class="token keyword">return</span> <span class="token variable">$decrypted</span><span class="token punctuation">;</span>
+
+        <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name class-name-fully-qualified"><span class="token punctuation">\</span>Exception</span> <span class="token variable">$exception</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> <span class="token variable">$exception</span><span class="token operator">-&gt;</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h4><a id="_107"></a>签名（私钥签名，公钥验签）</h4>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">namespace</span> <span class="token package">App<span class="token punctuation">\</span>Http<span class="token punctuation">\</span>Controllers</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">Illuminate<span class="token punctuation">\</span>Support<span class="token punctuation">\</span>Str</span><span class="token punctuation">;</span>
+
+<span class="token keyword">class</span> <span class="token class-name-definition class-name">RsaController</span> <span class="token keyword">extends</span> <span class="token class-name">Controller</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// 这里应直接从配置文件获取，为方便大家查阅直接定义在这里，</span>
+    <span class="token comment">// 公钥和私钥可以直接复制出来以字符串形式配置，也可以配置存放公钥秘钥文件的目录路径</span>
+    <span class="token keyword">private</span> <span class="token variable">$private_key</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'MIIEowIBAAKCAQEAyZGgkPRWyeGIlY'</span><span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token variable">$public_key</span> <span class="token operator">=</span> <span class="token function">storage_path</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'public_key.pem'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    
+    <span class="token comment">// 私钥签名</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function-definition function">genSign</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 待生成签名的字符串</span>
+        <span class="token variable">$str</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'a=1&amp;b=2&amp;c=3&amp;d=5'</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 验证私钥 拼装私钥</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name static-context">Str</span><span class="token operator">::</span><span class="token function">endsWith</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">private_key</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'.pem'</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token variable">$private_key</span> <span class="token operator">=</span> <span class="token function">openssl_pkey_get_private</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">private_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token variable">$private_key</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"-----BEGIN RSA PRIVATE KEY-----\n"</span><span class="token operator">.</span>
+                <span class="token function">wordwrap</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">private_key</span><span class="token punctuation">,</span> <span class="token number">64</span><span class="token punctuation">,</span> <span class="token string double-quoted-string">"\n"</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">)</span><span class="token operator">.</span>
+                <span class="token string double-quoted-string">"\n-----END RSA PRIVATE KEY-----"</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token function">openssl_sign</span><span class="token punctuation">(</span><span class="token variable">$str</span><span class="token punctuation">,</span> <span class="token variable">$signature</span><span class="token punctuation">,</span> <span class="token variable">$private_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+			<span class="token variable">$sign</span> <span class="token operator">=</span> <span class="token function">base64_encode</span><span class="token punctuation">(</span><span class="token variable">$signature</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+			
+			<span class="token operator">!</span><span class="token function">is_resource</span><span class="token punctuation">(</span><span class="token variable">$private_key</span><span class="token punctuation">)</span> <span class="token operator">?</span><span class="token punctuation">:</span> <span class="token function">openssl_free_key</span><span class="token punctuation">(</span><span class="token variable">$private_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">return</span> <span class="token variable">$sign</span><span class="token punctuation">;</span>
+
+        <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name class-name-fully-qualified"><span class="token punctuation">\</span>Exception</span> <span class="token variable">$exception</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> <span class="token variable">$exception</span><span class="token operator">-&gt;</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// 公钥验签</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function-definition function">verifySign</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 获取到参与签名的字符串</span>
+        <span class="token variable">$str</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'a=1&amp;b=2&amp;c=3&amp;d=5'</span><span class="token punctuation">;</span>
+        <span class="token comment">// 私钥生成的签名</span>
+        <span class="token variable">$sign</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'ZSMivQqMFZ1s36NFE9kcB83BcltwII...'</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 验证公钥 拼装公钥</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name static-context">Str</span><span class="token operator">::</span><span class="token function">endsWith</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">public_key</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'.pem'</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token variable">$public_key</span> <span class="token operator">=</span> <span class="token function">openssl_pkey_get_public</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">public_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token variable">$public_key</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"-----BEGIN PUBLIC KEY-----\n"</span><span class="token operator">.</span>
+                <span class="token function">wordwrap</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">public_key</span><span class="token punctuation">,</span> <span class="token number">64</span><span class="token punctuation">,</span> <span class="token string double-quoted-string">"\n"</span><span class="token punctuation">,</span> <span class="token constant boolean">true</span><span class="token punctuation">)</span><span class="token operator">.</span>
+                <span class="token string double-quoted-string">"\n-----END PUBLIC KEY-----"</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">// 验签</span>
+        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// 如果签名正确返回 1, 签名错误返回 0, 内部发生错误则返回-1</span>
+            <span class="token variable">$result</span> <span class="token operator">=</span> <span class="token function">openssl_verify</span><span class="token punctuation">(</span><span class="token variable">$str</span><span class="token punctuation">,</span> <span class="token function">base64_decode</span><span class="token punctuation">(</span><span class="token variable">$sign</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token variable">$public_key</span> <span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+			<span class="token operator">!</span><span class="token function">is_resource</span><span class="token punctuation">(</span><span class="token variable">$public_key</span><span class="token punctuation">)</span> <span class="token operator">?</span><span class="token punctuation">:</span> <span class="token function">openssl_free_key</span><span class="token punctuation">(</span><span class="token variable">$public_key</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+			
+            <span class="token keyword">return</span> <span class="token variable">$result</span> <span class="token operator">===</span> <span class="token number">1</span>
+
+        <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name class-name-fully-qualified"><span class="token punctuation">\</span>Exception</span> <span class="token variable">$exception</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> <span class="token variable">$exception</span><span class="token operator">-&gt;</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h4><a id="_RSA2__183"></a>使用 RSA2 的签名和验签说明</h4>
+<p>RSA 默认签名方式为 OPENSSL_ALGO_SHA1 如果使用RSA2的话需要在签名和验签方法中增加参数 OPENSSL_ALGO_SHA256 ，示例如下：</p>
+<pre><code class="prism language-php"><span class="token comment">// 签名</span>
+<span class="token function">openssl_sign</span><span class="token punctuation">(</span><span class="token variable">$str</span><span class="token punctuation">,</span> <span class="token variable">$signature</span><span class="token punctuation">,</span> <span class="token variable">$private_key</span><span class="token punctuation">,</span> <span class="token constant">OPENSSL_ALGO_SHA256</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">// 验签</span>
+<span class="token function">openssl_verify</span><span class="token punctuation">(</span><span class="token variable">$str</span><span class="token punctuation">,</span> <span class="token function">base64_decode</span><span class="token punctuation">(</span><span class="token variable">$sign</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token variable">$public_key</span><span class="token punctuation">,</span> <span class="token constant">OPENSSL_ALGO_SHA256</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>RSA 和 RSA2的区别</p>
+<table><thead><tr><th><strong>签名算法</strong></th><th><strong>标准签名算法</strong></th><th><strong>描述</strong></th></tr></thead><tbody><tr><td>RSA2</td><td>SHA256WithRSA</td><td>强制要求 RSA 密钥的长度至少为 2048。</td></tr><tr><td>RSA</td><td>SHA1WithRSA</td><td>对 RSA 密钥的长度不限制，推荐使用 2048 位以上。</td></tr></tbody></table>
+<h4><a id="_202"></a>结论</h4>
+<p>以上就是使用 RSA 进行加解密以及签名验签的全部实现了，并不是很复杂，代码稍作修改即可应用在你自己的业务中了。</p>
+<p>另外建议在使用 RSA 做签名验证的时候建议使用 RSA2 的方式，相对而言 RSA2 的安全能力是高于 RSA 的。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

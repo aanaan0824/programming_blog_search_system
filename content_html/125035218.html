@@ -1,0 +1,76 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p></p>
+<p><img alt="" height="344" src="image\9f6f835a847e40d9983365329470c640.png" width="498"/></p>
+<p></p>
+<h1>一、对象布局</h1>
+<p>HotSpot虚拟机中，对象在内存中存储的布局可以分为三块区域：对象头（Header）、实例数据（Instance Data）和对齐填充（Padding）。</p>
+<h2>1、对象头</h2>
+<p>HotSpot虚拟机的对象头包括三部分信息</p>
+<h3>（1）Mark Word</h3>
+<p>比如 hash码，对象所属的年代，对象锁，锁状态标志，偏向锁（线程）ID，偏向时间，数组长度（数组对象）等。Java对象头一般占有2个机器码（64位虚拟机中，1个机器码是8个字节，也就是64bit），但是 如果对象是数组类型，则需要3个机器码，因为JVM虚拟机可以通过Java对象的元数据信息确定Java对象的大小，但是无法从数组的元数据来确认数组的大小，所以用一块来记录数组长度。</p>
+<p><img alt="" height="210" src="image\cca67b35be6a4b498ba1b29859d96a1f.png" width="649"/></p>
+<p></p>
+<p>现在我们虚拟机基本是64位的，而64位的对象头有点浪费空间，JVM默认会开启指针压缩，所以基本上也是按32位的形式记录对象头的。手动设置jvm启动参数为：-XX:+UseCompressedOops</p>
+<p></p>
+<p><strong>哪些信息会被压缩？</strong></p>
+<ol><li>对象的全局静态变量（即类属性）</li><li>对象头信息：64位平台下，原生对象头大小为16字节，压缩后为12字节</li><li>对象的引/用类型：64位平台下，引|用类型本身大小为8字节，压缩后为4字节</li><li>对象数组类型：64位平台下，数组类型本身大小为24字节，压缩后16字节</li></ol>
+<p></p>
+<h3>（2）指向类的指针</h3>
+<p>大小也通常为32bit，它主要指向类的数据，也就是指向方法区中的位置。</p>
+<p></p>
+<h3>（3）数组长度</h3>
+<p>只有数组对象才有，在32位或者64位JVM中，长度都是32bit。</p>
+<p></p>
+<h2>2、实例数据</h2>
+<p>存放类的属性数据信息，包括父类的属性信息；</p>
+<p></p>
+<h2>3、对齐填充</h2>
+<p>由于虚拟机要求 对象起始地址必须是8字节的整数倍。填充数据不是必须存在的，仅仅是为了字节对齐。原因是为了寻址最优，64位机器正好8个字节；</p>
+<p></p>
+<h1>二、ClassLayout类打印对象头</h1>
+<p><strong> 1、引入依赖</strong></p>
+<pre><code class="language-XML">        &lt;dependency&gt;
+            &lt;groupId&gt;org.openjdk.jol&lt;/groupId&gt;
+            &lt;artifactId&gt;jol-core&lt;/artifactId&gt;
+            &lt;version&gt;0.10&lt;/version&gt;
+        &lt;/dependency&gt;</code></pre>
+<p><strong> 2、使用</strong></p>
+<pre><code class="language-java">public class Main {
+    long a;
+
+    public static void main(String[] args) {
+        Main main = new Main();
+        System.out.println(ClassLayout.parseInstance(main).toPrintable());
+
+        Main[] mainArray = new Main[1];
+        System.out.println(ClassLayout.parseInstance(mainArray).toPrintable());
+    }
+}</code></pre>
+<p><strong>执行结果 </strong></p>
+<p><img alt="" height="892" src="image\c298a3deb9dc40e885da7f9f4f052b6d.png" width="1200"/></p>
+<p></p>
+<p> 注意，对照上图markword图，查看打印的对象头时，顺序是相反的，需要按这个顺序自己重新排列一下</p>
+<p><img alt="" height="86" src="image\fd918b11773c40da83c2bdd2271ea921.png" width="429"/></p>
+<p></p>
+<h1>三、java对象内存的分配方式</h1>
+<h2>1、指针碰撞</h2>
+<p>假设Java堆中内存是绝对规整的，用过的和空闲的内存各在一边，中间放着一个指针作为分界点的指示器，分配内存就是把那个指针向空闲空间的那边挪动一段与对象大小相等的距离。</p>
+<h2><br/> 2、空闲列表</h2>
+<p>如果Java堆中的内存不是规整的，虚拟机就需要维护一个列表，记录哪个内存块是可用的，在分配的时候从列表中找到一块足够大的空间划分给对象实例，并更新列表上的记录。</p>
+<p> </p>
+<p>采用哪种分配方式是由*Java堆是否规整决定的，而Java堆是否规整是由所采用的垃圾收集器是否带有压缩整理功能决定的。</p>
+<p></p>
+<h1>四、java对象的访问定位</h1>
+<h2>1、直接指针访问</h2>
+<p>使用直接指针访问的话, reference中存储的直接就是对象地址, 如果只是访问对象本身的话, 就不需要再多一次间接访问的开销</p>
+<p>使用直接指针来访问最大的好处就是速度更快，它节省了一次指针定位的时间开销，由于对象访 问在Java中非常频繁，因此这类开销积少成多也是一项极为可观的执行成本，</p>
+<h2>2、句柄访问</h2>
+<p>使用句柄访问的话，Java堆中将可能会划分出一块内存来作为句柄池，reference中存储的就 是对象的句柄地址，而句柄中包含了对象实例数据与类型数据各自具体的地址信息，</p>
+<p>使用句柄来访问的最大好处就是reference中存储的是稳定句柄地 址，在对象被移动(垃圾收集时移动对象是非常普遍的行为)时只会改变句柄中的实例数据指针，而 reference本身不需要被修改。</p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

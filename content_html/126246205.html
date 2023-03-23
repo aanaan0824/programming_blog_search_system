@@ -1,0 +1,50 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#_1">一、前言</a></li><li><a href="#_27">二、解决方案</a></li><li><a href="#pymysqlMysqlclient_42">三、pymysql和Mysqlclient区别</a></li><li><a href="#gunicorngevent_47">四、为什么要使用gunicorn+gevent</a></li></ul>
+</div>
+<p></p>
+<h1><a id="_1"></a>一、前言</h1>
+<p>为了提高Django的并发性能，所以使用<code>gunicorn+gevent</code>组合来启动Django，但在过程中遇到了一个问题，之前能正常使用的接口按新方法部署后一直在报超时，后面排查发现当项目代码执行到使用Mysqlclient创建数据库连接时就会卡住。</p>
+<p>网上找了一圈发现了一个解决方案：</p>
+<hr/>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ff756b37bc3b4b4f833b70f51bea3fbb.png"/></p>
+<hr/>
+<p>但使用时会报错，方法不好使，后面查阅<code>pymysql</code>的github:<a href="https://github.com/PyMySQL/mysqlclient/pull/285">https://github.com/PyMySQL/mysqlclient/pull/285</a>发现作者移除了上述的方法：</p>
+<hr/>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6c9266f3c04e452bbc5b0ea47b81ea3d.png"/></p>
+<hr/>
+<p>移除的原因作者也做了解释：</p>
+<hr/>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1b9b2b0056544c5e9b64a25c88d4b855.png"/></p>
+<hr/>
+<p>一句话概括：waiter不能完全解决gevent阻塞的问题，所以对此建议使用pymysql。</p>
+<h1><a id="_27"></a>二、解决方案</h1>
+<p>因此我只好将代码中的所有mysqldb连接替换为了pymysql连接的方式，得以解决问题：</p>
+<pre><code class="prism language-python"><span class="token keyword">import</span> pymysql
+<span class="token keyword">from</span> pymysql<span class="token punctuation">.</span>cursors <span class="token keyword">import</span> DictCursor
+
+db_con <span class="token operator">=</span> pymysql<span class="token punctuation">.</span>connect<span class="token punctuation">(</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">)</span><span class="token punctuation">.</span>cursor<span class="token punctuation">(</span><span class="token punctuation">)</span>
+</code></pre>
+<hr/>
+<p>可能还有其他的三方库或方案来解决此问题，但由于改动成本的原因还是选择了替换为pymysql。</p>
+<h1><a id="pymysqlMysqlclient_42"></a>三、pymysql和Mysqlclient区别</h1>
+<p>PyMySQL和Mysqlclient提供相同的功能——它们都是数据库连接器。<br/> 区别在于Mysqlclient是C扩展，PyMySQL是纯Python的实现，由此可以看出Mysqlclient的性能会由于PyMySQL，但由于Mysqlclient不支持gevent，所以在涉及到需要使用gevent时，还是得使用PyMySQL。</p>
+<hr/>
+<h1><a id="gunicorngevent_47"></a>四、为什么要使用gunicorn+gevent</h1>
+<p>由于Python全局解释器锁的存在，Python的多线程更像是一种伪多线程，甚至就几乎等于Python是个单线程的程序。<br/> 所以在使用多线程时回发现CPU并不会被打满，因为在同一时刻,Python只会有一个线程在运行。所以为了提高Django的并发性能，需要采用多进程的方式来弥补这个问题，gunicorn是基于unix系统的一个 Python 的 WSGI HTTP 服务器，使用它可以很方便的管理我们的后端服务，它也兼容很多其他的框架。</p>
+<p>另外使用gevent能更好对性能提升，gevent是python的一个并发框架，以协程（微线程）greenlet为核心，使用了epoll事件监听机制以及诸多其他优化而变得高效，Gevent 通过 Cython 调用 libev 来实现一个高效的 event loop 调度循环。同时类似于 Event，Gevent 也有自己的 monkey_patch，在打了补丁后，完全可以使用 python 线程的方式来无感知的使用协程，减少了开发成本：</p>
+<hr/>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/fcfe38cff95343daa4f6ea3ca493ecd9.png"/></p>
+<hr/>
+<p>gunicorn+gevent组合是比较广泛的部署方案，小伙伴们在遇到性能瓶颈时可以尝试一下。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

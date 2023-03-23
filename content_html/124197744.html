@@ -1,0 +1,104 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>        最近在将c源文件改成cpp时，编译时出现很多的错误，对于不同类型间的转换c编译器没问题的，但在c++编译器里可能就报错，如将int类型直接赋给enum类型，将会出现类似这种错误：</p>
+<p><img alt="" height="198" src="image\57ec989c4d844e619b3f2bc111ea1516.png" width="630"/></p>
+<p>         我们知道在c中，enum类型默认是int类型，它们之间可以自动转换，但在c++中却不是这样的。可以参考：<a class="link-info" href="https://isocpp.org/wiki/faq/newbie#enumeration-is-its-own-type" title="https://isocpp.org/wiki/faq/newbie#enumeration-is-its-own-type">https://isocpp.org/wiki/faq/newbie#enumeration-is-its-own-type</a></p>
+<p>截取如下：</p>
+<p><img alt="" height="137" src="image\dc1088eebe7841dcbd569661c66f6e5b.png" width="1200"/></p>
+<p> c++编译器支持从enum类型自动转换为int，但反过来是不支持的。需要进行强制转换，有代码如下：</p>
+<pre><code class="language-cpp">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+enum type 
+{
+	TYPE_1 = 0,
+	TYPE_2,
+	TYPE_3,
+	Type_4
+};
+
+enum type2
+{
+	TYPE2_1 = 0,
+	TYPE2_2,
+	TYPE2_3,
+	TYPE2_4,
+	TYPE2_5
+};
+
+int main()
+{
+	enum type t;
+	t = type(2); //强制转换，也可以这样t = (type)2;
+	printf("t = %d\n", t);
+
+	t = type(TYPE2_5); //不的同枚举类型间转换也需要强制转换
+	int a = TYPE2_4; //自动转换，没有问题
+	printf("t = %d, a = %d\n", t, a);
+	return 0;
+}
+</code></pre>
+<p><img alt="" height="146" src="image\925f260ded6f479d88c8c7fbddc99fc5.png" width="514"/></p>
+<p> 只要在目标enum范围内，转换是没有问题的，但是否有意义需要根据代码实际看。</p>
+<p>上面说到enum类型的范围，它默认是int类型，所以enum的取值范围就是int的取值范围了，如：</p>
+<pre><code class="language-cpp">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+
+enum type
+{
+	TYPE_1 = 0,
+	TYPE_2,
+	TYPE_3,
+	Type_4,
+	TYPE_MAX = 255
+};
+
+int main()
+{
+	enum type t;
+	t = (type)(0x7FFFFFFF); //取最大值，最高位是符号位为0，即为正数最大值
+	printf("t = %d\n", t);
+	
+	return 0;
+}</code></pre>
+<p><img alt="" height="127" src="image\014c0a28d71d47b7a34748e670c62a0d.png" width="564"/></p>
+<p> 若是t = (type)(0x7FFFFFFF + 1); 会怎么样呢？</p>
+<p><img alt="" height="172" src="image\d5de8f6c65724825a964b834f110bbad.png" width="559"/></p>
+<p> 表达式中的整数溢出。所以enum默认取值范围就是int的取值范围。</p>
+<p>在c++11中，enum可以指定类型来限制enum的取值范围，而不是默认的Int类型，如：</p>
+<pre><code class="language-cpp">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef unsigned char uint8;
+enum type: uint8
+{
+	TYPE_1 = 0,
+	TYPE_2,
+	TYPE_3,
+	Type_4,
+	TYPE_MAX = 255 //最大值，大于这个值是编译不过的
+};
+
+int main()
+{
+	enum type t;
+	t = (type)(256);
+	printf("t = %d\n", t);
+
+	return 0;
+}</code></pre>
+<p><img alt="" height="124" src="image\26d3601a19ce416097163d32dd44b009.png" width="561"/></p>
+<p> 为什么结果为 0 呢？因为我们定义enum时限制了其最大值(unsigned char的最大值)。</p>
+<p>我们看计算器上256的二进制表示为：</p>
+<p><img alt="" height="443" src="image\04c280e8045640cdba470b93005bd0e3.png" width="405"/></p>
+<p> enum只取前8位，所以为0。</p>
+<p>如果给enum赋负数呢，结果又是多少呢？</p>
+<p>若：t = (type)(-10);</p>
+<p><img alt="" height="154" src="image\794d4565a593448295c4b4859e7cd233.png" width="581"/></p>
+<p> 一样的道理，t 只会取低8位的值。那就取决于-10的低8位是什么了。因为负数的存储是以补码存的，而负数的补码=反码+1，反码=除符号位外其余位取反，我们先看-10的原码为：1000 1010，其反码为：1111 0101(除最高符号位外，其余位取反), 补码为：1111 0110(1111 0101 + 1的结果)，那二进制1111 0110表示的数值是多少呢？因为我们定义enum时限制为unsigned char类型，所以最高位也表示数据而不是符号位，即：<br/><img alt="" height="455" src="image\cd78c82695a74155a2dd323c26305384.png" width="417"/></p>
+<p>其他类型如 unsigned short, unsigned int 有兴趣的同学可以自行验证。</p>
+<p></p>
+</div>
+</div>

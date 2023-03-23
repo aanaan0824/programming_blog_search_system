@@ -1,0 +1,247 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>一直做单机版应用程序开发，这不客户都需要手机端的小程序嘛！眼看着客户要纷纷“掉粉”，急了！必须马上学起！起步的确有点难，好在掉了些头发（摸摸还好）突破了通路，高兴之余写下来，希望能够帮到大家（瞧瞧这大局观~~~哈哈）。</p>
+<p>微信小程序的创建就不赘述了，只是打开微信开发者工具后，眼前黑乎乎的背景，脑子里一片片空白，该怎么搞啊！大家就不用着急了，还好有我经历过，从这里开始吧！</p>
+<p>设想一个场景---你的客户需要通过微信小程序查询积分情况，简单的只需要输入会员卡号，点击查询就显示出积分额等信息。好了，有了需求流，程序流也就很快画出来了：</p>
+<p><img alt="" height="331" src="image\f2360c13bfbb479b81de845b1e95ffeb.png" width="823"/></p>
+<p>一、介绍四个小程序文件</p>
+<p>js---逻辑层控制脚本文件，主要是它发送请求和接收数据，<br/> json--- 用于此页面局部，配置并且覆盖全局app.json配置，<br/> wxss---页面样式设置，相当于html的CSS配置文件，<br/> wxml---渲染层，就是页面，相当于html</p>
+<p>二、简单的页面设计</p>
+<p style="text-align:center;"><img alt="" height="662" src="image\82cf6f331e8f4077ac16918c5f7fca4a.png" width="380"/></p>
+<p style="text-align:center;">哈哈，UI不是特长，说明问题就好^~^ </p>
+<p>1、index.wxml代码</p>
+<pre><code>&lt;!--index.wxml--&gt;
+&lt;view class="container" style="width: 750rpx; height: 153rpx; display: flex; box-sizing: border-box"&gt;
+
+  &lt;view class="title"&gt;加油站客户积分查询&lt;/view&gt;
+
+  &lt;view class="top_tip"&gt;I love “油”&lt;/view&gt;
+
+  &lt;cloud-tip-modal showUploadTipProps="{<!-- -->{showUploadTip}}"&gt;&lt;/
+  
+  cloud-tip-modal&gt;
+  
+&lt;/view&gt;
+
+&lt;view&gt;
+  &lt;!-- 图片直接 --&gt;
+  &lt;image bindload='imgLoad' src="../../images/petrol.jpg" style="width: 756rpx; height: 306rpx; display: inline-block; box-sizing: border-box; left: -4rpx; top: 10rpx; position: relative"&gt;&lt;/image&gt;
+&lt;/view&gt;
+
+&lt;navigator url="test.wxml"  open-type="navigate" target="self" &gt;&lt;view class="top_tip"&gt;加油！我们一直在一起！
+  
+&lt;/view&gt;&lt;/navigator&gt;
+
+&lt;form bindsubmit="formSubmit" &gt;
+&lt;view class="section" style="width: 750rpx; height: 82rpx; display: block; box-sizing: border-box"&gt;
+  &lt;input class="class_input" name="card_id" placeholder="请输入卡号" /&gt;
+  &lt;button formType="submit" class="button" style="width: 168rpx; height: 46rpx; display: block; box-sizing: border-box; left: 114rpx; top: -96rpx; position: relative"&gt;提交&lt;/button&gt; 
+&lt;/view&gt;
+&lt;view class="btn-area"&gt;
+  &lt;text class="my-name"&gt;{<!-- -->{Str_Custom}}&lt;/text&gt;
+&lt;/view&gt;
+&lt;/form&gt;
+</code></pre>
+<p> </p>
+<p>注意：</p>
+<p>（1）Form表单，需要绑定一个属性为bindsubmit事件,bindsubmit=”formSubmit”   这里的属性值formSubmit，命名可以为符合规范的任意值，相当于以前html中的  οnsubmit=”formSubmit()”,是一个函数名，当提交的时候触发formSubmit这个函数事件，这个函数写在js中。</p>
+<p>（2）input控件一定要有name="card_id"属性，后端处理和以前一样，比如name="card_id" PHP用 $_POST[‘card_id']来接收。</p>
+<p>（3）由于小程序没有input submit这个按钮，所以在每个form表单中都要有一个提交按钮，&lt;button formType="submit"&gt;提交&lt;/button&gt;，这个按钮就是用来开启提交事件的。</p>
+<p>（4）在页面上设置一个&lt;text&gt;控件，将来用来返现数据查询结果。</p>
+<p>&lt;view class="btn-area"&gt;<br/>   &lt;text class="my-name"&gt;{<!-- -->{Str_Custom}}&lt;/text&gt;<br/> &lt;/view&gt;</p>
+<p>其中：{<!-- -->{Str_Custom}}是渲染层的动态变量，通过改变这个变量，返回查询结果。</p>
+<p>2、index.js代码</p>
+<pre><code>// index.js
+const { envList } = require('../../envList.js');
+const app = getApp()
+
+Page({
+  //图片加载完成后执行的方法
+  imgLoad(image) {
+    console.log(image.detail.width);
+  },
+
+  data: {
+    Str_Custom:'查询结果',
+    defaultClass:'my-name',
+    backgroudColor:'#e4393c'
+  },
+
+  formSubmit: function (e) {     
+      console.log(e.detail.value);
+      let that = this;
+      if (e.detail.value.card_id.length == 0 || e.detail.value.card_id.length &gt;= 25) {
+        wx.showToast({
+          title: '卡号不能为空或过长!',
+          icon: 'loading',
+          duration: 1500
+        })
+        setTimeout(function () {
+          wx.hideToast()
+        }, 2000)
+      } else {
+        wx.request({
+          url: 'https://www.ygcomputer.cn/points/show_sql.php', //替换成你们的php后台程序
+          header: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          method: "POST",
+          data: { card_id: e.detail.value.card_id },
+          success: function (res) {
+            console.log(res.data);
+            if (res.data.status == 0) {
+              wx.showToast({
+                title: '提交失败！！！',
+                icon: 'loading',
+                duration: 1500
+              })
+            } else {
+              that.setData({ 
+                 Str_Custom: res.data.name + '积分余额[' + res.data.ye + ']' //显示姓名+余额
+               }); 
+              wx.showToast({
+                title: '提交成功！！！',//这里打印出登录成功
+                icon: 'success',
+                duration: 1000
+              })
+            }
+          }
+        })
+      }
+  }
+
+})</code></pre>
+<p>要点：</p>
+<p>（1）初始数据的赋值</p>
+<p>data: {<!-- --><br/>     Str_Custom:'查询结果',<br/>     ...<br/>   },</p>
+<p>通过data给渲染层Str_Custom变量赋值。</p>
+<p>（2）函数 formSubmit解释</p>
+<p>  formSubmit: function (e) {     ----e代表事件引起的本函数</p>
+<p>      console.log(e.detail.value);   ----主控台显出，便于调试</p>
+<p>      let that = this; ---- 关键点，这里将page的保存至that容器中，此后this会改变</p>
+<p>......</p>
+<p>     that.setData({  ---- 关键点，上面代表page的that在这里，通过setData改变Str_Custom值</p>
+<p>                 Str_Custom: res.data.name + '积分余额[' + res.data.ye + ']'</p>
+<p>     }); </p>
+<p>3、index.wxss代码</p>
+<pre><code>/**index.wxss**/
+
+page {
+  padding-top: 54rpx;
+  background-color: #e2dddd;
+  padding-bottom: 60rpx;
+}
+
+.title {
+  font-family: PingFang SC;
+  font-weight: 500;
+  color: #e04343;
+  font-size: 44rpx;
+  margin-bottom: 40rpx;
+}
+
+.top_tip {
+  font-size: 28rpx;
+  font-family: PingFang SC;
+  font-weight: 400;
+  color: #000000;
+  margin-bottom: 28rpx;
+  text-align: center;
+}
+
+.button {
+  width: 300rpx;
+  text-align: center;
+  margin: 5% auto 5% auto;
+  height: 70rpx;
+  color: white;
+  border-radius: 5rpx;
+  line-height: 10rpx;
+  background-color: #07c160;
+  text-align: center;
+  font-size: 30rpx;
+}
+
+.box&gt;text:first-child {
+  color: #e4393c;
+}
+
+input:active {
+  border: 1px solid #ddd;
+}
+
+.class_input{
+  width: 150px;
+  text-align: center;
+  height: 70rpx;
+  color: rgb(0, 0, 0);
+  border-radius: 3px;
+  line-height: 70rpx;
+  background-color: #b5f7d4;
+}
+
+.box{
+  width: 400rpx;
+  height: 400rpx;
+  display: block;
+  background-color: antiquewhite;
+}
+
+.my-name {
+  height: 30px;
+  width: 168px;
+  text-align: center;
+  line-height: 30px;
+  color: rgb(83, 81, 81);
+  background-color: #b5f7d4;
+}
+
+.section{
+  text-align: center;
+  align-items:center;
+}</code></pre>
+<p>一些class文件，为控件的样式，不重要。</p>
+<p>三、后台PHP文件</p>
+<p>我的数据库为sqlserver2016，php版本为4.2，后台php文件编写方法为（说明：php4.2以上版本MSSQL访问函数变化，不适用这个脚本）:</p>
+<pre><code>&lt;?php
+  //说明：测试的时候是连接的是远程的mssql数据库，没有在本机运行
+  //初始化mssql数据库连接,分别是 主机(ip:端口号默认1433), 用户名, 密码
+  //header("Content-Type: text/html;charset=utf-8");
+  header("Cache-Control: no-cache");
+  $card_id=$_POST['card_id']; //接收参数
+  $serverName = "XXXXXXXX";
+  
+  $conn=mssql_connect( $serverName ,'userxxx','passwordxxx') or die("SQL SERVER 数据库连接失败！"); 
+  //选择数据库
+  mssql_select_db('points',$conn); 
+  ini_set("date.timezone", "PRC");
+  //sql语句
+  $sql="SELECT id,name,shouji,ye FROM sell_user where id = '".$card_id."'"; 
+  $result= mssql_query( $sql );
+  $num = mssql_num_rows($result); 
+  if($num){
+      while( $row = mssql_fetch_assoc( $result) ){
+          $row[name] = iconv("GB2312","UTF-8//IGNORE",$row[name]);
+          foreach ( $row as $key =&gt; $value ) { 
+              $row[$key] = urlencode ( $value ); 
+          }      
+          echo urldecode( json_encode($row ) );
+      }
+  }
+  //关闭连接
+  mssql_close($conn);
+?&gt;
+</code></pre>
+<p>重点：</p>
+<p>（1）header("Cache-Control: no-cache"); 清理服务器缓存</p>
+<p>（2）ini_set("date.timezone", "PRC"); 同步时区；</p>
+<p>（3） $row[name] = iconv("GB2312","UTF-8//IGNORE",$row[name]); 注意json只接受utf-字符集，而mssl汉字为GBk类型，因此必须在这里首先将汉字编码转变为UTF-8类型；（独立知识产权哦，老费劲了！）</p>
+<p>（4）foreach ( $row as $key =&gt; $value ) {     ----- 遍历字符<br/>               $row[$key] = urlencode ( $value );   ------ 转换为16进制，为 json_encode函数转换<br/>           }      <br/>           echo urldecode( json_encode($row ) );------  json_encode函数后，再将字符由16进制转换为正常</p>
+<p>四、运行结果</p>
+<p style="text-align:center;"><img alt="" height="467" src="image\1ff1880c7b994e0793789720294f98bb.png" width="381"/></p>
+<p> 哈哈，大功告成，整个流程跑通，剩下就是细节了，如果要求低一些，这也是一个商用小程序哦~（不知道能不能通过微信审核~哈哈）。</p>
+<p></p>
+<p></p>
+</div>
+</div>

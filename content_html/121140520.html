@@ -1,0 +1,185 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>Unity3D 与西门子PLC通讯</h3>
+<ul><li><a href="#_1">前言</a></li><li><a href="#_7">通讯协议</a></li><li><a href="#_15">通讯建立的细节</a></li><li><ul><li><a href="#_194">期间遇到的两个主要问题</a></li></ul>
+</li><li><a href="#_205">总结</a></li></ul>
+</div>
+<p></p>
+<h1><a id="_1"></a>前言</h1>
+<p>想做这样的通讯太久了，从21年二月份陆陆续续到十一月份才正式做好，最开始想西门子1200系列与unity如果可以进行通讯，那么很多实验都可以做到虚拟仿真，未来做上位机的界面也会比传统的更丰富些。如今工控行业与IT行业密不可分，相似度也越来越高，零零散散试了几个通讯方式，最后还是在老师的帮助下找到了最为妥帖的通讯方式。<br/> 本文是做实体PLC和Unity 的通讯，如果没有实体PLC可以参考我之前的博文<a href="https://blog.csdn.net/qq_44879321/article/details/114062710">上位机与西门子博途TIA的PROFINET通讯仿真（虚拟通讯）</a>，这篇博文写了如何对PLCsim进行配置，使用PlCsim代替实体PLC进行通讯。</p>
+<p><font color="red">特别要说明的一点是，下文所介绍的通讯方式在本人的计算机上调试成功，如果遇到特殊情况请特殊处理，欢迎大家联系我，我们一起进步学习。</font></p>
+<h1><a id="_7"></a>通讯协议</h1>
+<p>PLC与Unity之间的通讯协议，选用的是ModbusTCP通讯，<br/> 在西门子端需要做到大致两点</p>
+<ol><li>将项目的通讯保护等选项勾选掉</li><li>编写一部分ModbusTCP的代码，我认为这样的目的是允许外部访问。</li></ol>
+<p>在Unity端是需要引入一个C#的Dll库——S7.Net，这个库是编写Winform应用的，因为都是C#写的，所以导入Unity也是可以直接使用。</p>
+<h1><a id="_15"></a>通讯建立的细节</h1>
+<p><font color="red">注意！！！运行博途的计算机、运行Unity的计算机、西门子PLC这三者需要在一网段，即IP地址的前三位相同。</font><br/> 一、西门子博途方的设置</p>
+<ol><li>根据S7.Net官方文档进行配置应有属性<br/> 官方文档中提到（下面为了避免我描述的不够清楚，将原文放置下面，设置一共有三点，第一点是只有需要访问DB块是才会用到，访问M寄存器时不需要这样做。之后两点是必须要做的。）</li></ol>
+<pre><code>S7 1200/1500 Notes
+An external equipment can access to S71200/1500 CPU using the S7 “base” 
+protocol, only working as an HMI, i.e. only basic data transfer are allowed.
+All other PG operations (control/directory/etc..) must follow the extended protocol, 
+not (yet) covered by Snap7.
+Particularly to access a DB in S71500 some additional setting plc-side are needed.
+1. Only global DBs can be accessed.
+2. The optimized block access must be turned off.
+3. The access level must be “full” and the “connection mechanism” must allow 
+GET/PUT.
+Let’s see these settings in TIA Portal V12
+</code></pre>
+<pre><code>DB property
+Select the DB in the left pane under “Program blocks” and press Alt-Enter (or in 
+the contextual menu select “Properties…”)
+Uncheck Optimized block access, by default it’s checked
+</code></pre>
+<p>(这里需要将要访问的数据块关闭优化块访问这个选项。)<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2c2ae161113f441f8f50d0922a99a7a5.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5pel5LqO,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<pre><code>Protection
+Select the CPU project in the left pane and press Alt-Enter (or in the contextual 
+menu select “Properties…”)
+In the item Protection, select “Full access” and Check “Permit access with PUT/GET 
+….” as in figure.
+</code></pre>
+<p>（这里有两点设置，一是将保护中的访问等级调至：Full access；二是允许PUT/GET连接）<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/8a193c8388e44b5da6e009efeba5231d.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5pel5LqO,size_20,color_FFFFFF,t_70,g_se,x_16"/>2. 编写通讯代码<br/> 在右侧通讯-其他-ModbusTCP中选择MB_Server块<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/cd60cbaa64d44b12ba9fd2baa29ebd7c.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5pel5LqO,size_19,color_FFFFFF,t_70,g_se,x_16"/><br/> 放入后进行编写即可，具体细节如下两图。（具体参数含义在此不再赘述，如有疑问请参照博途信息系统。）<img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7a1a4d3426f34b2a82872ad4d780875b.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5pel5LqO,size_20,color_FFFFFF,t_70,g_se,x_16"/><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a35d3f3bccb94db78b3ae5dbc5b589f3.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5pel5LqO,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 二、Unity方的通讯设置</p>
+<ol><li>在Unity项目文件Assets文件夹下新建一个Plugins文件夹，并将S7.Net.dll及其他文件放入<br/> <a href="https://download.csdn.net/download/qq_44879321/42546051">S7.net的Dll库及说明书</a>已经上传有需要的可以自取<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e1de62dcc4dd4ec4ba158466d469749c.png"/><br/> 这里要注意的两点是，一是我也不清楚，这个文件是否会对项目有影响，所以是一起放入的。（.meta文件是导入Unity后自动生成的，可以通过这个来确认是否能在项目中使用。）<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3036ddd4be5847468168687c862a33b7.png"/><br/> 第二点是网上的S7.Net的库是一个文件夹，但是有三个版本的S7.Net库，只需要保存一个即可，不然Unity会识别混乱。<br/> 当然，要是拿到的只有<img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/95f1cbb2cead4b3fa3c2a65c1b6dceab.png"/><br/> 这样两个文件就没有以上需要注意的两点。</li><li>导入Dll库后就可以在项目中新建C#脚本进行代码编写了。<br/> 下面是我的源代码，其中重要的点我会以注释的形式标出。</li></ol>
+<pre><code>using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using S7.Net; 					 //首先一定是using
+using System;
+using UnityEngine.UI;
+using System.Threading;
+
+public class PLC : MonoBehaviour
+{
+    Plc PLC1 = new Plc(CpuType.S71200, "192.168.0.1", 0, 1);		
+    //在这里对Plc这类进行新建，public Plc(CpuType cpu, string ip, Int16 rack, Int16 slot)，这个函数是对连接的Plc进行一个访问初始化
+    //需要的参数有PLC类型、IP地址、插槽号、机架号。其中后两项在博途CPU属性中可以查到。
+
+    public InputField InputIP;
+    public Text InputSet;
+
+    Thread PLCLink;
+
+    public Text Error;
+
+    public GameObject FluidC;
+    public byte HighSet;
+
+    public byte result;
+    public double RealSet;
+    public byte ReadValve;
+
+    public ushort intValve;
+
+    float UnityHigh;
+    // Start is called before the first frame update
+    void Start()
+    {
+    }
+
+    public void BtnOpen()
+    {
+        
+        try
+        {
+            PLC1 = new Plc(CpuType.S71200, InputIP.text, 0, 1);  //这里的是做了一个外部设置IP地址的操作
+            PLC1.Open();
+            //打开与PLC的连接是有两种方式，一个是Open()；另一个是OpenAsync()，两者之间的功能是一样的，前者可以返回错误信息，比较适合初学者。
+
+            if (PLC1.IsConnected)   //判断是否连接
+            {
+
+                Debug.Log("Plc is Connected");
+                Error.text = "Plc is Connected";
+
+                PLCLink = new Thread(LinkThread);
+                PLCLink.Start();                    //这里我是想做一个阶段性的中断，所以选用另起线程，将查询和写入PLC的功能放入新的线程，数据处理在主线程。用来防止线程卡死。
+            }
+            else
+            {
+                Error.text = "PLC 连接不成功，请检查IP地址、机架、插槽等是否正确";
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.Log(ex);
+            Error.text = ex + "";
+            throw;
+        }
+    }
+
+    public void BtnClose()
+    {
+        try
+        {
+            PLC1.Close();     //关闭与PLC的连接
+        }
+        catch (Exception ex)
+        {
+            Debug.Log(ex);
+            Error.text = ex + "";
+            throw;
+        }
+    }
+
+    public void BtnRead()
+    {
+        //复位按键
+        try
+        {
+            PLC1.Write("M0.0", true);  //我做的是Unity上的仿真PID所以需要一个复位按键。
+            PLC1.Write("M0.0", false);
+        }
+        catch (Exception ex)
+        {
+            Debug.Log(ex);
+            Error.text = ex + "";
+            throw;
+        }
+    }
+    
+    public void LinkThread()
+    {
+        while (true)
+        {
+            if (PLC1.IsConnected)
+            {
+                RealSet = Convert.ToDouble(PLC1.Read("DB3.DBD0"));  
+                //读取PLC的值，这边我还没有做的很满意，大家可以根据S7.Net的说明书和自己的意图来写合适的代码
+                result = (byte)PLC1.Read("MB103");
+                intValve = (ushort)PLC1.Read("DB3.DBW12");
+                Debug.Log(intValve);
+                Thread.Sleep(100);
+            }
+        }
+    }
+
+    private void OnApplicationQuit()
+    {
+        BtnClose();
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        UnityHigh = FluidC.GetComponent&lt;FluidControl&gt;().OutPutHigh;
+        InputSet.text = result + "";
+    }
+}
+
+</code></pre>
+<p>到这里，双方通讯已经完成，剩下的就是数据处理。等下次做的满意后，单写一篇文章给大家看。</p>
+<h2><a id="_194"></a>期间遇到的两个主要问题</h2>
+<ol><li> <p>S7.Net.PlcException: 无法将数据写入传输连接: 远程主机强迫关闭了一个现有的连接。</p> </li><li> <p>索引超出数组界限。<br/> 我的这两个问题都是发生在连接成功后无法进行读取和写入操作。<br/> 大致总结了一下检查步骤</p> </li><li> <p>Ping一下PLC的IP地址，ping不通的话有很多种可能，不在同一网段、PLC没有正确设置对外部访问还有保护（请参照 一、西门子博途方的设置）等。</p> </li><li> <p>如果可以Ping的通，请检查一下PLC的通讯代码是否有错。一般第一个问题会出现在这里。</p> </li><li> <p>第二个问题，有可能是访问的块不存在或者是地址没定义数。</p> </li></ol>
+<h1><a id="_205"></a>总结</h1>
+<p>这篇仅写了我一家之言，问题遇到的不算多，所以不会是最全面的，希望大家遇到的稀奇古怪问题可以找我一起讨论。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,267 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1>前言</h1>
+<p>在前两篇，详细了解了谷歌gRPC的使用，以及gRPC实际使用中的几种通信模式，本篇通过实际案例了解下 gRPC与springboot的整合过程；</p>
+<p></p>
+<h1>整合过程</h1>
+<p></p>
+<p>案例为了模拟真实的场景，仍然分为Server端，和Client端，这个和前两篇保持一致，分为2个工程模块，服务端发布服务，客户端调服务，整体步骤和之前差不多；</p>
+<p></p>
+<p><img alt="" height="85" src="image\94e5a516fe5c45318629170590f4bf19.png" width="374"/></p>
+<p></p>
+<p></p>
+<h2>一、服务端：grpc-server</h2>
+<h3></h3>
+<h3>1、导入maven相关依赖</h3>
+<p></p>
+<pre><code class="language-java"> &lt;repositories&gt;
+        &lt;repository&gt;
+            &lt;id&gt;alimaven&lt;/id&gt;
+            &lt;name&gt;aliyun maven&lt;/name&gt;
+            &lt;url&gt;http://maven.aliyun.com/nexus/content/groups/public/&lt;/url&gt;
+        &lt;/repository&gt;
+    &lt;/repositories&gt;
+
+    &lt;pluginRepositories&gt;
+        &lt;pluginRepository&gt;
+            &lt;id&gt;alimaven&lt;/id&gt;
+            &lt;name&gt;aliyun maven&lt;/name&gt;
+            &lt;url&gt;http://maven.aliyun.com/nexus/content/groups/public/&lt;/url&gt;
+        &lt;/pluginRepository&gt;
+    &lt;/pluginRepositories&gt;
+
+    &lt;dependencies&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;net.devh&lt;/groupId&gt;
+            &lt;artifactId&gt;grpc-server-spring-boot-starter&lt;/artifactId&gt;
+            &lt;version&gt;2.13.0.RELEASE&lt;/version&gt;
+        &lt;/dependency&gt;
+
+    &lt;/dependencies&gt;
+
+    &lt;build&gt;
+        &lt;extensions&gt;
+            &lt;extension&gt;
+                &lt;groupId&gt;kr.motd.maven&lt;/groupId&gt;
+                &lt;artifactId&gt;os-maven-plugin&lt;/artifactId&gt;
+                &lt;version&gt;1.6.0&lt;/version&gt;
+            &lt;/extension&gt;
+        &lt;/extensions&gt;
+        &lt;plugins&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+                &lt;artifactId&gt;spring-boot-maven-plugin&lt;/artifactId&gt;
+                &lt;executions&gt;
+                    &lt;execution&gt;
+                        &lt;goals&gt;
+                            &lt;goal&gt;repackage&lt;/goal&gt;
+                        &lt;/goals&gt;
+                    &lt;/execution&gt;
+                &lt;/executions&gt;
+            &lt;/plugin&gt;
+
+            &lt;!--跳过test测试--&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+                &lt;artifactId&gt;maven-surefire-plugin&lt;/artifactId&gt;
+                &lt;configuration&gt;
+                    &lt;skip&gt;true&lt;/skip&gt;
+                &lt;/configuration&gt;
+            &lt;/plugin&gt;
+
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.xolstice.maven.plugins&lt;/groupId&gt;
+                &lt;artifactId&gt;protobuf-maven-plugin&lt;/artifactId&gt;
+                &lt;version&gt;0.6.1&lt;/version&gt;
+                &lt;configuration&gt;
+                    &lt;protocArtifact&gt;com.google.protobuf:protoc:3.5.1:exe:${os.detected.classifier}&lt;/protocArtifact&gt;
+                    &lt;pluginId&gt;grpc-java&lt;/pluginId&gt;
+                    &lt;pluginArtifact&gt;io.grpc:protoc-gen-grpc-java:1.11.0:exe:${os.detected.classifier}&lt;/pluginArtifact&gt;
+                    &lt;!--默认值--&gt;
+                    &lt;protoSourceRoot&gt;${project.basedir}/src/main/proto&lt;/protoSourceRoot&gt;
+                    &lt;!--默认值--&gt;
+                    &lt;!--&lt;outputDirectory&gt;${project.build.directory}/generated-sources/protobuf/java&lt;/outputDirectory&gt;--&gt;
+                    &lt;outputDirectory&gt;${project.basedir}/src/main/java&lt;/outputDirectory&gt;
+                    &lt;!--设置是否在生成java文件之前清空outputDirectory的文件，默认值为true，设置为false时也会覆盖同名文件--&gt;
+                    &lt;clearOutputDirectory&gt;false&lt;/clearOutputDirectory&gt;
+                &lt;/configuration&gt;
+                &lt;executions&gt;
+                    &lt;execution&gt;
+                        &lt;!--在执行mvn compile的时候会执行以下操作--&gt;
+                        &lt;phase&gt;compile&lt;/phase&gt;
+                        &lt;goals&gt;
+                            &lt;!--生成OuterClass类--&gt;
+                            &lt;goal&gt;compile&lt;/goal&gt;
+                            &lt;!--生成Grpc类--&gt;
+                            &lt;goal&gt;compile-custom&lt;/goal&gt;
+                        &lt;/goals&gt;
+                    &lt;/execution&gt;
+                &lt;/executions&gt;
+            &lt;/plugin&gt;
+        &lt;/plugins&gt;
+    &lt;/build&gt;</code></pre>
+<p></p>
+<h3>2、创建proto目录并定义proto服务文件 </h3>
+<p></p>
+<p>通过前两篇的学习，相信大家对这个服务文件的定义应该非常熟悉了，服务端提供一个 hello的服务接口，入参和出参均为字符串；</p>
+<pre><code class="language-bash">
+syntax = "proto3";
+
+option java_multiple_files = false;
+
+option java_package = "com.congge.news.proto";
+
+option java_outer_classname = "NewsProto";
+
+package news;
+
+service NewsService {
+    rpc hello(StringRequest) returns (StringResponse){}
+}
+
+message StringRequest{
+    string name = 1;
+}
+
+message StringResponse{
+    string result = 1;
+}
+
+</code></pre>
+<p></p>
+<h3>3、编译并生成服务端相关的服务目录和类文件</h3>
+<p></p>
+<p>依次点击下面两个按钮，生成服务相关的文件</p>
+<p></p>
+<p><img alt="" height="475" src="image\fe7fe755a5c542e287fec76b9fc22ca0.png" width="469"/></p>
+<p></p>
+<p><img alt="" height="129" src="image\c4ffa32d344149f0af181e8e3cee2884.png" width="384"/></p>
+<p></p>
+<h3>4、重写服务接口的方法</h3>
+<p></p>
+<p>在该方法中，就是具体编写服务接口方法实现的逻辑，实际开发中，就是实际要关注业务逻辑的位置；</p>
+<pre><code class="language-java">import com.congge.news.proto.NewsProto;
+import com.congge.news.proto.NewsServiceGrpc;
+import io.grpc.stub.StreamObserver;
+import net.devh.boot.grpc.server.service.GrpcService;
+
+@GrpcService
+public class NewsService extends NewsServiceGrpc.NewsServiceImplBase {
+
+    @Override
+    public void hello(NewsProto.StringRequest request, StreamObserver&lt;NewsProto.StringResponse&gt; responseObserver) {
+        String name = request.getName();
+        NewsProto.StringResponse response = NewsProto.StringResponse.newBuilder().setResult("hello :" + name).build();
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+}</code></pre>
+<p></p>
+<h3>5、配置文件</h3>
+<p></p>
+<pre><code class="language-java">spring:
+  application:
+    name: rpc-server
+
+grpc:
+  server:
+    port: 9988
+
+server:
+  port: 8088</code></pre>
+<p></p>
+<h3>6、提供一个启动类并启动服务</h3>
+<p>通过启动日志可以发现，服务端自身的web端口以及grpc服务监听的端口都已经生效；</p>
+<p><img alt="" height="569" src="image\72cb23909c944d9db387eea6f9275436.png" width="1200"/></p>
+<p></p>
+<p>到这里，服务端的整合过程就基本完成了，接下来看客户端的整合步骤吧；</p>
+<p></p>
+<h2>二、服务端：grpc-client</h2>
+<p></p>
+<h3>1、导入依赖</h3>
+<p>同上</p>
+<p></p>
+<h3>2、创建proto目录并定义proto服务文件 </h3>
+<p>同上</p>
+<p></p>
+<h3>3、编译并生成服务端相关的服务目录和类文件</h3>
+<p>同上</p>
+<p></p>
+<h3>4、配置文件</h3>
+<p></p>
+<pre><code class="language-java">spring:
+  application:
+    name: rpc-client
+
+grpc:
+  client:
+    grpc-server:
+      address: 'static://127.0.0.1:9988'
+      negotiationType: plaintext
+
+server:
+  port: 8087</code></pre>
+<p></p>
+<h3>5、提供一个web接口</h3>
+<p></p>
+<p>为了模拟外部的接口调用，这里提供一个用于测试的web接口，在接口中远程调用服务端的服务接口；</p>
+<p></p>
+<pre><code class="language-java">@RestController
+public class NewsController {
+
+    @GrpcClient("grpc-server")
+    private NewsServiceGrpc.NewsServiceBlockingStub newsServiceBlockingStub;
+
+    @GetMapping("/hello")
+    public String hello(String name) {
+        NewsProto.StringResponse response = newsServiceBlockingStub.hello(NewsProto.StringRequest.newBuilder().setName(name).build());
+        return response.getResult();
+    }
+
+}</code></pre>
+<p></p>
+<h3>6、提供一个启动类并启动服务</h3>
+<p></p>
+<p><img alt="" height="466" src="image\5d8c107fb635495e805cbfa62ea29d4c.png" width="1200"/></p>
+<p></p>
+<p>浏览器调用下上面的客户端提供的接口进行测试，效果如下：</p>
+<p></p>
+<p><img alt="" height="158" src="image\f760e5e54a124e56bb074a749457f495.png" width="643"/></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

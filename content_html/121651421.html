@@ -1,0 +1,256 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2 id="1.%E7%BA%BF%E7%A8%8B%E6%B1%A0%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF%EF%BC%9F"><strong>线程池使用场景？</strong></h2>
+<p> </p>
+<blockquote>
+<p>java中经常需要用到多线程来处理一些业务，我们非常不建议单纯使用继承Thread或者实现Runnable接口的方式来创建线程，那样势必有创建及销毁线程耗费资源、线程上下文切换问题。同时创建过多的线程也可能引发资源耗尽的风险，这个时候引入线程池比较合理，方便线程任务的管理。java中涉及到线程池的相关类均在jdk1.5开始的java.util.concurrent包中，涉及到的几个核心类及接口包括：Executor、Executors、ExecutorService、ThreadPoolExecutor、FutureTask、Callable、Runnable等。</p>
+</blockquote>
+<h2>线程池的创建及核心参数</h2>
+<p><strong>Executors创建线程池</strong></p>
+<blockquote>
+<p>Java中创建线程池很简单，只需要调用<code>Executors</code>中相应的便捷方法即可，比如<code>Executors.newFixedThreadPool(int nThreads)</code>，但是便捷不仅隐藏了复杂性，也为我们埋下了潜在的隐患（OOM，线程耗尽）。</p>
+</blockquote>
+<p><code>Executors</code>创建线程池方法：</p>
+<table><thead><tr><th>方法名</th><th>功能</th></tr></thead><tbody><tr><td>newFixedThreadPool(int nThreads)</td><td>创建固定大小的线程池</td></tr><tr><td>newSingleThreadExecutor()</td><td>创建只有一个线程的线程池</td></tr><tr><td>newCachedThreadPool()</td><td>创建一个不限线程数上限的线程池，任何提交的任务都将立即执行</td></tr></tbody></table>
+<blockquote>
+<p>创建线程池应该直接使用<code>ThreadPoolExecutor</code>的构造方法。没错，上述<code>Executors</code>方法创建的线程池就是<code>ThreadPoolExecutor</code>。</p>
+</blockquote>
+<p><strong>ThreadPoolExecutor构造方法</strong></p>
+<blockquote>
+<p><code>Executors</code>中创建线程池的快捷方法，实际上是调用了<code>ThreadPoolExecutor</code>的构造方法（定时任务使用的是<code>ScheduledThreadPoolExecutor</code>），该类构造方法参数列表如下：</p>
+</blockquote>
+<pre><code class="language-java">// Java线程池的完整构造函数
+public ThreadPoolExecutor(
+  int corePoolSize, // 线程池长期维持的线程数，即使线程处于Idle状态，也不会回收。
+  int maximumPoolSize, // 线程数的上限
+  long keepAliveTime, TimeUnit unit, // 超过corePoolSize的线程的idle时长，
+                                     // 超过这个时间，多余的线程会被回收。
+  BlockingQueue&lt;Runnable&gt; workQueue, // 任务的排队队列
+  ThreadFactory threadFactory, // 新线程的产生方式
+  RejectedExecutionHandler handler) // 拒绝策略</code></pre>
+<p>有7个参数，这些参数中，比较容易引起问题的有<code>corePoolSize</code>, <code>maximumPoolSize</code>, <code>workQueue</code>以及<code>handler</code>：</p>
+<blockquote>
+<ul><li><code>corePoolSize</code>和<code>maximumPoolSize</code>设置不当会影响效率，甚至耗尽线程；</li><li><code>workQueue</code>设置不当容易导致OOM；</li><li><code>handler</code>设置不当会导致提交任务时抛出异常。</li></ul>
+</blockquote>
+<p></p>
+<p> <strong>ThreadPoolExecutor中参数详解</strong></p>
+<blockquote>
+<p><span style="color:#fe2c24;">corePoolSize</span>：核心线程数，也是线程池中常驻的线程数，线程池初始化时默认是没有线程的，当任务来临时才开始创建线程去执行任务</p>
+<p><span style="color:#fe2c24;">maximumPoolSize</span>：最大线程数，在核心线程数的基础上可能会额外增加一些非核心线程，需要注意的是只有当workQueue队列填满时才会创建多于corePoolSize的线程(线程池总线程数不超过maxPoolSize)</p>
+<p><span style="color:#fe2c24;">keepAliveTime</span>：非核心线程的空闲时间超过keepAliveTime就会被自动终止回收掉，注意当corePoolSize=maxPoolSize时，keepAliveTime参数也就不起作用了(因为不存在非核心线程)；</p>
+<p><span style="color:#fe2c24;">unit：</span>keepAliveTime的时间单位</p>
+<p><span style="color:#fe2c24;">workQueue</span>：用于保存任务的队列，可以为无界、有界、同步移交三种队列类型之一，当池子里的工作线程数大于corePoolSize时，这时新进来的任务会被放到队列中</p>
+<p><span style="color:#fe2c24;">threadFactory</span>：创建线程的工厂类，默认使用Executors.defaultThreadFactory()，也可以使用guava库的ThreadFactoryBuilder来创建</p>
+<p><span style="color:#fe2c24;">handler</span>：线程池无法继续接收任务(队列已满且线程数达到maximunPoolSize)时的饱和策略，取值有AbortPolicy、CallerRunsPolicy、DiscardOldestPolicy、DiscardPolicy</p>
+</blockquote>
+<p></p>
+<p><strong>线程池中的线程创建流程图：</strong></p>
+<p><img alt="" src="image\20200210182132388.png"/></p>
+<p></p>
+<p>举个栗子：现有一个线程池，corePoolSize=10，maxPoolSize=20，队列长度为100，那么当任务过来会先创建10个核心线程数，接下来进来的任务会进入到队列中直到队列满了，会创建额外的线程来执行任务(最多20个线程)，这个时候如果再来任务就会执行拒绝策略</p>
+<p><strong>workQueue队列</strong></p>
+<blockquote>
+<p>SynchronousQueue(同步移交队列)：队列不作为任务的缓冲方式，可以简单理解为队列长度为零<br/> LinkedBlockingQueue(无界队列)：队列长度不受限制，当请求越来越多时(任务处理速度跟不上任务提交速度造成请求堆积)可能导致内存占用过多或OOM<br/> ArrayBlockintQueue(有界队列)：队列长度受限，当队列满了就需要创建多余的线程来执行任务</p>
+</blockquote>
+<p></p>
+<p> <strong>handler拒绝策略</strong></p>
+<blockquote>
+<ul><li>AbortPolicy：中断抛出异常</li><li>DiscardPolicy：默默丢弃任务，不进行任何通知</li><li>DiscardOldestPolicy：丢弃掉在队列中存在时间最久的任务</li><li>CallerRunsPolicy：让提交任务的线程去执行任务(对比前三种比较友好一丢丢)</li></ul>
+</blockquote>
+<h1><strong>常见的几种创建线程池方式</strong></h1>
+<blockquote>
+<p><br/> newFixedThreadPool：</p>
+<p>        使用的构造方式为new ThreadPoolExecutor(var0, var0, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue())，设置了corePoolSize=maxPoolSize，keepAliveTime=0(此时该参数没作用)，无界队列，任务可以无限放入，当请求过多时(任务处理速度跟不上任务提交速度造成请求堆积)可能导致占用过多内存或直接导致OOM异常</p>
+<p><br/> newSingleThreadExector：</p>
+<p>        使用的构造方式为new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue(), var0)，基本同newFixedThreadPool，但是将线程数设置为了1，单线程，弊端和newFixedThreadPool一致</p>
+<p><br/> newCachedThreadPool：</p>
+<p>        使用的构造方式为new ThreadPoolExecutor(0, 2147483647, 60L, TimeUnit.SECONDS, new SynchronousQueue())，corePoolSize=0，maxPoolSize为很大的数，同步移交队列，也就是说不维护常驻线程(核心线程)，每次来请求直接创建新线程来处理任务，也不使用队列缓冲，会自动回收多余线程，由于将maxPoolSize设置成Integer.MAX_VALUE，当请求很多时就可能创建过多的线程，导致资源耗尽OOM</p>
+<p><br/> newScheduledThreadPool：</p>
+<p>        使用的构造方式为new ThreadPoolExecutor(var1, 2147483647, 0L, TimeUnit.NANOSECONDS, new ScheduledThreadPoolExecutor.DelayedWorkQueue())，支持定时周期性执行，注意一下使用的是延迟队列，弊端同newCachedThreadPool一致</p>
+</blockquote>
+<p></p>
+<p>所以根据上面分析我们可以看到，FixedThreadPool和SigleThreadExecutor中之所以用LinkedBlockingQueue无界队列，是因为设置了corePoolSize=maxPoolSize，线程数无法动态扩展，于是就设置了无界阻塞队列来应对不可知的任务量；而CachedThreadPool则使用的是SynchronousQueue同步移交队列，为什么使用这个队列呢？因为CachedThreadPool设置了corePoolSize=0，maxPoolSize=Integer.MAX_VALUE，来一个任务就创建一个线程来执行任务，用不到队列来存储任务；SchduledThreadPool用的是延迟队列DelayedWorkQueue。在实际项目开发中也是推荐使用手动创建线程池的方式，而不用默认方式，关于这点在《阿里巴巴开发规范》中是这样描述的：<br/><img alt="" src="image\2018110617483330.png"/></p>
+<p><strong>关闭线程池</strong></p>
+<blockquote>
+<p>shutdownNow()：立即关闭线程池(暴力)，正在执行中的及队列中的任务会被中断，同时该方法会返回被中断的队列中的任务列表<br/> shutdown()：平滑关闭线程池，正在执行中的及队列中的任务能执行完成，后续进来的任务会被执行拒绝策略<br/> isTerminated()：当正在执行的任务及对列中的任务全部都执行（清空）完就会返回true<br/>  </p>
+</blockquote>
+<h1><strong>线程池实现线程复用的原理</strong></h1>
+<blockquote>
+<p>1.线程池里执行的是任务,核心逻辑在ThreadPoolExecutor类的execute方法中,同时ThreadPoolExecutor中维护了HashSet&lt;Worker&gt; workers;<br/> 2.addWorker()方法来创建线程执行任务,如果是核心线程的任务,会赋值给Worker的firstTask属性;<br/> 3.Worker实现了Runnable,本质上也是任务,核心在run()方法里;<br/> 4.run()方法的执行核心runWorker(),自旋拿任务while (task != null || (task = getTask()) != null)),task是核心线程Worker的firstTask或者getTask();<br/> 5.getTask()的核心逻辑:<br/>         1.若当前工作线程数量大于核心线程数-&gt;说明此线程是非核心工作线程,通过poll()拿任务,未拿到任务即getTask()返回null,然后会在processWorkerExit(w, completedAbruptly)方法释放掉这个非核心工作线程的引用;<br/>         2.若当前工作线程数量小于核心线程数-&gt;说明此时线程是核心工作线程,通过take()拿任务<br/>         3.take()方式取任务,如果队列中没有任务了会调用await()阻塞当前线程,直到新任务到来,所以核心工作线程不会被回收; 当执行execute方法里的workQueue.offer(command)时会调用Condition.singal()方法唤醒一个之前阻塞的线程,这样核心线程即可复用<br/>  </p>
+</blockquote>
+<p><img alt="" src="image\2021041619093578.png"/></p>
+<p></p>
+<p></p>
+<h1><strong>手动创建线程池(推荐)</strong></h1>
+<p>上面说了使用Executors工具类创建的线程池有隐患，那如何使用才能避免这个隐患呢？建立自己的线程工厂类，灵活设置关键参数：</p>
+<pre><code class="language-java">//这里默认拒绝策略为AbortPolicy
+private static ExecutorService executor = new ThreadPoolExecutor(10,10,60L, TimeUnit.SECONDS,new ArrayBlockingQueue(10));</code></pre>
+<p>使用guava包中的ThreadFactoryBuilder工厂类来构造线程池:</p>
+<pre><code class="language-java">private static ThreadFactory threadFactory = new ThreadFactoryBuilder().build();
+ 
+private static ExecutorService executorService = new ThreadPoolExecutor(10, 10, 60L, TimeUnit.SECONDS, new ArrayBlockingQueue&lt;Runnable&gt;(10), threadFactory, new ThreadPoolExecutor.AbortPolicy());</code></pre>
+<p>通过guava的ThreadFactory工厂类还可以指定线程组名称，这对于后期定位错误时也是很有帮助的</p>
+<pre><code class="language-java">ThreadFactory threadFactory = new ThreadFactoryBuilder().setNameFormat("thread-pool-d%").build();
+</code></pre>
+<h1></h1>
+<h1><strong> Callable和Runnable</strong></h1>
+<p>可以向线程池提交的任务有两种：<code>Runnable</code>和<code>Callable</code>，二者的区别如下：</p>
+<blockquote>
+<ol><li>方法签名不同，<code>void Runnable.run()</code>, <code>V Callable.call() throws Exception</code></li><li>是否允许有返回值，<code>Callable</code>允许有返回值</li><li>是否允许抛出异常，<code>Callable</code>允许抛出异常。</li></ol>
+</blockquote>
+<p><code>Callable</code>是JDK1.5时加入的接口，作为<code>Runnable</code>的一种补充，允许有返回值，允许抛出异常。</p>
+<h3 id="三种提交任务的方式：">三种提交任务的方式：</h3>
+<table><thead><tr><th>提交方式</th><th>是否关心返回结果</th></tr></thead><tbody><tr><td><code>Future&lt;T&gt; submit(Callable&lt;T&gt; task)</code></td><td>是</td></tr><tr><td><code>void execute(Runnable command)</code></td><td>否</td></tr><tr><td><code>Future&lt;?&gt; submit(Runnable task)</code></td><td>否，虽然返回Future，但是其get()方法总是返回null</td></tr></tbody></table>
+<p></p>
+<pre><code class="language-java">@FunctionalInterface
+public interface Runnable {
+    public abstract void run();
+}
+ 
+@FunctionalInterface
+public interface Callable&lt;V&gt; {
+    V call() throws Exception;
+}</code></pre>
+<h3>Future和FutureTask</h3>
+<p>Future接口用来表示执行异步任务的结果存储器，当一个任务的执行时间过长就可以采用这种方式：把任务提交给子线程去处理，主线程不用同步等待，当向线程池提交了一个Callable或Runnable任务时就会返回Future，用Future可以获取任务执行的返回结果。Future的主要方法包括：</p>
+<p>get()方法：返回任务的执行结果，若任务还未执行完，则会一直阻塞直到完成为止，如果执行过程中发生异常，则抛出异常，但是主线程是感知不到并且不受影响的，除非调用get()方法进行获取结果则会抛出ExecutionException异常；<br/> get(long timeout, TimeUnit unit)：在指定时间内返回任务的执行结果，超时未返回会抛出TimeoutException，这个时候需要显式的取消任务；<br/> cancel(boolean mayInterruptIfRunning)：取消任务，boolean类型入参表示如果任务正在运行中是否强制中断；<br/> isDone()：判断任务是否执行完毕，执行完毕不代表任务一定成功执行，比如任务执行失但也执行完毕、任务被中断了也执行完毕都会返回true，它仅仅表示一种状态说后面任务不会再执行了；<br/> isCancelled()：判断任务是否被取消；<br/> 下面来实际演示Future和FutureTask的用法：<br/>  </p>
+<pre><code class="language-java">   public static void main(String[] args) throws ExecutionException, InterruptedException {
+        ExecutorService executorService = Executors.newFixedThreadPool(10);
+        Future&lt;Integer&gt; future = executorService.submit(new Task());
+        Integer integer = future.get();
+        System.out.println(integer);
+        executorService.shutdown();
+    }
+ 
+    static class Task implements Callable&lt;Integer&gt; {
+        @Override
+        public Integer call() throws Exception {
+            System.out.println("子线程开始计算");
+            int sum = 0;
+            for (int i = 0; i &lt;= 100; i++) {
+                sum += i;
+            }
+            return sum;
+        }
+    }</code></pre>
+<p></p>
+<pre><code class="language-java">  public static void main(String[] args) throws ExecutionException, InterruptedException {
+        ExecutorService executorService = Executors.newFixedThreadPool(10);
+        FutureTask&lt;Integer&gt; futureTask = new FutureTask&lt;&gt;(new Task());
+        executorService.submit(futureTask);
+        Integer integer = futureTask.get();
+        System.out.println(integer);
+        executorService.shutdown();
+    }
+ 
+    static class Task implements Callable&lt;Integer&gt; {
+        @Override
+        public Integer call() throws Exception {
+            System.out.println("子线程开始计算");
+            int sum = 0;
+            for (int i = 0; i &lt;= 100; i++) {
+                sum += i;
+            }
+            return sum;
+        }
+    }</code></pre>
+<h1>线程池的优化</h1>
+<p>当前在JDK中默认使用的线程池 ThreadPoolExecutor，在具体使用场景中，有以下几个缺点</p>
+<blockquote>
+<p>1.core线程一般不会timeOut<br/> 2.新任务提交时，如果工作线程数小于 coreSize，会自动先创建线程，即使当前工作线程已经空闲，这样会造成空闲线程浪费<br/> 3.设置的maxSize参数只有在队列满之后，才会生效，而默认情况下容器队列会很大(比如1000)</p>
+</blockquote>
+<p>如一个coreSize为10，maxSize为100,队列长度为1000的线程池，在运行一段时间之后的效果会是以下2个效果:</p>
+<blockquote>
+<p>1.系统空闲时，线程池中始终保持10个线程不变，有一部分线程在执行任务，另一部分线程一直wait中(即使设置allowCoreThreadTimeOut)<br/> 2.系统繁忙时，线程池中线程仍然为10个，但队列中有还没有执行的任务(不超过1000),存在任务堆积现象</p>
+</blockquote>
+<p>本文将描述一下简单版本的线程池，参考于 Tomcat ThreadPoolExecutor, 实现以下3个目标</p>
+<blockquote>
+<p>1.新任务提交时，如果有空闲线程，直接让空闲线程执行任务，而非创建新线程<br/> 2.如果coreSize满了，并且线程数没有超过maxSize，则优先创建线程，而不是放入队列<br/> 3.其它规则与ThreadPoolExecutor一致，如 timeOut机制</p>
+</blockquote>
+<p>首先看一下ThreadPoolExecutor的执行逻辑, 其基本逻辑如下</p>
+<blockquote>
+<p>1.如果线程数小于coreSize，直接创建新线程并执行(coreSize逻辑)<br/> 2.尝试放入队列<br/> 3.放入队列失败，则尝试创建新线程(maxSize逻辑)</p>
+</blockquote>
+<p><br/> 而执行线程的任务执行逻辑，就是不断地从队列里面获取任务并执行，换言之，即如果有执行线程，直接往队列里面放任务，执行线程就会被通知到并直接执行任务.</p>
+<p><strong>空闲线程优先</strong></p>
+<blockquote>
+<p>空闲线程优先在基本逻辑中，即如果线程数小于coreSize，但如果有空闲线程，就取消创建线程的逻辑. 在有空闲线程的情况下，直接将任务放入队列中，即达到任务执行的目的。</p>
+</blockquote>
+<p>这里的逻辑即是直接调整默认的ThreadPoolExecutor逻辑，通过重载 execute(Runnable) 方法达到效果. 具体代码如下所示:<br/>  </p>
+<pre><code class="language-java">public void execute(Runnable command) {
+
+    //此处优先处理有活跃线程的情况，避免在&lt;coreSize时，直接创建线程
+
+    if(getActiveCount() &lt; getPoolSize()) {
+        if(pool1.offer(command)) {
+            return;
+        }
+    }
+    super.execute(command);
+}
+</code></pre>
+<p><strong>coreSize满了优先创建线程</strong></p>
+<p>从之前的逻辑来看，如果放入队列失败，则尝试创建新线程。在这个时候，相应的coreSize肯定已经满了。那么，只需要处理一下逻辑，将其offer调整为false，即可以实现相应的目的。</p>
+<p>这里的逻辑，即是重新定义一个BlockingDeque，重载相应的offer方法，相应的参考如下:<br/>  </p>
+<pre><code class="language-java">public boolean offer(Runnable o) {
+
+    //这里的parent为ThreadPoolExecutor的引用
+
+    int poolSize = parent.getPoolSize();
+
+    int maxPoolSize = parent.getMaximumPoolSize();
+
+    //还没到最大值,先创建线程
+
+    if(poolSize &lt; maxPoolSize) {
+        return false;
+    }
+    //默认逻辑
+    return super.offer(o);
+
+}
+</code></pre>
+<h1>Springboot中使用线程池</h1>
+<pre><code class="language-java">/**
+ * @ClassName ThreadPoolConfig
+ * @Description 配置类中构建线程池实例，方便调用
+ */
+@Configuration
+public class ThreadPoolConfig {
+    @Bean(value = "threadPoolInstance")
+    public ExecutorService createThreadPoolInstance() {
+        //通过guava类库的ThreadFactoryBuilder来实现线程工厂类并设置线程名称
+        ThreadFactory threadFactory = new ThreadFactoryBuilder().setNameFormat("thread-pool-%d").build();
+        ExecutorService threadPool = new ThreadPoolExecutor(10, 16, 60L, TimeUnit.SECONDS, new ArrayBlockingQueue&lt;Runnable&gt;(100), threadFactory, new ThreadPoolExecutor.AbortPolicy());
+        return threadPool;
+    }
+}</code></pre>
+<pre><code class="language-java">  //通过name=threadPoolInstance引用线程池实例
+  @Resource(name = "threadPoolInstance")
+  private ExecutorService executorService;
+ 
+  @Override
+  public void spikeConsumer() {
+    //TODO
+    executorService.execute(new Runnable() {
+    @Override
+    public void run() {
+      //TODO
+      //执行业务逻辑
+     }});
+  }</code></pre>
+<p></p>
+<p><strong>其它相关</strong></p>
+<p>在ThreadPoolExecutor类中有两个比较重要的方法引起了我们的注意：beforeExecute和afterExecute</p>
+<pre><code class="language-java"> protected void beforeExecute(Thread var1, Runnable var2) {
+ }
+ 
+ protected void afterExecute(Runnable var1, Throwable var2) {
+ }</code></pre>
+<p>这两个方法是protected修饰的，很显然是留给开发人员去重写方法体实现自己的业务逻辑，非常适合做钩子函数，在任务run方法的前后增加业务逻辑，比如添加日志、统计等。这个和我们springmvc中拦截器的preHandle和afterCompletion方法很类似，都是对方法进行环绕，类似于spring的AOP，参考下图：</p>
+<p><img alt="" src="image\20210408104014289.png"/></p>
+<p></p>
+<p><img alt="" src="image\20200211120754429.png"/></p>
+</div>
+</div>

@@ -1,0 +1,30 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h3><strong>背景</strong>：</h3>
+<p>ClickHouse中一张数据表中一天有7000w数据，采用delete删除命令删除一周数据，SQL已经执行成功，短时间内查询原表数据仍然存在，没有被删除，过了一会之后，在查询数据删除成功。</p>
+<p><strong>SQL提交成功： </strong></p>
+<p><img alt="" height="123" src="image\d757843c0fbf4c7a8b24664260a35c41.png" width="562"/></p>
+<p>短时间内【40s】查询数据仍然存在</p>
+<p><img alt="" height="270" src="image\fd70b027f4a342b5ad8a3a8fc86b80bd.png" width="854"/><img alt="" height="233" src="image\297c9d40dd9e4992ba669f287c48c24a.png" width="949"/></p>
+<p> </p>
+<p>经过查阅资料得知，ClickHouse提供了DELETE和UPDATE的能力，这类操作称为Mutation查询，可以看作ALTER语句的变种。虽然Mutation能最终实现修改和删除，但不能完全以通常意义上的UPDATE和DELETE来理解，我们必须认识到它的不同：</p>
+<ul><li>Mutation语句是一种“很重”的操作，更适用于批量数据的修改和删除；</li><li>它不支持事务，一旦语句被提交执行，就会立刻对现有数据产生影响，无法回滚；</li><li>Mutation语句的执行是一个异步的后台过程，语句被提交之后就会立即返回。</li></ul>
+<p></p>
+<p>由于一般测试的数据很少，DELETE操作给人的感觉和常用的OLTP数据库无异。但是我们心中应该要明白这是一个异步的后台执行动作。语句提交成功这并不代表具体逻辑已经执行完毕，它的具体执行进度需要通过system.mutations系统表查询。</p>
+<p><strong>DELETE语句的语法:</strong></p>
+<blockquote>
+<p>ALTER TABLE <strong>[db_name.]table_name</strong> DELETE WHERE <strong>filter_expr</strong></p>
+</blockquote>
+<p>数据删除的范围由WHERE查询子句决定，<strong>删除操作是这样实现的</strong>：</p>
+<p>在执行了DELETE操作之后数据目录发生了一些变化。【/chbase/data/default/test_table】每一个原有的数据目录都额外增加了一个同名目录，并且在末尾处增加了_【数字】的后缀。此外，目录下还多了一个名为mutation_【数字】.txt的文件，查看文件的内容如下所示：</p>
+<blockquote>
+<p># cat mutation_6.txt<br/> format version: 1<br/> create time: 2022-02-16 13:33:27 commands: DELETE WHERE ID = \'1\'</p>
+</blockquote>
+<p>mutation_6.txt是一个日志文件，完整地记录了这次DELETE操作的执行语句和时间，而文件名的后缀_6与新增目录的后缀对应。那么后缀的数字从何而来呢？<strong>system.mutations系统表：</strong></p>
+<pre><code class="language-sql">SELECT database,table,mutation_id,block_numbers.number as num,is_done 
+FROM system.mutations</code></pre>
+<p><img alt="" height="83" src="image\bec713280b4549a69a763613c511f33a.png" width="646"/></p>
+<p> 综上，整个Mutation操作的逻辑就比较清晰了。在每ClickHouse执行一条ALTER DELETE语句，都会在mutations系统表中生成一条对应的执行计划，<strong>当is_done等于1时表示执行完毕</strong>。同时，在数据表的根目录下，会以mutation_id为名生成与之对应的日志文件用于记录相关信息。而<strong>数据删除的过程是以数据表的每个分区目录为单位，将所有目录重写为新的目录</strong>，新目录的命名规则是在原有名称上加上system.mutations.block_numbers.number。数据在重写的过程中会将需要删除的数据去掉。旧的数据目录并不会立即删除，而是会被标记成非激活状态（active为0）。等到MergeTree引擎的下一次合并动作触发时，这些非激活目录才会被真正从物理意义上删除。</p>
+</div>
+</div>

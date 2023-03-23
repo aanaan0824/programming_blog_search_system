@@ -1,0 +1,41 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>问题是这样的，在docker中搭了PHP网站并用nginx做代理，因为有很多资源重复使用，于是我把它们抽到公共目录，并把这个公共目录软链接到ngnix的/usr/share/nginx/html目录下，结果在页面访问老是报404。</p>
+<p>一开始以为是nginx没有放开软链接访问，于是在nginx.conf配置文件http模块中配“disable_symlinks off”启用链接符。</p>
+<pre><code>http {
+    disable_symlinks off;
+}</code></pre>
+<p>但是依然报404。查资料说配cgi要将里面的document_root 改成 realpath_root。</p>
+<pre><code>location ~ \.php$ {
+                fastcgi_param  HTTPS 'on';
+		#root /usr/share/nginx/html;
+		try_files $uri =404;
+                fastcgi_pass   php-fpm:9000;
+                fastcgi_index  index.php;
+                fastcgi_param  SCRIPT_FILENAME  /www/$fastcgi_script_name; #nginx高版本已不支持$document_root$fastcgi_script_name;
+		fastcgi_param DOCUMENT_ROOT /www/$document_root;#开启软链接
+		include        fastcgi_params;
+        	#include fastcgi.conf;
+	}</code></pre>
+<p>但是改完仍然报404！</p>
+<p>这回我直接进去容器里看看了，结果发现打开软链接时报了“No such file or directory”。</p>
+<pre><code>[root@xubingtao www]# docker exec -it 3deee1eddd2c0ea /bin/bash
+root@nginx:/# cd /usr/share/nginx/html/common 
+bash: cd: /usr/share/nginx/html/common: No such file or directory</code></pre>
+<p>但是我在容器外面是可以直接通过软链接打开目录的，于是用docker inspect nginx看一下容器挂载目录情况，发现没有挂载软链接的源目录，而容器里又没有源目录，所以报404！</p>
+<p style="text-align:center;"><img alt="" src="image\e5ec294de64640e0962d39f74cfb2b09.png"/></p>
+<p>因此<strong>直接挂载源目录</strong>就行了，上面的配置都改回去！</p>
+<p>有以下两种方法改挂载目录，看自己需求吧，像我这里怕影响其它容器运行，选择第1种方法。</p>
+<pre><code>1.删除原有容器，重新运行镜像启动新容器；
+2.修改容器配置文件，重启docker服务：
+容器的配置文件路径: /var/lib/docker/containers/[hash_of_the_container]/hostconfig.json
+其中的hash_of_the_container是docker镜像的hash值，可以通过docker ps或者docker inspect containername查看（CONTAINER ID就是hash_of_the_container的前面部分字符串）
+然后重启docker: systemctl restart docker</code></pre>
+<p> </p>
+<p>个人网站有更多原创文章，原文链接：<a href="https://www.xubingtao.cn/?p=3926" title="https://www.xubingtao.cn?p=3984">https://www.xubingtao.cn?p=3984</a></p>
+<p>关注我的公众号为你分享各类有用信息。</p>
+<p><img alt="" src="image\20210304113115471.jpg"/></p>
+<p>更多内容请访问我的其他端：<img alt="" height="1200" src="image\20210523131712661.png" width="1200"/></p>
+</div>
+</div>

@@ -1,0 +1,345 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#_1">（一）实验任务</a></li><li><a href="#_4">（二）数据处理</a></li><li><ul><li><a href="#1_8">1、读取和划分数据集</a></li><li><a href="#2Dataset_82">2、创建Dataset</a></li></ul>
+</li><li><a href="#_135">（三）手写实现二维卷积</a></li><li><ul><li><a href="#1_136">1、卷积操作的实现</a></li><li><a href="#2_154">2、多通道输入的卷积实现</a></li><li><a href="#3_168">3、多通道输入输出的卷积实现</a></li><li><a href="#4_181">4、将卷积运算封装成卷积层</a></li><li><a href="#5_202">5、二维卷积神经网络模型的构建</a></li></ul>
+</li><li><a href="#_235">（四）模型训练与测试</a></li><li><ul><li><a href="#1_236">1、模型训练</a></li><li><a href="#2_271">2、测试</a></li><li><a href="#3accloss_317">3、绘制acc和loss曲线</a></li></ul>
+</li><li><a href="#_336">（五）实验结果</a></li></ul>
+</div>
+<p></p>
+<h1><a id="_1"></a>（一）实验任务</h1>
+<p>手写二维卷积的实现，并在车辆分类数据集上完成分类任务<br/> 数据集包含三个文件夹，里面分别是car、bus和truck的车辆图片，需要对数据集进行处理并且划分数据集。</p>
+<h1><a id="_4"></a>（二）数据处理</h1>
+<p>数据形式如下<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b561083f088449ba8ffe395f3e5b3d02.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/43590f7983b64c01ac9c5abc52093ee6.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2N1bWluYQ==,size_16,color_FFFFFF,t_70"/></p>
+<h2><a id="1_8"></a>1、读取和划分数据集</h2>
+<p>使用PIL读取图片。</p>
+<pre><code class="prism language-python"><span class="token keyword">import</span> os
+<span class="token keyword">import</span> torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>functional <span class="token keyword">as</span> F
+<span class="token keyword">from</span> PIL <span class="token keyword">import</span> Image
+<span class="token keyword">import</span> matplotlib<span class="token punctuation">.</span>pyplot <span class="token keyword">as</span> plt
+<span class="token keyword">import</span> numpy <span class="token keyword">as</span> np
+<span class="token keyword">import</span> torch
+<span class="token keyword">from</span> torch<span class="token punctuation">.</span>utils<span class="token punctuation">.</span>data <span class="token keyword">import</span> Dataset
+<span class="token keyword">from</span> torchvision <span class="token keyword">import</span> transforms
+<span class="token keyword">import</span> random
+
+
+num_classes <span class="token operator">=</span> <span class="token number">3</span>  <span class="token comment"># 分类数量</span>
+batch_size <span class="token operator">=</span> <span class="token number">256</span>
+num_epochs <span class="token operator">=</span> <span class="token number">10</span>  <span class="token comment"># 训练轮次</span>
+lr <span class="token operator">=</span> <span class="token number">0.02</span>
+device <span class="token operator">=</span> torch<span class="token punctuation">.</span>device<span class="token punctuation">(</span><span class="token string">'cuda'</span> <span class="token keyword">if</span> torch<span class="token punctuation">.</span>cuda<span class="token punctuation">.</span>is_available<span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword">else</span> <span class="token string">'cpu'</span><span class="token punctuation">)</span>
+
+<span class="token comment"># 读取并展示图片</span>
+
+file_root <span class="token operator">=</span> <span class="token string">"D:/1MyProjects/python/pytorch_1/实验三数据集/车辆分类数据集"</span>
+classes <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token string">'bus'</span><span class="token punctuation">,</span> <span class="token string">'car'</span><span class="token punctuation">,</span> <span class="token string">'truck'</span><span class="token punctuation">]</span>  <span class="token comment"># 分别对应0，1，2</span>
+nums <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token number">218</span><span class="token punctuation">,</span> <span class="token number">779</span><span class="token punctuation">,</span> <span class="token number">360</span><span class="token punctuation">]</span>  <span class="token comment"># 每种类别的个数</span>
+
+<span class="token keyword">def</span> <span class="token function">read_data</span><span class="token punctuation">(</span>path<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    file_name <span class="token operator">=</span> os<span class="token punctuation">.</span>listdir<span class="token punctuation">(</span>path<span class="token punctuation">)</span>  <span class="token comment"># 获取所有文件的文件名称</span>
+    train_data <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    train_labels <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    test_data <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    test_labels <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    <span class="token comment"># 每个类别随机抽取20%作为测试集</span>
+    train_num <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token builtin">int</span><span class="token punctuation">(</span>num <span class="token operator">*</span> <span class="token number">4</span> <span class="token operator">/</span> <span class="token number">5</span><span class="token punctuation">)</span> <span class="token keyword">for</span> num <span class="token keyword">in</span> nums<span class="token punctuation">]</span>
+    test_num <span class="token operator">=</span> <span class="token punctuation">[</span>nums<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">-</span> train_num<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token builtin">len</span><span class="token punctuation">(</span>nums<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">]</span>
+
+    <span class="token keyword">for</span> idx<span class="token punctuation">,</span> f_name <span class="token keyword">in</span> <span class="token builtin">enumerate</span><span class="token punctuation">(</span>file_name<span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 每个类别一个idx，即以idx作为标签</span>
+        im_dirs <span class="token operator">=</span> path <span class="token operator">+</span> <span class="token string">'/'</span> <span class="token operator">+</span> f_name
+        im_path <span class="token operator">=</span> os<span class="token punctuation">.</span>listdir<span class="token punctuation">(</span>im_dirs<span class="token punctuation">)</span>  <span class="token comment"># 每个不同类别图像文件夹下所有图像的名称</span>
+
+        index <span class="token operator">=</span> <span class="token builtin">list</span><span class="token punctuation">(</span><span class="token builtin">range</span><span class="token punctuation">(</span><span class="token builtin">len</span><span class="token punctuation">(</span>im_path<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        random<span class="token punctuation">.</span>shuffle<span class="token punctuation">(</span>index<span class="token punctuation">)</span>  <span class="token comment"># 打乱顺序</span>
+        im_path_ <span class="token operator">=</span> <span class="token builtin">list</span><span class="token punctuation">(</span>np<span class="token punctuation">.</span>array<span class="token punctuation">(</span>im_path<span class="token punctuation">)</span><span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">)</span>
+        test_path <span class="token operator">=</span> im_path_<span class="token punctuation">[</span><span class="token punctuation">:</span>test_num<span class="token punctuation">[</span>idx<span class="token punctuation">]</span><span class="token punctuation">]</span>  <span class="token comment"># 测试数据的路径</span>
+        train_path <span class="token operator">=</span> im_path_<span class="token punctuation">[</span>test_num<span class="token punctuation">[</span>idx<span class="token punctuation">]</span><span class="token punctuation">:</span><span class="token punctuation">]</span>  <span class="token comment"># 训练数据的路径</span>
+
+        <span class="token keyword">for</span> img_name <span class="token keyword">in</span> train_path<span class="token punctuation">:</span>
+            <span class="token comment"># 会读到desktop.ini,要去掉</span>
+            <span class="token keyword">if</span> img_name <span class="token operator">==</span> <span class="token string">'desktop.ini'</span><span class="token punctuation">:</span>
+                <span class="token keyword">continue</span>
+            img <span class="token operator">=</span> Image<span class="token punctuation">.</span><span class="token builtin">open</span><span class="token punctuation">(</span>im_dirs <span class="token operator">+</span> <span class="token string">'/'</span> <span class="token operator">+</span> img_name<span class="token punctuation">)</span>  <span class="token comment"># img shape: (120, 85, 3) 高、宽、通道</span>
+            <span class="token comment"># 对图片进行变形</span>
+            img <span class="token operator">=</span> img<span class="token punctuation">.</span>resize<span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token number">32</span><span class="token punctuation">,</span> <span class="token number">32</span><span class="token punctuation">)</span><span class="token punctuation">,</span> Image<span class="token punctuation">.</span>ANTIALIAS<span class="token punctuation">)</span>  <span class="token comment"># 宽、高</span>
+            train_data<span class="token punctuation">.</span>append<span class="token punctuation">(</span>img<span class="token punctuation">)</span>
+            train_labels<span class="token punctuation">.</span>append<span class="token punctuation">(</span>idx<span class="token punctuation">)</span>
+
+        <span class="token keyword">for</span> img_name <span class="token keyword">in</span> test_path<span class="token punctuation">:</span>
+            <span class="token comment"># 会读到desktop.ini,要去掉</span>
+            <span class="token keyword">if</span> img_name <span class="token operator">==</span> <span class="token string">'desktop.ini'</span><span class="token punctuation">:</span>
+                <span class="token keyword">continue</span>
+            img <span class="token operator">=</span> Image<span class="token punctuation">.</span><span class="token builtin">open</span><span class="token punctuation">(</span>im_dirs <span class="token operator">+</span> <span class="token string">'/'</span> <span class="token operator">+</span> img_name<span class="token punctuation">)</span>  <span class="token comment"># img shape: (120, 85, 3) 高、宽、通道</span>
+            <span class="token comment"># 对图片进行变形</span>
+            img <span class="token operator">=</span> img<span class="token punctuation">.</span>resize<span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token number">32</span><span class="token punctuation">,</span> <span class="token number">32</span><span class="token punctuation">)</span><span class="token punctuation">,</span> Image<span class="token punctuation">.</span>ANTIALIAS<span class="token punctuation">)</span>  <span class="token comment"># 宽、高</span>
+            test_data<span class="token punctuation">.</span>append<span class="token punctuation">(</span>img<span class="token punctuation">)</span>
+            test_labels<span class="token punctuation">.</span>append<span class="token punctuation">(</span>idx<span class="token punctuation">)</span>
+
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'训练集大小：'</span><span class="token punctuation">,</span> <span class="token builtin">len</span><span class="token punctuation">(</span>train_data<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token string">' 测试集大小：'</span><span class="token punctuation">,</span> <span class="token builtin">len</span><span class="token punctuation">(</span>test_data<span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">return</span> train_data<span class="token punctuation">,</span> train_labels<span class="token punctuation">,</span> test_data<span class="token punctuation">,</span> test_labels
+
+<span class="token comment"># 一次性读取全部的数据</span>
+train_data<span class="token punctuation">,</span> train_labels<span class="token punctuation">,</span> test_data<span class="token punctuation">,</span> test_labels <span class="token operator">=</span> read_data<span class="token punctuation">(</span>file_root<span class="token punctuation">)</span>
+</code></pre>
+<h2><a id="2Dataset_82"></a>2、创建Dataset</h2>
+<p>首先需要定义一个Transform操作，将PIL格式的数据转为Tensor并且归一化标准化。</p>
+<pre><code class="prism language-python"><span class="token comment"># 定义一个Transform操作</span>
+transform <span class="token operator">=</span> transforms<span class="token punctuation">.</span>Compose<span class="token punctuation">(</span>
+    <span class="token punctuation">[</span>transforms<span class="token punctuation">.</span>ToTensor<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>  <span class="token comment"># 变为tensor</span>
+     <span class="token comment"># 对数据按通道进行标准化，即减去均值，再除以方差, [0-1]-&gt;[-1,1]</span>
+     transforms<span class="token punctuation">.</span>Normalize<span class="token punctuation">(</span>mean<span class="token operator">=</span><span class="token punctuation">[</span><span class="token number">0.4686</span><span class="token punctuation">,</span> <span class="token number">0.4853</span><span class="token punctuation">,</span> <span class="token number">0.5193</span><span class="token punctuation">]</span><span class="token punctuation">,</span> std<span class="token operator">=</span><span class="token punctuation">[</span><span class="token number">0.1720</span><span class="token punctuation">,</span> <span class="token number">0.1863</span><span class="token punctuation">,</span> <span class="token number">0.2175</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+     <span class="token punctuation">]</span>
+<span class="token punctuation">)</span>
+</code></pre>
+<p>然后自定义Dataset类，每次取出样本都要先经过Transform转为Tensor。</p>
+<pre><code class="prism language-python">
+<span class="token comment"># 自定义Dataset类实现每次取出图片，将PIL转换为Tensor</span>
+<span class="token keyword">class</span> <span class="token class-name">MyDataset</span><span class="token punctuation">(</span>Dataset<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> data<span class="token punctuation">,</span> label<span class="token punctuation">,</span> trans<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        self<span class="token punctuation">.</span><span class="token builtin">len</span> <span class="token operator">=</span> <span class="token builtin">len</span><span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> data
+        self<span class="token punctuation">.</span>label <span class="token operator">=</span> label
+        self<span class="token punctuation">.</span>trans <span class="token operator">=</span> trans
+
+    <span class="token keyword">def</span> <span class="token function">__getitem__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> index<span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 根据索引返回数据和对应的标签</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>trans<span class="token punctuation">(</span>self<span class="token punctuation">.</span>data<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">,</span> self<span class="token punctuation">.</span>label<span class="token punctuation">[</span>index<span class="token punctuation">]</span>
+
+    <span class="token keyword">def</span> <span class="token function">__len__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span><span class="token builtin">len</span>
+
+
+<span class="token comment"># 调用自己创建的Dataset</span>
+train_dataset <span class="token operator">=</span> MyDataset<span class="token punctuation">(</span>train_data<span class="token punctuation">,</span> train_labels<span class="token punctuation">,</span> transform<span class="token punctuation">)</span>
+test_dataset <span class="token operator">=</span> MyDataset<span class="token punctuation">(</span>test_data<span class="token punctuation">,</span> test_labels<span class="token punctuation">,</span> transform<span class="token punctuation">)</span>
+
+</code></pre>
+<p>最后生成data_loader</p>
+<pre><code class="prism language-python"><span class="token comment"># 生成data loader</span>
+train_iter <span class="token operator">=</span> torch<span class="token punctuation">.</span>utils<span class="token punctuation">.</span>data<span class="token punctuation">.</span>DataLoader<span class="token punctuation">(</span>
+    dataset<span class="token operator">=</span>train_dataset<span class="token punctuation">,</span>
+    batch_size<span class="token operator">=</span>batch_size<span class="token punctuation">,</span>
+    shuffle<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span>
+    num_workers<span class="token operator">=</span><span class="token number">0</span>
+<span class="token punctuation">)</span>
+test_iter <span class="token operator">=</span> torch<span class="token punctuation">.</span>utils<span class="token punctuation">.</span>data<span class="token punctuation">.</span>DataLoader<span class="token punctuation">(</span>
+    dataset<span class="token operator">=</span>test_dataset<span class="token punctuation">,</span>
+    batch_size<span class="token operator">=</span>batch_size<span class="token punctuation">,</span>
+    shuffle<span class="token operator">=</span><span class="token boolean">False</span><span class="token punctuation">,</span>
+    num_workers<span class="token operator">=</span><span class="token number">0</span>
+<span class="token punctuation">)</span>
+</code></pre>
+<h1><a id="_135"></a>（三）手写实现二维卷积</h1>
+<h2><a id="1_136"></a>1、卷积操作的实现</h2>
+<pre><code class="prism language-python"><span class="token keyword">def</span> <span class="token function">conv2d</span><span class="token punctuation">(</span>X<span class="token punctuation">,</span> K<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">'''
+    :param X: 样本输入，shape(batch_size,H,W)
+    :param K: 卷积核，shape(k_h,k_w)
+    :return: Y 卷积结果，shape(batch_size, H-k_h+1, W-k_w+1)
+    '''</span>
+    batch_size<span class="token punctuation">,</span> H<span class="token punctuation">,</span> W <span class="token operator">=</span> X<span class="token punctuation">.</span>shape
+    k_h<span class="token punctuation">,</span> k_w <span class="token operator">=</span> K<span class="token punctuation">.</span>shape
+    <span class="token comment"># 初始化 Y</span>
+    Y <span class="token operator">=</span> torch<span class="token punctuation">.</span>zeros<span class="token punctuation">(</span><span class="token punctuation">(</span>batch_size<span class="token punctuation">,</span> H <span class="token operator">-</span> k_h <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">,</span> W <span class="token operator">-</span> k_w <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span>to<span class="token punctuation">(</span>device<span class="token punctuation">)</span>
+    <span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>Y<span class="token punctuation">.</span>shape<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">for</span> j <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>Y<span class="token punctuation">.</span>shape<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            Y<span class="token punctuation">[</span><span class="token punctuation">:</span><span class="token punctuation">,</span> i<span class="token punctuation">,</span> j<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">(</span>X<span class="token punctuation">[</span><span class="token punctuation">:</span><span class="token punctuation">,</span> i<span class="token punctuation">:</span> i <span class="token operator">+</span> k_h<span class="token punctuation">,</span> j<span class="token punctuation">:</span>j <span class="token operator">+</span> k_w<span class="token punctuation">]</span> <span class="token operator">*</span> K<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token builtin">sum</span><span class="token punctuation">(</span>dim<span class="token operator">=</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token builtin">sum</span><span class="token punctuation">(</span>dim<span class="token operator">=</span><span class="token number">1</span><span class="token punctuation">)</span>
+    <span class="token keyword">return</span> Y
+</code></pre>
+<h2><a id="2_154"></a>2、多通道输入的卷积实现</h2>
+<pre><code class="prism language-python"><span class="token keyword">def</span> <span class="token function">conv2d_multi_in</span><span class="token punctuation">(</span>X<span class="token punctuation">,</span> K<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">'''
+    :param X: (batch_size, C_in，H，W)代表有C个输入通道
+    :param K: (C_in, k_h, k_w)
+    :return: (batch_size, H_out, W_out)
+    '''</span>
+    res <span class="token operator">=</span> conv2d<span class="token punctuation">(</span>X<span class="token punctuation">[</span><span class="token punctuation">:</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token punctuation">:</span><span class="token punctuation">,</span> <span class="token punctuation">:</span><span class="token punctuation">]</span><span class="token punctuation">,</span> K<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token punctuation">:</span><span class="token punctuation">,</span> <span class="token punctuation">:</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+    <span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> X<span class="token punctuation">.</span>shape<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 多个通道的结果相加</span>
+        res <span class="token operator">+=</span> conv2d<span class="token punctuation">(</span>X<span class="token punctuation">[</span><span class="token punctuation">:</span><span class="token punctuation">,</span> i<span class="token punctuation">,</span> <span class="token punctuation">:</span><span class="token punctuation">,</span> <span class="token punctuation">:</span><span class="token punctuation">]</span><span class="token punctuation">,</span> K<span class="token punctuation">[</span>i<span class="token punctuation">,</span> <span class="token punctuation">:</span><span class="token punctuation">,</span> <span class="token punctuation">:</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+    <span class="token keyword">return</span> res
+</code></pre>
+<h2><a id="3_168"></a>3、多通道输入输出的卷积实现</h2>
+<pre><code class="prism language-python"><span class="token comment"># 实现多输出通道</span>
+<span class="token comment"># 输出通道数 = 卷积核个数</span>
+<span class="token keyword">def</span> <span class="token function">conv2d_multi_in_out</span><span class="token punctuation">(</span>X<span class="token punctuation">,</span> K<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">'''
+    :param X: (batch_size, C_in，H，W)代表有C个输入通道
+    :param K: (K_num, C_in, k_h, k_w) k_num表示卷积核的个数
+    :return: (batch_size, K_num, H_out, W_out)
+    '''</span>
+    <span class="token keyword">return</span> torch<span class="token punctuation">.</span>stack<span class="token punctuation">(</span><span class="token punctuation">[</span>conv2d_multi_in<span class="token punctuation">(</span>X<span class="token punctuation">,</span> k<span class="token punctuation">)</span> <span class="token keyword">for</span> k <span class="token keyword">in</span> K<span class="token punctuation">]</span><span class="token punctuation">,</span> dim<span class="token operator">=</span><span class="token number">1</span><span class="token punctuation">)</span>
+</code></pre>
+<h2><a id="4_181"></a>4、将卷积运算封装成卷积层</h2>
+<pre><code class="prism language-python"><span class="token keyword">class</span> <span class="token class-name">MyConv2D</span><span class="token punctuation">(</span>torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>Module<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> in_channels<span class="token punctuation">,</span> out_channels<span class="token punctuation">,</span> kernel_size<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>MyConv2D<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>__init__<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token comment"># 初始化卷积层2个参数：卷积核、偏差</span>
+        <span class="token keyword">if</span> <span class="token builtin">isinstance</span><span class="token punctuation">(</span>kernel_size<span class="token punctuation">,</span> <span class="token builtin">int</span><span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 如果kernel size是一个数</span>
+            kernel_size <span class="token operator">=</span> <span class="token punctuation">(</span>kernel_size<span class="token punctuation">,</span> kernel_size<span class="token punctuation">)</span>
+        <span class="token comment"># weight的shape:(卷积核个数/输出通道数，输入通道数，卷积核高，卷积核宽)</span>
+        <span class="token comment"># torch.randn:返回一个符合均值为0，方差为1的正态分布（标准正态分布）中填充随机数的张量</span>
+        self<span class="token punctuation">.</span>weight <span class="token operator">=</span> torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>Parameter<span class="token punctuation">(</span>torch<span class="token punctuation">.</span>randn<span class="token punctuation">(</span><span class="token punctuation">(</span>out_channels<span class="token punctuation">,</span> in_channels<span class="token punctuation">)</span> <span class="token operator">+</span> kernel_size<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        self<span class="token punctuation">.</span>bias <span class="token operator">=</span> torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>Parameter<span class="token punctuation">(</span>torch<span class="token punctuation">.</span>randn<span class="token punctuation">(</span>out_channels<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">forward</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> x<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token triple-quoted-string string">'''
+        :param x:
+        :return:
+        '''</span>
+        <span class="token keyword">return</span> conv2d_multi_in_out<span class="token punctuation">(</span>x<span class="token punctuation">,</span> self<span class="token punctuation">.</span>weight<span class="token punctuation">)</span> <span class="token operator">+</span> self<span class="token punctuation">.</span>bias
+</code></pre>
+<h2><a id="5_202"></a>5、二维卷积神经网络模型的构建</h2>
+<pre><code class="prism language-python"><span class="token keyword">class</span> <span class="token class-name">MyConvModule</span><span class="token punctuation">(</span>torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>Module<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>MyConvModule<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>__init__<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token comment"># 定义一层卷积</span>
+        self<span class="token punctuation">.</span>conv <span class="token operator">=</span> torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>Sequential<span class="token punctuation">(</span>
+            MyConv2D<span class="token punctuation">(</span>in_channels<span class="token operator">=</span><span class="token number">3</span><span class="token punctuation">,</span> out_channels<span class="token operator">=</span><span class="token number">32</span><span class="token punctuation">,</span> kernel_size<span class="token operator">=</span><span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>BatchNorm2d<span class="token punctuation">(</span><span class="token number">32</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>ReLU<span class="token punctuation">(</span>inplace<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">)</span>  <span class="token comment"># inplace=True表示计算出来的结果会替换掉原来的Tensor</span>
+        <span class="token punctuation">)</span>
+        <span class="token comment"># 输出层，将输出通道数变为分类数量</span>
+        self<span class="token punctuation">.</span>fc <span class="token operator">=</span> torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>Linear<span class="token punctuation">(</span><span class="token number">32</span><span class="token punctuation">,</span> num_classes<span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">forward</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> X<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token comment"># 图片经过一层卷积，输出（batch_size，C_out, H, W)</span>
+        out <span class="token operator">=</span> self<span class="token punctuation">.</span>conv<span class="token punctuation">(</span>X<span class="token punctuation">)</span>
+        <span class="token comment"># 使用平均池化层将图片大小变为1*1(图片原大小32*32,卷积后为30*30</span>
+        out <span class="token operator">=</span> F<span class="token punctuation">.</span>avg_pool2d<span class="token punctuation">(</span>out<span class="token punctuation">,</span> <span class="token number">30</span><span class="token punctuation">)</span>
+        <span class="token comment"># 将out从shape batch_size*32*1*1变为batch_size*32</span>
+        out <span class="token operator">=</span> out<span class="token punctuation">.</span>squeeze<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># squeeze的用法：</span>
+        <span class="token comment"># 输入到全连接层</span>
+        out <span class="token operator">=</span> self<span class="token punctuation">.</span>fc<span class="token punctuation">(</span>out<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> out
+
+
+net <span class="token operator">=</span> MyConvModule<span class="token punctuation">(</span><span class="token punctuation">)</span>
+net<span class="token punctuation">.</span>to<span class="token punctuation">(</span>device<span class="token punctuation">)</span>
+<span class="token comment"># 损失函数和优化器</span>
+loss <span class="token operator">=</span> torch<span class="token punctuation">.</span>nn<span class="token punctuation">.</span>CrossEntropyLoss<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 交叉熵损失函数</span>
+optimizer <span class="token operator">=</span> torch<span class="token punctuation">.</span>optim<span class="token punctuation">.</span>SGD<span class="token punctuation">(</span>net<span class="token punctuation">.</span>parameters<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> lr<span class="token operator">=</span>lr<span class="token punctuation">)</span>
+</code></pre>
+<h1><a id="_235"></a>（四）模型训练与测试</h1>
+<h2><a id="1_236"></a>1、模型训练</h2>
+<pre><code class="prism language-python"><span class="token keyword">def</span> <span class="token function">train</span><span class="token punctuation">(</span>net<span class="token punctuation">,</span> data_loader<span class="token punctuation">,</span> device<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    net<span class="token punctuation">.</span>train<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 指定为训练模式</span>
+    train_batch_num <span class="token operator">=</span> <span class="token builtin">len</span><span class="token punctuation">(</span>data_loader<span class="token punctuation">)</span>
+    total_loss <span class="token operator">=</span> <span class="token number">0.0</span>
+    correct <span class="token operator">=</span> <span class="token number">0</span>  <span class="token comment"># 记录共有多少个样本被正确分类</span>
+    sample_num <span class="token operator">=</span> <span class="token number">0</span>
+
+    <span class="token comment"># 遍历每个batch进行训练</span>
+    <span class="token keyword">for</span> data<span class="token punctuation">,</span> target <span class="token keyword">in</span> data_loader<span class="token punctuation">:</span>
+        <span class="token comment"># 将图片和标签放入指定的device中</span>
+        data <span class="token operator">=</span> data<span class="token punctuation">.</span>to<span class="token punctuation">(</span>device<span class="token punctuation">)</span>
+        target <span class="token operator">=</span> target<span class="token punctuation">.</span>to<span class="token punctuation">(</span>device<span class="token punctuation">)</span>
+        <span class="token comment"># 将当前梯度清零</span>
+        optimizer<span class="token punctuation">.</span>zero_grad<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token comment"># 使用模型计算出结果</span>
+        y_hat <span class="token operator">=</span> net<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+        <span class="token comment"># 计算损失</span>
+        loss_ <span class="token operator">=</span> loss<span class="token punctuation">(</span>y_hat<span class="token punctuation">,</span> target<span class="token punctuation">)</span>
+        <span class="token comment"># 进行反向传播</span>
+        loss_<span class="token punctuation">.</span>backward<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        optimizer<span class="token punctuation">.</span>step<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        total_loss <span class="token operator">+=</span> loss_<span class="token punctuation">.</span>item<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        cor <span class="token operator">=</span> <span class="token punctuation">(</span>torch<span class="token punctuation">.</span>argmax<span class="token punctuation">(</span>y_hat<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">==</span> target<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token builtin">sum</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>item<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        correct <span class="token operator">+=</span> cor
+        <span class="token comment"># 累加当前的样本总数</span>
+        sample_num <span class="token operator">+=</span> target<span class="token punctuation">.</span>shape<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'loss: %.4f  acc: %.4f'</span> <span class="token operator">%</span> <span class="token punctuation">(</span>loss_<span class="token punctuation">.</span>item<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> cor<span class="token operator">/</span>target<span class="token punctuation">.</span>shape<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token comment"># 平均loss和准确率</span>
+    loss_ <span class="token operator">=</span> total_loss <span class="token operator">/</span> train_batch_num
+    acc <span class="token operator">=</span> correct <span class="token operator">/</span> sample_num
+    <span class="token keyword">return</span> loss_<span class="token punctuation">,</span> acc
+</code></pre>
+<h2><a id="2_271"></a>2、测试</h2>
+<pre><code class="prism language-python"><span class="token comment"># 测试</span>
+<span class="token keyword">def</span> <span class="token function">test</span><span class="token punctuation">(</span>net<span class="token punctuation">,</span> data_loader<span class="token punctuation">,</span> device<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    net<span class="token punctuation">.</span><span class="token builtin">eval</span><span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 指定当前模式为测试模式（针对BN层和dropout层）</span>
+    test_batch_num <span class="token operator">=</span> <span class="token builtin">len</span><span class="token punctuation">(</span>data_loader<span class="token punctuation">)</span>
+    total_loss <span class="token operator">=</span> <span class="token number">0</span>
+    correct <span class="token operator">=</span> <span class="token number">0</span>
+    sample_num <span class="token operator">=</span> <span class="token number">0</span>
+    <span class="token comment"># 指定不进行梯度计算（没有反向传播也会计算梯度，增大GPU开销</span>
+    <span class="token keyword">with</span> torch<span class="token punctuation">.</span>no_grad<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">for</span> data<span class="token punctuation">,</span> target <span class="token keyword">in</span> data_loader<span class="token punctuation">:</span>
+            data <span class="token operator">=</span> data<span class="token punctuation">.</span>to<span class="token punctuation">(</span>device<span class="token punctuation">)</span>
+            target <span class="token operator">=</span> target<span class="token punctuation">.</span>to<span class="token punctuation">(</span>device<span class="token punctuation">)</span>
+            output <span class="token operator">=</span> net<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+            loss_ <span class="token operator">=</span> loss<span class="token punctuation">(</span>output<span class="token punctuation">,</span> target<span class="token punctuation">)</span>
+            total_loss <span class="token operator">+=</span> loss_<span class="token punctuation">.</span>item<span class="token punctuation">(</span><span class="token punctuation">)</span>
+            correct <span class="token operator">+=</span> <span class="token punctuation">(</span>torch<span class="token punctuation">.</span>argmax<span class="token punctuation">(</span>output<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">==</span> target<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token builtin">sum</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>item<span class="token punctuation">(</span><span class="token punctuation">)</span>
+            sample_num <span class="token operator">+=</span> target<span class="token punctuation">.</span>shape<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+    loss_ <span class="token operator">=</span> total_loss <span class="token operator">/</span> test_batch_num
+    acc <span class="token operator">=</span> correct <span class="token operator">/</span> sample_num
+    <span class="token keyword">return</span> loss_<span class="token punctuation">,</span> acc
+</code></pre>
+<pre><code class="prism language-python"><span class="token comment"># 模型训练与测试</span>
+train_loss_list <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+train_acc_list <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+test_loss_list <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+test_acc_list <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+
+
+<span class="token keyword">for</span> epoch <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>num_epochs<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token comment"># 在训练集上训练</span>
+    train_loss<span class="token punctuation">,</span> train_acc <span class="token operator">=</span> train<span class="token punctuation">(</span>net<span class="token punctuation">,</span> data_loader<span class="token operator">=</span>train_iter<span class="token punctuation">,</span> device<span class="token operator">=</span>device<span class="token punctuation">)</span>
+    <span class="token comment"># 测试集上验证</span>
+    test_loss<span class="token punctuation">,</span> test_acc <span class="token operator">=</span> test<span class="token punctuation">(</span>net<span class="token punctuation">,</span> data_loader<span class="token operator">=</span>test_iter<span class="token punctuation">,</span> device<span class="token operator">=</span>device<span class="token punctuation">)</span>
+
+    train_loss_list<span class="token punctuation">.</span>append<span class="token punctuation">(</span>train_loss<span class="token punctuation">)</span>
+    train_acc_list<span class="token punctuation">.</span>append<span class="token punctuation">(</span>train_acc<span class="token punctuation">)</span>
+    test_loss_list<span class="token punctuation">.</span>append<span class="token punctuation">(</span>test_loss<span class="token punctuation">)</span>
+    test_acc_list<span class="token punctuation">.</span>append<span class="token punctuation">(</span>test_acc<span class="token punctuation">)</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'epoch %d, train loss: %.4f, train acc: %.3f'</span> <span class="token operator">%</span> <span class="token punctuation">(</span>epoch<span class="token operator">+</span><span class="token number">1</span><span class="token punctuation">,</span> train_loss<span class="token punctuation">,</span> train_acc<span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'test loss: %.4f, test acc: %.3f'</span> <span class="token operator">%</span> <span class="token punctuation">(</span>test_loss<span class="token punctuation">,</span> test_acc<span class="token punctuation">)</span><span class="token punctuation">)</span>
+</code></pre>
+<h2><a id="3accloss_317"></a>3、绘制acc和loss曲线</h2>
+<pre><code class="prism language-python"><span class="token comment"># 绘制函数</span>
+<span class="token keyword">def</span> <span class="token function">draw_</span><span class="token punctuation">(</span>x<span class="token punctuation">,</span> train_Y<span class="token punctuation">,</span> test_Y<span class="token punctuation">,</span> ylabel<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    plt<span class="token punctuation">.</span>plot<span class="token punctuation">(</span>x<span class="token punctuation">,</span> train_Y<span class="token punctuation">,</span> label<span class="token operator">=</span><span class="token string">'train_'</span> <span class="token operator">+</span> ylabel<span class="token punctuation">,</span> linewidth<span class="token operator">=</span><span class="token number">1.5</span><span class="token punctuation">)</span>
+    plt<span class="token punctuation">.</span>plot<span class="token punctuation">(</span>x<span class="token punctuation">,</span> test_Y<span class="token punctuation">,</span> label<span class="token operator">=</span><span class="token string">'test_'</span> <span class="token operator">+</span> ylabel<span class="token punctuation">,</span> linewidth<span class="token operator">=</span><span class="token number">1.5</span><span class="token punctuation">)</span>
+    plt<span class="token punctuation">.</span>xlabel<span class="token punctuation">(</span><span class="token string">'epoch'</span><span class="token punctuation">)</span>
+    plt<span class="token punctuation">.</span>ylabel<span class="token punctuation">(</span>ylabel<span class="token punctuation">)</span>
+    plt<span class="token punctuation">.</span>legend<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 加上图例</span>
+    plt<span class="token punctuation">.</span>show<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+
+<span class="token comment"># 绘制loss曲线</span>
+x <span class="token operator">=</span> np<span class="token punctuation">.</span>linspace<span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token builtin">len</span><span class="token punctuation">(</span>train_loss_list<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token builtin">len</span><span class="token punctuation">(</span>train_loss_list<span class="token punctuation">)</span><span class="token punctuation">)</span>
+draw_<span class="token punctuation">(</span>x<span class="token punctuation">,</span> train_loss_list<span class="token punctuation">,</span> test_loss_list<span class="token punctuation">,</span> <span class="token string">'loss'</span><span class="token punctuation">)</span>
+draw_<span class="token punctuation">(</span>x<span class="token punctuation">,</span> train_acc_list<span class="token punctuation">,</span> test_acc_list<span class="token punctuation">,</span> <span class="token string">'accuracy'</span><span class="token punctuation">)</span>
+
+</code></pre>
+<h1><a id="_336"></a>（五）实验结果</h1>
+<p>训练期间输出：</p>
+<pre><code class="prism language-python">epoch <span class="token number">8</span><span class="token punctuation">,</span> train loss<span class="token punctuation">:</span> <span class="token number">0.9420</span><span class="token punctuation">,</span> train acc<span class="token punctuation">:</span> <span class="token number">0.574</span>
+test loss<span class="token punctuation">:</span> <span class="token number">1.0830</span><span class="token punctuation">,</span> test acc<span class="token punctuation">:</span> <span class="token number">0.574</span>
+loss<span class="token punctuation">:</span> <span class="token number">0.9440</span>  acc<span class="token punctuation">:</span> <span class="token number">0.5820</span>
+loss<span class="token punctuation">:</span> <span class="token number">0.9627</span>  acc<span class="token punctuation">:</span> <span class="token number">0.5430</span>
+loss<span class="token punctuation">:</span> <span class="token number">0.9615</span>  acc<span class="token punctuation">:</span> <span class="token number">0.5703</span>
+loss<span class="token punctuation">:</span> <span class="token number">0.9169</span>  acc<span class="token punctuation">:</span> <span class="token number">0.6094</span>
+loss<span class="token punctuation">:</span> <span class="token number">0.9855</span>  acc<span class="token punctuation">:</span> <span class="token number">0.5410</span>
+epoch <span class="token number">9</span><span class="token punctuation">,</span> train loss<span class="token punctuation">:</span> <span class="token number">0.9541</span><span class="token punctuation">,</span> train acc<span class="token punctuation">:</span> <span class="token number">0.574</span>
+test loss<span class="token punctuation">:</span> <span class="token number">1.0850</span><span class="token punctuation">,</span> test acc<span class="token punctuation">:</span> <span class="token number">0.574</span>
+loss<span class="token punctuation">:</span> <span class="token number">0.9088</span>  acc<span class="token punctuation">:</span> <span class="token number">0.6211</span>
+loss<span class="token punctuation">:</span> <span class="token number">0.9370</span>  acc<span class="token punctuation">:</span> <span class="token number">0.5703</span>
+loss<span class="token punctuation">:</span> <span class="token number">0.9487</span>  acc<span class="token punctuation">:</span> <span class="token number">0.5781</span>
+loss<span class="token punctuation">:</span> <span class="token number">0.9783</span>  acc<span class="token punctuation">:</span> <span class="token number">0.5391</span>
+loss<span class="token punctuation">:</span> <span class="token number">0.9872</span>  acc<span class="token punctuation">:</span> <span class="token number">0.5246</span>
+epoch <span class="token number">10</span><span class="token punctuation">,</span> train loss<span class="token punctuation">:</span> <span class="token number">0.9520</span><span class="token punctuation">,</span> train acc<span class="token punctuation">:</span> <span class="token number">0.574</span>
+test loss<span class="token punctuation">:</span> <span class="token number">1.0850</span><span class="token punctuation">,</span> test acc<span class="token punctuation">:</span> <span class="token number">0.574</span>
+</code></pre>
+<p>训练和测试的acc曲线和loss曲线<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/202ef42e6eef4e5fadba0b5409b59c8c.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2N1bWluYQ==,size_16,color_FFFFFF,t_70"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/93601fd566064fb6a673cc594749fba5.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2N1bWluYQ==,size_16,color_FFFFFF,t_70"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

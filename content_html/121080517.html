@@ -1,0 +1,213 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>一、下载文档</p>
+<p>1.下载php:<a href="https://windows.php.net/download/" title=" "> </a><a class="has-card" href="https://windows.php.net/download/" title="https://windows.php.net/download/"><span class="link-card-box"><span class="link-title">https://windows.php.net/download/</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon-default.png"/>https://windows.php.net/download/</span></span></a><a href="https://windows.php.net/download/" title=" "> </a>(<span style="color:#fe2c24;">注意，需下载正确的文件，最好下载Thread Safe安全版，我就是因为下载错文件，绕了好久。</span>）</p>
+<p style="text-align:center;"><img alt="" src="image\7aca82fa4bd843c2bd4539cc58b9098b.png"/></p>
+<p> 2.下载nginx: <a class="has-card" href="http://nginx.org/en/download.html" title="nginx: download"><span class="link-card-box"><span class="link-title">nginx: download</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon-default.png"/>http://nginx.org/en/download.html</span></span></a></p>
+<p>二、配置nginx</p>
+<p>修改Nginx的conf文件,Nginx的配置文件默认位置为：<code>/etc/nginx/nginx.conf</code></p>
+<p>1. 去掉worker_processes前的#号，开启一个进程</p>
+<p>2. 添加events</p>
+<p>3. 设置http-&gt;设置server-&gt;支持php</p>
+<pre><code>...
+worker_processes  1;
+...
+events {
+    worker_connections  1024;
+}
+....
+server {
+        listen       801;
+        server_name  localhost;
+        ...
+
+      location / {
+            root   html;
+            index  index.html index.htm  index.php;
+        }
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   html;
+        }
+        
+        location ~ \.php$ {
+            root      html;
+           fastcgi_pass   127.0.0.1:9000;
+           fastcgi_index  index.php;
+          fastcgi_param     SCRIPT_FILENAME    $document_root$fastcgi_script_name;
+           include        fastcgi_params;
+       }
+    }</code></pre>
+<p>4.测试nginx是否安装成功  <br/> 启动命令：start nginx <br/> 在浏览器输入：<a href="http://localhost:801/indexbb.php" title="http://localhost:801/">http://localhost:801/</a>，就会打开html下的index.html文件<br/> 如果不能正常打开，查看端口号是否被占用<br/><br/> 三、配置php</p>
+<p>复制php.ini-development，命名为“php.ini"，开始进行配置</p>
+<p>1.查找doc_root，配置需访问的源码目录<br/>  </p>
+<pre><code>doc_root ="D:/.../nginx-1.16.1/html"</code></pre>
+<p>2.查找extension_dir,配置目录</p>
+<pre><code>extension_dir = "D:/.../php-8.0.12/ext"</code></pre>
+<p>3.查找cgi.fix_pathinfo，设置为0<br/> 搜索“php_mysql”，找到：”extension=php_mysql.dll和extension=php_mysqli.dll  去掉前面的“;”extension=php_mysql.dll和extension=php_mysqli.dll   （支持MYSQL数据库）</p>
+<p>四、配置完成后，在cmd输入“php-cgi.exe -b 127.0.0.1:9000” 命令，确保“127.0.0.1:9000“的地址与nginx.conf中的 location ~ \.php$ 中的地址一样。如果cmd窗口关闭的话，服务关闭，就不能正常访问php页面，如果不需要cmd窗口，让服务在后台运行，可进行第五步骤</p>
+<p style="text-align:center;"><img alt="" src="image\fdb6a51921d643f09208ad17cde69ef6.png"/></p>
+<p>五：后台启动服务</p>
+<p>1.在php目录下新建文件php-cgi.vbs，用php-cgi.vbs文件启动php-cgi:打开php-cgi.vbs,写入启动编码：</p>
+<pre><code>set wscriptObj = CreateObject("Wscript.Shell")
+wscriptObj.run "php-cgi -b 127.0.0.1:9000",0</code></pre>
+<p>2.在Nginx目录下新建启动项：runServer.bat和停止项stopServer.bat<br/> 在启动项runServer.bat中输入：</p>
+<pre><code>@echo off
+echo Starting nginx...
+cd %~dp0nginx
+start "" "D:/.../nginx-1.16.1/nginx.exe"
+
+#echo Starting mysql...
+#net start mysql
+
+echo Starting PHP FastCGI...
+cd %~dp0PHP
+start "" "D:/.../php-8.0.12/php-cgi.vbs"
+
+pause
+
+Exit</code></pre>
+<p>　在停止项stopServer.bat中输入：</p>
+<pre><code>@echo off
+echo Stopping nginx...
+taskkill /F /IM nginx.exe &gt; nul
+echo Stopping PHP FastCGI...
+taskkill /F /IM php-cgi.exe &gt; nul
+echo Stopping mysql...
+net stop mysql
+pause
+exit</code></pre>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p>附上nginx.conf配置</p>
+<pre><code>
+#user  nobody;
+worker_processes  1;
+
+#error_log  logs/error.log;
+#error_log  logs/error.log  notice;
+#error_log  logs/error.log  info;
+
+#pid        logs/nginx.pid;
+
+
+events {
+    worker_connections  1024;
+}
+
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    #log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+    #                  '$status $body_bytes_sent "$http_referer" '
+    #                  '"$http_user_agent" "$http_x_forwarded_for"';
+
+    #access_log  logs/access.log  main;
+
+    sendfile        on;
+    #tcp_nopush     on;
+
+    #keepalive_timeout  0;
+    keepalive_timeout  65;
+
+    gzip  on;
+    gzip_min_length 1k;
+    gzip_comp_level 9;
+    gzip_types text/plain application/javascript application/x-javascript text/css application/xml text/javascript application/x-httpd-php image/jpeg image/gif image/png;
+    gzip_vary on;
+    gzip_disable "MSIE [1-6]\.";
+
+    
+
+    server {
+        listen       801;
+        server_name  localhost;
+
+        #charset koi8-r;
+
+        #access_log  logs/host.access.log  main;
+
+      location / {
+            root   html;
+            index  index.html index.htm  index.php;
+        }
+
+        #error_page  404              /404.html;
+
+        # redirect server error pages to the static page /50x.html
+        #
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   html;
+        }
+
+        # proxy the PHP scripts to Apache listening on 127.0.0.1:80
+        #
+        #location ~ \.php$ {
+        #    proxy_pass   http://127.0.0.1;
+        #}
+
+        # pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+        
+        location ~ \.php$ {
+            root      html;
+           fastcgi_pass   127.0.0.1:9000;
+           fastcgi_index  index.php;
+          fastcgi_param     SCRIPT_FILENAME    $document_root$fastcgi_script_name;
+           include        fastcgi_params;
+       }
+
+        # deny access to .htaccess files, if Apache's document root
+        # concurs with nginx's one
+        #
+        #location ~ /\.ht {
+        #    deny  all;
+        #}
+    }
+
+
+    # another virtual host using mix of IP-, name-, and port-based configuration
+    #
+    #server {
+    #    listen       8000;
+    #    listen       somename:8080;
+    #    server_name  somename  alias  another.alias;
+
+    #    location / {
+    #        root  D:\software\nginx-1.16.1\html;
+    #        index  index.html index.htm;
+    #    }
+    #}
+
+
+    # HTTPS server
+    #
+    #server {
+    #    listen       443 ssl;
+    #    server_name  localhost;
+
+    #    ssl_certificate      cert.pem;
+    #    ssl_certificate_key  cert.key;
+
+    #    ssl_session_cache    shared:SSL:1m;
+    #    ssl_session_timeout  5m;
+
+    #    ssl_ciphers  HIGH:!aNULL:!MD5;
+    #    ssl_prefer_server_ciphers  on;
+
+    #    location / {
+    #        root   html;
+    #        index  index.html index.htm;
+    #    }
+    #}
+
+}
+</code></pre>
+<p></p>
+</div>
+</div>

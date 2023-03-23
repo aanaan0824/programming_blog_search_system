@@ -1,0 +1,554 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h3>前言</h3>
+<p>通过前面的四篇文章，我们已经了解到了ModbusRTU具体是什么，以及如何生成正确的报文，也完成了一个完整实现ModbusRTU的Demo。</p>
+<p>前面我们的实现方式，是从零开始一点点自己写，所以我们需要完整实现整个串口通讯以及报文的生成与收发。在实际使用的时候，我们其实不需要写那么多东西，GitHub上其实有很多现成的类库，可以直接导入使用，无需自己生成通讯报文。</p>
+<p>由于本专栏并非仅仅介绍实际应用，所以前面花费了不少篇幅来讲解ModbusRTU的报文。如果能完全理解前面四篇文章的内容，那么当我们遇到需要使用常用的八种功能码以外的报文的情况的时候，我们也能举一反三地写出对应的程序，而不必依赖他人的类库。</p>
+<p>在实际应用的开发过程中，如果充当主站的应用程序与子站直接的物理连接，并非完全是RS485等的串行通讯连接方式，而是中间使用了串口服务器将串行信号转换为以太网信号，那么则需要我们使用Socket通讯的方式将报文发送出去，所以就不能使用NModbus4这样的类库了。在这种情况下，虽然串行信号被转换成了以太网的信号，但是我们需要收发的报文格式是不变的，所以这时，我们只需要用我们前面写好的报文生成和解析的方法，结合Socket通讯，实现数据的请求与解析。</p>
+<p>传送门：</p>
+<p><a href="https://blog.csdn.net/XUMENGCAS/article/details/122062266" title="C#实现ModbusRTU详解【一】—— 简介及仿真配置">C#实现ModbusRTU详解【一】—— 简介及仿真配置</a></p>
+<p><a href="https://blog.csdn.net/XUMENGCAS/article/details/122077200" title="C#实现ModbusRTU详解【二】—— 生成读取报文">C#实现ModbusRTU详解【二】—— 生成读取报文</a></p>
+<p><a href="https://blog.csdn.net/XUMENGCAS/article/details/122185571" title="C#实现ModbusRTU详解【三】—— 生成写入报文">C#实现ModbusRTU详解【三】—— 生成写入报文</a></p>
+<p><a class="link-info" href="https://blog.csdn.net/XUMENGCAS/article/details/122235567" title="C#实现ModbusRTU详解【四】—— 通讯Demo">C#实现ModbusRTU详解【四】—— 通讯Demo</a></p>
+<hr/>
+<h3>引入类库</h3>
+<p>以下以Winform为例。创建一个Winform项目，然后在NuGet中安装NModbus4，如下图所示：</p>
+<p><img alt="" height="300" src="image\caeb97595e934ffa970203cf768c30b1.png" width="605"/></p>
+<hr/>
+<h3>窗体界面</h3>
+<p>根据自己喜好创建布局，参考如下：</p>
+<p><img alt="" height="437" src="image\1f66a88bd6094c63abb91d04b21b0adf.png" width="830"/></p>
+<hr/>
+<h3>读写方法</h3>
+<p>首先我们需要引入NModbusRTU。</p>
+<pre><code class="language-cs">using Modbus.Device;</code></pre>
+<p>创建一个串口对象，还有一个ModbusRTU的实例对象。</p>
+<pre><code class="language-cs">/// &lt;summary&gt;
+/// 私有串口实例
+/// &lt;/summary&gt;
+private SerialPort serialPort = new SerialPort();
+
+/// &lt;summary&gt;
+/// 私有ModbusRTU主站字段
+/// &lt;/summary&gt;
+private static IModbusMaster master;</code></pre>
+<p> 根据八种不同的功能，创建读写方法。</p>
+<pre><code class="language-cs">/// &lt;summary&gt;
+/// 写入单个线圈
+/// &lt;/summary&gt;
+private void WriteSingleCoil()
+{
+    bool result = false;
+    if (rbxRWMsg.Text.Equals("true", StringComparison.OrdinalIgnoreCase) || rbxRWMsg.Text.Equals("1", StringComparison.OrdinalIgnoreCase))
+    {
+        result = true;
+    }
+    master.WriteSingleCoil((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, result);
+}
+
+/// &lt;summary&gt;
+/// 批量写入线圈
+/// &lt;/summary&gt;
+private void WriteArrayCoil()
+{
+    List&lt;string&gt; strList = rbxRWMsg.Text.Split(',').ToList();
+
+    List&lt;bool&gt; result = new List&lt;bool&gt;();
+
+    strList.ForEach(m =&gt; result.Add(m.Equals("true", StringComparison.OrdinalIgnoreCase) || m.Equals("1", StringComparison.OrdinalIgnoreCase)));
+
+    master.WriteMultipleCoils((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, result.ToArray());
+}
+
+/// &lt;summary&gt;
+/// 写入单个寄存器
+/// &lt;/summary&gt;
+private void WriteSingleRegister()
+{
+    ushort result = Convert.ToUInt16(rbxRWMsg.Text);
+
+    master.WriteSingleRegister((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, result);
+}
+
+/// &lt;summary&gt;
+/// 批量写入寄存器
+/// &lt;/summary&gt;
+private void WriteArrayRegister()
+{
+    List&lt;string&gt; strList = rbxRWMsg.Text.Split(',').ToList();
+
+    List&lt;ushort&gt; result = new List&lt;ushort&gt;();
+
+    strList.ForEach(m =&gt; result.Add(Convert.ToUInt16(m)));
+
+    master.WriteMultipleRegisters((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, result.ToArray());
+}
+
+/// &lt;summary&gt;
+/// 读取输出线圈
+/// &lt;/summary&gt;
+/// &lt;returns&gt;&lt;/returns&gt;
+private bool[] ReadCoils()
+{
+    return master.ReadCoils((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, (ushort)nudLength.Value);
+}
+
+/// &lt;summary&gt;
+/// 读取输入线圈
+/// &lt;/summary&gt;
+/// &lt;returns&gt;&lt;/returns&gt;
+private bool[] ReadInputs()
+{
+    return master.ReadInputs((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, (ushort)nudLength.Value);
+}
+
+/// &lt;summary&gt;
+/// 读取保持型寄存器
+/// &lt;/summary&gt;
+/// &lt;returns&gt;&lt;/returns&gt;
+private ushort[] ReadHoldingRegisters()
+{
+    return master.ReadHoldingRegisters((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, (ushort)nudLength.Value);
+}
+
+/// &lt;summary&gt;
+/// 读取输入寄存器
+/// &lt;/summary&gt;
+/// &lt;returns&gt;&lt;/returns&gt;
+private ushort[] ReadInputRegisters()
+{
+    return master.ReadInputRegisters((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, (ushort)nudLength.Value);
+}</code></pre>
+<p>创建显示读取数据到窗体的方法。</p>
+<pre><code class="language-cs">/// &lt;summary&gt;
+/// 界面显示读取结果
+/// &lt;/summary&gt;
+/// &lt;typeparam name="T"&gt;&lt;/typeparam&gt;
+/// &lt;param name="result"&gt;&lt;/param&gt;
+private void SetMsg&lt;T&gt;(List&lt;T&gt; result)
+{
+    string msg = string.Empty;
+
+    result.ForEach(m =&gt; msg += $"{m} ");
+
+    rbxRWMsg.Text = msg.Trim();
+}</code></pre>
+<p> 在按钮事件中调用读写方法。</p>
+<pre><code class="language-cs">/// &lt;summary&gt;
+/// 读写事件
+/// &lt;/summary&gt;
+/// &lt;param name="sender"&gt;&lt;/param&gt;
+/// &lt;param name="e"&gt;&lt;/param&gt;
+private void btnRW_Click(object sender, EventArgs e)
+{
+    //设定串口参数
+    serialPort.PortName = cbxPort.SelectedItem.ToString();
+    serialPort.BaudRate = (int)cbxBaudRate.SelectedItem;
+    serialPort.Parity = GetSelectedParity();
+    serialPort.DataBits = (int)cbxDataBits.SelectedItem;
+    serialPort.StopBits = GetSelectedStopBits();
+
+    //创建ModbusRTU主站实例
+    master = ModbusSerialMaster.CreateRtu(serialPort);
+
+    //打开串口
+    if (!serialPort.IsOpen) serialPort.Open();
+
+    //根据选择的模式进行读写
+    switch (cbxMode.SelectedItem.ToString())
+    {
+        case "读取输出线圈":
+            SetMsg(ReadCoils().ToList());
+            break;
+        case "读取离散输入":
+            SetMsg(ReadInputs().ToList());
+            break;
+        case "读取保持型寄存器":
+            SetMsg(ReadHoldingRegisters().ToList());
+            break;
+        case "读取输入寄存器":
+            SetMsg(ReadInputRegisters().ToList());
+            break;
+        case "写入单个线圈":
+            if (rbxRWMsg.Text.Contains(","))
+            {
+                MessageBox.Show("输入值过多");
+                return;
+            }
+            WriteSingleCoil();
+            break;
+        case "写入多个线圈":
+            WriteArrayCoil();
+            break;
+        case "写入单个寄存器":
+            if (rbxRWMsg.Text.Contains(","))
+            {
+                MessageBox.Show("输入值过多");
+                return;
+            }
+            WriteSingleRegister();
+            break;
+        case "写入多个寄存器":
+            WriteArrayRegister();
+            break;
+        default:
+            break;
+    }
+
+    //关闭串口
+    serialPort.Close();
+}</code></pre>
+<hr/>
+<h3>读写测试</h3>
+<p>读取输出线圈</p>
+<p><img alt="" height="357" src="image\9b284413e0cc418fa6ab273caf8ef787.png" width="1050"/></p>
+<p><a name="t15"></a>读取输入线圈</p>
+<p></p>
+<p><img alt="" height="340" src="image\8a1bd7919d234f349144ae946bd5fc23.png" width="1056"/></p>
+<p><a name="t16"></a>读取保持型寄存器</p>
+<p><img alt="" height="338" src="image\b81cf686c4f84ab2aa8c8f6ad7d8d508.png" width="1053"/></p>
+<p></p>
+<p><a name="t17"></a>读取输入寄存器</p>
+<p><img alt="" height="353" src="image\43f13e1f8a384389a3b6e243a1558fdc.png" width="1056"/></p>
+<p></p>
+<p><a name="t18"></a>写入单个线圈</p>
+<p><img alt="" height="350" src="image\4113e960a0b548f9bf9d9476329c081b.png" width="1051"/></p>
+<p></p>
+<p><a name="t19"></a>写入多个线圈</p>
+<p><img alt="" height="346" src="image\5a88ad071e6e45a3ae901287a0e5e999.png" width="1056"/></p>
+<p></p>
+<p><a name="t20"></a>写入单个寄存器</p>
+<p><img alt="" height="352" src="image\efb0ed7b7cfb45998a7f45dcbd20f36e.png" width="1051"/></p>
+<p></p>
+<p><a name="t21"></a>写入多个寄存器</p>
+<p><img alt="" height="343" src="image\c06eecae40904e78b8121592ce67aacf.png" width="1057"/></p>
+<hr/>
+<h3>完整代码</h3>
+<pre><code class="language-cs">using Modbus.Device;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.IO.Ports;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace NModbusDemo
+{
+    public partial class DemoForm : Form
+    {
+        /// &lt;summary&gt;
+        /// 私有串口实例
+        /// &lt;/summary&gt;
+        private SerialPort serialPort = new SerialPort();
+
+        /// &lt;summary&gt;
+        /// 私有ModbusRTU主站字段
+        /// &lt;/summary&gt;
+        private static IModbusMaster master;
+
+        /// &lt;summary&gt;
+        /// 构造函数
+        /// &lt;/summary&gt;
+        public DemoForm()
+        {
+            InitializeComponent();            
+        }
+
+        /// &lt;summary&gt;
+        /// 窗体加载事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void DemoForm_Load(object sender, EventArgs e)
+        {
+            //设置可选串口
+            cbxPort.Items.AddRange(SerialPort.GetPortNames());
+            //设置可选波特率
+            cbxBaudRate.Items.AddRange(new object[] { 9600, 19200 });
+            //设置可选奇偶校验
+            cbxParity.Items.AddRange(new object[] { "None", "Odd", "Even", "Mark", "Space" });
+            //设置可选数据位
+            cbxDataBits.Items.AddRange(new object[] { 5, 6, 7, 8 });
+            //设置可选停止位
+            cbxStopBits.Items.AddRange(new object[] { 1, 1.5, 2 });
+            //设置读写模式
+            cbxMode.Items.AddRange(new object[] {
+                "读取输出线圈",
+                "读取离散输入",
+                "读取保持型寄存器",
+                "读取输入寄存器",
+                "写入单个线圈",
+                "写入多个线圈",
+                "写入单个寄存器",
+                "写入多个寄存器"
+            });
+
+            //设置默认选中项
+            cbxPort.SelectedIndex = 1;
+            cbxBaudRate.SelectedIndex = 0;
+            cbxParity.SelectedIndex = 0;
+            cbxDataBits.SelectedIndex = 3;
+            cbxStopBits.SelectedIndex = 0;
+            cbxMode.SelectedIndex = 0;
+
+            nudLength.Minimum = 1;
+            nudSlaveID.Minimum = 1;
+            nudStartAdr.Minimum = 0;
+
+            //设置为默认输入法，即为英文半角
+            rbxRWMsg.ImeMode = ImeMode.Disable;            
+        }
+
+        /// &lt;summary&gt;
+        /// 模式切换事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void cbxMode_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            rbxRWMsg.Clear();
+            if (cbxMode.SelectedItem.ToString().Contains("读取"))
+            {
+                btnRW.Text = "读取";
+                rbxRWMsg.Enabled = false;
+                nudLength.Enabled = true;
+            }
+            else
+            {
+                btnRW.Text = "写入";
+                rbxRWMsg.Enabled = true;
+                nudLength.Enabled = false;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 读写事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void btnRW_Click(object sender, EventArgs e)
+        {
+            //设定串口参数
+            serialPort.PortName = cbxPort.SelectedItem.ToString();
+            serialPort.BaudRate = (int)cbxBaudRate.SelectedItem;
+            serialPort.Parity = GetSelectedParity();
+            serialPort.DataBits = (int)cbxDataBits.SelectedItem;
+            serialPort.StopBits = GetSelectedStopBits();
+
+            //创建ModbusRTU主站实例
+            master = ModbusSerialMaster.CreateRtu(serialPort);
+
+            //打开串口
+            if (!serialPort.IsOpen) serialPort.Open();
+            
+            //根据选择的模式进行读写
+            switch (cbxMode.SelectedItem.ToString())
+            {
+                case "读取输出线圈":
+                    SetMsg(ReadCoils().ToList());
+                    break;
+                case "读取离散输入":
+                    SetMsg(ReadInputs().ToList());
+                    break;
+                case "读取保持型寄存器":
+                    SetMsg(ReadHoldingRegisters().ToList());
+                    break;
+                case "读取输入寄存器":
+                    SetMsg(ReadInputRegisters().ToList());
+                    break;
+                case "写入单个线圈":
+                    if (rbxRWMsg.Text.Contains(","))
+                    {
+                        MessageBox.Show("输入值过多");
+                        serialPort.Close();
+                        return;
+                    }
+                    WriteSingleCoil();
+                    break;
+                case "写入多个线圈":
+                    WriteArrayCoil();
+                    break;
+                case "写入单个寄存器":
+                    if (rbxRWMsg.Text.Contains(","))
+                    {
+                        MessageBox.Show("输入值过多");
+                        serialPort.Close();
+                        return;
+                    }
+                    WriteSingleRegister();
+                    break;
+                case "写入多个寄存器":
+                    WriteArrayRegister();
+                    break;
+                default:
+                    break;
+            }
+
+            //关闭串口
+            serialPort.Close();
+        }
+
+        /// &lt;summary&gt;
+        /// 更新写入值计数
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void rbxRWMsg_TextChanged(object sender, EventArgs e)
+        {
+            nudLength.Value = Regex.Matches(rbxRWMsg.Text, ",").Count + 1;
+        }
+
+        /// &lt;summary&gt;
+        /// 获取窗体选中的奇偶校验
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Parity GetSelectedParity()
+        {
+            switch (cbxParity.SelectedItem.ToString())
+            {
+                case "Odd":
+                    return Parity.Odd;
+                case "Even":
+                    return Parity.Even;
+                case "Mark":
+                    return Parity.Mark;
+                case "Space":
+                    return Parity.Space;
+                case "None":
+                default:
+                    return Parity.None;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 获取窗体选中的停止位
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private StopBits GetSelectedStopBits()
+        {
+            switch (Convert.ToDouble(cbxStopBits.SelectedItem))
+            {
+                case 1:
+                    return StopBits.One;
+                case 1.5:
+                    return StopBits.OnePointFive;
+                case 2:
+                    return StopBits.Two;
+                default:
+                    return StopBits.One;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 写入单个线圈
+        /// &lt;/summary&gt;
+        private void WriteSingleCoil()
+        {
+            bool result = false;
+            if (rbxRWMsg.Text.Equals("true", StringComparison.OrdinalIgnoreCase) || rbxRWMsg.Text.Equals("1", StringComparison.OrdinalIgnoreCase))
+            {
+                result = true;
+            }
+            master.WriteSingleCoil((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, result);
+        }
+
+        /// &lt;summary&gt;
+        /// 批量写入线圈
+        /// &lt;/summary&gt;
+        private void WriteArrayCoil()
+        {
+            List&lt;string&gt; strList = rbxRWMsg.Text.Split(',').ToList();
+
+            List&lt;bool&gt; result = new List&lt;bool&gt;();
+
+            strList.ForEach(m =&gt; result.Add(m.Equals("true", StringComparison.OrdinalIgnoreCase) || m.Equals("1", StringComparison.OrdinalIgnoreCase)));
+
+            master.WriteMultipleCoils((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, result.ToArray());
+        }
+
+        /// &lt;summary&gt;
+        /// 写入单个寄存器
+        /// &lt;/summary&gt;
+        private void WriteSingleRegister()
+        {
+            ushort result = Convert.ToUInt16(rbxRWMsg.Text);
+
+            master.WriteSingleRegister((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, result);
+        }
+
+        /// &lt;summary&gt;
+        /// 批量写入寄存器
+        /// &lt;/summary&gt;
+        private void WriteArrayRegister()
+        {
+            List&lt;string&gt; strList = rbxRWMsg.Text.Split(',').ToList();
+
+            List&lt;ushort&gt; result = new List&lt;ushort&gt;();
+
+            strList.ForEach(m =&gt; result.Add(Convert.ToUInt16(m)));
+
+            master.WriteMultipleRegisters((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, result.ToArray());
+        }
+
+        /// &lt;summary&gt;
+        /// 读取输出线圈
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private bool[] ReadCoils()
+        {
+            return master.ReadCoils((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, (ushort)nudLength.Value);
+        }
+
+        /// &lt;summary&gt;
+        /// 读取输入线圈
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private bool[] ReadInputs()
+        {
+            return master.ReadInputs((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, (ushort)nudLength.Value);
+        }
+
+        /// &lt;summary&gt;
+        /// 读取保持型寄存器
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private ushort[] ReadHoldingRegisters()
+        {
+            return master.ReadHoldingRegisters((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, (ushort)nudLength.Value);
+        }
+
+        /// &lt;summary&gt;
+        /// 读取输入寄存器
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private ushort[] ReadInputRegisters()
+        {
+            return master.ReadInputRegisters((byte)nudSlaveID.Value, (ushort)nudStartAdr.Value, (ushort)nudLength.Value);
+        }
+
+        /// &lt;summary&gt;
+        /// 界面显示读取结果
+        /// &lt;/summary&gt;
+        /// &lt;typeparam name="T"&gt;&lt;/typeparam&gt;
+        /// &lt;param name="result"&gt;&lt;/param&gt;
+        private void SetMsg&lt;T&gt;(List&lt;T&gt; result)
+        {
+            string msg = string.Empty;
+
+            result.ForEach(m =&gt; msg += $"{m} ");
+
+            rbxRWMsg.Text = msg.Trim();
+        }
+    }
+}</code></pre>
+<hr/>
+<h3>结尾</h3>
+<p>至此，本专栏需要介绍的所有东西都已经介绍完毕了。</p>
+</div>
+</div>

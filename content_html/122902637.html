@@ -1,0 +1,64 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night-eighties" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>502 Bad Gateway 是一种HTTP协议的服务器端错误状态代码，它表示作为网关或代理角色的服务器，从上游服务器（如tomcat、php-fpm）中接收到的响应是无效的。</p>
+<p>Gateway （网关）在计算机网络体系中可以指代不同的设备，502 错误通常不是客户端能够修复的，而是需要由途径的Web服务器或者代理服务器对其进行修复。</p>
+<p><strong>总结：php-cgi进程数不够用、php执行时间长、或者是php-cgi进程死掉，都会出现502错误.</strong></p>
+<p><img alt="502 Bad Gateway" src="https://img-blog.csdnimg.cn/a66b8dce777b43ff854eb9dd79cdc097.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAcHV0b25nZGV5YW5n,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h1><a id="502_8"></a>502系列错误代码</h1>
+<ul><li><code>HTTP Error 502</code> Bad Gateway HTTP 错误 502 网关错误</li><li><code>HTTP 502</code></li><li><code>502 Service Temporarily Overloaded 502</code> 服务暂时超载</li><li><code>Temporary Error (502)</code> 临时错误 (502)</li><li><code>502 Server Error: The server encountered a temporary error and could not - - complete your request 502</code> 服务器错误：服务器遇到临时错误，无法完成您的请求</li><li><code>502 Bad Gateway Nginx</code> 502 网关坏 Nginx<br/> <img alt="502 Bad Gateway" src="https://img-blog.csdnimg.cn/67b409764c634c5db7cf6db0b4117d39.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAcHV0b25nZGV5YW5n,size_10,color_FFFFFF,t_70,g_se,x_16#pic_center"/></li></ul>
+<h2><a id="5XX_19"></a>5XX系列错误代码</h2>
+<ul><li><code>500 Internal Server Error</code>Web 服务器遇到遇到阻止其无法完成其任务（即客户端请求）的条件时，将显示此错误</li><li><code>501 Not Implemented</code> 服务器无法支持或识别请求方法。 它缺少处理请求的功能，因此它会响应此错误</li><li><code>502 Bad Gateway</code> 服务器之间发生了错误，充当代理或网关时，您的服务器在尝试处理请求时未收到上游服务器的正确响应</li><li><code>503 Service Unavailable</code> 由于正在进行维护或服务器当前过载而导致服务器无法处理请求的临时情况</li><li><code>504 Gateway Timeout</code> 服务器再次充当代理或网关时，没有及时从另一个服务器（例如DNS）获得响应，因此它无法处理请求</li><li><code>505 HTTP Version Not Supported</code> 当您的Web服务器不能或将不支持源自请求的HTTP协议版本时，将发生他的错误。 该错误通常包含服务器为什么不合作的描述</li></ul>
+<h2><a id="Nginx_502_Bad_Gateway__29"></a>Nginx 502 Bad Gateway 错误的原因及解决方法</h2>
+<p>多数是后端问题也就是PHP的问题， 简单的情况可以刷新（不是一般的刷新哦，<code>Ctrl + F5</code> 强制刷新）解决。在php服务当中，有两个参数非常的重要：<code>max_requestst</code>和<code>max_children</code>，具体的原因必须要查看日志才可以弄明白！</p>
+<p><strong>1、检查PHP基础设置</strong><br/> 修改<code>/www/server/php/80/etc/php-fpm.conf request_terminate_timeout = 100</code> ，把<code>100</code>改成<code>5</code>；<br/> php执行超时，修改<code>/usr/local/php/etc/php.ini 将max_execution_time</code> 为<code>300</code>；</p>
+<p><strong>2、FastCGI进程是否已经启动</strong></p>
+<p><code>ps aux | grep php</code></p>
+<p>查看是否启动了<code>php-fpm</code>服务；</p>
+<p><strong>3、FastCGI worker进程数是否不够</strong><br/> 运行linux命令：</p>
+<p><code>netstat -anpo | grep “php-cgi” | wc -l</code></p>
+<p>判断是否接近FastCGI进程，接近配置文件中设置的数值，表明worker进程数设置太少；</p>
+<p><strong>4、FastCGI执行时间过长</strong><br/> PHP程序执行时间超过了Nginx等待时间，可以适当增加<code>nginx.conf</code>配置文件中<code>FastCGI</code>的<code>timeout</code>时间，根据实际情况调高以下参数值：</p>
+<p><code>fastcgi_connect_timeout 300;</code><br/> <code>fastcgi_send_timeout 300;</code><br/> <code>fastcgi_read_timeout 300;</code></p>
+<p><strong>5、FastCGI Buffer不够</strong><br/> nginx和apache一样，有前端缓冲限制，可以调整缓冲参数</p>
+<p><code>fastcgi_buffer_size 32k;</code><br/> <code>fastcgi_buffers 8 32k;</code></p>
+<p><strong>6、FastCGI 缓冲区设置过小</strong><br/> 首先查找nginx日志文件，目录<code>/var/log/nginx</code>，在日志中发现了如下错误：</p>
+<p><code>[error] 15421#0: *16 upstream sent too big header while reading response header from upstream</code>意思是nginx缓冲区bug造成，网站页面占用缓冲区可能过大。增加缓冲区彻底解决了Nginx 502 Bad Gateway，方法如下：</p>
+<pre><code>http {
+    ...
+    fastcgi_buffers 8 16k;
+    fastcgi_buffer_size 32k;
+    ...
+}
+</code></pre>
+<p>请根据服务器已经网站的情况自行增大上述两个配置项。</p>
+<p><strong>7、代理缓冲区设置过小（使用了nginx反向代理的情况）</strong><br/> 如果header过大，超出了默认的1k，就会引发upstream sent too big header</p>
+<pre><code>server {
+        listen       80;
+        server_name  *.test.com;
+ 
+        location / {
+ 
+###############添加这3行
+            proxy_buffer_size 64k;
+            proxy_buffers   32 32k;
+            proxy_busy_buffers_size 128k;
+###############添加这3行
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP       $remote_addr;
+            proxy_set_header X-Forwarded-For  $proxy_add_x_forwarded_for;
+............
+}
+</code></pre>
+<p><strong>8、默认php-cgi的进程数设置过少</strong><br/> 在安装好使用过程中出现502问题，一般是因为默认php-cgi进程是5个，可能因为phpcgi进程不够用而造成502，需要修改<code>/usr/local/php/etc/php-fpm.conf 将其中的max_children</code>的值适当增加。也有可能是<code>max_requests</code>的值不够用。需要说明的是这连个配置项占用内存很大，请根据服务器配置进行设置。否则可能起到反效果。</p>
+<p><strong>9、其它原因</strong><br/> 如果您上网时在您尝试访问的所有网站上都看这个问题，有两种可能<br/> ①你的ISP重大设备故障/过载<br/> ②有问题的内部互联网连接如您的防火墙无法正常运作。<br/> 在种情况下，只有您的ISP可以帮助您。在第二种情况下，你需要解决什么，那是阻止你进入互联网。<br/> 如果您只有在部分尝试访问的网站中出现此问题，那很可能是一个问题，即这些网站之一，其设备故障或超载。联系你网站的管理员。</p>
+<blockquote>
+<p>本文持续更新补充…</p>
+</blockquote>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

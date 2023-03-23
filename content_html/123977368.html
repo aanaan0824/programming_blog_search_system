@@ -1,0 +1,1016 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>ILRuntime使用讲解快速入门</h3>
+<ul><li><a href="#ILRuntime_1">ILRuntime的作用</a></li><li><a href="#ILRuntime_4">为什么要用到ILRuntime</a></li><li><a href="#ILRuntime_6">ILRuntime的实现原理</a></li><li><a href="#ILRuntime_8">ILRuntime使用</a></li><li><ul><li><a href="#_9">环境部署</a></li><li><a href="#UnityModeldllUnityHotFixdll_44">生成Unity.Model.dll文件和Unity.HotFix.dll文件</a></li><li><a href="#unityHotFixdllUnityHotFixpdb_49">加载unityHotFix.dll和Unity.HotFix.pdb文件</a></li><li><ul><li><a href="#unityHotFixdllUnityHotFixpdb_51">为什么加载unityHotFix.dll和Unity.HotFix.pdb文件</a></li><li><a href="#_53">开始加载</a></li></ul>
+</li><li><a href="#HotFixManager_91">HotFixManager脚本</a></li><li><ul><li><a href="#Load_370">Load函数</a></li></ul>
+</li><li><a href="#HotFixTest_402">HotFix文件夹Test脚本</a></li></ul>
+</li><li><a href="#_599">现在开始使用</a></li><li><ul><li><a href="#_600">跨域访问函数</a></li><li><a href="#_681">跨域加载成员变量</a></li><li><a href="#_732">跨域委托</a></li><li><a href="#_833">跨域继承适配</a></li><li><a href="#CLR_1059">CLR重定向</a></li></ul>
+</li><li><a href="#_1096">运行各种的结果</a></li><li><a href="#_1103">大总结</a></li></ul>
+</div>
+<p></p>
+<h1><a id="ILRuntime_1"></a>ILRuntime的作用</h1>
+<p>用于unity游戏的热更新，其语言是由C#写的，所以很受unity工程师的喜爱，这样就不再用xlua脚本进行热更新。<br/> <a href="http://ourpalm.github.io/ILRuntime/public/v1/guide/tutorial.html">ILRuntime官方讲解</a></p>
+<h1><a id="ILRuntime_4"></a>为什么要用到ILRuntime</h1>
+<p>我们知道他的目的后，它主要是用来进行游戏的更新操作，但是更新的流程是玩家运行游戏查看使用的游戏版本和我们上传到服务器版本是否相同，不同则进行更新操作。所以这里我们就用到了程序之间的跨域使用。而ILRuntime就是充当中介的作用实现跨域操作。</p>
+<h1><a id="ILRuntime_6"></a>ILRuntime的实现原理</h1>
+<p>ILRuntime借助Mono.Cecil库来读取DLL的PE信息，以及当中类型的所有信息，最终得到方法的IL汇编码，然后通过内置的IL解译执行虚拟机来执行DLL中的代码。</p>
+<h1><a id="ILRuntime_8"></a>ILRuntime使用</h1>
+<h2><a id="_9"></a>环境部署</h2>
+<p>将项目设置更改如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4077636eb8574651bf61987c940227ae.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>.在Assetts中创建HotFix文件夹，Model文件夹两个文件夹,</p>
+<p>导入资源（我上传的<a href="https://download.csdn.net/download/m0_48554728/85080818">免费资源</a>）下载下来导入<br/> 我们将link文件进行修改</p>
+<pre><code class="prism language-csharp"><span class="token operator">&lt;</span>linker<span class="token operator">&gt;</span>  
+    <span class="token operator">&lt;</span><span class="token class-name">assembly</span> fullname<span class="token operator">=</span><span class="token string">"Unity.Model"</span> preserve<span class="token operator">=</span><span class="token string">"all"</span><span class="token operator">/</span><span class="token operator">&gt;</span>
+    <span class="token operator">&lt;</span><span class="token class-name">assembly</span> fullname<span class="token operator">=</span><span class="token string">"Unity.ThirdParty"</span> preserve<span class="token operator">=</span><span class="token string">"all"</span><span class="token operator">/</span><span class="token operator">&gt;</span>
+    <span class="token operator">&lt;</span><span class="token class-name">assembly</span> fullname<span class="token operator">=</span><span class="token string">"unityEngine"</span> preserve<span class="token operator">=</span><span class="token string">"all"</span><span class="token operator">/</span><span class="token operator">&gt;</span>
+    <span class="token operator">&lt;</span><span class="token class-name">assembly</span> fullname<span class="token operator">=</span><span class="token string">"System"</span> preserve<span class="token operator">=</span><span class="token string">"all"</span><span class="token operator">/</span><span class="token operator">&gt;</span>
+<span class="token operator">&lt;</span><span class="token operator">/</span>linker<span class="token operator">&gt;</span>
+</code></pre>
+<p>将文件中的内容替换成该内容</p>
+<p>在Modle文件夹创建Uunity.Model程序集<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/0a7fbca7931946628b86895f50f9a941.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>在HotFix文件夹创建Unity.HotFix程序集<br/> 在ThirdParty文件夹创建Unity.ThirdParty程序集…（名字自定义）<br/> 接下来对这三个程序集进行修改</p>
+<p>Unity.Model程序集<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d7e2bcc4818a435a8de9615db015713a.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_12,color_FFFFFF,t_70,g_se,x_16"/><br/> Unity.HotFix程序集<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d72bcbd163ec4f99873d92cb5670830f.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_12,color_FFFFFF,t_70,g_se,x_16"/><br/> Unity.ThirdParty程序集<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/34dbc661b9554d67873e7b7886adeda7.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_15,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>很好，现在我们的环境搭建完毕。</p>
+<h2><a id="UnityModeldllUnityHotFixdll_44"></a>生成Unity.Model.dll文件和Unity.HotFix.dll文件</h2>
+<p>我们在Model文件夹和HotFix文件夹中创建两个init脚本编译一下。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9aa0f9d35c72431ebb69eea87c8534cc.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 我们就可以在这里查看到我们这两个程序集了</p>
+<h2><a id="unityHotFixdllUnityHotFixpdb_49"></a>加载unityHotFix.dll和Unity.HotFix.pdb文件</h2>
+<p>我们HotFix问价夹存放的都是我们需要用到热更新的代码，而Modle使我们初始化打包的脚本文件夹，简而言之，我们所有的代码大部分存放在HotFix，Mondle,ThirdParty文件夹中，除非有些脚本要放在Edtior问价夹中。因为这样我们可以很方便的管理脚本。</p>
+<h3><a id="unityHotFixdllUnityHotFixpdb_51"></a>为什么加载unityHotFix.dll和Unity.HotFix.pdb文件</h3>
+<p>因为这是跨域加载，要读取热更新里面的脚本我们就要在主工程项目加载到这两个文件然后才能通过ILRuntime进行访问。</p>
+<h3><a id="_53"></a>开始加载</h3>
+<p>我们首先创建一个Edtior文件夹，再创建BuildEdtior文件夹，再创建一个BuildHotFix脚本<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/517616eabf54413cb5952baf72aad3c0.png"/></p>
+<p><mark>脚本内容</mark></p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>IO</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEditor</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine</span><span class="token punctuation">;</span>
+
+<span class="token comment">//unity提供的特性  每次编译后都会执行  编辑器模式下</span>
+<span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">InitializeOnLoad</span></span><span class="token punctuation">]</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">BuildHotFixEditor</span> 
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">string</span></span> scriptAssembliesDir <span class="token operator">=</span> <span class="token string">"Library/ScriptAssemblies"</span><span class="token punctuation">;</span><span class="token comment">//加载路径</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">string</span></span> codeDir <span class="token operator">=</span> <span class="token string">"Assets/Res/Code/"</span><span class="token punctuation">;</span><span class="token comment">//生成的dll和pdb文件夹存放的位置</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">string</span></span> hotfixDll<span class="token operator">=</span><span class="token string">"Unity.HotFix.dll"</span><span class="token punctuation">;</span><span class="token comment">//加载文件夹名称</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">string</span></span> hotfixPdb <span class="token operator">=</span> <span class="token string">"Unity.HotFix.pdb"</span><span class="token punctuation">;</span><span class="token comment">//加载文件夹名称</span>
+    <span class="token keyword">static</span> <span class="token function">BuildHotFixEditor</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//编译后将原有的文件覆盖掉</span>
+        File<span class="token punctuation">.</span><span class="token function">Copy</span><span class="token punctuation">(</span>Path<span class="token punctuation">.</span><span class="token function">Combine</span><span class="token punctuation">(</span>scriptAssembliesDir<span class="token punctuation">,</span>hotfixDll<span class="token punctuation">)</span><span class="token punctuation">,</span>
+            Path<span class="token punctuation">.</span><span class="token function">Combine</span><span class="token punctuation">(</span>codeDir<span class="token punctuation">,</span>hotfixDll<span class="token operator">+</span><span class="token string">".bytes"</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        File<span class="token punctuation">.</span><span class="token function">Copy</span><span class="token punctuation">(</span>Path<span class="token punctuation">.</span><span class="token function">Combine</span><span class="token punctuation">(</span>scriptAssembliesDir<span class="token punctuation">,</span>hotfixPdb<span class="token punctuation">)</span><span class="token punctuation">,</span>
+            Path<span class="token punctuation">.</span><span class="token function">Combine</span><span class="token punctuation">(</span>codeDir<span class="token punctuation">,</span>hotfixPdb<span class="token operator">+</span><span class="token string">".bytes"</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"复制hotfix文件成功"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4858bca0d8be4b3386b5bfb85152b294.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_18,color_FFFFFF,t_70,g_se,x_16"/><br/> 这样子我们每次编译脚本后他都会自动重新修改刷新这两个文件夹的内容，保证实时性</p>
+<h2><a id="HotFixManager_91"></a>HotFixManager脚本</h2>
+<p><strong><mark>下面的脚本很大我们耐心一点，不要一次性全部看完，我们慢慢来一步一步的讲解</mark></strong><br/> 在Model文件夹创建HotFixManager脚本，作为全局变量加载HotFix文件夹中脚本内容</p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>IO</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Reflection</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">ILRuntime<span class="token punctuation">.</span>CLR<span class="token punctuation">.</span>Method</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">ILRuntime<span class="token punctuation">.</span>CLR<span class="token punctuation">.</span>TypeSystem</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">ILRuntime<span class="token punctuation">.</span>Mono<span class="token punctuation">.</span>Cecil<span class="token punctuation">.</span>Pdb</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">ILRuntime<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>Intepreter</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">ILRuntime<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>Stack</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">Unity<span class="token punctuation">.</span>Model</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEditor</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEditor<span class="token punctuation">.</span>Compilation</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine<span class="token punctuation">.</span>Events</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token class-name">AppDomain</span> <span class="token operator">=</span> <span class="token class-name">ILRuntime<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>Enviorment<span class="token punctuation">.</span>AppDomain</span><span class="token punctuation">;</span>
+
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">HotFixManager</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+
+    <span class="token keyword">public</span> <span class="token class-name">GameObject</span> code<span class="token punctuation">;</span><span class="token comment">//code预制体，它身上带有Unity.HotFix.dll和Unity.HotFix.pdb文件</span>
+
+    <span class="token keyword">private</span> <span class="token class-name">MemoryStream</span> dllStream<span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token class-name">MemoryStream</span> pdbStream<span class="token punctuation">;</span>
+
+    <span class="token keyword">private</span> <span class="token class-name">AppDomain</span> appDomain<span class="token punctuation">;</span><span class="token comment">//全局变量，建议使用时用单例模式将HotManager做成单例</span>
+    
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">string</span></span> namespaceName <span class="token operator">=</span> <span class="token string">"HotFix"</span><span class="token punctuation">;</span><span class="token comment">//我们加载热更新脚本的命名空间名字</span>
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">string</span></span> className <span class="token operator">=</span> <span class="token string">"Test"</span><span class="token punctuation">;</span><span class="token comment">//加载类的名字</span>
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">string</span></span> name <span class="token operator">=</span> <span class="token string">""</span><span class="token punctuation">;</span><span class="token comment">//加载文件总名称</span>
+    <span class="token comment">// Start is called before the first frame update</span>
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Start</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        name <span class="token operator">=</span> namespaceName <span class="token operator">+</span> <span class="token string">"."</span> <span class="token operator">+</span> className<span class="token punctuation">;</span>
+        <span class="token function">Load</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        热更新加载函数<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Load</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//1.获取带两个bytes文件</span>
+        <span class="token class-name">CodeReference</span> cr <span class="token operator">=</span> code<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">GetComponent</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>CodeReference<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> assBytes <span class="token operator">=</span> cr<span class="token punctuation">.</span>hotFixDll<span class="token punctuation">.</span>bytes<span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> pdbBytes <span class="token operator">=</span> cr<span class="token punctuation">.</span>hotFixPdb<span class="token punctuation">.</span>bytes<span class="token punctuation">;</span>
+        
+         
+<span class="token preprocessor property">#<span class="token directive keyword">if</span> ILRuntime</span>
+        <span class="token comment">//2.在ILRuntime模式下 把这两个文件加载到内存流里面</span>
+        dllStream <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">MemoryStream</span><span class="token punctuation">(</span>assBytes<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        pdbStream <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">MemoryStream</span><span class="token punctuation">(</span>pdbBytes<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        <span class="token comment">//3.构造AppDomain对象 通过它的LoadAssembly来进行加载</span>
+        appDomain <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">AppDomain</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">LoadAssembly</span><span class="token punctuation">(</span>dllStream<span class="token punctuation">,</span>pdbStream<span class="token punctuation">,</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">PdbReaderProvider</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        委托适配器<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        跨域继承适配器注册<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        CLR重定向方法<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"ILRuntime模式加载成功"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token preprocessor property">#<span class="token directive keyword">else</span></span>
+       Assembly<span class="token punctuation">.</span><span class="token function">Load</span><span class="token punctuation">(</span>assBytes<span class="token punctuation">,</span>pdbBytes<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token preprocessor property">#<span class="token directive keyword">endif</span></span>
+        
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">void</span> 跨域继承适配器注册<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        appDomain<span class="token punctuation">.</span><span class="token function">RegisterCrossBindingAdaptor</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">UIBaseAdapter</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">void</span> 热更新加载函数<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 1.加载静态无返回函数</span>
+
+        <span class="token comment">//第一个参数：命名空间.类名</span>
+        <span class="token comment">//第二个参数：方法名</span>
+        <span class="token comment">//第三个参数：类的实例(静态函数不用写实例，动态的要添加实例参数</span>
+        <span class="token comment">//第四个参数：参数类型</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"无参函数"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span><span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span><span class="token string">"有一参数函数"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"有多参函数"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> <span class="token punctuation">{<!-- --></span><span class="token string">"皮学渣"</span><span class="token punctuation">,</span> <span class="token string">"学渣皮"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"多个不同参数类型无返回函数"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">object</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> <span class="token punctuation">{<!-- --></span><span class="token string">"皮学渣"</span><span class="token punctuation">,</span> <span class="token number">211</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 2.加载静态有返回函数</span>
+        
+        <span class="token class-name"><span class="token keyword">object</span></span> m1 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"无参函数有返回值"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>m1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> m2 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"有一参数函数有返回"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>m2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> m3 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"有多参函数有返回"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span><span class="token punctuation">{<!-- --></span><span class="token string">"皮学渣"</span><span class="token punctuation">,</span><span class="token string">"学渣皮"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>m3<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> m4 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"多个不同参数类型无返回函数有返回"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">object</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span><span class="token punctuation">{<!-- --></span><span class="token string">"皮学渣"</span><span class="token punctuation">,</span><span class="token number">211985</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>m4<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 3.加载动态无返回函数</span>
+
+        <span class="token function">InstantiateTest</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+        
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 4.加载重载函数</span>
+
+        <span class="token comment">//1.第一种和上面记载的方法一样，指定方法名，实例，参数个数，具体实现就不再重写，自己照着上面就可以了</span>
+        <span class="token comment">//2.List&lt;IType&gt;泛型加载参数形式找到对应的函数</span>
+        <span class="token class-name">IType</span> type1 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span>LoadedTypes<span class="token punctuation">[</span>name<span class="token punctuation">]</span><span class="token punctuation">;</span><span class="token comment">//这里将指定类的所有类型都加载出来</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>type1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">IMethod</span> method1 <span class="token operator">=</span> type1<span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"Log"</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>method1<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这个对应的无参Log函数</span>
+        
+        <span class="token class-name">IType</span> type2 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span>LoadedTypes<span class="token punctuation">[</span>name<span class="token punctuation">]</span><span class="token punctuation">;</span><span class="token comment">//这里将指定类的所有类型都加载出来</span>
+        <span class="token class-name">List<span class="token punctuation">&lt;</span>IType<span class="token punctuation">&gt;</span></span> param2 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>IType<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        param2<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>appDomain<span class="token punctuation">.</span><span class="token function">GetType</span><span class="token punctuation">(</span><span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name"><span class="token keyword">string</span></span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这里对应的函数参数什么类型，有几个都这样添加进来</span>
+        <span class="token class-name">IMethod</span> method2 <span class="token operator">=</span> type2<span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"Log"</span><span class="token punctuation">,</span> param2<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>method2<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        <span class="token class-name">IType</span> type3 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span>LoadedTypes<span class="token punctuation">[</span>name<span class="token punctuation">]</span><span class="token punctuation">;</span><span class="token comment">//这里将指定类的所有类型都加载出来</span>
+        <span class="token class-name">List<span class="token punctuation">&lt;</span>IType<span class="token punctuation">&gt;</span></span> param3 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>IType<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        param3<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>appDomain<span class="token punctuation">.</span><span class="token function">GetType</span><span class="token punctuation">(</span><span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name"><span class="token keyword">string</span></span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        param3<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>appDomain<span class="token punctuation">.</span><span class="token function">GetType</span><span class="token punctuation">(</span><span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name"><span class="token keyword">int</span></span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">IMethod</span> method3 <span class="token operator">=</span> type2<span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"Log"</span><span class="token punctuation">,</span> param3<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>method3<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">object</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span><span class="token punctuation">{<!-- --></span><span class="token string">"皮学渣"</span><span class="token punctuation">,</span><span class="token number">211985</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        
+        <span class="token comment">//该形式也可和前面的函数类型进行调用，只是那样直接调用的比较方便</span>
+<span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 5.加载成员变量</span>
+
+        调用变量成员<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 6.加载泛型函数</span>
+
+        调用泛型<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 7.加载委托</span>
+
+        调用委托<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 跨域继承的调用</span>
+
+        调用继承类函数<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> CLR重定向</span>
+        
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 实例化类，从而达到调用动态函数</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">InstantiateTest</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">ILTypeInstance</span> test<span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Instantiate</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"动态无参"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"动态有一参函数"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> x1<span class="token operator">=</span>appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"动态无参有返回值"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>x1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> x2<span class="token operator">=</span>appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"动态有一参函数有返回值"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>x2<span class="token punctuation">)</span> <span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 这个方法是调用热更新dll文件中的类的成员</span>
+    <span class="token comment">/// 注意这里的调用热更新文件变量必须是属性</span>
+    <span class="token comment">/// 采用get_Name获取和set_Name设置赋值</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token keyword">void</span> 调用变量成员<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//通过实例化，我们去访问成员变量，但是对应的成员变量是字段属性，我们还是类似调用的方法一样才能得到变量</span>
+        <span class="token comment">//get_ID  set_ID都是我们在给变量设置为属性时自动生成的</span>
+        <span class="token class-name">ILTypeInstance</span> test <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Instantiate</span><span class="token punctuation">(</span>name<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        <span class="token class-name"><span class="token keyword">int</span></span> id1 <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"get_ID"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>id1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"set_ID"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token number">985211</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">int</span></span> id2 <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"get_ID"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>id2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 这个方法是调用热更新Dll文件中类的泛型方法，我们只需要给</span>
+    <span class="token comment">/// 该方法声明类型即可使用 采用appDomain.GetType(type(string....)注册</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token keyword">void</span> 调用泛型<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">ILTypeInstance</span> test <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Instantiate</span><span class="token punctuation">(</span>name<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">InvokeGenericMethod</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"泛型函数"</span><span class="token punctuation">,</span>
+            <span class="token keyword">new</span> <span class="token constructor-invocation class-name">IType<span class="token punctuation">[</span><span class="token punctuation">]</span></span> <span class="token punctuation">{<!-- --></span>appDomain<span class="token punctuation">.</span><span class="token function">GetType</span><span class="token punctuation">(</span><span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name"><span class="token keyword">string</span></span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">}</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">void</span> 调用委托<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//注意：我们的ILRuntime只支持Action以及Func，delegate委托的使用</span>
+        <span class="token comment">//而在unity’中的委托调用是UnityAction，所以我们咋这里用ILRuntime无法直接调用该方法</span>
+        <span class="token comment">//所以我们这里就用到了我们的委托适配器，我们要在生成appDomain变量是进行注册委托适配器</span>
+        <span class="token class-name">ILTypeInstance</span> test <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Instantiate</span><span class="token punctuation">(</span>name<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"ButtonClick"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"调用这些委托"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">void</span> 委托适配器<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//普通委托注册</span>
+        appDomain<span class="token punctuation">.</span>DelegateManager<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">RegisterMethodDelegate</span><span class="token generic class-name"><span class="token punctuation">&lt;</span><span class="token keyword">int</span><span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这是给Action类型添加委托进行适配，&lt;&gt;里可以写任意个参数类型，要和dll里面的匹配</span>
+        appDomain<span class="token punctuation">.</span>DelegateManager<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">RegisterFunctionDelegate</span><span class="token generic class-name"><span class="token punctuation">&lt;</span><span class="token keyword">int</span><span class="token punctuation">,</span><span class="token keyword">int</span><span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这是给Action类型添加委托进行适配，&lt;&gt;里可以写任意个参数类型，要和dll里面的匹配</span>
+        
+        <span class="token comment">//这里是给非Action Func 委托类型进行注册</span>
+        appDomain<span class="token punctuation">.</span>DelegateManager<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">RegisterDelegateConvertor</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>UnityAction<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">(</span>
+            <span class="token punctuation">(</span>act<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">UnityAction</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">=&gt;</span>
+                    <span class="token punctuation">(</span><span class="token punctuation">(</span>Action<span class="token punctuation">)</span> act<span class="token punctuation">)</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+                    <span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">void</span> 调用继承类函数<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name"><span class="token keyword">string</span></span> pName <span class="token operator">=</span> <span class="token string">"HotFix.继承unity主程序中的类"</span><span class="token punctuation">;</span>
+        <span class="token class-name">UIBase</span> uibase <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">Instantiate</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>UIBase<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span>pName<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">int</span></span> id <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>pName<span class="token punctuation">,</span> <span class="token string">"get_MyID"</span><span class="token punctuation">,</span> uibase<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>id<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>pName<span class="token punctuation">,</span> <span class="token string">"HandleEvent"</span><span class="token punctuation">,</span> uibase<span class="token punctuation">,</span> <span class="token number">50</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>pName<span class="token punctuation">,</span> <span class="token string">"Open"</span><span class="token punctuation">,</span> uibase<span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+
+    <span class="token keyword">unsafe</span> <span class="token keyword">void</span> CLR重定向方法<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">MethodInfo</span> method<span class="token operator">=</span>  <span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name">Debug</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"Log"</span><span class="token punctuation">,</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">System<span class="token punctuation">.</span>Type<span class="token punctuation">[</span><span class="token punctuation">]</span></span> <span class="token punctuation">{<!-- --></span> <span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name"><span class="token keyword">object</span></span><span class="token punctuation">)</span> <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">RegisterCLRMethodRedirection</span><span class="token punctuation">(</span>method<span class="token punctuation">,</span> DLog<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token keyword">unsafe</span> <span class="token keyword">static</span> StackObject<span class="token operator">*</span> <span class="token function">DLog</span><span class="token punctuation">(</span><span class="token class-name">ILIntepreter</span> __intp<span class="token punctuation">,</span> StackObject<span class="token operator">*</span> __esp<span class="token punctuation">,</span> <span class="token class-name">IList<span class="token punctuation">&lt;</span><span class="token keyword">object</span><span class="token punctuation">&gt;</span></span> __mStack<span class="token punctuation">,</span> <span class="token class-name">CLRMethod</span> __method<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">bool</span></span> isNewObj<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">ILRuntime<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>Enviorment<span class="token punctuation">.</span>AppDomain</span> __domain <span class="token operator">=</span> __intp<span class="token punctuation">.</span>AppDomain<span class="token punctuation">;</span>
+        StackObject<span class="token operator">*</span> ptr_of_this_method<span class="token punctuation">;</span>
+        <span class="token comment">//只有一个参数，所以返回指针就是当前栈指针ESP - 1</span>
+        StackObject<span class="token operator">*</span> __ret <span class="token operator">=</span> ILIntepreter<span class="token punctuation">.</span><span class="token function">Minus</span><span class="token punctuation">(</span>__esp<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//第一个参数为ESP -1， 第二个参数为ESP - 2，以此类推</span>
+        ptr_of_this_method <span class="token operator">=</span> ILIntepreter<span class="token punctuation">.</span><span class="token function">Minus</span><span class="token punctuation">(</span>__esp<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//获取参数message的值</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> message <span class="token operator">=</span> StackObject<span class="token punctuation">.</span><span class="token function">ToObject</span><span class="token punctuation">(</span>ptr_of_this_method<span class="token punctuation">,</span> __domain<span class="token punctuation">,</span> __mStack<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//需要清理堆栈</span>
+        __intp<span class="token punctuation">.</span><span class="token function">Free</span><span class="token punctuation">(</span>ptr_of_this_method<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//如果参数类型是基础类型，例如int，可以直接通过int param = ptr_of_this_method-&gt;Value获取值，</span>
+        <span class="token comment">//关于具体原理和其他基础类型如何获取，请参考ILRuntime实现原理的文档。</span>
+
+        <span class="token comment">//通过ILRuntime的Debug接口获取调用热更DLL的堆栈</span>
+        <span class="token class-name"><span class="token keyword">string</span></span> stackTrace <span class="token operator">=</span> __domain<span class="token punctuation">.</span>DebugService<span class="token punctuation">.</span><span class="token function">GetStackTrace</span><span class="token punctuation">(</span>__intp<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token keyword">string</span><span class="token punctuation">.</span><span class="token function">Format</span><span class="token punctuation">(</span><span class="token string">"{0}\n----------------\n{1}"</span><span class="token punctuation">,</span> message<span class="token punctuation">,</span> stackTrace<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">return</span> __ret<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span> 
+
+</code></pre>
+<h3><a id="Load_370"></a>Load函数</h3>
+<pre><code class="prism language-csharp"><span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Load</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//1.获取带两个bytes文件</span>
+        <span class="token class-name">CodeReference</span> cr <span class="token operator">=</span> code<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">GetComponent</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>CodeReference<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> assBytes <span class="token operator">=</span> cr<span class="token punctuation">.</span>hotFixDll<span class="token punctuation">.</span>bytes<span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> pdbBytes <span class="token operator">=</span> cr<span class="token punctuation">.</span>hotFixPdb<span class="token punctuation">.</span>bytes<span class="token punctuation">;</span>
+        
+         
+<span class="token preprocessor property">#<span class="token directive keyword">if</span> ILRuntime</span>
+        <span class="token comment">//2.在ILRuntime模式下 把这两个文件加载到内存流里面</span>
+        dllStream <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">MemoryStream</span><span class="token punctuation">(</span>assBytes<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        pdbStream <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">MemoryStream</span><span class="token punctuation">(</span>pdbBytes<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        <span class="token comment">//3.构造AppDomain对象 通过它的LoadAssembly来进行加载</span>
+        appDomain <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">AppDomain</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">LoadAssembly</span><span class="token punctuation">(</span>dllStream<span class="token punctuation">,</span>pdbStream<span class="token punctuation">,</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">PdbReaderProvider</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        委托适配器<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        跨域继承适配器注册<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        CLR重定向方法<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"ILRuntime模式加载成功"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token preprocessor property">#<span class="token directive keyword">else</span></span>
+       Assembly<span class="token punctuation">.</span><span class="token function">Load</span><span class="token punctuation">(</span>assBytes<span class="token punctuation">,</span>pdbBytes<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token preprocessor property">#<span class="token directive keyword">endif</span></span>
+        
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>Load函数的作用就是进行初始化appDomain，它是我们ILRuntime的集成者，我们都是通过它来访问热更新文件。<br/> 而委托适配器();跨域继承适配器注册();CLR重定向方法();这三个函数是进行适配器注册，所以我们在个热更新项目中也是在初始化的时候将所有的适配器加载出来，适配器后面会讲。</p>
+<h2><a id="HotFixTest_402"></a>HotFix文件夹Test脚本</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7c2242ec21e940b3bdf08737cb42424e.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_19,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p><mark>脚本内容</mark></p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine<span class="token punctuation">.</span>UI</span><span class="token punctuation">;</span>
+
+
+<span class="token keyword">namespace</span> HotFix<span class="token comment">//这里就是我们要给访问的命名空间</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Test</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 函数</span>
+
+        <span class="token keyword">public</span> <span class="token function">Test</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"我是无参构造函数"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token function">Test</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"我是有参构造函数string text：   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">text</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> 无参函数<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"我是静态无参函数无返回函数"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> 有一参数函数<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"我是静态有一个string参数函数无返回函数：   "</span><span class="token operator">+</span>text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> 有多参函数<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text1<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> text2<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"我是静态有多个参数无返回函数"</span></span> <span class="token operator">+</span>
+                      <span class="token interpolation-string"><span class="token string">$"string  text1：   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">text1</span><span class="token punctuation">}</span></span><span class="token string">   string text2:   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">text2</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> 多个不同参数类型无返回函数<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> m<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"我是静态有多个不同参数类型无返回函数 "</span></span> <span class="token operator">+</span>
+                      <span class="token interpolation-string"><span class="token string">$"  string text：   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">text</span><span class="token punctuation">}</span></span><span class="token string">    int m:   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">m</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Log</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"无参无返回Log函数"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Log</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"有一个string参数无返回Log函数 text：   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">text</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Log</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> m<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"有一个string参数一个int参乎上无返回Log函数 text：   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">text</span><span class="token punctuation">}</span></span><span class="token string">      m:     </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">m</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">int</span> 无参函数有返回值<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"我是静态无参函数有返回函数"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token number">1</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">int</span> 有一参数函数有返回<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"我是静态有一个string参数函数有返回函数：   "</span><span class="token operator">+</span>text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token number">2</span><span class="token punctuation">;</span> 
+        <span class="token punctuation">}</span>
+        
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">int</span> 有多参函数有返回<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text1<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> text2<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"我是静态有多个参数有返回函数"</span></span> <span class="token operator">+</span>
+                      <span class="token interpolation-string"><span class="token string">$"string  text1：   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">text1</span><span class="token punctuation">}</span></span><span class="token string">   string text2:   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">text2</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token number">3</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">int</span> 多个不同参数类型无返回函数有返回<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> m<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"我是静态有多个不同参数类型有返回函数 "</span></span> <span class="token operator">+</span>
+                      <span class="token interpolation-string"><span class="token string">$"  string text：   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">text</span><span class="token punctuation">}</span></span><span class="token string">    int m:   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">m</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token number">4</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+        <span class="token keyword">public</span> <span class="token keyword">void</span> 动态无参<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"我是动态无参无返回函数"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">void</span> 动态有一参函数<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"我是动态有一参数函数  string text:     "</span><span class="token operator">+</span>text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">int</span> 动态无参有返回值<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"我是动态无参有返回函数"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token number">1</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+        <span class="token keyword">public</span> <span class="token keyword">int</span> 动态有一参函数有返回值<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"我是动态有一参数有返回值函数  string text:     "</span><span class="token operator">+</span>text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token number">2</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 字段变量</span>
+
+        <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">int</span></span> id<span class="token operator">=</span><span class="token number">5000</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> ID
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">get</span> <span class="token punctuation">{<!-- --></span> <span class="token keyword">return</span> id<span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token keyword">set</span> <span class="token punctuation">{<!-- --></span> id <span class="token operator">=</span> <span class="token keyword">value</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 泛型函数</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">void</span> 泛型函数<span class="token operator">&lt;</span>T<span class="token operator">&gt;</span><span class="token punctuation">(</span><span class="token class-name">T</span> t<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"我是泛型函数参数是：</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">t</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> UnityAction委托调用</span>
+
+        <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ButtonClick</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">Button</span> button <span class="token operator">=</span> GameObject<span class="token punctuation">.</span><span class="token function">Find</span><span class="token punctuation">(</span><span class="token string">"Canvas/Test"</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token generic-method"><span class="token function">GetComponent</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>Button<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            button<span class="token punctuation">.</span>onClick<span class="token punctuation">.</span><span class="token function">AddListener</span><span class="token punctuation">(</span>OnClike<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这里的注册添加的是UnityAction委托类型</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">OnClike</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"点击了Test按钮"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 其他委托delegate Func Action</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">delegate</span> <span class="token keyword">void</span> Delegate委托<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">public</span> Action<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> action委托<span class="token punctuation">;</span>
+        <span class="token keyword">public</span> Func<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">,</span> <span class="token keyword">int</span><span class="token operator">&gt;</span> func委托<span class="token punctuation">;</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">void</span> 注册<span class="token keyword">delegate</span>委托<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"使用了delegate委托"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token keyword">void</span> 注册Action委托<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> n<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"使用了Action委托,参数数n:   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">n</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token keyword">int</span> 注册Func委托<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> m<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"使用了func委托,参数数m：</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">m</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> m<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">void</span> 调用这些委托<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">//首先给这些委托进行注册</span>
+            Delegate委托 <span class="token keyword">delegate</span>委托 <span class="token operator">=</span> 注册<span class="token keyword">delegate</span>委托<span class="token punctuation">;</span>
+            action委托 <span class="token operator">=</span> 注册Action委托<span class="token punctuation">;</span>
+            func委托 <span class="token operator">=</span> 注册Func委托<span class="token punctuation">;</span>
+            
+            
+            <span class="token comment">//调用这些委托</span>
+            <span class="token keyword">delegate</span>委托<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            action委托<span class="token punctuation">(</span><span class="token number">985</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name"><span class="token keyword">int</span></span> m <span class="token operator">=</span> func委托<span class="token punctuation">(</span><span class="token number">985211</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>m<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<h1><a id="_599"></a>现在开始使用</h1>
+<h2><a id="_600"></a>跨域访问函数</h2>
+<p>我们在Test脚本中定义了好多函数，我们现在只看我划分分函数部分，所谓什么类型的都包括了，所以看完一遍你就完全可以掌握，并且不会出现什么疑问<br/> 我们在HotFixManager中进行访问<br/> 这就看我们在HotFixManager中的<mark>热更新加载函数();</mark></p>
+<pre><code class="prism language-csharp"> <span class="token preprocessor property">#<span class="token directive keyword">region</span> 1.加载静态无返回函数</span>
+
+        <span class="token comment">//第一个参数：命名空间.类名</span>
+        <span class="token comment">//第二个参数：方法名</span>
+        <span class="token comment">//第三个参数：类的实例(静态函数不用写实例，动态的要添加实例参数</span>
+        <span class="token comment">//第四个参数：参数类型</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"无参函数"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span><span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span><span class="token string">"有一参数函数"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"有多参函数"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> <span class="token punctuation">{<!-- --></span><span class="token string">"皮学渣"</span><span class="token punctuation">,</span> <span class="token string">"学渣皮"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"多个不同参数类型无返回函数"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">object</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> <span class="token punctuation">{<!-- --></span><span class="token string">"皮学渣"</span><span class="token punctuation">,</span> <span class="token number">211</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//不同参数类型用object数组</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 2.加载静态有返回函数</span>
+        <span class="token comment">//返回值我们用object接受，当然我们可以将返回值进行转化成我们想要的类型</span>
+        <span class="token comment">// int m1 = (int)appDomain.Invoke(name, "无参函数有返回值", null, null);这样也可以</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> m1 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"无参函数有返回值"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>m1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> m2 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"有一参数函数有返回"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>m2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> m3 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"有多参函数有返回"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span><span class="token punctuation">{<!-- --></span><span class="token string">"皮学渣"</span><span class="token punctuation">,</span><span class="token string">"学渣皮"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>m3<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> m4 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"多个不同参数类型无返回函数有返回"</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">object</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span><span class="token punctuation">{<!-- --></span><span class="token string">"皮学渣"</span><span class="token punctuation">,</span><span class="token number">211985</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>m4<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 3.加载动态无返回函数</span>
+
+        <span class="token function">InstantiateTest</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+        
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 4.加载重载函数</span>
+
+        <span class="token comment">//1.第一种和上面记载的方法一样，指定方法名，实例，参数个数，具体实现就不再重写，自己照着上面就可以了</span>
+        <span class="token comment">//2.List&lt;IType&gt;泛型加载参数形式找到对应的函数</span>
+        <span class="token class-name">IType</span> type1 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span>LoadedTypes<span class="token punctuation">[</span>name<span class="token punctuation">]</span><span class="token punctuation">;</span><span class="token comment">//这里将指定类的所有类型都加载出来</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>type1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">IMethod</span> method1 <span class="token operator">=</span> type1<span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"Log"</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>method1<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这个对应的无参Log函数</span>
+        
+        <span class="token class-name">IType</span> type2 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span>LoadedTypes<span class="token punctuation">[</span>name<span class="token punctuation">]</span><span class="token punctuation">;</span><span class="token comment">//这里将指定类的所有类型都加载出来</span>
+        <span class="token class-name">List<span class="token punctuation">&lt;</span>IType<span class="token punctuation">&gt;</span></span> param2 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>IType<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        param2<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>appDomain<span class="token punctuation">.</span><span class="token function">GetType</span><span class="token punctuation">(</span><span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name"><span class="token keyword">string</span></span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这里对应的函数参数什么类型，有几个都这样添加进来</span>
+        <span class="token class-name">IMethod</span> method2 <span class="token operator">=</span> type2<span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"Log"</span><span class="token punctuation">,</span> param2<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>method2<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        <span class="token class-name">IType</span> type3 <span class="token operator">=</span> appDomain<span class="token punctuation">.</span>LoadedTypes<span class="token punctuation">[</span>name<span class="token punctuation">]</span><span class="token punctuation">;</span><span class="token comment">//这里将指定类的所有类型都加载出来</span>
+        <span class="token class-name">List<span class="token punctuation">&lt;</span>IType<span class="token punctuation">&gt;</span></span> param3 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>IType<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        param3<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>appDomain<span class="token punctuation">.</span><span class="token function">GetType</span><span class="token punctuation">(</span><span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name"><span class="token keyword">string</span></span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        param3<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>appDomain<span class="token punctuation">.</span><span class="token function">GetType</span><span class="token punctuation">(</span><span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name"><span class="token keyword">int</span></span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">IMethod</span> method3 <span class="token operator">=</span> type2<span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"Log"</span><span class="token punctuation">,</span> param3<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>method3<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">object</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span><span class="token punctuation">{<!-- --></span><span class="token string">"皮学渣"</span><span class="token punctuation">,</span><span class="token number">211985</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        <span class="token comment">//该形式也可和前面的函数类型进行调用，只是那样直接调用的比较方便</span>
+<span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+</code></pre>
+<pre><code class="prism language-csharp">	<span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 实例化类，从而达到调用动态函数，动态函数字段都要有实例才能进行访问</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">InstantiateTest</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">ILTypeInstance</span> test<span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Instantiate</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//生成实例，第一个参数名字是实例的类名，第二个是参数null代表是用无参构造函数进行实例化，有参数就是有参构造创建</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"动态无参"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"动态有一参函数"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> x1<span class="token operator">=</span>appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"动态无参有返回值"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>x1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> x2<span class="token operator">=</span>appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"动态有一参函数有返回值"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>x2<span class="token punctuation">)</span> <span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="_681"></a>跨域加载成员变量</h2>
+<p><mark>HotFix.Test脚本中</mark></p>
+<pre><code class="prism language-csharp"><span class="token preprocessor property">#<span class="token directive keyword">region</span> 字段变量</span>
+
+        <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">int</span></span> id<span class="token operator">=</span><span class="token number">5000</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">int</span> ID<span class="token comment">//我们要给他一个属性才能进行访问</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">get</span> <span class="token punctuation">{<!-- --></span> <span class="token keyword">return</span> id<span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token keyword">set</span> <span class="token punctuation">{<!-- --></span> id <span class="token operator">=</span> <span class="token keyword">value</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+</code></pre>
+<p><mark>Modle.HotFixManager脚本</mark><br/> 热更新加载函数():</p>
+<pre><code class="prism language-csharp"><span class="token preprocessor property">#<span class="token directive keyword">region</span> 5.加载成员变量</span>
+
+        调用变量成员<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+</code></pre>
+<pre><code class="prism language-csharp"> 	<span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 这个方法是调用热更新dll文件中的类的成员</span>
+    <span class="token comment">/// 注意这里的调用热更新文件变量必须是属性</span>
+    <span class="token comment">/// 采用get_Name获取和set_Name设置赋值</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token keyword">void</span> 调用变量成员<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//通过实例化，我们去访问成员变量，但是对应的成员变量是字段属性，我们还是类似调用的方法一样才能得到变量</span>
+        <span class="token comment">//get_ID  set_ID都是我们在给变量设置为属性时自动生成的</span>
+        <span class="token class-name">ILTypeInstance</span> test <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Instantiate</span><span class="token punctuation">(</span>name<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        
+        <span class="token class-name"><span class="token keyword">int</span></span> id1 <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"get_ID"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>id1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"set_ID"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token number">985211</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">int</span></span> id2 <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span> appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"get_ID"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>id2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="_732"></a>跨域委托</h2>
+<p>我们在场景创建一个button按钮，接下来我们通过HotFix.Test脚本获取button并注册点击事件<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/94695cb673c24910a47e30ea9325223d.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p><mark>HotFix.Test</mark></p>
+<pre><code class="prism language-csharp">		<span class="token preprocessor property">#<span class="token directive keyword">region</span> UnityAction委托调用</span>
+
+        <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ButtonClick</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">Button</span> button <span class="token operator">=</span> GameObject<span class="token punctuation">.</span><span class="token function">Find</span><span class="token punctuation">(</span><span class="token string">"Canvas/Test"</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token generic-method"><span class="token function">GetComponent</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>Button<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            button<span class="token punctuation">.</span>onClick<span class="token punctuation">.</span><span class="token function">AddListener</span><span class="token punctuation">(</span>OnClick<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这里的注册添加的是UnityAction委托类型</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">OnClick</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"点击了Test按钮"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+		<span class="token preprocessor property">#<span class="token directive keyword">region</span> 其他委托delegate Func Action</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">delegate</span> <span class="token keyword">void</span> Delegate委托<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">public</span> Action<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> action委托<span class="token punctuation">;</span>
+        <span class="token keyword">public</span> Func<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">,</span> <span class="token keyword">int</span><span class="token operator">&gt;</span> func委托<span class="token punctuation">;</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">void</span> 注册<span class="token keyword">delegate</span>委托<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"使用了delegate委托"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token keyword">void</span> 注册Action委托<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> n<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"使用了Action委托,参数数n:   </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">n</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token keyword">int</span> 注册Func委托<span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> m<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"使用了func委托,参数数m：</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">m</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> m<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">void</span> 调用这些委托<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">//首先给这些委托进行注册</span>
+            Delegate委托 <span class="token keyword">delegate</span>委托 <span class="token operator">=</span> 注册<span class="token keyword">delegate</span>委托<span class="token punctuation">;</span>
+            action委托 <span class="token operator">=</span> 注册Action委托<span class="token punctuation">;</span>
+            func委托 <span class="token operator">=</span> 注册Func委托<span class="token punctuation">;</span>
+            
+            
+            <span class="token comment">//调用这些委托</span>
+            <span class="token keyword">delegate</span>委托<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            action委托<span class="token punctuation">(</span><span class="token number">985</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name"><span class="token keyword">int</span></span> m <span class="token operator">=</span> func委托<span class="token punctuation">(</span><span class="token number">985211</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>m<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span></span>
+</code></pre>
+<p>如果我们直接向上面那样调用函数调用ButtonClick的话会进行报错。<br/> 报错的原因就是没有进行委托适配<br/> <mark>button.onClick.AddListener(OnClick);</mark> 这一句参数OnClick是一个UnityAction类型委托，而ILRuntime不支持UnityAction，所以我们要进行委托注册，这样才能调用UnityAction类型委托<br/> <a href="http://ourpalm.github.io/ILRuntime/public/v1/guide/delegate.html">官方文档</a></p>
+<p><mark>HotFixManager</mark></p>
+<pre><code class="prism language-csharp"> <span class="token keyword">void</span> 委托适配器<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//普通委托注册</span>
+        appDomain<span class="token punctuation">.</span>DelegateManager<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">RegisterMethodDelegate</span><span class="token generic class-name"><span class="token punctuation">&lt;</span><span class="token keyword">int</span><span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这是给Action类型添加委托进行适配，&lt;&gt;里可以写任意个参数类型，要和dll里面的匹配</span>
+        appDomain<span class="token punctuation">.</span>DelegateManager<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">RegisterFunctionDelegate</span><span class="token generic class-name"><span class="token punctuation">&lt;</span><span class="token keyword">int</span><span class="token punctuation">,</span><span class="token keyword">int</span><span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这是给Action类型添加委托进行适配，&lt;&gt;里可以写任意个参数类型，要和dll里面的匹配</span>
+        
+        <span class="token comment">//这里是给非Action Func 委托类型进行注册</span>
+        appDomain<span class="token punctuation">.</span>DelegateManager<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">RegisterDelegateConvertor</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>UnityAction<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">(</span>
+            <span class="token punctuation">(</span>act<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">UnityAction</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">=&gt;</span>
+                    <span class="token punctuation">(</span><span class="token punctuation">(</span>Action<span class="token punctuation">)</span> act<span class="token punctuation">)</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+                    <span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>我们进行注册后，在load函数初始化的后面进行调用</p>
+<pre><code class="prism language-csharp"><span class="token keyword">void</span> 调用委托<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//注意：我们的ILRuntime只支持Action以及Func，delegate委托的使用</span>
+        <span class="token comment">//而在unity’中的委托调用是UnityAction，所以我们咋这里用ILRuntime无法直接调用该方法</span>
+        <span class="token comment">//所以我们这里就用到了我们的委托适配器，我们要在生成appDomain变量是进行注册委托适配器</span>
+        <span class="token class-name">ILTypeInstance</span> test <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token function">Instantiate</span><span class="token punctuation">(</span>name<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"ButtonClick"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>name<span class="token punctuation">,</span> <span class="token string">"调用这些委托"</span><span class="token punctuation">,</span> test<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>这个函数就是调用我们在Test脚本中的委托</p>
+<h2><a id="_833"></a>跨域继承适配</h2>
+<p>当我们在热更新中的脚本要继承主工程中的类时，我们要对被继承的类进行适配，这样我们调用hotfix中派生类才能成功。</p>
+<p>我们在Model文件夹创建一个抽象基类UIBase</p>
+<p><mark>UIase</mark></p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine</span><span class="token punctuation">;</span>
+
+<span class="token keyword">namespace</span> <span class="token namespace">Unity<span class="token punctuation">.</span>Model</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">abstract</span> <span class="token keyword">class</span> <span class="token class-name">UIBase</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">public</span> <span class="token keyword">virtual</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> MyID
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">get</span> <span class="token punctuation">{<!-- --></span> <span class="token keyword">return</span> <span class="token number">100</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">virtual</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Open</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"UIBase中的Open方法"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">abstract</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">HandleEvent</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> id<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p>现在再Model问价中创建Adapter文件夹，在该文件夹创建UIBaseAdapter脚本<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3f073deb82264966870d7bbb838819ae.png"/></p>
+<p>接下来我们要根据官方文档来进行适配器的编写</p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">ILRuntime<span class="token punctuation">.</span>CLR<span class="token punctuation">.</span>Method</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">ILRuntime<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>Enviorment</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">ILRuntime<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>Intepreter</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">Unity<span class="token punctuation">.</span>Model</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine</span><span class="token punctuation">;</span>
+
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">UIBaseAdapter</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">CrossBindingAdaptor</span></span><span class="token comment">//这是一个接口，我们要实现里面的方法即可</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Type</span> BaseCLRType
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">get</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> <span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name">UIBase</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//这里的参数填写基类名字（哪个类被热更新问价继承就填哪个）</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Type<span class="token punctuation">[</span><span class="token punctuation">]</span></span> BaseCLRTypes <span class="token operator">=&gt;</span> <span class="token keyword">base</span><span class="token punctuation">.</span>BaseCLRTypes<span class="token punctuation">;</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Type</span> AdaptorType
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">get</span> <span class="token punctuation">{<!-- --></span> <span class="token keyword">return</span> <span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name">Adapter</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">object</span></span> <span class="token function">CreateCLRInstance</span><span class="token punctuation">(</span><span class="token class-name">ILRuntime<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>Enviorment<span class="token punctuation">.</span>AppDomain</span> appdomain<span class="token punctuation">,</span> <span class="token class-name">ILTypeInstance</span> instance<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Adapter</span><span class="token punctuation">(</span>appdomain<span class="token punctuation">,</span> instance<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+
+    <span class="token keyword">class</span> <span class="token class-name">Adapter</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">UIBase</span><span class="token punctuation">,</span> <span class="token class-name">CrossBindingAdaptorType</span></span><span class="token comment">//继承基类，在继承这个接口，重写基类的方法，和实现接口方法，一定要有一个无参构造函数，下面的两个参数一个AppDomain和ILTyoeInstance的构造函数</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">private</span> <span class="token class-name">ILRuntime<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>Enviorment<span class="token punctuation">.</span>AppDomain</span> appdomain<span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token class-name">ILTypeInstance</span> instance<span class="token punctuation">;</span>
+
+        <span class="token keyword">public</span> <span class="token function">Adapter</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+
+        <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token function">Adapter</span><span class="token punctuation">(</span><span class="token class-name">ILRuntime<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>Enviorment<span class="token punctuation">.</span>AppDomain</span> appdomain<span class="token punctuation">,</span> <span class="token class-name">ILTypeInstance</span> instance<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">this</span><span class="token punctuation">.</span>appdomain <span class="token operator">=</span> appdomain<span class="token punctuation">;</span>
+            <span class="token keyword">this</span><span class="token punctuation">.</span>instance <span class="token operator">=</span> instance<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token return-type class-name">ILTypeInstance</span> ILInstance
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">get</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">return</span> instance<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+		<span class="token comment">//到这里我们都是按照上面的进行</span>
+
+	
+		<span class="token comment">//下面开始进行适配方法和字段</span>
+
+        <span class="token class-name"><span class="token keyword">bool</span></span> mGetMyIDGot <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span><span class="token comment">//定义一个标识未  标识是否已经缓存了热更里的方法get_xxx</span>
+        <span class="token class-name">IMethod</span> mGetMyID<span class="token punctuation">;</span><span class="token comment">//缓存获取到的方法</span>
+        <span class="token class-name"><span class="token keyword">bool</span></span> isGetMyIDInvoking <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span><span class="token comment">//判断是否运行该方法</span>
+        <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> MyID
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">get</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span><span class="token punctuation">(</span>mGetMyIDGot<span class="token operator">==</span><span class="token boolean">false</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token comment">//字段获取的话就是根据属性一样获取get__xxx方法</span>
+                    mGetMyID <span class="token operator">=</span> instance<span class="token punctuation">.</span>Type<span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"get_MyID"</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    mGetMyIDGot <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">if</span><span class="token punctuation">(</span>mGetMyID<span class="token operator">!=</span><span class="token keyword">null</span><span class="token operator">&amp;&amp;</span> isGetMyIDInvoking<span class="token operator">==</span><span class="token boolean">false</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    isGetMyIDInvoking <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                    <span class="token class-name"><span class="token keyword">int</span></span> m<span class="token operator">=</span><span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>appdomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>mGetMyID<span class="token punctuation">,</span> instance<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    isGetMyIDInvoking<span class="token operator">=</span><span class="token boolean">false</span><span class="token punctuation">;</span>
+                    <span class="token keyword">return</span> m<span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token keyword">return</span> <span class="token keyword">base</span><span class="token punctuation">.</span>MyID<span class="token punctuation">;</span>    
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+
+        <span class="token class-name">IMethod</span> mHandleEvent<span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">bool</span></span> isHandleEventCalled <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> parame1<span class="token operator">=</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">object</span></span><span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">;</span><span class="token comment">//参数列表</span>
+        <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">HandleEvent</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> id<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>mHandleEvent<span class="token operator">==</span><span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                mHandleEvent <span class="token operator">=</span> instance<span class="token punctuation">.</span>Type<span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"HandleEvent"</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>mHandleEvent<span class="token operator">!=</span><span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                parame1<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">=</span> id<span class="token punctuation">;</span>
+                appdomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>mHandleEvent<span class="token punctuation">,</span> instance<span class="token punctuation">,</span> parame1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+
+        <span class="token class-name"><span class="token keyword">bool</span></span> mOpenGot<span class="token operator">=</span><span class="token boolean">false</span><span class="token punctuation">;</span>
+        <span class="token class-name">IMethod</span> mOpen<span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">bool</span></span> isOpenCalled <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">object</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> paream2<span class="token operator">=</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">object</span></span><span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+        <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Open</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>mOpenGot<span class="token operator">==</span><span class="token boolean">false</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                mOpen <span class="token operator">=</span> instance<span class="token punctuation">.</span>Type<span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"Open"</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>mOpen<span class="token operator">!=</span><span class="token keyword">null</span><span class="token operator">&amp;&amp;</span>isOpenCalled<span class="token operator">==</span><span class="token boolean">false</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                isOpenCalled <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                paream2<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token operator">=</span>text<span class="token punctuation">;</span>
+                appdomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>mOpen<span class="token punctuation">,</span> instance<span class="token punctuation">,</span> paream2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                isOpenCalled<span class="token operator">=</span><span class="token boolean">false</span><span class="token punctuation">;</span>  
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">base</span><span class="token punctuation">.</span><span class="token function">Open</span><span class="token punctuation">(</span>text<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p>在 <mark>HotFixManager</mark> 脚本</p>
+<pre><code class="prism language-csharp"><span class="token keyword">void</span> 跨域继承适配器注册<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        appDomain<span class="token punctuation">.</span><span class="token function">RegisterCrossBindingAdaptor</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">UIBaseAdapter</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>在Load函数下面添加进行适配<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/28b8653b7dbd49d69046b09132b980ce.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 现在我们添加了委托适配，跨域继承适配</p>
+<p>HotFix文件夹创建 <mark>继承unity主程序中的类</mark>脚本</p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">Unity<span class="token punctuation">.</span>Model</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine</span><span class="token punctuation">;</span>
+
+<span class="token keyword">namespace</span> <span class="token namespace">HotFix</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">class</span> 继承unity主程序中的类 <span class="token punctuation">:</span> UIBase
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> MyID <span class="token operator">=&gt;</span> <span class="token number">985211</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">HandleEvent</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> id<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token string">"现在是调用了重写的HandleEvent方法参数t是："</span> <span class="token operator">+</span> id<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Open</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> text<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"现在是调用了重写的Open方法参数text：</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">text</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p><mark>HotFixManager</mark></p>
+<pre><code class="prism language-csharp"> <span class="token keyword">void</span> 调用继承类函数<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name"><span class="token keyword">string</span></span> pName <span class="token operator">=</span> <span class="token string">"HotFix.继承unity主程序中的类"</span><span class="token punctuation">;</span><span class="token comment">//命名空间.类名</span>
+        <span class="token class-name">UIBase</span> uibase <span class="token operator">=</span> appDomain<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">Instantiate</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>UIBase<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span>pName<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">int</span></span> id <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>pName<span class="token punctuation">,</span> <span class="token string">"get_MyID"</span><span class="token punctuation">,</span> uibase<span class="token punctuation">,</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>id<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>pName<span class="token punctuation">,</span> <span class="token string">"HandleEvent"</span><span class="token punctuation">,</span> uibase<span class="token punctuation">,</span> <span class="token number">50</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">Invoke</span><span class="token punctuation">(</span>pName<span class="token punctuation">,</span> <span class="token string">"Open"</span><span class="token punctuation">,</span> uibase<span class="token punctuation">,</span> <span class="token string">"皮学渣"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="CLR_1059"></a>CLR重定向</h2>
+<p>我的理解重定向就是重新定义一个类和方法<br/> 接下来我们重定向Debug.Log方法</p>
+<p><mark>HotFixManager</mark></p>
+<pre><code class="prism language-csharp"> <span class="token keyword">unsafe</span> <span class="token keyword">void</span> CLR重定向方法<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+    	<span class="token comment">//                         类名              方法名      参数列表</span>
+        <span class="token class-name">MethodInfo</span> method<span class="token operator">=</span>  <span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name">Debug</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">GetMethod</span><span class="token punctuation">(</span><span class="token string">"Log"</span><span class="token punctuation">,</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">System<span class="token punctuation">.</span>Type<span class="token punctuation">[</span><span class="token punctuation">]</span></span> <span class="token punctuation">{<!-- --></span> <span class="token keyword">typeof</span><span class="token punctuation">(</span><span class="token type-expression class-name"><span class="token keyword">object</span></span><span class="token punctuation">)</span> <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        appDomain<span class="token punctuation">.</span><span class="token function">RegisterCLRMethodRedirection</span><span class="token punctuation">(</span>method<span class="token punctuation">,</span> DLog<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token keyword">unsafe</span> <span class="token keyword">static</span> StackObject<span class="token operator">*</span> <span class="token function">DLog</span><span class="token punctuation">(</span><span class="token class-name">ILIntepreter</span> __intp<span class="token punctuation">,</span> StackObject<span class="token operator">*</span> __esp<span class="token punctuation">,</span> <span class="token class-name">IList<span class="token punctuation">&lt;</span><span class="token keyword">object</span><span class="token punctuation">&gt;</span></span> __mStack<span class="token punctuation">,</span> <span class="token class-name">CLRMethod</span> __method<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">bool</span></span> isNewObj<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">ILRuntime<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>Enviorment<span class="token punctuation">.</span>AppDomain</span> __domain <span class="token operator">=</span> __intp<span class="token punctuation">.</span>AppDomain<span class="token punctuation">;</span>
+        StackObject<span class="token operator">*</span> ptr_of_this_method<span class="token punctuation">;</span>
+        <span class="token comment">//只有一个参数，所以返回指针就是当前栈指针ESP - 1</span>
+        StackObject<span class="token operator">*</span> __ret <span class="token operator">=</span> ILIntepreter<span class="token punctuation">.</span><span class="token function">Minus</span><span class="token punctuation">(</span>__esp<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//第一个参数为ESP -1， 第二个参数为ESP - 2，以此类推</span>
+        ptr_of_this_method <span class="token operator">=</span> ILIntepreter<span class="token punctuation">.</span><span class="token function">Minus</span><span class="token punctuation">(</span>__esp<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//获取参数message的值</span>
+        <span class="token class-name"><span class="token keyword">object</span></span> message <span class="token operator">=</span> StackObject<span class="token punctuation">.</span><span class="token function">ToObject</span><span class="token punctuation">(</span>ptr_of_this_method<span class="token punctuation">,</span> __domain<span class="token punctuation">,</span> __mStack<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//需要清理堆栈</span>
+        __intp<span class="token punctuation">.</span><span class="token function">Free</span><span class="token punctuation">(</span>ptr_of_this_method<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//如果参数类型是基础类型，例如int，可以直接通过int param = ptr_of_this_method-&gt;Value获取值，</span>
+        <span class="token comment">//关于具体原理和其他基础类型如何获取，请参考ILRuntime实现原理的文档。</span>
+
+        <span class="token comment">//通过ILRuntime的Debug接口获取调用热更DLL的堆栈</span>
+        <span class="token class-name"><span class="token keyword">string</span></span> stackTrace <span class="token operator">=</span> __domain<span class="token punctuation">.</span>DebugService<span class="token punctuation">.</span><span class="token function">GetStackTrace</span><span class="token punctuation">(</span>__intp<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span><span class="token keyword">string</span><span class="token punctuation">.</span><span class="token function">Format</span><span class="token punctuation">(</span><span class="token string">"{0}\n----------------\n{1}"</span><span class="token punctuation">,</span> message<span class="token punctuation">,</span> stackTrace<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">return</span> __ret<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>然后在Load函数是下面添加该函数</p>
+<h1><a id="_1096"></a>运行各种的结果</h1>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/99fbe41b18234479a857cbd711938594.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b5bf128513414c579f4732c85200c50d.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3e87951fe65043c4970be20147e3e0bd.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA55qu5a2m5rij,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 点击Button按钮<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/acc61c137baa46f49bdf56f606768fc8.png"/></p>
+<h1><a id="_1103"></a>大总结</h1>
+<p>希望我这篇文章能够让你快速入门</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

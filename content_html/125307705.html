@@ -1,0 +1,369 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>前言：<br/> 由于前段时间，项目组长分配的任务是要完成一个在线编写<code>SQL</code>并要实现查询功能的需求，最终需要将查询到的数据以<code>JSON</code>格式显示到响应数据的区域，以供操作者进行查看，一开始拿到需求时想着直接使用<code>Mybatis</code>进行操作不就可以了，完全没必要大费周章，因为在<code>MyBatis</code>中有个拼接<code>SQL</code>的语法，可以使用<code>${sql}</code>来进行执行输入的<code>SQL</code>语句，但是实际操作起来并不是想象中的那么简单，因为使用<code>MyBatis</code>会将数据源固定在本项目所使用的数据库，而不可以进行数据源之间的切换，无法进行其他数据源中表的查询操作 ❌，所以在实现过程也是相当艰难曲折…</p>
+<blockquote>
+<p>🏡  博客首页：派 大 星</p>
+<p>⛳️  欢迎关注  ❤️ 点赞  🎒 收藏  ✏️ 留言</p>
+<p>🎢  本文由派大星原创编撰</p>
+<p>🚧  系列专栏：项目从0搭建</p>
+<p>🎈  本系列项目从设计到实现源码全部开源免费学习使用，一起追向理想，欢迎各位大佬监督打卡开发！</p>
+</blockquote>
+<hr/>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/14aba5e1162c481796b2ab12761c088c.jpeg#pic_center"/></p>
+<hr/>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><ul><li><ul><li><a href="#nbsp_25">🍉 难度分析</a></li><li><a href="#nbspSQL_31">🍓 项目回顾（在线编写SQL查询）</a></li><li><ul><li><a href="#nbsp_33">🍅 最终效果演示</a></li><li><a href="#nbsp_38">🍓 技术选型：</a></li><li><a href="#nbsp_46">🍌 需求分析</a></li><li><a href="#nbsp_53">🍊 项目搭建</a></li><li><ul><li><a href="#_Maven_55">① 引入项目所需要的相关`Maven`依赖</a></li><li><a href="#__83">② 编写配置文件</a></li><li><a href="#_Controller_96">③ 创建Controller前端控制器</a></li><li><a href="#__JDBCResultSet_109">④ 探究 JDBC中ResultSet中的方法</a></li><li><a href="#__143">⑤ 获取所有的数据源</a></li><li><a href="#__163">⑥ 实现执行查询逻辑</a></li><li><a href="#_VuemonacoeditorSQL_349">⑦ Vue前端引入monaco-editor组件进行编写SQL语句</a></li></ul>
+</li><li><a href="#nbsp_358">🌟 项目总结</a></li></ul>
+</li><li><a href="#___Ending_____364"><span class="katex--display"><span class="katex-display"><span class="katex"><span class="katex-mathml">
+          
+           
+            
+             
+              🔔
+             
+             
+              🔔
+             
+             
+              🔔
+             
+             
+              E
+             
+             
+              n
+             
+             
+              d
+             
+             
+              i
+             
+             
+              n
+             
+             
+              g
+             
+             
+              🔔
+             
+             
+              🔔
+             
+             
+              🔔
+             
+            
+            
+             🔔 🔔 🔔 Ending 🔔 🔔 🔔
+            
+           
+          </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.88888em; vertical-align: -0.19444em;"></span><span class="mord">🔔</span><span class="mord">🔔</span><span class="mord">🔔</span><span class="mord mathdefault" style="margin-right: 0.05764em;">E</span><span class="mord mathdefault">n</span><span class="mord mathdefault">d</span><span class="mord mathdefault">i</span><span class="mord mathdefault">n</span><span class="mord mathdefault" style="margin-right: 0.03588em;">g</span><span class="mord">🔔</span><span class="mord">🔔</span><span class="mord">🔔</span></span></span></span></span></span></a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<h3><a id="nbsp_25"></a>🍉 难度分析</h3>
+<p>在线执行<code>SQL</code>语句的查询主要的难点分为以下几点：其一则是对<code>JDBC</code>的部分的<code>API</code>理解的不够透彻，导致在实现某些工鞥是并不是想象中的顺利；其二在于对于查询部分属性的SQL语句该如何使用<code>Java</code>进行实现，是将输入的字符串进行分割再拼接还是使用直接整条语句的查询操作；其三则是用户可以动态的切换数据源，并且对相应数据源下的表进行查询操作，如果使用<code>Mybatis</code>进行<code>SQL</code>的查询操作则无法进行数据源的切换，只能查询所在微服务项目所连接的数据库进行查询，否则无法进行相应的操作，即会出现该数据库下并不存在所查询的某张数据库表的错误信息 ❌</p>
+<h3><a id="nbspSQL_31"></a>🍓 项目回顾（在线编写SQL查询）</h3>
+<h4><a id="nbsp_33"></a>🍅 最终效果演示</h4>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/44db1154b7ad4cc98143b2cde7e14809.gif#pic_center"/></p>
+<h4><a id="nbsp_38"></a>🍓 技术选型：</h4>
+<ul><li>🥒 SpringBoot</li><li>🍠 MyBatis-Plus</li><li>🌽 JDBC</li><li>🥥 Vue</li><li>🍇 代码编辑器<strong>monaco-editor</strong></li></ul>
+<h4><a id="nbsp_46"></a>🍌 需求分析</h4>
+<p>使用者在页面可以选择切换需要操作的数据源，并在编辑区域内输入<code>SQL</code>语句进行查询，查询语句可以是全表查询表中所有字段或者根据所需查询指定某几列字段对应的值，点击查询之后即可在响应数据之后以<code>JSON</code>的格式将查询到的每一条数据封装一个对象最后显示到响应数据区域以供操作者进行观看以达到可视化工具的效果。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ccf0199245ec4f52b2191603f4c3f4ee.png#pic_center"/></p>
+<h4><a id="nbsp_53"></a>🍊 项目搭建</h4>
+<h5><a id="_Maven_55"></a>① 引入项目所需要的相关<code>Maven</code>依赖</h5>
+<pre><code class="prism language-xml"><span class="token comment">&lt;!--SpringBoot相关依赖--&gt;</span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>dependency</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>groupId</span><span class="token punctuation">&gt;</span></span>org.springframework.boot<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>groupId</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>artifactId</span><span class="token punctuation">&gt;</span></span>spring-boot-starter-web<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>artifactId</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>dependency</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>dependency</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>groupId</span><span class="token punctuation">&gt;</span></span>commons-lang<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>groupId</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>artifactId</span><span class="token punctuation">&gt;</span></span>commons-lang<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>artifactId</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>version</span><span class="token punctuation">&gt;</span></span>2.6<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>version</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>dependency</span><span class="token punctuation">&gt;</span></span>
+<span class="token comment">&lt;!--servlet-api相关依赖--&gt;</span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>dependency</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>groupId</span><span class="token punctuation">&gt;</span></span>javax.servlet<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>groupId</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>artifactId</span><span class="token punctuation">&gt;</span></span>servlet-api<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>artifactId</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>version</span><span class="token punctuation">&gt;</span></span>2.5<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>version</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>scope</span><span class="token punctuation">&gt;</span></span>provided<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>scope</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>dependency</span><span class="token punctuation">&gt;</span></span>
+<span class="token comment">&lt;!--MySQL驱动相关依赖--&gt;</span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>dependency</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>groupId</span><span class="token punctuation">&gt;</span></span>mysql<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>groupId</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>artifactId</span><span class="token punctuation">&gt;</span></span>mysql-connector-java<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>artifactId</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>version</span><span class="token punctuation">&gt;</span></span>8.0.28<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>version</span><span class="token punctuation">&gt;</span></span>
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>dependency</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<h5><a id="__83"></a>② 编写配置文件</h5>
+<pre><code class="prism language-yaml"><span class="token key atrule">server</span><span class="token punctuation">:</span>
+  <span class="token key atrule">port</span><span class="token punctuation">:</span> <span class="token number">8080</span>
+<span class="token key atrule">spring</span><span class="token punctuation">:</span>
+  <span class="token key atrule">datasource</span><span class="token punctuation">:</span>
+    <span class="token key atrule">username</span><span class="token punctuation">:</span> root
+    <span class="token key atrule">password</span><span class="token punctuation">:</span> root
+    <span class="token key atrule">driver-class-name</span><span class="token punctuation">:</span> com.mysql.cj.jdbc.Driver
+    <span class="token key atrule">url</span><span class="token punctuation">:</span> jdbc<span class="token punctuation">:</span>mysql<span class="token punctuation">:</span>//localhost<span class="token punctuation">:</span>3306/data_source<span class="token punctuation">?</span>useUnicode=true<span class="token important">&amp;characterEncoding=UTF-8&amp;useSSL=false&amp;serverTimezone=Asia/Shanghai</span>
+</code></pre>
+<h5><a id="_Controller_96"></a>③ 创建Controller前端控制器</h5>
+<pre><code class="prism language-java">	<span class="token annotation punctuation">@PostMapping</span><span class="token punctuation">(</span><span class="token string">"/dynamic-query"</span><span class="token punctuation">)</span>
+	<span class="token annotation punctuation">@ApiOperation</span><span class="token punctuation">(</span>value <span class="token operator">=</span> <span class="token string">"动态执行SQL"</span><span class="token punctuation">)</span>
+	<span class="token keyword">public</span> <span class="token class-name">Result</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token operator">?</span><span class="token punctuation">&gt;</span></span> <span class="token function">dynamicQuery</span><span class="token punctuation">(</span><span class="token annotation punctuation">@RequestBody</span> <span class="token class-name">DynamicQuery</span> dynamicQuery<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+		<span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">HashMap</span><span class="token punctuation">&lt;</span><span class="token class-name">Object</span><span class="token punctuation">,</span><span class="token class-name">Object</span><span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span> res <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+		<span class="token class-name">BladeVisualDb</span> visualDb <span class="token operator">=</span> bladeVisualDbService<span class="token punctuation">.</span><span class="token function">getOne</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">QueryWrapper</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">BladeVisualDb</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">eq</span><span class="token punctuation">(</span><span class="token string">"id"</span><span class="token punctuation">,</span> dynamicQuery<span class="token punctuation">.</span><span class="token function">getId</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">HashMap</span><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span><span class="token class-name">Object</span><span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span> result <span class="token operator">=</span> <span class="token class-name">ConnectBySql</span><span class="token punctuation">.</span><span class="token function">connAndExecSql</span><span class="token punctuation">(</span>visualDb<span class="token punctuation">.</span><span class="token function">getUrl</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> visualDb<span class="token punctuation">.</span><span class="token function">getDriverClass</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> visualDb<span class="token punctuation">.</span><span class="token function">getUsername</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> visualDb<span class="token punctuation">.</span><span class="token function">getPassword</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>dynamicQuery<span class="token punctuation">.</span><span class="token function">getSql</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">return</span> <span class="token class-name">Result</span><span class="token punctuation">.</span><span class="token function">ok</span><span class="token punctuation">(</span>result<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+</code></pre>
+<h5><a id="__JDBCResultSet_109"></a>④ 探究 JDBC中ResultSet中的方法</h5>
+<ul><li><code>next()</code></li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/84c73cbe03cb495d876d81d00ae33377.png"/></p>
+<p><strong>解释：</strong> 将光标从其当前位置向前移动一行。 <code>ResultSet </code>游标最初位于第一行之前；第一次调用 <code>next</code> 方法使第一行成为当前行；第二次调用使第二行成为当前行，依此类推。实则对查询到的数据进行遍历操作</p>
+<ul><li><code>getString(String columnLabel)</code></li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/fab3163aae8549fe9b1af752d654b9a0.png"/></p>
+<p><strong>解释：</strong> 根据表中对应的列名称来查询到该列对应到的数据</p>
+<ul><li><code>getMetaData()</code><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/dfc8e58bdce24daba81ce2bce1a3a086.png"/></li></ul>
+<p><strong>解释：</strong> 获取某张表中列的数量、类型和列名称</p>
+<ul><li><code>findColumn(String columnLabel)</code></li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/33a22661a4d8415687de9f521a6137db.png"/></p>
+<p><strong>解释：</strong> 返回某个列的索引值即下标</p>
+<h5><a id="__143"></a>⑤ 获取所有的数据源</h5>
+<p>因为使用者是可以动态的选择数据源从而来对表中的数据进行相关操作，所以首先要查询出可供连接的数据源</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ab62f4081faa451e8e9657e9827c4c45.png"/></p>
+<pre><code class="prism language-java">	 <span class="token comment">/**
+	  * 下拉数据源列表
+	  * @return
+	  */</span>
+	<span class="token annotation punctuation">@ApiOperation</span><span class="token punctuation">(</span>value <span class="token operator">=</span> <span class="token string">"下拉列表"</span><span class="token punctuation">)</span>
+	<span class="token annotation punctuation">@GetMapping</span><span class="token punctuation">(</span><span class="token string">"/db-list"</span><span class="token punctuation">)</span>
+	<span class="token keyword">public</span> <span class="token class-name">Result</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token operator">?</span><span class="token punctuation">&gt;</span></span> <span class="token function">list</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+		<span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">BladeVisualDb</span><span class="token punctuation">&gt;</span></span> bladeVisualDbs <span class="token operator">=</span> bladeVisualDbService<span class="token punctuation">.</span><span class="token function">list</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">return</span> <span class="token class-name">Result</span><span class="token punctuation">.</span><span class="token function">ok</span><span class="token punctuation">(</span>bladeVisualDbs<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+</code></pre>
+<h5><a id="__163"></a>⑥ 实现执行查询逻辑</h5>
+<p>首先执行查询有两种方式：所有字段的全查询即<code>select * from xx</code> 或者 查询指定字段即<code>select xx from xx</code></p>
+<ul><li><strong>所有字段的全查询即<code>select * from xx</code></strong></li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c316cff287cb456b823a59bd76c2ea70.png"/></p>
+<p>在进行所有字段的查询时，由于无法得知需要查询的表中有什么字段，所以首先需要对输入的<code>SQL</code>字符串进行判断是否是全字段查询，然后即可获取查询表中的所有字段，然后再一一的进行查询出字段对应的值即可，此操作也是需要对输入<code>SQL</code>字符串进行分割的，拿出所有插叙的表名即可。</p>
+<pre><code class="prism language-java"><span class="token class-name">ResultSet</span> resultSet <span class="token operator">=</span> stmt<span class="token punctuation">.</span><span class="token function">executeQuery</span><span class="token punctuation">(</span>sql<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">//如果输入的SQL属于select * 操作</span>
+<span class="token keyword">if</span> <span class="token punctuation">(</span>sql<span class="token punctuation">.</span><span class="token function">contains</span><span class="token punctuation">(</span><span class="token string">"*"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+  <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> list <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">ArrayList</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">//获取SQL中需要查询的表的结构</span>
+  <span class="token class-name">ResultSetMetaData</span> metaData <span class="token operator">=</span> resultSet<span class="token punctuation">.</span><span class="token function">getMetaData</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">int</span> columnCount <span class="token operator">=</span> metaData<span class="token punctuation">.</span><span class="token function">getColumnCount</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span> i <span class="token operator">&lt;=</span> columnCount<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    log<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span><span class="token string">"属性列   ======&gt;{}"</span><span class="token punctuation">,</span>metaData<span class="token punctuation">.</span><span class="token function">getColumnName</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//获取表中的所有列</span>
+    list<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>metaData<span class="token punctuation">.</span><span class="token function">getColumnName</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">while</span> <span class="token punctuation">(</span>resultSet<span class="token punctuation">.</span><span class="token function">next</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token class-name">HashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span><span class="token class-name">Object</span><span class="token punctuation">&gt;</span></span> hashMap <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">HashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name">String</span> index <span class="token operator">:</span> list<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+      <span class="token comment">//根据列名称查询出该列对应的数据</span>
+      <span class="token class-name">String</span> rs <span class="token operator">=</span> resultSet<span class="token punctuation">.</span><span class="token function">getString</span><span class="token punctuation">(</span>index<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token comment">//将其放入列和值存放HashMap中</span>
+      hashMap<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span>index<span class="token punctuation">,</span>rs<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token comment">//将多个HashMap合并成一个Map</span>
+      hashMap<span class="token punctuation">.</span><span class="token function">putAll</span><span class="token punctuation">(</span>hashMap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    res<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>hashMap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<ul><li><strong>查询指定字段即<code>select xx from xx</code></strong></li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c09e20a09f0549588f3ca7664652983c.png"/></p>
+<p>在使用<code>JDBC</code>进行指定字段查询时需要对输入的<code>SQL</code>字符串进行分割后将所需要查询到的字段再使用<code>JDBC</code>中的<code>getString(String columnName)</code>进行查询字段对应的值</p>
+<pre><code class="prism language-java">    <span class="token comment">/**
+     * 将SQL语句进行拆分
+     * @param sql
+     * @return
+     */</span>
+    <span class="token annotation punctuation">@NotNull</span>
+    <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> <span class="token function">getString</span><span class="token punctuation">(</span><span class="token class-name">String</span> sql<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> list <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">ArrayList</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">String</span> str <span class="token operator">=</span> sql<span class="token punctuation">.</span><span class="token function">substring</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> sql<span class="token punctuation">.</span><span class="token function">indexOf</span><span class="token punctuation">(</span><span class="token string">"from"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">String</span> realSql <span class="token operator">=</span> str<span class="token punctuation">.</span><span class="token function">replace</span><span class="token punctuation">(</span><span class="token string">"select"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">trim</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>realSql<span class="token punctuation">.</span><span class="token function">contains</span><span class="token punctuation">(</span><span class="token string">","</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> split <span class="token operator">=</span> realSql<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">","</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name">String</span> s <span class="token operator">:</span> split<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                list<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>s<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span><span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            list<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>realSql<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">return</span> list<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+</code></pre>
+<p>随后将分割完成的<code>SQL</code>存放到<code>List</code>集合中再进行查询操作</p>
+<pre><code class="prism language-java"><span class="token class-name">ResultSet</span> resultSet <span class="token operator">=</span> stmt<span class="token punctuation">.</span><span class="token function">executeQuery</span><span class="token punctuation">(</span>sql<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">while</span> <span class="token punctuation">(</span>resultSet<span class="token punctuation">.</span><span class="token function">next</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+  <span class="token class-name">HashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span><span class="token class-name">Object</span><span class="token punctuation">&gt;</span></span> hashMap <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">HashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> str <span class="token operator">=</span> <span class="token function">getString</span><span class="token punctuation">(</span>sql<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name">String</span> index <span class="token operator">:</span> str<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token class-name">String</span> rs <span class="token operator">=</span> resultSet<span class="token punctuation">.</span><span class="token function">getString</span><span class="token punctuation">(</span>index<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    hashMap<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span>index<span class="token punctuation">,</span>rs<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    hashMap<span class="token punctuation">.</span><span class="token function">putAll</span><span class="token punctuation">(</span>hashMap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  res<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>hashMap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>经过对操作者输入的<code>SQL</code>即可完成对表的查询操作，由于所要实现的是可动态切换数据源从而进行相关的查询操作，所以在此操作逻辑中首先需要连接数据库，后再对输入的<code>SQL</code>进行分割查询等操作。合并后的完整代码：</p>
+<pre><code class="prism language-java">    <span class="token comment">/**
+     * 连接数据库并根据输入的SQL语句查询数据
+     * @param url
+     * @param driverClass
+     * @param username
+     * @param password
+     * @param sql
+     * @return
+     */</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">HashMap</span><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span><span class="token class-name">Object</span><span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span> <span class="token function">connAndExecSql</span><span class="token punctuation">(</span><span class="token class-name">String</span> url<span class="token punctuation">,</span> <span class="token class-name">String</span> driverClass<span class="token punctuation">,</span> <span class="token class-name">String</span> username<span class="token punctuation">,</span> <span class="token class-name">String</span> password<span class="token punctuation">,</span> <span class="token class-name">String</span> sql<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">Boolean</span> result <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+        <span class="token class-name">Connection</span> conn <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+        <span class="token class-name">Statement</span> stmt <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+        <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">HashMap</span><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span><span class="token class-name">Object</span><span class="token punctuation">&gt;</span><span class="token punctuation">&gt;</span></span> res <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">ArrayList</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">Class</span><span class="token punctuation">.</span><span class="token function">forName</span><span class="token punctuation">(</span>driverClass<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"------------连接数据库-----------"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            conn <span class="token operator">=</span> <span class="token class-name">DriverManager</span><span class="token punctuation">.</span><span class="token function">getConnection</span><span class="token punctuation">(</span>url<span class="token punctuation">,</span>username<span class="token punctuation">,</span>password<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            stmt <span class="token operator">=</span> conn<span class="token punctuation">.</span><span class="token function">createStatement</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token class-name">ResultSet</span> resultSet <span class="token operator">=</span> stmt<span class="token punctuation">.</span><span class="token function">executeQuery</span><span class="token punctuation">(</span>sql<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token comment">//如果输入的SQL属于select * 操作</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>sql<span class="token punctuation">.</span><span class="token function">contains</span><span class="token punctuation">(</span><span class="token string">"*"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> list <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">ArrayList</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token comment">//获取SQL中需要查询的表的结构</span>
+                <span class="token class-name">ResultSetMetaData</span> metaData <span class="token operator">=</span> resultSet<span class="token punctuation">.</span><span class="token function">getMetaData</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">int</span> columnCount <span class="token operator">=</span> metaData<span class="token punctuation">.</span><span class="token function">getColumnCount</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span> i <span class="token operator">&lt;=</span> columnCount<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    log<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span><span class="token string">"属性列   ======&gt;{}"</span><span class="token punctuation">,</span>metaData<span class="token punctuation">.</span><span class="token function">getColumnName</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token comment">//获取表中的所有列</span>
+                    list<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>metaData<span class="token punctuation">.</span><span class="token function">getColumnName</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token keyword">while</span> <span class="token punctuation">(</span>resultSet<span class="token punctuation">.</span><span class="token function">next</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                    <span class="token class-name">HashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span><span class="token class-name">Object</span><span class="token punctuation">&gt;</span></span> hashMap <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">HashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name">String</span> index <span class="token operator">:</span> list<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                        <span class="token comment">//根据列名称查询出该列对应的数据</span>
+                        <span class="token class-name">String</span> rs <span class="token operator">=</span> resultSet<span class="token punctuation">.</span><span class="token function">getString</span><span class="token punctuation">(</span>index<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token comment">//将其放入列和值存放HashMap中</span>
+                        hashMap<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span>index<span class="token punctuation">,</span>rs<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token comment">//将多个HashMap合并成一个Map</span>
+                        hashMap<span class="token punctuation">.</span><span class="token function">putAll</span><span class="token punctuation">(</span>hashMap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                    res<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>hashMap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span><span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">while</span> <span class="token punctuation">(</span>resultSet<span class="token punctuation">.</span><span class="token function">next</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                    <span class="token class-name">HashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span><span class="token class-name">Object</span><span class="token punctuation">&gt;</span></span> hashMap <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">HashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> str <span class="token operator">=</span> <span class="token function">getString</span><span class="token punctuation">(</span>sql<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name">String</span> index <span class="token operator">:</span> str<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                        <span class="token class-name">String</span> rs <span class="token operator">=</span> resultSet<span class="token punctuation">.</span><span class="token function">getString</span><span class="token punctuation">(</span>index<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        hashMap<span class="token punctuation">.</span><span class="token function">put</span><span class="token punctuation">(</span>index<span class="token punctuation">,</span>rs<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        hashMap<span class="token punctuation">.</span><span class="token function">putAll</span><span class="token punctuation">(</span>hashMap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                    res<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>hashMap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+            <span class="token comment">//完成连接数据库</span>
+            stmt<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            conn<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"查询连接结束"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">ClassNotFoundException</span> e<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            e<span class="token punctuation">.</span><span class="token function">printStackTrace</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span><span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">SQLException</span> e<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            e<span class="token punctuation">.</span><span class="token function">printStackTrace</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">return</span> res<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/**
+     * 将SQL语句进行拆分
+     * @param sql
+     * @return
+     */</span>
+    <span class="token annotation punctuation">@NotNull</span>
+    <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> <span class="token function">getString</span><span class="token punctuation">(</span><span class="token class-name">String</span> sql<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> list <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">ArrayList</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">String</span> str <span class="token operator">=</span> sql<span class="token punctuation">.</span><span class="token function">substring</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> sql<span class="token punctuation">.</span><span class="token function">indexOf</span><span class="token punctuation">(</span><span class="token string">"from"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">String</span> realSql <span class="token operator">=</span> str<span class="token punctuation">.</span><span class="token function">replace</span><span class="token punctuation">(</span><span class="token string">"select"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">trim</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>realSql<span class="token punctuation">.</span><span class="token function">contains</span><span class="token punctuation">(</span><span class="token string">","</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> split <span class="token operator">=</span> realSql<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">","</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token class-name">String</span> s <span class="token operator">:</span> split<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                list<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>s<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span><span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            list<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span>realSql<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">return</span> list<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<h5><a id="_VuemonacoeditorSQL_349"></a>⑦ Vue前端引入monaco-editor组件进行编写SQL语句</h5>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2349294febba40ca8d5e7e86ba9d4be0.png"/></p>
+<h4><a id="nbsp_358"></a>🌟 项目总结</h4>
+<p>在使用<code>JDBC</code>来进行数据库的操作，在使用时由于对其方法并不是全部了解，所以需要边看源码边改善功能，因此遇到问题时才会感觉到脑中知识储备的不足，目前只是实现了查询操作，还未完善<code>CRUD</code>全部过程的操作。</p>
+<h3><a id="___Ending_____364"></a><span class="katex--display"><span class="katex-display"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         🔔
+        
+        
+         🔔
+        
+        
+         🔔
+        
+        
+         E
+        
+        
+         n
+        
+        
+         d
+        
+        
+         i
+        
+        
+         n
+        
+        
+         g
+        
+        
+         🔔
+        
+        
+         🔔
+        
+        
+         🔔
+        
+       
+       
+        🔔 🔔 🔔 Ending 🔔 🔔 🔔
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.88888em; vertical-align: -0.19444em;"></span><span class="mord">🔔</span><span class="mord">🔔</span><span class="mord">🔔</span><span class="mord mathdefault" style="margin-right: 0.05764em;">E</span><span class="mord mathdefault">n</span><span class="mord mathdefault">d</span><span class="mord mathdefault">i</span><span class="mord mathdefault">n</span><span class="mord mathdefault" style="margin-right: 0.03588em;">g</span><span class="mord">🔔</span><span class="mord">🔔</span><span class="mord">🔔</span></span></span></span></span></span></h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2b8abf74019940d39f40c9ea8577994c.gif#pic_center"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

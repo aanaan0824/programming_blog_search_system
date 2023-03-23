@@ -1,0 +1,756 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h3>简介</h3>
+<p>串口是目前最常用的通讯接口之一，常用的标准接口有RS-232和RS-485，ModbusRTU通讯协议使用的一般也是串口。</p>
+<p>Virtual Serial Port Driver是一款串口仿真软件，如果当前没有设备或者连接线，而又需要进行串口通讯测试，它将是你的得力助手。</p>
+<p>以下为官网介绍：</p>
+<blockquote>
+<p>Virtual COM Port Driver is a powerful technology designed specifically for those who develop, test, or debug serial port software and hardware. This solution will provide your system with as many virtual COM interfaces as you need.<br/><br/> If there are not enough physical COM ports or even if you don’t have a single real serial port on your computer, this dedicated software will come to the rescue. It will help you create pairs of virtual serial interfaces communicating via a virtual null-modem connection.<br/><br/> You can use Virtual Serial Port Driver as a standalone solution or integrate its advanced functionality into your own product.</p>
+</blockquote>
+<p>本文将使用Virtual Serial Port Driver软件虚拟两个串口，并用C#实现串口通讯。</p>
+<p>本文代码已上传至GitHub，项目地址如下：</p>
+<p><a class="link-info" href="https://github.com/XMNHCAS/SerialPortWPFDemo" title="https://github.com/XMNHCAS/SerialPortWPFDemo">https://github.com/XMNHCAS/SerialPortWPFDemo</a></p>
+<hr/>
+<h3>软件下载</h3>
+<p><a class="link-info" href="https://www.eltima.com/products/vspdxp/" title="Virtual Serial Port Driver官网下载">Virtual Serial Port Driver官网下载</a>（如需汉化版，可以自行百度）</p>
+<p><a class="link-info" href="http://www.cmsoft.cn/resource/101.html" title="UartAssist串口调试助手">UartAssist串口调试助手</a>（免安装免注册，提供了各种校验算法、生成报文等功能）</p>
+<h3>创建虚拟串口</h3>
+<p>打开Virtual Serial Port Driver，设定需要创建的端口号，点击添加按钮就可以创建出两个相连的虚拟串行端口，如下图所示：</p>
+<p><img alt="" height="372" src="image\36806a50178a427089d98916a73dd588.png" width="606"/></p>
+<p> 此时打开UartAssist串口调试助手，可以看到刚刚已经创建出来的虚拟串口。</p>
+<p><img alt="" height="554" src="image\818369b081e044b4aead73444d8a8e34.png" width="655"/></p>
+<hr/>
+<h3>搭建界面 </h3>
+<p>首先创建一个WPF项目，接着按照个人喜好设计界面，可参考下图：</p>
+<p><img alt="" height="572" src="image\a33832a900644b668968b35dc2335246.png" width="962"/></p>
+<p>XAML如下：</p>
+<pre><code class="language-XML">&lt;!--左右布局--&gt;
+    &lt;Grid Margin="10"&gt;
+        &lt;Grid.ColumnDefinitions&gt;
+            &lt;ColumnDefinition Width="40*"/&gt;
+            &lt;ColumnDefinition Width="60*"/&gt;
+        &lt;/Grid.ColumnDefinitions&gt;
+        
+        &lt;!--控制面板--&gt;
+        &lt;GroupBox Header="控制面板" Grid.Column="0" Margin="10" Padding="10" &gt;
+            &lt;Grid&gt;
+                &lt;Grid.RowDefinitions&gt;
+                    &lt;RowDefinition/&gt;
+                    &lt;RowDefinition/&gt;
+                    &lt;RowDefinition/&gt;
+                    &lt;RowDefinition/&gt;
+                    &lt;RowDefinition/&gt;
+                    &lt;RowDefinition/&gt;
+                    &lt;RowDefinition/&gt;
+                &lt;/Grid.RowDefinitions&gt;
+                &lt;Grid.ColumnDefinitions&gt;
+                    &lt;ColumnDefinition Width="40*"/&gt;
+                    &lt;ColumnDefinition Width="70*"/&gt;
+                &lt;/Grid.ColumnDefinitions&gt;
+                &lt;TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="可用串口："  /&gt;
+                &lt;ComboBox Grid.Row="0" Grid.Column="1" x:Name="cbxSerialPortList" ItemsSource="{Binding}" 
+                          Margin="5" VerticalAlignment="Center" /&gt;
+
+                &lt;TextBlock  Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="连接状态："/&gt;
+                &lt;TextBlock x:Name="tbxStatus"  Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" 
+                           Margin="5,0,0,0"  Text="未连接" FontWeight="Bold"/&gt;
+
+                &lt;TextBlock  Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="波特率："/&gt;
+                &lt;ComboBox Grid.Row="2" Grid.Column="1" x:Name="cbxBaudRate" ItemsSource="{Binding}" 
+                          Margin="5" VerticalAlignment="Center" /&gt;
+
+                &lt;TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Text="奇偶校验："/&gt;
+                &lt;ComboBox Grid.Row="3" Grid.Column="1" x:Name="cbxParity" ItemsSource="{Binding}" 
+                          Margin="5" VerticalAlignment="Center" /&gt;
+
+                &lt;TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Text="数据位："/&gt;
+                &lt;ComboBox Grid.Row="4" Grid.Column="1" x:Name="cbxDataBits" ItemsSource="{Binding}" 
+                          Margin="5" VerticalAlignment="Center" /&gt;
+
+                &lt;TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Text="停止位："/&gt;
+                &lt;ComboBox Grid.Row="5" Grid.Column="1" x:Name="cbxStopBits" ItemsSource="{Binding}" 
+                          Margin="5" VerticalAlignment="Center" /&gt;
+                &lt;Button x:Name="btnSwitch" Grid.Row="6" Grid.Column="1" Content="打开串口" 
+                        Margin="5" Click="btnSwitch_Click"/&gt;
+            &lt;/Grid&gt;
+        &lt;/GroupBox&gt;
+
+        &lt;!--消息面板--&gt;
+        &lt;Grid Grid.Column="1" Margin="10"&gt;
+            &lt;Grid.RowDefinitions&gt;
+                &lt;RowDefinition Height="45*"/&gt;
+                &lt;RowDefinition Height="55*"/&gt;
+            &lt;/Grid.RowDefinitions&gt;
+
+            &lt;!--发送消息--&gt;
+            &lt;GroupBox Grid.Row="0" Header="发送消息" Margin="0,10,0,0" Padding="5"&gt;
+                &lt;StackPanel VerticalAlignment="Center"&gt;
+                    &lt;Grid VerticalAlignment="Center" Margin="0,0,0,5"&gt;
+                        &lt;Grid.ColumnDefinitions&gt;
+                            &lt;ColumnDefinition/&gt;
+                            &lt;ColumnDefinition/&gt;
+                            &lt;ColumnDefinition/&gt;
+                            &lt;ColumnDefinition/&gt;
+                        &lt;/Grid.ColumnDefinitions&gt;
+                        &lt;TextBlock Text="消息格式:" Grid.Column="0" VerticalAlignment="Center"/&gt;
+                        &lt;ComboBox x:Name="cbxSendStatus" Grid.Column="1" ItemsSource="{Binding}"
+                                  SelectionChanged="cbxSendStatus_SelectionChanged" Margin="0,0,5,0" /&gt;
+                        &lt;Button x:Name="btnClearSendText" Grid.Column="2" Content="清空" Margin="0,0,5,0" 
+                                Click="btnClearSendText_Click"/&gt;
+                        &lt;Button x:Name="btnSend" Grid.Column="3" Content="发送" Click="btnSend_Click"/&gt;
+                    &lt;/Grid&gt;
+                    &lt;RichTextBox x:Name="rbxSendMsg" Height="40" Margin="0,0,0,5"/&gt;
+                &lt;/StackPanel&gt;
+            &lt;/GroupBox&gt;
+
+            &lt;!--接收消息--&gt;
+            &lt;GroupBox Grid.Row="1" Header="接收消息" Margin="0,10,0,0" Padding="5"&gt;
+                &lt;StackPanel VerticalAlignment="Center"&gt;
+                    &lt;RichTextBox x:Name="rbxReceiveMsg" Height="100"/&gt;
+                &lt;/StackPanel&gt;
+            &lt;/GroupBox&gt;
+        &lt;/Grid&gt;
+    &lt;/Grid&gt;</code></pre>
+<hr/>
+<h3>SerialPort使用示例</h3>
+<p>SerialPort是C#提供的串行端口资源，位于System.IO.Ports，使用时需要引入此命名空间。通过此类可以很轻松地搭建串口通讯。</p>
+<p>使用示例如下：</p>
+<pre><code class="language-cs">        //串口实例
+        SerialPort serialPort = new SerialPort();
+
+        /// &lt;summary&gt;
+        /// 串口参数
+        /// &lt;/summary&gt;
+        public void SetSerialPort()
+        {
+            //获取当前计算机所有的串行端口名
+            string[] serialProtArray = SerialPort.GetPortNames();
+
+            //端口名，如COM1
+            serialPort.PortName = "COM1";
+
+            //波特率
+            serialPort.BaudRate = 9600;
+
+            //奇偶校验
+            serialPort.Parity = Parity.None;
+
+            //数据位
+            serialPort.DataBits = 8;
+
+            //停止位
+            serialPort.StopBits = StopBits.One;
+
+            //串口接收数据事件
+            serialPort.DataReceived += ReceiveDataMethod;
+        }
+
+        /// &lt;summary&gt;
+        /// 打开串口
+        /// &lt;/summary&gt;
+        public void Open()
+        {
+            //打开串口
+            serialPort.Open();
+        }
+
+        /// &lt;summary&gt;
+        /// 关闭串口
+        /// &lt;/summary&gt;
+        public void Close()
+        {
+            serialPort.Close();
+        }
+
+        /// &lt;summary&gt;
+        /// 发送数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="data"&gt;要发送的数据&lt;/param&gt;
+        public void SendDataMethod(byte[] data)
+        {
+            //获取串口状态，true为已打开，false为未打开
+            bool isOpen = serialPort.IsOpen;
+
+            if (!isOpen)
+            {
+                Open();
+            }
+
+            //发送字节数组
+            //参数1：包含要写入端口的数据的字节数组。
+            //参数2：参数中从零开始的字节偏移量，从此处开始将字节复制到端口。
+            //参数3：要写入的字节数。 
+            serialPort.Write(data, 0, data.Length);
+        }
+
+        /// &lt;summary&gt;
+        /// 发送数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="data"&gt;要发送的数据&lt;/param&gt;
+        public void SendDataMethod(string data)
+        {
+            //获取串口状态，true为已打开，false为未打开
+            bool isOpen = serialPort.IsOpen;
+
+            if (!isOpen)
+            {
+                Open();
+            }
+
+            //直接发送字符串
+            serialPort.Write(data);
+        }
+
+        /// &lt;summary&gt;
+        /// 串口接收到数据触发此方法进行数据读取
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void ReceiveDataMethod(object sender, SerialDataReceivedEventArgs e)
+        {
+            //读取串口缓冲区的字节数据
+            byte[] result = new byte[serialPort.BytesToRead];
+            serialPort.Read(result, 0, serialPort.BytesToRead);
+        }</code></pre>
+<hr/>
+<h3>具体实现示例</h3>
+<p>设置窗体：</p>
+<pre><code class="language-cs">        /// &lt;summary&gt;
+        /// 窗体构造函数
+        /// &lt;/summary&gt;
+        public MainWindow()
+        {
+            InitializeComponent();
+
+            //获取串口列表
+            cbxSerialPortList.DataContext = SerialPort.GetPortNames();
+            //设置可选波特率
+            cbxBaudRate.DataContext = new object[] { 9600, 19200 };
+            //设置可选奇偶校验
+            cbxParity.DataContext = new object[] { "None", "Odd", "Even", "Mark", "Space" };
+            //设置可选数据位
+            cbxDataBits.DataContext = new object[] { 5, 6, 7, 8 };
+            //设置可选停止位
+            cbxStopBits.DataContext = new object[] { 1, 1.5, 2 };
+            //设置发送模式
+            cbxSendStatus.DataContext = new object[] { "文本", "字节" };
+
+            //设置默认选中项
+            cbxSerialPortList.SelectedIndex = 0;
+            cbxBaudRate.SelectedIndex = 0;
+            cbxParity.SelectedIndex = 0;
+            cbxDataBits.SelectedIndex = 3;
+            cbxStopBits.SelectedIndex = 0;
+            cbxSendStatus.SelectedIndex = 0;
+
+            rbxReceiveMsg.Document.Blocks.Clear();
+            btnSend.IsEnabled = false;
+
+            //注册串口接收到数据事件的回调函数
+            serialPort.DataReceived += GetReceiveMsg;
+        }</code></pre>
+<p>串口开关事件：</p>
+<pre><code class="language-cs"> /// &lt;summary&gt;
+        /// 打开或关闭串口
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void btnSwitch_Click(object sender, RoutedEventArgs e)
+        {
+            if (!serialPort.IsOpen)
+            {
+                //设定参数
+                serialPort.PortName = cbxSerialPortList.SelectedItem.ToString();
+                serialPort.BaudRate = (int)cbxBaudRate.SelectedItem;
+                serialPort.Parity = GetSelectedParity();
+                serialPort.DataBits = (int)cbxDataBits.SelectedItem;
+                serialPort.StopBits = GetSelectedStopBits();
+
+                try
+                {
+                    //打开串口
+                    serialPort.Open();
+                }
+                catch (Exception)
+                {
+                    MessageBox.Show("无法打开此串口，请检查是否被占用");
+                    return;
+                }
+
+                //切换文本
+                tbxStatus.Text = "已连接";
+                btnSwitch.Content = "关闭串口";
+
+                //切换可用状态
+                cbxSerialPortList.IsEnabled = false;
+                cbxBaudRate.IsEnabled = false;
+                cbxParity.IsEnabled = false;
+                cbxDataBits.IsEnabled = false;
+                cbxStopBits.IsEnabled = false;
+
+                btnSend.IsEnabled = true;
+            }
+            else
+            {
+                if (serialPort != null)
+                {
+                    //关闭串口
+                    serialPort.Close();
+                }
+
+                //切换文本
+                tbxStatus.Text = "未连接";
+                btnSwitch.Content = "打开串口";
+
+                //切换可用状态
+                cbxSerialPortList.IsEnabled = true;
+                cbxBaudRate.IsEnabled = true;
+                cbxParity.IsEnabled = true;
+                cbxDataBits.IsEnabled = true;
+                cbxStopBits.IsEnabled = true;
+
+                btnSend.IsEnabled = false;
+            }
+        }</code></pre>
+<p>向串口发送数据：</p>
+<pre><code class="language-cs">        /// &lt;summary&gt;
+        /// 发送数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void btnSend_Click(object sender, RoutedEventArgs e)
+        {
+            //获取RichTextBox上的文本
+            string str = new TextRange(rbxSendMsg.Document.ContentStart, rbxSendMsg.Document.ContentEnd).Text;
+            if (string.IsNullOrEmpty(str.Replace("\r\n", "")))
+            {
+                MessageBox.Show("未输入消息");
+                return;
+            }
+
+            //判断读写模式
+            if (sendText)
+            {
+                //发送字符串
+                serialPort.Write(str);
+            }
+            else
+            {
+                str = str.Replace(" ", "").Replace("\r\n", "");
+
+                //将输入的16进制字符串两两分割为字符串集合
+                var strArr = Regex.Matches(str, ".{2}").Cast&lt;Match&gt;().Select(m =&gt; m.Value);
+
+                //需要发送的字节数组
+                byte[] data = new byte[strArr.Count()];
+                
+                //循环索引
+                int temp = 0;
+
+                //将字符串集合转换为字节数组
+                foreach (string item in strArr)
+                {
+                    data[temp] = Convert.ToByte(item, 16);
+                    temp++;
+                }
+
+                //发送字节
+                serialPort.Write(data, 0, data.Length);
+            }
+
+            MessageBox.Show("发送成功");
+        }</code></pre>
+<p>读取接收到的数据：</p>
+<pre><code class="language-cs">        /// &lt;summary&gt;
+        /// 获取接收到的数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void GetReceiveMsg(object sender, SerialDataReceivedEventArgs e)
+        {
+            //读取串口缓冲区的字节数据
+            byte[] result = new byte[serialPort.BytesToRead];
+            serialPort.Read(result, 0, serialPort.BytesToRead);
+
+            string str = $"{DateTime.Now}\n";
+
+            //判断读写模式
+            //将接收到的字节数组转换为指定的消息格式
+            if (sendText)
+            {
+                str += $"{Encoding.UTF8.GetString(result)}";
+            }
+            else
+            {
+                for (int i = 0; i &lt; result.Length; i++)
+                {
+                    str += $"{result[i].ToString("X2")} ";
+                }
+            }
+
+            //在窗体中显示接收到的消息
+            SetRecMsgRbx(str.Trim());
+        }</code></pre>
+<p>需要注意串口接收到数据的时候触发的事件并不是主线程里面执行的，而是另开了一个新的线程，如果需要访问主线程并将数据在WPF窗口中显示，则需要通过委托的方式进行跨线程操作，如下所示：</p>
+<pre><code class="language-cs">        /// &lt;summary&gt;
+        /// 为显示接收消息的富文本框添加文本
+        /// &lt;/summary&gt;
+        /// &lt;param name="str"&gt;&lt;/param&gt;
+        private void SetRecMsgRbx(string str)
+        {
+            rbxReceiveMsg.Dispatcher.BeginInvoke(new Action(() =&gt;
+            {
+                Run run = new Run(str);
+                Paragraph p = new Paragraph();
+                p.Inlines.Add(run);
+                rbxReceiveMsg.Document.Blocks.Add(p);
+            }));
+        }</code></pre>
+<hr/>
+<h3>完整示例</h3>
+<pre><code class="language-cs">using System;
+using System.Collections.Generic;
+using System.IO.Ports;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Markup;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Navigation;
+using System.Windows.Shapes;
+
+namespace SerialPortWPF
+{
+    /// &lt;summary&gt;
+    /// MainWindow.xaml 的交互逻辑
+    /// &lt;/summary&gt;
+    public partial class MainWindow : Window
+    {
+        //串口实例
+        SerialPort serialPort = new SerialPort();
+
+        //是否发送文本
+        bool sendText = true;
+
+        /// &lt;summary&gt;
+        /// 窗体构造函数
+        /// &lt;/summary&gt;
+        public MainWindow()
+        {
+            InitializeComponent();
+
+            //获取串口列表
+            cbxSerialPortList.DataContext = SerialPort.GetPortNames();
+            //设置可选波特率
+            cbxBaudRate.DataContext = new object[] { 9600, 19200 };
+            //设置可选奇偶校验
+            cbxParity.DataContext = new object[] { "None", "Odd", "Even", "Mark", "Space" };
+            //设置可选数据位
+            cbxDataBits.DataContext = new object[] { 5, 6, 7, 8 };
+            //设置可选停止位
+            cbxStopBits.DataContext = new object[] { 1, 1.5, 2 };
+            //设置发送模式
+            cbxSendStatus.DataContext = new object[] { "文本", "字节" };
+
+            //设置默认选中项
+            cbxSerialPortList.SelectedIndex = 0;
+            cbxBaudRate.SelectedIndex = 0;
+            cbxParity.SelectedIndex = 0;
+            cbxDataBits.SelectedIndex = 3;
+            cbxStopBits.SelectedIndex = 0;
+            cbxSendStatus.SelectedIndex = 0;
+
+            rbxReceiveMsg.Document.Blocks.Clear();
+            btnSend.IsEnabled = false;
+
+            //注册串口接收到数据事件的回调函数
+            serialPort.DataReceived += GetReceiveMsg;
+        }
+
+        /// &lt;summary&gt;
+        /// 打开或关闭串口
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void btnSwitch_Click(object sender, RoutedEventArgs e)
+        {
+            if (!serialPort.IsOpen)
+            {
+                //设定参数
+                serialPort.PortName = cbxSerialPortList.SelectedItem.ToString();
+                serialPort.BaudRate = (int)cbxBaudRate.SelectedItem;
+                serialPort.Parity = GetSelectedParity();
+                serialPort.DataBits = (int)cbxDataBits.SelectedItem;
+                serialPort.StopBits = GetSelectedStopBits();
+
+                try
+                {
+                    //打开串口
+                    serialPort.Open();
+                }
+                catch (Exception)
+                {
+                    MessageBox.Show("无法打开此串口，请检查是否被占用");
+                    return;
+                }
+
+                //切换文本
+                tbxStatus.Text = "已连接";
+                btnSwitch.Content = "关闭串口";
+
+                //切换可用状态
+                cbxSerialPortList.IsEnabled = false;
+                cbxBaudRate.IsEnabled = false;
+                cbxParity.IsEnabled = false;
+                cbxDataBits.IsEnabled = false;
+                cbxStopBits.IsEnabled = false;
+
+                btnSend.IsEnabled = true;
+            }
+            else
+            {
+                if (serialPort != null)
+                {
+                    //关闭串口
+                    serialPort.Close();
+                }
+
+                //切换文本
+                tbxStatus.Text = "未连接";
+                btnSwitch.Content = "打开串口";
+
+                //切换可用状态
+                cbxSerialPortList.IsEnabled = true;
+                cbxBaudRate.IsEnabled = true;
+                cbxParity.IsEnabled = true;
+                cbxDataBits.IsEnabled = true;
+                cbxStopBits.IsEnabled = true;
+
+                btnSend.IsEnabled = false;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 切换读写模式
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void cbxSendStatus_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            sendText = cbxSendStatus.SelectedItem.ToString() == "文本" ? true : false;
+        }
+
+        /// &lt;summary&gt;
+        /// 发送数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void btnSend_Click(object sender, RoutedEventArgs e)
+        {
+            //获取RichTextBox上的文本
+            string str = new TextRange(rbxSendMsg.Document.ContentStart, rbxSendMsg.Document.ContentEnd).Text;
+            if (string.IsNullOrEmpty(str.Replace("\r\n", "")))
+            {
+                MessageBox.Show("未输入消息");
+                return;
+            }
+
+            //判断读写模式
+            if (sendText)
+            {
+                //发送字符串
+                serialPort.Write(str);
+            }
+            else
+            {
+                str = str.Replace(" ", "").Replace("\r\n", "");
+
+                //将输入的16进制字符串两两分割为字符串集合
+                var strArr = Regex.Matches(str, ".{2}").Cast&lt;Match&gt;().Select(m =&gt; m.Value);
+
+                //需要发送的字节数组
+                byte[] data = new byte[strArr.Count()];
+                
+                //循环索引
+                int temp = 0;
+
+                //将字符串集合转换为字节数组
+                foreach (string item in strArr)
+                {
+                    data[temp] = Convert.ToByte(item, 16);
+                    temp++;
+                }
+
+                //发送字节
+                serialPort.Write(data, 0, data.Length);
+            }
+
+            MessageBox.Show("发送成功");
+        }
+
+        /// &lt;summary&gt;
+        /// 清空发送框的文本
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void btnClearSendText_Click(object sender, RoutedEventArgs e)
+        {
+            rbxSendMsg.Document.Blocks.Clear();
+        }
+
+        /// &lt;summary&gt;
+        /// 获取接收到的数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void GetReceiveMsg(object sender, SerialDataReceivedEventArgs e)
+        {
+            //读取串口缓冲区的字节数据
+            byte[] result = new byte[serialPort.BytesToRead];
+            serialPort.Read(result, 0, serialPort.BytesToRead);
+
+            string str = $"{DateTime.Now}：\n";
+
+            //判断读写模式
+            //将接收到的字节数组转换为指定的消息格式
+            if (sendText)
+            {
+                str += $"{Encoding.UTF8.GetString(result)}";
+            }
+            else
+            {
+                for (int i = 0; i &lt; result.Length; i++)
+                {
+                    str += $"{result[i].ToString("X2")} ";
+                }
+            }
+
+            //在窗体中显示接收到的消息
+            SetRecMsgRbx(str.Trim());
+        }
+
+        /// &lt;summary&gt;
+        /// 为显示接收消息的富文本框添加文本
+        /// &lt;/summary&gt;
+        /// &lt;param name="str"&gt;&lt;/param&gt;
+        private void SetRecMsgRbx(string str)
+        {
+            rbxReceiveMsg.Dispatcher.BeginInvoke(new Action(() =&gt;
+            {
+                Run run = new Run(str);
+                Paragraph p = new Paragraph();
+                p.Inlines.Add(run);
+                rbxReceiveMsg.Document.Blocks.Add(p);
+            }));
+        }
+
+        /// &lt;summary&gt;
+        /// 获取窗体选中的奇偶校验
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Parity GetSelectedParity()
+        {
+            switch (cbxParity.SelectedItem.ToString())
+            {
+                case "Odd":
+                    return Parity.Odd;
+                case "Even":
+                    return Parity.Even;
+                case "Mark":
+                    return Parity.Mark;
+                case "Space":
+                    return Parity.Space;
+                case "None":
+                default:
+                    return Parity.None;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 获取窗体选中的停止位
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private StopBits GetSelectedStopBits()
+        {
+            switch (Convert.ToDouble(cbxStopBits.SelectedItem))
+            {
+                case 1:
+                    return StopBits.One;
+                case 1.5:
+                    return StopBits.OnePointFive;
+                case 2:
+                    return StopBits.Two;
+                default:
+                    return StopBits.One;
+            }
+        }
+    }
+}
+</code></pre>
+<hr/>
+<h3>效果测试</h3>
+<p>文本收发： </p>
+<p><img alt="" height="565" src="image\28bb9d80e2094ccf8292eff8d022cb31.png" width="1200"/></p>
+<p>字节收发： </p>
+<p><img alt="" height="600" src="image\034653cacb3140718b957ca7e9e1de30.png" width="1200"/></p>
+<hr/>
+<h3>结尾</h3>
+<p>在C#中实现串口通讯是比较简单的，但是用到真实的设备通讯的时候，往往会涉及到一些报文格式的问题，而报文比较麻烦的就是计算校验码，这里提供常用的两种常用的校验算法：BCC异或校验、CRC16循环冗余校验。</p>
+<p>BCC：</p>
+<pre><code class="language-cs">public static byte[] BCC(byte[] data)
+{
+    int temp = 0;
+    for (int index = 0; index &lt; data.Length; index++)
+    {
+        temp = temp ^ data[index];
+    }
+
+    byte[] result = new byte[1];
+
+    result[0] = Convert.ToByte(temp);
+
+    return result;
+}</code></pre>
+<p>CRC16：</p>
+<pre><code class="language-cs">public static byte[] CRC16(string code)
+{
+    var strArr = Regex.Matches(code, ".{2}").Cast&lt;Match&gt;().Select(m =&gt; m.Value);
+    byte[] pDataBytes = new byte[strArr.Count()];
+    int temp = 0;
+    foreach (var item in strArr)
+    {
+        pDataBytes[temp] = Convert.ToByte(item, 16);
+        temp++;
+    }
+    ushort crc = 0xffff;
+    ushort polynom = 0xA001;
+
+    for (int i = 0; i &lt; pDataBytes.Length; i++)
+    {
+        crc ^= pDataBytes[i];
+        for (int j = 0; j &lt; 8; j++)
+        {
+            if ((crc &amp; 0x01) == 0x01)
+            {
+                crc &gt;&gt;= 1;
+                crc ^= polynom;
+            }
+            else
+            {
+                crc &gt;&gt;= 1;
+            }
+        }
+    }
+
+    return BitConverter.GetBytes(crc);
+}</code></pre>
+</div>
+</div>

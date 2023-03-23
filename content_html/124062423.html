@@ -1,0 +1,144 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2>一：安装</h2>
+<p>1、<span style="color:#2c3e50;">要求：</span></p>
+<p><img alt="" height="330" src="image\dfcb61ff11ae4f5fa522dab60b6a7a66.png" width="426"/></p>
+<p>2、安装命令：</p>
+<pre><code class="language-php">使用Composer安装依赖
+composer require maatwebsite/excel
+
+使用Composer安装依赖 指定版本
+composer require maatwebsite/excel=~3.1</code></pre>
+<p>3、配置修改：</p>
+<p>将 ServiceProvider 添加到config/app.php 中注册服务提供者到 providers 数组：</p>
+<pre><code class="language-php">'providers' =&gt; [
+    /*
+     * Package Service Providers...
+     */
+    Maatwebsite\Excel\ExcelServiceProvider::class,
+]</code></pre>
+<p>在 config/app.php 中 aliases 数组添加 Facade：</p>
+<pre><code class="language-php">'aliases' =&gt; [
+    ...
+    'Excel' =&gt; Maatwebsite\Excel\Facades\Excel::class,
+]</code></pre>
+<p>如果想要进行更多的自定义配置，执行如下Artisan命令：</p>
+<pre><code class="language-php">php artisan vendor:publish --provider="Maatwebsite\Excel\ExcelServiceProvider" --tag=config</code></pre>
+<p>执行成功后会在 config 目录下生成一个配置文件 excel.php</p>
+<p>到这里，安装就完成了</p>
+<h2>二：导入</h2>
+<p>1、创建一个导入类，可以使用<code>make:import</code>命令来执行此操作。</p>
+<pre><code class="language-php">php artisan make:import ImportTest --model=TestImport</code></pre>
+<p>名称、模型自行定义，我使用的是导入 Eloquent 模型ToModel，我的一些代码参考</p>
+<pre><code class="language-php">&lt;?php
+
+
+namespace App\Import;
+
+
+use Maatwebsite\Excel\Concerns\ToModel;
+use App\Models\TestImport;
+use Maatwebsite\Excel\Concerns\Importable;
+use Maatwebsite\Excel\Concerns\SkipsOnFailure;
+use Maatwebsite\Excel\Concerns\WithValidation;
+use Maatwebsite\Excel\Concerns\SkipsFailures;
+
+
+class ImportTest implements ToModel, WithValidation, SkipsOnFailure
+{
+    use Importable, SkipsFailures;
+
+
+    /**
+     * @author cjg
+     */
+    public function model(array $row)
+    {
+        //判断标题不插入
+        if ($row[0] == '手机号') {
+            return null;
+        }
+
+        //下面为插入数据库，数据表自行创建，字段自行定义
+        return new TestImport([
+            'phone' =&gt; $row[0],
+            'remarks' =&gt; $row[1],
+        ]);
+        
+    }
+
+     /**
+     * @author cjg
+     * rules()方法期望返回一个带有 Laravel 验证规则的数组。
+     */
+    public function rules(): array
+    {
+        return [
+            // Can also use callback validation rules 
+            '0' =&gt; function($attribute, $value, $onFailure) {
+                if ($value != '手机号') {
+                    if (!$value || !preg_match("/^(13[0-9]|14[5|7]|15[0|1|2|3|4|5|6|7|8|9]|18[0|1|2|3|5|6|7|8|9])\d{8}$/", $value)) {
+                        $onFailure('手机号错误');
+                    }
+                }
+            },
+            '1' =&gt; function($attribute, $value, $onFailure) {
+                if ($value != '备注' &amp;&amp; !$value) {
+                    $onFailure('备注不能为空');
+                }
+            },
+        ];
+    }
+
+}
+</code></pre>
+<p>xlsx数据截图</p>
+<p><img alt="" height="244" src="image\d7cf725ebbcf43ac97662f9624601ac7.png" width="587"/></p>
+<p>2、导入控制器代码</p>
+<pre><code class="language-php">    /**
+     * 导入代码
+     * @author cjg
+     */
+    public function test_import(Request $request)
+    {
+        $file = $request-&gt;file('file');
+
+        if(substr(strtolower(PHP_OS), 0, 3) == 'win') {
+            //获取文件临时目录 windows环境
+            $realpath = $file-&gt;getRealPath();
+        } else {
+            //获取文件临时目录 linux环境
+            $realpath = storage_path('app') . '/' . $file-&gt;store('temp');
+        }
+
+        // 获取文件名，此方法包括后缀
+        // $filename = $file-&gt;getClientOriginalName();
+        // 将缓存在tmp目录下的文件移到某个位置，返回的是这个文件移动过后的路径
+        // $path=$file-&gt;move(文件移到哪个文件夹下的路径, 将上传的文件重新命名的文件名);
+        // 获取上传的文件缓存在tmp文件夹下的绝对路径
+        // $realpath=$file-&gt;getRealPath();
+
+        $import = new ImportTest();
+        $import-&gt;import($realpath);
+        if ($import-&gt;failures()) {
+            //每个失败都是一个实例Maatwebsite\Excel\Validators\Failure。Failure保存有关该单元格的哪一行、哪一列以及验证错误的信息。
+            foreach ($import-&gt;failures() as $failure) {
+                // 出问题的那一行
+                $failure-&gt;row();
+                //标题键（如果使用标题行）或列索引
+                $failure-&gt;attribute();
+                //来自Laravel验证程序的实际错误消息
+                $failure-&gt;errors();
+                //失败行的值。
+                $failure-&gt;values();
+            }
+
+        }
+    }</code></pre>
+<p>3、路由记得加上，用post方法</p>
+<p>导入就这么简单，更多详情可以参考官方文档</p>
+<p>官方文档：<a class="has-card" href="https://docs.laravel-excel.com/3.1/getting-started/" title="Introduction | Laravel Excel"><span class="link-card-box"><span class="link-title">Introduction | Laravel Excel</span><span class="link-desc">Supercharged Excel exports and imports in Laravel</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon.png"/>https://docs.laravel-excel.com/3.1/getting-started/</span></span></a></p>
+<p></p>
+</div>
+</div>

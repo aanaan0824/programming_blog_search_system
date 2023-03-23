@@ -1,0 +1,181 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2>前言：</h2>
+<p>在使用c/c++ 通过winrt 操作ble蓝牙之前，本身采用了qt的ble蓝牙库去操作，但是最后发现qt的ble只能使用在msvc+qt中使用，其他的使用的时候就会在扫描的时候没有反应，最终又只能在比较了解ble的同事帮助之下去研究 微软的使用c/c++ 通过winrt 操作ble蓝牙，另外如果不用通过广播过滤设备可以使用第三方库<a class="link-info" href="http://www.wch.cn/downloads/WCHBleLib_MultiOS_ZIP.html" title=" WCHBleLib_MultiOS"> WCHBleLib_MultiOS</a> 或者是<a class="link-info" href="https://github.com/adabru/BleWinrtDll" title="BleWinrtDll">BleWinrtDll</a> ，如果想多深入了解的话也可以参考微软写的demo <a class="link-info" href="https://github.com/microsoft/Windows-universal-samples/tree/main/Samples/BluetoothLE" title="BluetoothLE">BluetoothLE</a>，关于微软操作ble接口说明文档地址是<a class="link-info" href="https://docs.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.advertisement.bluetoothleadvertisement?view=winrt-22000" title="bluetoothleadvertisement">bluetoothleadvertisement</a></p>
+<h2>注意事项：</h2>
+<p>1.使用该方式的时候c++的版本要设置为 c++17</p>
+<p>2.引用的头文件为：</p>
+<pre><code class="language-cpp">#include &lt;windows.h&gt;
+#include &lt;iostream&gt;
+#include &lt;sstream&gt;
+#include &lt;iomanip&gt;
+#include &lt;mutex&gt; 
+#include &lt;winrt/Windows.Foundation.h&gt;
+#include &lt;winrt/Windows.Foundation.Collections.h&gt; 
+#include &lt;winrt/Windows.Devices.Bluetooth.h&gt;
+#include &lt;winrt/Windows.Devices.Enumeration.h&gt;
+#include &lt;winrt/Windows.Devices.Bluetooth.Advertisement.h&gt;
+#include &lt;winrt/Windows.Devices.Bluetooth.GenericAttributeProfile.h&gt;
+#include &lt;winrt/Windows.Storage.Streams.h&gt;
+#include &lt;winrt/Windows.Foundation.Collections.h&gt;
+#include &lt;winrt/Windows.Devices.Radios.h&gt;
+#include &lt;winrt/Windows.Web.Syndication.h&gt;
+#include &lt;windows.devices.bluetooth.h&gt;
+#include &lt;windows.foundation.h&gt;
+#include&lt;coroutine&gt;
+using namespace winrt;
+using namespace Windows::Devices::Bluetooth;
+using namespace Windows::Devices::Bluetooth::Advertisement;
+using namespace Windows::Devices::Bluetooth::GenericAttributeProfile;
+using namespace winrt::Windows::Devices::Radios;
+using namespace Windows::Foundation;
+#pragma comment(lib, "windowsapp")
+#pragma comment(lib, "WindowsApp.lib")
+using namespace std;</code></pre>
+<p></p>
+<h2>1.获取电脑是否支持ble蓝牙和蓝牙是否打开</h2>
+<pre><code class="language-cpp">bool BLEIsLowEnergySupported() {
+
+    auto getadapter_op = Windows::Devices::Bluetooth::BluetoothAdapter::GetDefaultAsync();
+    auto adapter = getadapter_op.get();
+    auto  supported = adapter.IsLowEnergySupported(); // 获取windows电脑是否支持ble
+    if (supported == false) return false;
+    auto async = adapter.GetRadioAsync(); //获取本地蓝牙信息
+    auto radio = async.get();
+    auto t = radio.State(); // 获取电脑蓝牙状态 0未知，1打开，2关闭，3硬件关闭或禁用
+    if (t != winrt::Windows::Devices::Radios::RadioState::On) {
+        return false;
+    }
+    return  true;
+}</code></pre>
+<h2>LPWSTRT 与char 互转</h2>
+<pre><code class="language-cpp">LPWSTR ConvertCharToLPWSTR(char* szString, WCHAR* addrchar)
+{
+    int dwLen = strlen(szString) + 1;
+    int nwLen = MultiByteToWideChar(CP_ACP, 0, szString, dwLen, NULL, 0);//算出合适的长度
+    MultiByteToWideChar(CP_ACP, 0, szString, dwLen, addrchar, nwLen);
+    return addrchar;
+}
+
+
+unsigned char* ConvertLPWSTRToChar(LPCTSTR widestr, unsigned char* addrchar)
+{
+    int num = WideCharToMultiByte(CP_OEMCP, NULL, widestr, -1, NULL, 0, NULL, FALSE);
+    WideCharToMultiByte(CP_OEMCP, NULL, widestr, -1, (char*)addrchar, num, NULL, FALSE);
+    return addrchar;
+}</code></pre>
+<p><br/>  </p>
+<h2>2.扫描ble蓝牙</h2>
+<pre><code class="language-cpp">void Scanblebackfun(BluetoothLEAdvertisementWatcher w, BluetoothLEAdvertisementReceivedEventArgs e) // 扫描到的ble蓝牙设备通过此回调方式返回{
+    if (e.AdvertisementType() == BluetoothLEAdvertisementType::ConnectableUndirected)
+    {
+        uint64_t address = e.BluetoothAddress(); //获取蓝牙地址，建议不用转字符串太麻烦
+        auto Rssi = e.RawSignalStrengthInDBm(); //获取蓝牙信号强度
+
+
+        //保存有效地址
+        BluetoothLEDevice dev = BluetoothLEDevice::FromBluetoothAddressAsync(address).get();
+        int cid = 0;
+        auto id = dev.BluetoothDeviceId(); //获取蓝牙唯一id
+        auto name = dev.Name(); //获取蓝牙名称
+
+        char ID[50] = {0};
+        char Name[50] = {0};
+        ConvertLPWSTRToChar(id.Id().c_str(), (unsigned char*)ID);
+		ConvertLPWSTRToChar(name.c_str(), (unsigned char*)Name);
+
+        auto advertisement = e.Advertisement();  //获取蓝牙广播
+
+        auto serviceUuids = advertisement.ServiceUuids(); //获取广播的服务器的uuid
+        auto view = serviceUuids.GetView();
+        bool Isfindguid = false;
+        for (size_t i = 0; i &lt; view.Size(); i++)
+        {
+            auto guid = view.GetAt(i);
+            if (guid.Data1 == 0xf801 ) { //获取自己需要的广播
+
+                Isfindguid = true;
+            }
+        }
+
+        dev.Close();
+
+        if (Isfindguid == false) return;
+}
+
+void ScanBLEDevice(int timeout) {
+    BluetoothLEAdvertisementWatcher m_btWatcher;
+    m_btWatcher.ScanningMode(BluetoothLEScanningMode::Passive); //扫描所有此时没有连接的蓝牙
+    m_btWatcher.Received(Scanblebackfun); // 注册扫描到的蓝牙回调
+    Pens.clear();
+    m_btWatcher.Start(); //开始扫描
+    Sleep(timeout);
+    m_btWatcher.Stop();//结束扫描
+}</code></pre>
+<h2>3.连接蓝牙获取服务和特征</h2>
+<pre><code class="language-cpp">void Characteristic_ValueChanged(GattCharacteristic const&amp; characteristic, GattValueChangedEventArgs args){//订阅回传的数据
+
+
+}
+BLEHandle ConnectBLEDevice(char * id) {
+    WCHAR ID[255] = { 0 };
+    ConvertCharToLPWSTR(id, ID);
+    hstring hst(ID);
+    auto device =  BluetoothLEDevice::FromIdAsync(hst).get();
+    auto result =  device.GetGattServicesAsync(BluetoothCacheMode::Uncached).get();//连接蓝牙服务
+    auto services = result.Services();
+
+    for (size_t i = 0; i &lt; services.Size(); i++)
+    {
+        auto service = services.GetAt(i);
+        auto uuid = service.Uuid(); //获取服务uuid
+        auto charact = service.GetCharacteristicsAsync().get();
+        auto characts = charact.Characteristics();
+        for (size_t j = 0; j &lt; characts.Size(); j++)
+        {
+            auto charact = characts.GetAt(j);
+            auto uuid = charact.Uuid(); //获取子服务的uuid
+            auto GAttpro = charact.CharacteristicProperties(); //获取每个子服务特征值
+            if (GAttpro == GattCharacteristicProperties::Notify) {                 charact.WriteClientCharacteristicConfigurationDescriptorAsync(GattClientCharacteristicConfigurationDescriptorValue::Notify);//注册订阅
+                charact.ValueChanged(auto_revoke, &amp;Characteristic_ValueChanged); //设置订阅数据回传的回调
+            }
+
+            if (GAttpro == GattCharacteristicProperties::Write) {
+                //写入数据
+                unsigned char* buff = "123456";
+                unsigned int lenght = 6;
+                winrt::Windows::Storage::Streams::DataWriter writer;
+                writer.WriteBytes(array_view&lt;uint8_t const&gt;(buff, buff + lenght));
+                winrt::Windows::Storage::Streams::IBuffer buffer = writer.DetachBuffer();
+                charact.WriteValueAsync(buffer);
+            }
+
+            if (GAttpro == GattCharacteristicProperties::Read) {
+                
+            }
+
+
+            if (GAttpro == (GattCharacteristicProperties::Write | GattCharacteristicProperties::WriteWithoutResponse)) {
+               
+            }
+
+            if (GAttpro == (GattCharacteristicProperties::Notify | GattCharacteristicProperties::Write)) {
+             
+            }
+
+            if (GAttpro == (GattCharacteristicProperties::Notify | GattCharacteristicProperties::Read)) {
+                
+            }
+
+            if (GAttpro == (GattCharacteristicProperties::Write | GattCharacteristicProperties::Read)) {
+                
+            }
+            return;
+        }
+    }
+
+}</code></pre>
+<p></p>
+</div>
+</div>

@@ -1,0 +1,91 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>通过<a href="https://blog.csdn.net/weixin_43983015/article/details/125361441">【VPS折腾记】nextcloud——安装（一）</a>完成对nextcloud中，还需要进行一些配置才能发挥出nextcloud的最佳性能。PS：一般服务器搭建个人网盘其实更推荐使用cloudreve，nextcloud实在太过沉重。<br/> 个人选择nextcloud的原因只有：</p>
+<ul><li>因为oracle arm免费鸡的纸面实力不错，不想浪费配置</li><li>cloudreve离线下载功能太局限，无法自定义header，而现在百度网盘等直链下载通常需要加入cookie或header，而nextcloud的离线下载插件可以做到</li></ul>
+<h1><a id="_7"></a>废话少说，开始折腾</h1>
+<h1><a id="1_8"></a>1.总体优化</h1>
+<h3><a id="_9"></a>从右上角头像中进入设置面板，进入下方管理处的概述</h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2559f867ae6444b1b48c847ee302bdac.png"/><br/> 这里列出了nextcloud自动检测出的一堆配置问题，这里针对个人出现的问题开始逐一排查，文中未提到的请自行百度解决。</p>
+<h4><a id="____12"></a>一些文件未通过完整性检查。有关如何解决这一问题的进一步信息可在 文档↗中找到。(无效文件列表… / 重新扫描…)</h4>
+<p>点击无效文件列表，将列出程序无法识别的一系列文件，删除，再重新扫描即可<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7bbb524a7c7e416bae44a4b45e374277.png"/></p>
+<h4><a id="PHP__512MB_16"></a>PHP 内存限制低于建议值 512MB。</h4>
+<h4><a id="PHP_configuration_option_output_buffering_must_be_disabled_17"></a>PHP configuration option output_buffering must be disabled</h4>
+<h4><a id="PHP_getenvPATH___PHPPHP_phpfpm__18"></a>PHP 的安装似乎不正确，无法访问系统环境变量。getenv(“PATH”) 函数测试返回了一个空值。 请检查安装文档 ↗中关于PHP的配置说明和您服务器上的PHP配置，特别是在使用 php-fpm 时。</h4>
+<p>进入宝塔软件商店，修改php配置，内存改为512；<br/> 配置文件中，在output_buffering前使用; 注释掉；<br/> 在FPM配置末尾添加一行<code>env[PATH] = /usr/local/bin:/usr/bin:/bin:/usr/local/php/bin</code>；<br/> 重启php<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/befe267a43ee4b859bf79a49691eb8ad.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ef3f7b6b4b144361981dbdca7804ceae.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f05bf393bc95421abce7c0afdc2e7872.png"/></p>
+<h4><a id="htaccess__web__web__27"></a>您的数据目录和文件可能可以从互联网访问。.htaccess 文件不工作。强烈建议您配置您的 web 服务器，使数据目录不再可访问，或将数据目录移到 web 服务器文档根目录之外。</h4>
+<p>在网站的配置文件中，禁止访问的文件和目录后添加data目录<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/44a2f3cb9c404747ba9738e3e63bd003.png"/></p>
+<h4><a id="wellknownwebfinger_30"></a>您的网页服务器未正确设置以解析“/.well-known/webfinger”。更多信息请参见文档↗。</h4>
+<h4><a id="wellknownnodeinfo_31"></a>您的网页服务器未正确设置以解析“/.well-known/nodeinfo”。更多信息请参见文档↗。</h4>
+<h4><a id="wellknowncaldav_32"></a>您的网页服务器未正确设置以解析“/.well-known/caldav”。更多信息请参见文档↗。</h4>
+<h4><a id="wellknowncarddav_33"></a>您的网页服务器未正确设置以解析“/.well-known/carddav”。更多信息请参见文档↗。</h4>
+<p>在网站nginx配置中，将以下代码覆盖在原location ^~ /.well-known处</p>
+<pre><code>location ^~ /.well-known {
+    # The rules in this block are an adaptation of the rules
+    # in `.htaccess` that concern `/.well-known`.
+
+    location = /.well-known/carddav { return 301 /remote.php/dav/; }
+    location = /.well-known/caldav  { return 301 /remote.php/dav/; }
+
+    location /.well-known/acme-challenge    { try_files $uri $uri/ =404; }
+    location /.well-known/pki-validation    { try_files $uri $uri/ =404; }
+
+    # Let Nextcloud's API for `/.well-known` URIs handle all other
+    # requests by passing them to the front-end controller.
+    return 301 /index.php$request_uri;
+}
+</code></pre>
+<h4><a id="_PHP__fileinfo__MIME__51"></a>未找到 PHP 的 “fileinfo” 模块。强烈推荐启用该模块，从而获得更好的 MIME 类型探测结果。</h4>
+<p>在PHP的安装扩展页面，安装fileinfo模块即可</p>
+<h4><a id="_54"></a>您的安装没有设置默认的电话区域。这对验证配置设定中没有国家代码的电话号码而言是必需的。</h4>
+<p>在 <code>网站根目录/config/config.php</code> 的最后一行中添加</p>
+<pre><code class="prism language-php">	<span class="token string single-quoted-string">'default_phone_region'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'CN'</span><span class="token punctuation">,</span>
+</code></pre>
+<h4><a id="_61"></a>内存缓存未配置。为了提升性能，请尽量配置内存缓存。</h4>
+<ul><li>在宝塔的应用商店中安装redis</li><li>在PHP-&gt;安装扩展中，安装redis, apcu扩展</li><li>在<code>redis设置-&gt;性能调整</code>中，配置redis密码</li><li>在 <code>网站根目录/config/config.php</code> 的最后一行中添加</li></ul>
+<pre><code class="prism language-php">  <span class="token string single-quoted-string">'memcache.local'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'\\OC\\Memcache\\APCu'</span><span class="token punctuation">,</span> <span class="token comment">//这里使用APCu+Redis的搭配，可自行更换</span>
+  <span class="token string single-quoted-string">'memcache.distributed'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'\\OC\\Memcache\\Redis'</span><span class="token punctuation">,</span>
+  <span class="token string single-quoted-string">'filelocking.enabled'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'true'</span><span class="token punctuation">,</span>
+  <span class="token string single-quoted-string">'memcache.locking'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'\\OC\\Memcache\\Redis'</span><span class="token punctuation">,</span>
+  <span class="token string single-quoted-string">'redis'</span> <span class="token operator">=&gt;</span>
+  <span class="token keyword">array</span> <span class="token punctuation">(</span>
+    <span class="token string single-quoted-string">'host'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'127.0.0.1'</span><span class="token punctuation">,</span>
+    <span class="token string single-quoted-string">'timeout'</span> <span class="token operator">=&gt;</span> <span class="token number">0</span><span class="token punctuation">,</span>
+    <span class="token string single-quoted-string">'dbindex'</span> <span class="token operator">=&gt;</span> <span class="token number">0</span><span class="token punctuation">,</span>
+    <span class="token string single-quoted-string">'port'</span> <span class="token operator">=&gt;</span> <span class="token number">6379</span><span class="token punctuation">,</span>
+    <span class="token string single-quoted-string">'password'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'你的redis密码'</span><span class="token punctuation">,</span>
+  <span class="token punctuation">)</span><span class="token punctuation">,</span>
+</code></pre>
+<h4><a id="The_PHP_OPcache_module_is_not_properly_configured_83"></a>The PHP OPcache module is not properly configured</h4>
+<h4><a id="The_PHP_module_imagick_is_not_enabled_although_the_theming_app_is_For_favicon_generation_to_work_correctly_you_need_to_install_and_enable_this_module_84"></a>The PHP module “imagick” is not enabled although the theming app is. For favicon generation to work correctly, you need to install and enable this module.</h4>
+<p>在PHP-&gt;安装扩展中，安装opcache，imagemagick两个扩展即可</p>
+<h4><a id="The_PHP_modules_gmp_andor_bcmath_are_not_enabled_If_you_use_WebAuthn_passwordless_authentication_these_modules_are_required_87"></a>The PHP modules “gmp” and/or “bcmath” are not enabled. If you use WebAuthn passwordless authentication, these modules are required.</h4>
+<p>在PHP-&gt;安装扩展中，安装gmp扩展即可，但在安装过程中我报了另一个错，因此特意分开<br/> 报错：<code>configure: error: GNU MP Library version 4.2 or greater required.</code><br/> 解决方法：<code>apt install libgmp-dev</code></p>
+<h4><a id="___92"></a>你还没有设置或验证你的电子邮件服务器配置。请前往基本设置，以便进行设置。之后，使用表单下方的 "发送电子邮件 "按钮来验证您的设置。</h4>
+<p>这是最无关紧要的一个警告了…改不改无所谓，前提是你不会忘记管理员密码的话<br/> 点入基本设置，配置smtp服务器即可，具体配置方法不同邮箱不同，请自行百度。</p>
+<h1><a id="2_97"></a>2.其余优化</h1>
+<h4><a id="_98"></a>定时任务</h4>
+<p>进入nextcloud管理员设置面板，在基本设置-&gt;后台任务中，修改定时任务执行方式为cron，<br/> 进入宝塔面板，在计划任务中配置shell脚本<br/> 内容为</p>
+<pre><code class="prism language-bash"><span class="token function">sudo</span> -u www php -f /www/wwwroot/你的域名/cron.php
+</code></pre>
+<p>时间自定，个人为5分钟一次。</p>
+<p>在这一步时出了点小问题，<code>OCP\HintException: [0]: Memcache \OC\Memcache\APCu not available for local cache (Is the matching PHP module installed and enabled?)</code><br/> 自nextcloud 21起，需要在php配置下加上 <code>apc.enable_cli=1</code> ，才能保证apcu缓存正常工作<br/> 在宝塔里比较傻逼，首先在终端输入<code>php --ini</code>，查看输出，我这里为</p>
+<pre><code class="prism language-bash">Configuration File <span class="token punctuation">(</span>php.ini<span class="token punctuation">)</span> Path: /www/server/php/80/etc
+Loaded Configuration File:         /www/server/php/80/etc/php-cli.ini
+Scan <span class="token keyword">for</span> additional .ini files in: <span class="token punctuation">(</span>none<span class="token punctuation">)</span>
+Additional .ini files parsed:      <span class="token punctuation">(</span>none<span class="token punctuation">)</span>
+</code></pre>
+<p>宝塔安装的php在cli模式下加载的是php-cli.ini，加载不到php.ini，所以光修改配置文件无法生效，卡了我好久！<br/> 解决方法是简单粗暴的直接删除了php-cli.ini，再重启php，就会发现cron执行没有报错了</p>
+<h4><a id="PHPFPM_119"></a>PHP-FPM配置</h4>
+<p>官方推荐方案, 4GB RAM 和 1GB MySQL 缓存<br/> 运行模式：动态<br/> max_children 120<br/> start_servers 12<br/> min_spare_servers = 6<br/> max_spare_servers = 18</p>
+<p>个人直接使用宝塔默认16GB方案</p>
+<h4><a id="Opcache_129"></a>Opcache配置</h4>
+<p>官方推荐配置<br/> opcache.enable=1<br/> opcache.interned_strings_buffer=8<br/> opcache.max_accelerated_files=10000<br/> opcache.memory_consumption=128<br/> opcache.save_comments=1<br/> opcache.revalidate_freq=1</p>
+<p>个人直接使用默认配置(机子默认配置高)</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

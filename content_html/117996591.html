@@ -1,0 +1,596 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<blockquote>
+<p>实验环境：python 3.6 + opencv-python 3.4.14.51<br/> 建议使用 anaconda配置相同环境</p>
+</blockquote>
+<h1><a id="_3"></a>背景</h1>
+<h2><a id="_4"></a>人脸识别步骤</h2>
+<center>
+<img src="image\20210622184054832.png" width="60%"/>
+<center>
+<b><font size="3">图1：人脸识别流程图</font></b>
+</center>
+</center>
+<h3><a id="_9"></a>人脸采集</h3>
+<p>采集人脸图片的方法多种多样，可以直接从网上下载数据集，可以从视频中提取图片，还可以从摄像头实时的采集图片。</p>
+<h3><a id="_12"></a>人脸检测方法</h3>
+<p>人脸检测在实际中主要用于人脸识别的预处理，即在图像中准确标定出人脸的位置和大小。人脸图像中包含的模式特征十分丰富，如直方图特征、颜色特征、模板特征、结构特征及Haar特征等。人脸检测就是把这其中有用的信息挑出来，并利用这些特征实现人脸检测。</p>
+<h3><a id="_15"></a>人脸图像预处理</h3>
+<p>对于人脸的图像预处理是基于人脸检测结果，对图像进行处理并最终服务于特征提取的过程。系统获取的原始图像由于受到各种条件的限制和随机 干扰，往往不能直接使用，必须在图像处理的早期阶段对它进行灰度校正、噪声过滤等图像预处理。对于人脸图像而言，其预处理过程主要包括人脸图像的光线补 偿、灰度变换、直方图均衡化、归一化、几何校正、滤波以及锐化等。</p>
+<h3><a id="_18"></a>人脸特征提取</h3>
+<p>人脸识别系统可使用的特征通常分为视觉特征、像素统计特征、人脸图像变换系数特征、人脸图像代数 特征等。人脸特征提取就是针对人脸的某些特征进行的。人脸特征提取，也称人脸表征，它是对人脸进行特征建模的过程。人脸特征提取的方法归纳起来分为两大 类：一种是基于知识的表征方法；另外一种是基于代数特征或统计学习的表征方法。</p>
+<h3><a id="_22"></a>匹配与识别</h3>
+<p>提取的人脸图像的特征数据与数据库中存储的特征模板进行搜索匹配，通过设定一个阈值，当相似度超过这一阈值，则把匹配得到的结果输 出。人脸识别就是将待识别的人脸特征与已得到的人脸特征模板进行比较，根据相似程度对人脸的身份信息进行判断。这一过程又分为两类：一类是确认，是一对一 进行图像比较的过程，另一类是辨认，是一对多进行图像匹配对比的过程。</p>
+<h2><a id="OpenCv_25"></a>关于OpenCv</h2>
+<p>Opencv是一个开源的的跨平台计算机视觉库，内部实现了图像处理和计算机视觉方面的很多通用算法，对于python而言，在引用opencv库的时候需要写为import cv2。其中，cv2是opencv的C++命名空间名称，使用它来表示调用的是C++开发的opencv的接口</p>
+<p>目前人脸识别有很多较为成熟的方法，这里调用OpenCv库，而OpenCV又提供了三种人脸识别方法，分别是LBPH方法、EigenFishfaces方法、Fisherfaces方法。本文采用的是LBPH（Local Binary Patterns Histogram，局部二值模式直方图）方法。在OpenCV中，可以用函数cv2.face.LBPHFaceRecognizer_create()生成LBPH识别器实例模型，然后应用cv2.face_FaceRecognizer.train()函数完成训练，最后用cv2.face_FaceRecognizer.predict()函数完成人脸识别。</p>
+<p>CascadeClassifier，是Opencv中做人脸检测的时候的一个级联分类器。并且既可以使用Haar，也可以使用LBP特征。其中Haar特征是一种反映图像的灰度变化的，像素分模块求差值的一种特征。它分为三类：边缘特征、线性特征、中心特征和对角线特征。</p>
+<h1><a id="_32"></a>程序设计</h1>
+<h2><a id="_33"></a>人脸识别算法：</h2>
+<center>
+<img src="image\20210622184156714.png" width="60%"/>
+<center>
+<b><font size="3">图2：人脸识别模块图</font></b>
+</center>
+</center>
+<h3><a id="1_39"></a>1.准备工作</h3>
+<center>
+<img src="image\20210622184233123.png" width="60%"/>
+<center>
+<b><font size="3">图3：准备阶段</font></b>
+</center>
+</center>
+<p>首先读取config文件，文件中第一行代表当前已经储存的人名个数，接下来每一行是二元组（id，name）即标签和对应的人名<br/> 读取结果存到以下两个全局变量中。</p>
+<pre><code class="prism language-python">id_dict <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token punctuation">}</span>  <span class="token comment"># 字典里存的是id——name键值对</span>
+Total_face_num <span class="token operator">=</span> <span class="token number">999</span>  <span class="token comment"># 已经被识别有用户名的人脸个数,</span>
+</code></pre>
+<p>def init(): # 将config文件内的信息读入到字典中</p>
+<p>加载人脸检测分类器Haar，并准备好识别方法LBPH方法</p>
+<pre><code class="prism language-python"><span class="token comment"># 加载OpenCV人脸检测分类器Haar</span>
+face_cascade <span class="token operator">=</span> cv2<span class="token punctuation">.</span>CascadeClassifier<span class="token punctuation">(</span><span class="token string">"haarcascade_frontalface_default.xml"</span><span class="token punctuation">)</span>
+<span class="token comment"># 准备好识别方法LBPH方法</span>
+recognizer <span class="token operator">=</span> cv2<span class="token punctuation">.</span>face<span class="token punctuation">.</span>LBPHFaceRecognizer_create<span class="token punctuation">(</span><span class="token punctuation">)</span>
+</code></pre>
+<p>然后打开标号为0的摄像头</p>
+<pre><code class="prism language-python">camera <span class="token operator">=</span> cv2<span class="token punctuation">.</span>VideoCapture<span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span>  <span class="token comment"># 摄像头</span>
+success<span class="token punctuation">,</span> img <span class="token operator">=</span> camera<span class="token punctuation">.</span>read<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 从摄像头读取照片</span>
+</code></pre>
+<h3><a id="2_70"></a>2.录入新面容</h3>
+<center>
+<img src="image\20210622184310674.png" width="60%"/>
+<center>
+<b><font size="3">图4：录入人脸</font></b>
+</center>
+</center>
+<h4><a id="21_77"></a>2.1采集面容</h4>
+<p>创建文件夹data用于储存本次从摄像头采集到的照片，每次调用前先清空这个目录。</p>
+<p>然后是一个循环，循环次数为需要采集的样本数，摄像头拍摄取样的数量,越多效果越好，但获取以及训练的越慢。</p>
+<p>循环内调用<code>camera.read()</code>返回值赋给全局变量success,和img 用于在GUI中实时显示。</p>
+<p>然后调用<code>cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)</code>用于将采集到的图片转为灰度图片减少计算量。</p>
+<p>然后利用加载好的人脸分类器将每一帧摄像头记录的数据带入OpenCv中，让Classifier判断人脸。</p>
+<pre><code class="prism language-python">  <span class="token comment"># 其中gray为要检测的灰度图像，1.3为每次图像尺寸减小的比例，5为minNeighbors</span>
+  faces <span class="token operator">=</span> face_cascade<span class="token punctuation">.</span>detectMultiScale<span class="token punctuation">(</span>gray<span class="token punctuation">,</span> <span class="token number">1.3</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token punctuation">)</span>
+</code></pre>
+<p>faces为在img图像中检测到的人脸，然后利用cv2.rectangle在人脸一圈画个矩形。并把含有人脸的区域储存进入data文件夹<br/> 注意这里写入时，每个图片的标签时<code>Total_face_num</code>即当前共有多少个可识别用户（在录入之前加一），亦即当前用户的编号</p>
+<pre><code class="prism language-python"> cv2<span class="token punctuation">.</span>rectangle<span class="token punctuation">(</span>img<span class="token punctuation">,</span> <span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>x <span class="token operator">+</span> w<span class="token punctuation">,</span> y <span class="token operator">+</span> w<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token number">255</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+ cv2<span class="token punctuation">.</span>imwrite<span class="token punctuation">(</span><span class="token string">"./data/User."</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>T<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">'.'</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>sample_num<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">'.jpg'</span><span class="token punctuation">,</span> gray<span class="token punctuation">[</span>y<span class="token punctuation">:</span>y <span class="token operator">+</span> h<span class="token punctuation">,</span> x<span class="token punctuation">:</span>x <span class="token operator">+</span> w<span class="token punctuation">]</span><span class="token punctuation">)</span>
+</code></pre>
+<p>然后在循环末尾最后打印一个进度条，用于提示采集图像的进度<br/> 主要原理就是每次输出不换行并且将光标移动到当前行的开头，输出内容根据进度不断变化即可，同时在控件的提示框也输出进度信息</p>
+<pre><code class="prism language-python"><span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\r"</span> <span class="token operator">+</span> <span class="token string">"%{:.1f}"</span><span class="token punctuation">.</span><span class="token builtin">format</span><span class="token punctuation">(</span>sample_num <span class="token operator">/</span> pictur_num <span class="token operator">*</span> <span class="token number">100</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">"="</span> <span class="token operator">*</span> l <span class="token operator">+</span> <span class="token string">"-&gt;"</span> <span class="token operator">+</span> <span class="token string">"_"</span> <span class="token operator">*</span> r<span class="token punctuation">,</span> end<span class="token operator">=</span><span class="token string">""</span><span class="token punctuation">)</span>
+var<span class="token punctuation">.</span><span class="token builtin">set</span><span class="token punctuation">(</span><span class="token string">"%{:.1f}"</span><span class="token punctuation">.</span><span class="token builtin">format</span><span class="token punctuation">(</span>sample_num <span class="token operator">/</span> pictur_num <span class="token operator">*</span> <span class="token number">100</span><span class="token punctuation">)</span><span class="token punctuation">)</span>  <span class="token comment"># 控件可视化进度信息</span>
+window<span class="token punctuation">.</span>update<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 刷新控件以实时显示进度</span>
+</code></pre>
+<h4><a id="22_107"></a>2.2训练识别器</h4>
+<p>读取data文件夹，读取照片内的信息，得到两个数组，一个faces存的是所有脸部信息、一个ids存的是faces内每一个脸部对应的标签，然后将这两个数组传给 <code>recog.train</code>用于训练</p>
+<pre><code class="prism language-python">    <span class="token comment"># 训练模型  #将输入的所有图片转成四维数组</span>
+    recog<span class="token punctuation">.</span>train<span class="token punctuation">(</span>faces<span class="token punctuation">,</span> np<span class="token punctuation">.</span>array<span class="token punctuation">(</span>ids<span class="token punctuation">)</span><span class="token punctuation">)</span>
+</code></pre>
+<p>训练完毕后保存训练得到的识别器到.yml文件中，文件名为人脸编号+.yml</p>
+<pre><code class="prism language-python"> recog<span class="token punctuation">.</span>save<span class="token punctuation">(</span><span class="token builtin">str</span><span class="token punctuation">(</span>Total_face_num<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">".yml"</span><span class="token punctuation">)</span>
+</code></pre>
+<h4><a id="23_122"></a>2.3修改配置文件</h4>
+<p>每一次训练结束都要修改配置文件，具体要修改的地方是第一行和最后一行。<br/> 第一行有一个整数代表当前系统已经录入的人脸的总数，每次修改都加一。这里修改文件的方式是先读入内存，然后修改内存中的数据，最后写回文件。</p>
+<pre><code class="prism language-python">    f <span class="token operator">=</span> <span class="token builtin">open</span><span class="token punctuation">(</span><span class="token string">'config.txt'</span><span class="token punctuation">,</span> <span class="token string">'r+'</span><span class="token punctuation">)</span>
+    flist <span class="token operator">=</span> f<span class="token punctuation">.</span>readlines<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    flist<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token builtin">str</span><span class="token punctuation">(</span><span class="token builtin">int</span><span class="token punctuation">(</span>flist<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">" \n"</span>
+    f<span class="token punctuation">.</span>close<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    
+    f <span class="token operator">=</span> <span class="token builtin">open</span><span class="token punctuation">(</span><span class="token string">'config.txt'</span><span class="token punctuation">,</span> <span class="token string">'w+'</span><span class="token punctuation">)</span>
+    f<span class="token punctuation">.</span>writelines<span class="token punctuation">(</span>flist<span class="token punctuation">)</span>
+    f<span class="token punctuation">.</span>close<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+</code></pre>
+<p>还要在最后一行加入一个二元组用以标识用户。<br/> 格式为：标签+空格+用户名+空格，用户名默认为Userx（其中x标识用户编号）</p>
+<pre><code class="prism language-python">f<span class="token punctuation">.</span>write<span class="token punctuation">(</span><span class="token builtin">str</span><span class="token punctuation">(</span>T<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">" User"</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>T<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">" \n"</span><span class="token punctuation">)</span>
+</code></pre>
+<h3><a id="3_145"></a>3.人脸识别（刷脸）</h3>
+<center>
+<img src="image\20210622184401375.png" width="60%"/>
+<center>
+<b><font size="3">图5：刷脸流程图</font></b>
+</center>
+</center>
+<p>由于这里采用多个<code>.yml</code>文件来储存识别器（实际操作时储存在一个文件中识别出错所以采用这种方式），所以在识别时需要遍历所有的.yml文件，如果每一个都不能识别才得出无法识别的结果，相反只要有一个可以识别当前对象就返回可以识别的结果。而对于每一个文件都识别十次人脸，若成功五次以上则表示最终结果为可以识别，否则表示当前文件无法识别这个人脸。</p>
+<p>识别过程中在GUI的控件中实时显示拍摄到的内容，并在人脸周围画一个矩形框，并根据识别器返回的结果实时显示在矩形框附近。</p>
+<pre><code class="prism language-python">idnum<span class="token punctuation">,</span> confidence <span class="token operator">=</span> recognizer<span class="token punctuation">.</span>predict<span class="token punctuation">(</span>gray<span class="token punctuation">[</span>y<span class="token punctuation">:</span>y <span class="token operator">+</span> h<span class="token punctuation">,</span> x<span class="token punctuation">:</span>x <span class="token operator">+</span> w<span class="token punctuation">]</span><span class="token punctuation">)</span>
+<span class="token comment"># 加载一个字体用于输出识别对象的信息</span>
+font <span class="token operator">=</span> cv2<span class="token punctuation">.</span>FONT_HERSHEY_SIMPLEX
+<span class="token comment"># 输出检验结果以及用户名</span>
+cv2<span class="token punctuation">.</span>putText<span class="token punctuation">(</span>img<span class="token punctuation">,</span> <span class="token builtin">str</span><span class="token punctuation">(</span>user_name<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>x <span class="token operator">+</span> <span class="token number">5</span><span class="token punctuation">,</span> y <span class="token operator">-</span> <span class="token number">5</span><span class="token punctuation">)</span><span class="token punctuation">,</span> font<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">255</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span>
+cv2<span class="token punctuation">.</span>putText<span class="token punctuation">(</span>img<span class="token punctuation">,</span> <span class="token builtin">str</span><span class="token punctuation">(</span>confidence<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>x <span class="token operator">+</span> <span class="token number">5</span><span class="token punctuation">,</span> y <span class="token operator">+</span> h <span class="token operator">-</span> <span class="token number">5</span><span class="token punctuation">)</span><span class="token punctuation">,</span> font<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span>
+</code></pre>
+<h2><a id="_170"></a>多线程：</h2>
+<p>程序的两个功能之间可以独立运行，就需要采用多线程的方法，但当遇到临界资源的使用时，多个进程/线程之间就要互斥的访问以免出错，本程序中具体的设计方法：<br/> 本程序采用多线程的方法实现并行。<br/> 程序的三个按钮对应着三个功能，分别是录入人脸、人脸检测、退出程序。<br/> 由于程序中的用户界面是利用python中的tkinter库做的，其按钮的响应函数用command指出，所以这里在每个<code>command</code>跳转到的函数中设置多线程，每敲击一次就用<code>threading.Thread</code>创建一个新的线程，然后在新的线程的处理函数<code>target</code>中实现按钮原本对应的功能。</p>
+<pre><code class="prism language-python">p <span class="token operator">=</span> threading<span class="token punctuation">.</span>Thread<span class="token punctuation">(</span>target<span class="token operator">=</span>f_scan_face_thread<span class="token punctuation">)</span>
+</code></pre>
+<p>在涉及到摄像头的访问时，线程之间需要互斥的访问，所以设置了一个全局的变量<code>system_state_lock</code> 来表示当前系统的状态，用以实现带有优先级的互斥锁的功能。<br/> 锁状态为0表示摄像头未被使用，1表示正在刷脸，2表示正在录入新面容。<br/> 程序在实际执行的过程中如果状态为0，则无论是刷脸还是录入都能顺利执行，如果状态为1表示正在刷脸，如果此时敲击刷脸按钮则，系统会提示正在刷脸并拒绝新的请求，如果此时敲击录入面容按钮，由于录入面容优先级比刷脸高，所以原刷脸线程会被阻塞，</p>
+<pre><code class="prism language-python"><span class="token keyword">global</span> system_state_lock
+<span class="token keyword">while</span> system_state_lock <span class="token operator">==</span> <span class="token number">2</span><span class="token punctuation">:</span>  <span class="token comment"># 如果正在录入新面孔就阻塞</span>
+	  <span class="token keyword">pass</span>
+</code></pre>
+<p>新的录入面容进程开始执行并修改系统状态为2，录入完成后状态变为原状态，被阻塞的刷脸进程继续执行，录入人脸线程刚执行完录入阶段现在正在训练，此时有两个线程并行，以此来保证训练数据的同时不影响系统的使用。</p>
+<p>对于退出的功能，直接在函数内调用<code>exit()</code>，但是python的线程会默认等待子线程全部结束再退出，所以用<code>p.setDaemon(True)</code>将线程设置为守护线程，这样在主线程退出之后其它线程也都退出从而实现退出整个程序的功能。</p>
+<h2><a id="GUI_198"></a>GUI设计：</h2>
+<p>程序采用python中的tkinter库做可视化，优点是占用资源小、轻量化、方便。</p>
+<ul><li>首先创建一个窗口命名为window然后设置其大小和标题等属性。</li><li>然后在界面上设定一个绿底的标签，类似于一个提示窗口的作用</li><li>然后分别创建三个按钮，并设置响应函数和提示字符，放置在window内部。</li><li>然后设置一个label类型的控件用于动态的展示摄像头的内容(将摄像头显示嵌入到控件中)。具体方法：创建video_loop()函数，在函数内访问全局的变量img，img是从摄像头读取到的图像数据。然后把img显示在label内。<br/> 使用window.after方法，在给定时间后调用函数一次，实现固定时间刷新控件，从而达到实时显示摄像头画面在GUI中的效果。</li></ul>
+<pre><code class="prism language-python">window<span class="token punctuation">.</span>after<span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> video_loop<span class="token punctuation">)</span>
+<span class="token comment"># 这句的意思是一秒以后执行video_loop函数</span>
+<span class="token comment"># 因为这一句是写在video_loop函数中的所以每过一秒函数执行一次。</span>
+</code></pre>
+<h1><a id="_211"></a>运行测试</h1>
+<h2><a id="_212"></a>说明</h2>
+<p>测试环境：python 3.6 + opencv-python 3.4.14.51<br/> 需要的包：</p>
+<center>
+<img src="image\20210702213815631.png" width="60%"/>
+<center>
+<b><font size="3">图6：需要的包</font></b>
+</center>
+</center>
+<h2><a id="_220"></a>录入人脸</h2>
+<p>从数据集录入</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2021070221383573.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NjI5MTI1MQ==,size_16,color_FFFFFF,t_70"/><br/> 从摄像头录入<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/20210702213904483.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NjI5MTI1MQ==,size_16,color_FFFFFF,t_70"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/20210702213915241.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NjI5MTI1MQ==,size_16,color_FFFFFF,t_70"/></p>
+<h2><a id="_230"></a>人脸识别</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/20210702213930210.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NjI5MTI1MQ==,size_16,color_FFFFFF,t_70"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/20210702213935524.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3dlaXhpbl80NjI5MTI1MQ==,size_16,color_FFFFFF,t_70"/></p>
+<h1><a id="_237"></a>代码实现：</h1>
+<center>
+<img src="https://img-blog.csdnimg.cn/992a49478a0a42869b872971a13fc151.gif" width="60%"/>
+</center>
+<pre><code class="prism language-python"><span class="token comment"># 实验环境：python 3.6 + opencv-python 3.4.14.51</span>
+
+<span class="token keyword">import</span> cv2
+<span class="token keyword">import</span> numpy <span class="token keyword">as</span> np
+<span class="token keyword">import</span> os
+<span class="token keyword">import</span> shutil
+<span class="token keyword">import</span> threading
+<span class="token keyword">import</span> tkinter <span class="token keyword">as</span> tk
+<span class="token keyword">from</span> PIL <span class="token keyword">import</span> Image<span class="token punctuation">,</span> ImageTk
+
+<span class="token comment"># 首先读取config文件，第一行代表当前已经储存的人名个数，接下来每一行是（id，name）标签和对应的人名</span>
+id_dict <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span><span class="token punctuation">}</span>  <span class="token comment"># 字典里存的是id——name键值对</span>
+Total_face_num <span class="token operator">=</span> <span class="token number">999</span>  <span class="token comment"># 已经被识别有用户名的人脸个数,</span>
+
+
+<span class="token keyword">def</span> <span class="token function">init</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 将config文件内的信息读入到字典中</span>
+    f <span class="token operator">=</span> <span class="token builtin">open</span><span class="token punctuation">(</span><span class="token string">'config.txt'</span><span class="token punctuation">)</span>
+    <span class="token keyword">global</span> Total_face_num
+    Total_face_num <span class="token operator">=</span> <span class="token builtin">int</span><span class="token punctuation">(</span>f<span class="token punctuation">.</span>readline<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token builtin">int</span><span class="token punctuation">(</span>Total_face_num<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        line <span class="token operator">=</span> f<span class="token punctuation">.</span>readline<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        id_name <span class="token operator">=</span> line<span class="token punctuation">.</span>split<span class="token punctuation">(</span><span class="token string">' '</span><span class="token punctuation">)</span>
+        id_dict<span class="token punctuation">[</span><span class="token builtin">int</span><span class="token punctuation">(</span>id_name<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">]</span> <span class="token operator">=</span> id_name<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span>
+    f<span class="token punctuation">.</span>close<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+
+init<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token comment"># 加载OpenCV人脸检测分类器Haar</span>
+face_cascade <span class="token operator">=</span> cv2<span class="token punctuation">.</span>CascadeClassifier<span class="token punctuation">(</span><span class="token string">"haarcascade_frontalface_default.xml"</span><span class="token punctuation">)</span>
+
+<span class="token comment"># 准备好识别方法LBPH方法</span>
+recognizer <span class="token operator">=</span> cv2<span class="token punctuation">.</span>face<span class="token punctuation">.</span>LBPHFaceRecognizer_create<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token comment"># 打开标号为0的摄像头</span>
+camera <span class="token operator">=</span> cv2<span class="token punctuation">.</span>VideoCapture<span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span>  <span class="token comment"># 摄像头</span>
+success<span class="token punctuation">,</span> img <span class="token operator">=</span> camera<span class="token punctuation">.</span>read<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 从摄像头读取照片</span>
+W_size <span class="token operator">=</span> <span class="token number">0.1</span> <span class="token operator">*</span> camera<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token number">3</span><span class="token punctuation">)</span>
+H_size <span class="token operator">=</span> <span class="token number">0.1</span> <span class="token operator">*</span> camera<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token number">4</span><span class="token punctuation">)</span>
+
+system_state_lock <span class="token operator">=</span> <span class="token number">0</span>  <span class="token comment"># 标志系统状态的量 0表示无子线程在运行 1表示正在刷脸 2表示正在录入新面孔。</span>
+<span class="token comment"># 相当于mutex锁，用于线程同步</span>
+
+
+<span class="token triple-quoted-string string">'''
+============================================================================================
+以上是初始化
+============================================================================================
+'''</span>
+
+
+<span class="token keyword">def</span> <span class="token function">Get_new_face</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"正在从摄像头录入新人脸信息 \n"</span><span class="token punctuation">)</span>
+
+    <span class="token comment"># 存在目录data就清空，不存在就创建，确保最后存在空的data目录</span>
+    filepath <span class="token operator">=</span> <span class="token string">"data"</span>
+    <span class="token keyword">if</span> <span class="token operator">not</span> os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>exists<span class="token punctuation">(</span>filepath<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        os<span class="token punctuation">.</span>mkdir<span class="token punctuation">(</span>filepath<span class="token punctuation">)</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        shutil<span class="token punctuation">.</span>rmtree<span class="token punctuation">(</span>filepath<span class="token punctuation">)</span>
+        os<span class="token punctuation">.</span>mkdir<span class="token punctuation">(</span>filepath<span class="token punctuation">)</span>
+
+    sample_num <span class="token operator">=</span> <span class="token number">0</span>  <span class="token comment"># 已经获得的样本数</span>
+
+    <span class="token keyword">while</span> <span class="token boolean">True</span><span class="token punctuation">:</span>  <span class="token comment"># 从摄像头读取图片</span>
+
+        <span class="token keyword">global</span> success
+        <span class="token keyword">global</span> img  <span class="token comment"># 因为要显示在可视化的控件内，所以要用全局的</span>
+        success<span class="token punctuation">,</span> img <span class="token operator">=</span> camera<span class="token punctuation">.</span>read<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+        <span class="token comment"># 转为灰度图片</span>
+        <span class="token keyword">if</span> success <span class="token keyword">is</span> <span class="token boolean">True</span><span class="token punctuation">:</span>
+            gray <span class="token operator">=</span> cv2<span class="token punctuation">.</span>cvtColor<span class="token punctuation">(</span>img<span class="token punctuation">,</span> cv2<span class="token punctuation">.</span>COLOR_BGR2GRAY<span class="token punctuation">)</span>
+        <span class="token keyword">else</span><span class="token punctuation">:</span>
+            <span class="token keyword">break</span>
+
+        <span class="token comment"># 检测人脸，将每一帧摄像头记录的数据带入OpenCv中，让Classifier判断人脸</span>
+        <span class="token comment"># 其中gray为要检测的灰度图像，1.3为每次图像尺寸减小的比例，5为minNeighbors</span>
+        face_detector <span class="token operator">=</span> face_cascade
+        faces <span class="token operator">=</span> face_detector<span class="token punctuation">.</span>detectMultiScale<span class="token punctuation">(</span>gray<span class="token punctuation">,</span> <span class="token number">1.3</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token punctuation">)</span>
+
+        <span class="token comment"># 框选人脸，for循环保证一个能检测的实时动态视频流</span>
+        <span class="token keyword">for</span> <span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">,</span> w<span class="token punctuation">,</span> h<span class="token punctuation">)</span> <span class="token keyword">in</span> faces<span class="token punctuation">:</span>
+            <span class="token comment"># xy为左上角的坐标,w为宽，h为高，用rectangle为人脸标记画框</span>
+            cv2<span class="token punctuation">.</span>rectangle<span class="token punctuation">(</span>img<span class="token punctuation">,</span> <span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>x <span class="token operator">+</span> w<span class="token punctuation">,</span> y <span class="token operator">+</span> w<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token number">255</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+            <span class="token comment"># 样本数加1</span>
+            sample_num <span class="token operator">+=</span> <span class="token number">1</span>
+            <span class="token comment"># 保存图像，把灰度图片看成二维数组来检测人脸区域，这里是保存在data缓冲文件夹内</span>
+            T <span class="token operator">=</span> Total_face_num
+            cv2<span class="token punctuation">.</span>imwrite<span class="token punctuation">(</span><span class="token string">"./data/User."</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>T<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">'.'</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>sample_num<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">'.jpg'</span><span class="token punctuation">,</span> gray<span class="token punctuation">[</span>y<span class="token punctuation">:</span>y <span class="token operator">+</span> h<span class="token punctuation">,</span> x<span class="token punctuation">:</span>x <span class="token operator">+</span> w<span class="token punctuation">]</span><span class="token punctuation">)</span>
+
+        pictur_num <span class="token operator">=</span> <span class="token number">30</span>  <span class="token comment"># 表示摄像头拍摄取样的数量,越多效果越好，但获取以及训练的越慢</span>
+
+        cv2<span class="token punctuation">.</span>waitKey<span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span>
+        <span class="token keyword">if</span> sample_num <span class="token operator">&gt;</span> pictur_num<span class="token punctuation">:</span>
+            <span class="token keyword">break</span>
+        <span class="token keyword">else</span><span class="token punctuation">:</span>  <span class="token comment"># 控制台内输出进度条</span>
+            l <span class="token operator">=</span> <span class="token builtin">int</span><span class="token punctuation">(</span>sample_num <span class="token operator">/</span> pictur_num <span class="token operator">*</span> <span class="token number">50</span><span class="token punctuation">)</span>
+            r <span class="token operator">=</span> <span class="token builtin">int</span><span class="token punctuation">(</span><span class="token punctuation">(</span>pictur_num <span class="token operator">-</span> sample_num<span class="token punctuation">)</span> <span class="token operator">/</span> pictur_num <span class="token operator">*</span> <span class="token number">50</span><span class="token punctuation">)</span>
+            <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\r"</span> <span class="token operator">+</span> <span class="token string">"%{:.1f}"</span><span class="token punctuation">.</span><span class="token builtin">format</span><span class="token punctuation">(</span>sample_num <span class="token operator">/</span> pictur_num <span class="token operator">*</span> <span class="token number">100</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">"="</span> <span class="token operator">*</span> l <span class="token operator">+</span> <span class="token string">"-&gt;"</span> <span class="token operator">+</span> <span class="token string">"_"</span> <span class="token operator">*</span> r<span class="token punctuation">,</span> end<span class="token operator">=</span><span class="token string">""</span><span class="token punctuation">)</span>
+            var<span class="token punctuation">.</span><span class="token builtin">set</span><span class="token punctuation">(</span><span class="token string">"%{:.1f}"</span><span class="token punctuation">.</span><span class="token builtin">format</span><span class="token punctuation">(</span>sample_num <span class="token operator">/</span> pictur_num <span class="token operator">*</span> <span class="token number">100</span><span class="token punctuation">)</span><span class="token punctuation">)</span>  <span class="token comment"># 控件可视化进度信息</span>
+            <span class="token comment"># tk.Tk().update()</span>
+            window<span class="token punctuation">.</span>update<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 刷新控件以实时显示进度</span>
+
+
+<span class="token keyword">def</span> <span class="token function">Train_new_face</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\n正在训练"</span><span class="token punctuation">)</span>
+    <span class="token comment"># cv2.destroyAllWindows()</span>
+    path <span class="token operator">=</span> <span class="token string">'data'</span>
+
+    <span class="token comment"># 初始化识别的方法</span>
+    recog <span class="token operator">=</span> cv2<span class="token punctuation">.</span>face<span class="token punctuation">.</span>LBPHFaceRecognizer_create<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token comment"># 调用函数并将数据喂给识别器训练</span>
+    faces<span class="token punctuation">,</span> ids <span class="token operator">=</span> get_images_and_labels<span class="token punctuation">(</span>path<span class="token punctuation">)</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">'本次用于训练的识别码为:'</span><span class="token punctuation">)</span>  <span class="token comment"># 调试信息</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span>ids<span class="token punctuation">)</span>  <span class="token comment"># 输出识别码</span>
+
+    <span class="token comment"># 训练模型  #将输入的所有图片转成四维数组</span>
+    recog<span class="token punctuation">.</span>train<span class="token punctuation">(</span>faces<span class="token punctuation">,</span> np<span class="token punctuation">.</span>array<span class="token punctuation">(</span>ids<span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token comment"># 保存模型</span>
+
+    yml <span class="token operator">=</span> <span class="token builtin">str</span><span class="token punctuation">(</span>Total_face_num<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">".yml"</span>
+    rec_f <span class="token operator">=</span> <span class="token builtin">open</span><span class="token punctuation">(</span>yml<span class="token punctuation">,</span> <span class="token string">"w+"</span><span class="token punctuation">)</span>
+    rec_f<span class="token punctuation">.</span>close<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    recog<span class="token punctuation">.</span>save<span class="token punctuation">(</span>yml<span class="token punctuation">)</span>
+
+    <span class="token comment"># recog.save('aaa.yml')</span>
+
+
+<span class="token comment"># 创建一个函数，用于从数据集文件夹中获取训练图片,并获取id</span>
+<span class="token comment"># 注意图片的命名格式为User.id.sampleNum</span>
+<span class="token keyword">def</span> <span class="token function">get_images_and_labels</span><span class="token punctuation">(</span>path<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    image_paths <span class="token operator">=</span> <span class="token punctuation">[</span>os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>join<span class="token punctuation">(</span>path<span class="token punctuation">,</span> f<span class="token punctuation">)</span> <span class="token keyword">for</span> f <span class="token keyword">in</span> os<span class="token punctuation">.</span>listdir<span class="token punctuation">(</span>path<span class="token punctuation">)</span><span class="token punctuation">]</span>
+    <span class="token comment"># 新建连个list用于存放</span>
+    face_samples <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+    ids <span class="token operator">=</span> <span class="token punctuation">[</span><span class="token punctuation">]</span>
+
+    <span class="token comment"># 遍历图片路径，导入图片和id添加到list中</span>
+    <span class="token keyword">for</span> image_path <span class="token keyword">in</span> image_paths<span class="token punctuation">:</span>
+
+        <span class="token comment"># 通过图片路径将其转换为灰度图片</span>
+        img <span class="token operator">=</span> Image<span class="token punctuation">.</span><span class="token builtin">open</span><span class="token punctuation">(</span>image_path<span class="token punctuation">)</span><span class="token punctuation">.</span>convert<span class="token punctuation">(</span><span class="token string">'L'</span><span class="token punctuation">)</span>
+
+        <span class="token comment"># 将图片转化为数组</span>
+        img_np <span class="token operator">=</span> np<span class="token punctuation">.</span>array<span class="token punctuation">(</span>img<span class="token punctuation">,</span> <span class="token string">'uint8'</span><span class="token punctuation">)</span>
+
+        <span class="token keyword">if</span> os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>split<span class="token punctuation">(</span>image_path<span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">.</span>split<span class="token punctuation">(</span><span class="token string">"."</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">!=</span> <span class="token string">'jpg'</span><span class="token punctuation">:</span>
+            <span class="token keyword">continue</span>
+
+        <span class="token comment"># 为了获取id，将图片和路径分裂并获取</span>
+        <span class="token builtin">id</span> <span class="token operator">=</span> <span class="token builtin">int</span><span class="token punctuation">(</span>os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>split<span class="token punctuation">(</span>image_path<span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">.</span>split<span class="token punctuation">(</span><span class="token string">"."</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+
+        <span class="token comment"># 调用熟悉的人脸分类器</span>
+        detector <span class="token operator">=</span> cv2<span class="token punctuation">.</span>CascadeClassifier<span class="token punctuation">(</span><span class="token string">'haarcascade_frontalface_default.xml'</span><span class="token punctuation">)</span>
+
+        faces <span class="token operator">=</span> detector<span class="token punctuation">.</span>detectMultiScale<span class="token punctuation">(</span>img_np<span class="token punctuation">)</span>
+
+        <span class="token comment"># 将获取的图片和id添加到list中</span>
+        <span class="token keyword">for</span> <span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">,</span> w<span class="token punctuation">,</span> h<span class="token punctuation">)</span> <span class="token keyword">in</span> faces<span class="token punctuation">:</span>
+            face_samples<span class="token punctuation">.</span>append<span class="token punctuation">(</span>img_np<span class="token punctuation">[</span>y<span class="token punctuation">:</span>y <span class="token operator">+</span> h<span class="token punctuation">,</span> x<span class="token punctuation">:</span>x <span class="token operator">+</span> w<span class="token punctuation">]</span><span class="token punctuation">)</span>
+            ids<span class="token punctuation">.</span>append<span class="token punctuation">(</span><span class="token builtin">id</span><span class="token punctuation">)</span>
+    <span class="token keyword">return</span> face_samples<span class="token punctuation">,</span> ids
+
+
+<span class="token keyword">def</span> <span class="token function">write_config</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"新人脸训练结束"</span><span class="token punctuation">)</span>
+    f <span class="token operator">=</span> <span class="token builtin">open</span><span class="token punctuation">(</span><span class="token string">'config.txt'</span><span class="token punctuation">,</span> <span class="token string">"a"</span><span class="token punctuation">)</span>
+    T <span class="token operator">=</span> Total_face_num
+    f<span class="token punctuation">.</span>write<span class="token punctuation">(</span><span class="token builtin">str</span><span class="token punctuation">(</span>T<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">" User"</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>T<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">" \n"</span><span class="token punctuation">)</span>
+    f<span class="token punctuation">.</span>close<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    id_dict<span class="token punctuation">[</span>T<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token string">"User"</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>T<span class="token punctuation">)</span>
+
+    <span class="token comment"># 这里修改文件的方式是先读入内存，然后修改内存中的数据，最后写回文件</span>
+    f <span class="token operator">=</span> <span class="token builtin">open</span><span class="token punctuation">(</span><span class="token string">'config.txt'</span><span class="token punctuation">,</span> <span class="token string">'r+'</span><span class="token punctuation">)</span>
+    flist <span class="token operator">=</span> f<span class="token punctuation">.</span>readlines<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    flist<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token builtin">str</span><span class="token punctuation">(</span><span class="token builtin">int</span><span class="token punctuation">(</span>flist<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">" \n"</span>
+    f<span class="token punctuation">.</span>close<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    f <span class="token operator">=</span> <span class="token builtin">open</span><span class="token punctuation">(</span><span class="token string">'config.txt'</span><span class="token punctuation">,</span> <span class="token string">'w+'</span><span class="token punctuation">)</span>
+    f<span class="token punctuation">.</span>writelines<span class="token punctuation">(</span>flist<span class="token punctuation">)</span>
+    f<span class="token punctuation">.</span>close<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+
+<span class="token triple-quoted-string string">'''
+============================================================================================
+以上是录入新人脸信息功能的实现
+============================================================================================
+'''</span>
+
+
+<span class="token keyword">def</span> <span class="token function">scan_face</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token comment"># 使用之前训练好的模型</span>
+    <span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>Total_face_num<span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 每个识别器都要用</span>
+        i <span class="token operator">+=</span> <span class="token number">1</span>
+        yml <span class="token operator">=</span> <span class="token builtin">str</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">".yml"</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\n本次:"</span> <span class="token operator">+</span> yml<span class="token punctuation">)</span>  <span class="token comment"># 调试信息</span>
+        recognizer<span class="token punctuation">.</span>read<span class="token punctuation">(</span>yml<span class="token punctuation">)</span>
+
+        ave_poss <span class="token operator">=</span> <span class="token number">0</span>
+        <span class="token keyword">for</span> times <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 每个识别器扫描十遍</span>
+            times <span class="token operator">+=</span> <span class="token number">1</span>
+            cur_poss <span class="token operator">=</span> <span class="token number">0</span>
+            <span class="token keyword">global</span> success
+            <span class="token keyword">global</span> img
+
+            <span class="token keyword">global</span> system_state_lock
+            <span class="token keyword">while</span> system_state_lock <span class="token operator">==</span> <span class="token number">2</span><span class="token punctuation">:</span>  <span class="token comment"># 如果正在录入新面孔就阻塞</span>
+                <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\r刷脸被录入面容阻塞"</span><span class="token punctuation">,</span> end<span class="token operator">=</span><span class="token string">""</span><span class="token punctuation">)</span>
+                <span class="token keyword">pass</span>
+
+            success<span class="token punctuation">,</span> img <span class="token operator">=</span> camera<span class="token punctuation">.</span>read<span class="token punctuation">(</span><span class="token punctuation">)</span>
+            gray <span class="token operator">=</span> cv2<span class="token punctuation">.</span>cvtColor<span class="token punctuation">(</span>img<span class="token punctuation">,</span> cv2<span class="token punctuation">.</span>COLOR_BGR2GRAY<span class="token punctuation">)</span>
+            <span class="token comment"># 识别人脸</span>
+            faces <span class="token operator">=</span> face_cascade<span class="token punctuation">.</span>detectMultiScale<span class="token punctuation">(</span>
+                gray<span class="token punctuation">,</span>
+                scaleFactor<span class="token operator">=</span><span class="token number">1.2</span><span class="token punctuation">,</span>
+                minNeighbors<span class="token operator">=</span><span class="token number">5</span><span class="token punctuation">,</span>
+                minSize<span class="token operator">=</span><span class="token punctuation">(</span><span class="token builtin">int</span><span class="token punctuation">(</span>W_size<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token builtin">int</span><span class="token punctuation">(</span>H_size<span class="token punctuation">)</span><span class="token punctuation">)</span>
+            <span class="token punctuation">)</span>
+            <span class="token comment"># 进行校验</span>
+            <span class="token keyword">for</span> <span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">,</span> w<span class="token punctuation">,</span> h<span class="token punctuation">)</span> <span class="token keyword">in</span> faces<span class="token punctuation">:</span>
+
+                <span class="token comment"># global system_state_lock</span>
+                <span class="token keyword">while</span> system_state_lock <span class="token operator">==</span> <span class="token number">2</span><span class="token punctuation">:</span>  <span class="token comment"># 如果正在录入新面孔就阻塞</span>
+                    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\r刷脸被录入面容阻塞"</span><span class="token punctuation">,</span> end<span class="token operator">=</span><span class="token string">""</span><span class="token punctuation">)</span>
+                    <span class="token keyword">pass</span>
+                <span class="token comment"># 这里调用Cv2中的rectangle函数 在人脸周围画一个矩形</span>
+                cv2<span class="token punctuation">.</span>rectangle<span class="token punctuation">(</span>img<span class="token punctuation">,</span> <span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>x <span class="token operator">+</span> w<span class="token punctuation">,</span> y <span class="token operator">+</span> h<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">255</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span>
+                <span class="token comment"># 调用分类器的预测函数，接收返回值标签和置信度</span>
+                idnum<span class="token punctuation">,</span> confidence <span class="token operator">=</span> recognizer<span class="token punctuation">.</span>predict<span class="token punctuation">(</span>gray<span class="token punctuation">[</span>y<span class="token punctuation">:</span>y <span class="token operator">+</span> h<span class="token punctuation">,</span> x<span class="token punctuation">:</span>x <span class="token operator">+</span> w<span class="token punctuation">]</span><span class="token punctuation">)</span>
+                conf <span class="token operator">=</span> confidence
+                <span class="token comment"># 计算出一个检验结果</span>
+                <span class="token keyword">if</span> confidence <span class="token operator">&lt;</span> <span class="token number">100</span><span class="token punctuation">:</span>  <span class="token comment"># 可以识别出已经训练的对象——直接输出姓名在屏幕上</span>
+                    <span class="token keyword">if</span> idnum <span class="token keyword">in</span> id_dict<span class="token punctuation">:</span>
+                        user_name <span class="token operator">=</span> id_dict<span class="token punctuation">[</span>idnum<span class="token punctuation">]</span>
+                    <span class="token keyword">else</span><span class="token punctuation">:</span>
+                        <span class="token comment"># print("无法识别的ID:{}\t".format(idnum), end="")</span>
+                        user_name <span class="token operator">=</span> <span class="token string">"Untagged user:"</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>idnum<span class="token punctuation">)</span>
+                    confidence <span class="token operator">=</span> <span class="token string">"{0}%"</span><span class="token punctuation">,</span> <span class="token builtin">format</span><span class="token punctuation">(</span><span class="token builtin">round</span><span class="token punctuation">(</span><span class="token number">100</span> <span class="token operator">-</span> confidence<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token keyword">else</span><span class="token punctuation">:</span>  <span class="token comment"># 无法识别此对象，那么就开始训练</span>
+                    user_name <span class="token operator">=</span> <span class="token string">"unknown"</span>
+                    <span class="token comment"># print("检测到陌生人脸\n")</span>
+
+                    <span class="token comment"># cv2.destroyAllWindows()</span>
+                    <span class="token comment"># global Total_face_num</span>
+                    <span class="token comment"># Total_face_num += 1</span>
+                    <span class="token comment"># Get_new_face()  # 采集新人脸</span>
+                    <span class="token comment"># Train_new_face()  # 训练采集到的新人脸</span>
+                    <span class="token comment"># write_config()  # 修改配置文件</span>
+                    <span class="token comment"># recognizer.read('aaa.yml')  # 读取新识别器</span>
+
+                <span class="token comment"># 加载一个字体用于输出识别对象的信息</span>
+                font <span class="token operator">=</span> cv2<span class="token punctuation">.</span>FONT_HERSHEY_SIMPLEX
+
+                <span class="token comment"># 输出检验结果以及用户名</span>
+                cv2<span class="token punctuation">.</span>putText<span class="token punctuation">(</span>img<span class="token punctuation">,</span> <span class="token builtin">str</span><span class="token punctuation">(</span>user_name<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>x <span class="token operator">+</span> <span class="token number">5</span><span class="token punctuation">,</span> y <span class="token operator">-</span> <span class="token number">5</span><span class="token punctuation">)</span><span class="token punctuation">,</span> font<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">255</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span>
+                cv2<span class="token punctuation">.</span>putText<span class="token punctuation">(</span>img<span class="token punctuation">,</span> <span class="token builtin">str</span><span class="token punctuation">(</span>confidence<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span>x <span class="token operator">+</span> <span class="token number">5</span><span class="token punctuation">,</span> y <span class="token operator">+</span> h <span class="token operator">-</span> <span class="token number">5</span><span class="token punctuation">)</span><span class="token punctuation">,</span> font<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span>
+
+                <span class="token comment"># 展示结果</span>
+                <span class="token comment"># cv2.imshow('camera', img)</span>
+
+                <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"conf="</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>conf<span class="token punctuation">)</span><span class="token punctuation">,</span> end<span class="token operator">=</span><span class="token string">"\t"</span><span class="token punctuation">)</span>
+                <span class="token keyword">if</span> <span class="token number">15</span> <span class="token operator">&gt;</span> conf <span class="token operator">&gt;</span> <span class="token number">0</span><span class="token punctuation">:</span>
+                    cur_poss <span class="token operator">=</span> <span class="token number">1</span>  <span class="token comment"># 表示可以识别</span>
+                <span class="token keyword">elif</span> <span class="token number">60</span> <span class="token operator">&gt;</span> conf <span class="token operator">&gt;</span> <span class="token number">35</span><span class="token punctuation">:</span>
+                    cur_poss <span class="token operator">=</span> <span class="token number">1</span>  <span class="token comment"># 表示可以识别</span>
+                <span class="token keyword">else</span><span class="token punctuation">:</span>
+                    cur_poss <span class="token operator">=</span> <span class="token number">0</span>  <span class="token comment"># 表示不可以识别</span>
+
+            k <span class="token operator">=</span> cv2<span class="token punctuation">.</span>waitKey<span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span>
+            <span class="token keyword">if</span> k <span class="token operator">==</span> <span class="token number">27</span><span class="token punctuation">:</span>
+                <span class="token comment"># cam.release()  # 释放资源</span>
+                cv2<span class="token punctuation">.</span>destroyAllWindows<span class="token punctuation">(</span><span class="token punctuation">)</span>
+                <span class="token keyword">break</span>
+
+            ave_poss <span class="token operator">+=</span> cur_poss
+
+        <span class="token keyword">if</span> ave_poss <span class="token operator">&gt;=</span> <span class="token number">5</span><span class="token punctuation">:</span>  <span class="token comment"># 有一半以上识别说明可行则返回</span>
+            <span class="token keyword">return</span> i
+
+    <span class="token keyword">return</span> <span class="token number">0</span>  <span class="token comment"># 全部过一遍还没识别出说明无法识别</span>
+
+
+<span class="token triple-quoted-string string">'''
+============================================================================================
+以上是关于刷脸功能的设计
+============================================================================================
+'''</span>
+
+
+<span class="token keyword">def</span> <span class="token function">f_scan_face_thread</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token comment"># 使用之前训练好的模型</span>
+    <span class="token comment"># recognizer.read('aaa.yml')</span>
+    var<span class="token punctuation">.</span><span class="token builtin">set</span><span class="token punctuation">(</span><span class="token string">'刷脸'</span><span class="token punctuation">)</span>
+    ans <span class="token operator">=</span> scan_face<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token keyword">if</span> ans <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"最终结果：无法识别"</span><span class="token punctuation">)</span>
+        var<span class="token punctuation">.</span><span class="token builtin">set</span><span class="token punctuation">(</span><span class="token string">"最终结果：无法识别"</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        ans_name <span class="token operator">=</span> <span class="token string">"最终结果："</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>ans<span class="token punctuation">)</span> <span class="token operator">+</span> id_dict<span class="token punctuation">[</span>ans<span class="token punctuation">]</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>ans_name<span class="token punctuation">)</span>
+        var<span class="token punctuation">.</span><span class="token builtin">set</span><span class="token punctuation">(</span>ans_name<span class="token punctuation">)</span>
+
+    <span class="token keyword">global</span> system_state_lock
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"锁被释放0"</span><span class="token punctuation">)</span>
+    system_state_lock <span class="token operator">=</span> <span class="token number">0</span>  <span class="token comment"># 修改system_state_lock,释放资源</span>
+
+
+<span class="token keyword">def</span> <span class="token function">f_scan_face</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">global</span> system_state_lock
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\n当前锁的值为："</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>system_state_lock<span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token keyword">if</span> system_state_lock <span class="token operator">==</span> <span class="token number">1</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"阻塞，因为正在刷脸"</span><span class="token punctuation">)</span>
+        <span class="token keyword">return</span> <span class="token number">0</span>
+    <span class="token keyword">elif</span> system_state_lock <span class="token operator">==</span> <span class="token number">2</span><span class="token punctuation">:</span>  <span class="token comment"># 如果正在录入新面孔就阻塞</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\n刷脸被录入面容阻塞\n"</span>
+              <span class="token string">""</span><span class="token punctuation">)</span>
+        <span class="token keyword">return</span> <span class="token number">0</span>
+    system_state_lock <span class="token operator">=</span> <span class="token number">1</span>
+    p <span class="token operator">=</span> threading<span class="token punctuation">.</span>Thread<span class="token punctuation">(</span>target<span class="token operator">=</span>f_scan_face_thread<span class="token punctuation">)</span>
+    p<span class="token punctuation">.</span>setDaemon<span class="token punctuation">(</span><span class="token boolean">True</span><span class="token punctuation">)</span>  <span class="token comment"># 把线程P设置为守护线程 若主线程退出 P也跟着退出</span>
+    p<span class="token punctuation">.</span>start<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+
+<span class="token keyword">def</span> <span class="token function">f_rec_face_thread</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    var<span class="token punctuation">.</span><span class="token builtin">set</span><span class="token punctuation">(</span><span class="token string">'录入'</span><span class="token punctuation">)</span>
+    cv2<span class="token punctuation">.</span>destroyAllWindows<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token keyword">global</span> Total_face_num
+    Total_face_num <span class="token operator">+=</span> <span class="token number">1</span>
+    Get_new_face<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 采集新人脸</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"采集完毕，开始训练"</span><span class="token punctuation">)</span>
+    <span class="token keyword">global</span> system_state_lock  <span class="token comment"># 采集完就可以解开锁</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"锁被释放0"</span><span class="token punctuation">)</span>
+    system_state_lock <span class="token operator">=</span> <span class="token number">0</span>
+
+    Train_new_face<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 训练采集到的新人脸</span>
+    write_config<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 修改配置文件</span>
+
+
+<span class="token comment">#    recognizer.read('aaa.yml')  # 读取新识别器</span>
+
+<span class="token comment"># global system_state_lock</span>
+<span class="token comment"># print("锁被释放0")</span>
+<span class="token comment"># system_state_lock = 0  # 修改system_state_lock,释放资源</span>
+
+
+<span class="token keyword">def</span> <span class="token function">f_rec_face</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">global</span> system_state_lock
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"当前锁的值为："</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>system_state_lock<span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token keyword">if</span> system_state_lock <span class="token operator">==</span> <span class="token number">2</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"阻塞，因为正在录入面容"</span><span class="token punctuation">)</span>
+        <span class="token keyword">return</span> <span class="token number">0</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        system_state_lock <span class="token operator">=</span> <span class="token number">2</span>  <span class="token comment"># 修改system_state_lock</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"改为2"</span><span class="token punctuation">,</span> end<span class="token operator">=</span><span class="token string">""</span><span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"当前锁的值为："</span> <span class="token operator">+</span> <span class="token builtin">str</span><span class="token punctuation">(</span>system_state_lock<span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+    p <span class="token operator">=</span> threading<span class="token punctuation">.</span>Thread<span class="token punctuation">(</span>target<span class="token operator">=</span>f_rec_face_thread<span class="token punctuation">)</span>
+    p<span class="token punctuation">.</span>setDaemon<span class="token punctuation">(</span><span class="token boolean">True</span><span class="token punctuation">)</span>  <span class="token comment"># 把线程P设置为守护线程 若主线程退出 P也跟着退出</span>
+    p<span class="token punctuation">.</span>start<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token comment"># tk.Tk().update()</span>
+
+
+<span class="token comment">#  system_state_lock = 0  # 修改system_state_lock,释放资源</span>
+
+
+<span class="token keyword">def</span> <span class="token function">f_exit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 退出按钮</span>
+    exit<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+
+<span class="token triple-quoted-string string">'''
+============================================================================================
+以上是关于多线程的设计
+============================================================================================
+'''</span>
+
+window <span class="token operator">=</span> tk<span class="token punctuation">.</span>Tk<span class="token punctuation">(</span><span class="token punctuation">)</span>
+window<span class="token punctuation">.</span>title<span class="token punctuation">(</span><span class="token string">'Cheney\' Face_rec 3.0'</span><span class="token punctuation">)</span>   <span class="token comment"># 窗口标题</span>
+window<span class="token punctuation">.</span>geometry<span class="token punctuation">(</span><span class="token string">'1000x500'</span><span class="token punctuation">)</span>  <span class="token comment"># 这里的乘是小x</span>
+
+<span class="token comment"># 在图形界面上设定标签，类似于一个提示窗口的作用</span>
+var <span class="token operator">=</span> tk<span class="token punctuation">.</span>StringVar<span class="token punctuation">(</span><span class="token punctuation">)</span>
+l <span class="token operator">=</span> tk<span class="token punctuation">.</span>Label<span class="token punctuation">(</span>window<span class="token punctuation">,</span> textvariable<span class="token operator">=</span>var<span class="token punctuation">,</span> bg<span class="token operator">=</span><span class="token string">'green'</span><span class="token punctuation">,</span> fg<span class="token operator">=</span><span class="token string">'white'</span><span class="token punctuation">,</span> font<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'Arial'</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">)</span><span class="token punctuation">,</span> width<span class="token operator">=</span><span class="token number">50</span><span class="token punctuation">,</span> height<span class="token operator">=</span><span class="token number">4</span><span class="token punctuation">)</span>
+<span class="token comment"># 说明： bg为背景，fg为字体颜色，font为字体，width为长，height为高，这里的长和高是字符的长和高，比如height=2,就是标签有2个字符这么高</span>
+l<span class="token punctuation">.</span>pack<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 放置l控件</span>
+
+<span class="token comment"># 在窗口界面设置放置Button按键并绑定处理函数</span>
+button_a <span class="token operator">=</span> tk<span class="token punctuation">.</span>Button<span class="token punctuation">(</span>window<span class="token punctuation">,</span> text<span class="token operator">=</span><span class="token string">'开始刷脸'</span><span class="token punctuation">,</span> font<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'Arial'</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">)</span><span class="token punctuation">,</span> width<span class="token operator">=</span><span class="token number">10</span><span class="token punctuation">,</span> height<span class="token operator">=</span><span class="token number">2</span><span class="token punctuation">,</span> command<span class="token operator">=</span>f_scan_face<span class="token punctuation">)</span>
+button_a<span class="token punctuation">.</span>place<span class="token punctuation">(</span>x<span class="token operator">=</span><span class="token number">800</span><span class="token punctuation">,</span> y<span class="token operator">=</span><span class="token number">120</span><span class="token punctuation">)</span>
+
+button_b <span class="token operator">=</span> tk<span class="token punctuation">.</span>Button<span class="token punctuation">(</span>window<span class="token punctuation">,</span> text<span class="token operator">=</span><span class="token string">'录入人脸'</span><span class="token punctuation">,</span> font<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'Arial'</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">)</span><span class="token punctuation">,</span> width<span class="token operator">=</span><span class="token number">10</span><span class="token punctuation">,</span> height<span class="token operator">=</span><span class="token number">2</span><span class="token punctuation">,</span> command<span class="token operator">=</span>f_rec_face<span class="token punctuation">)</span>
+button_b<span class="token punctuation">.</span>place<span class="token punctuation">(</span>x<span class="token operator">=</span><span class="token number">800</span><span class="token punctuation">,</span> y<span class="token operator">=</span><span class="token number">220</span><span class="token punctuation">)</span>
+
+button_b <span class="token operator">=</span> tk<span class="token punctuation">.</span>Button<span class="token punctuation">(</span>window<span class="token punctuation">,</span> text<span class="token operator">=</span><span class="token string">'退出'</span><span class="token punctuation">,</span> font<span class="token operator">=</span><span class="token punctuation">(</span><span class="token string">'Arial'</span><span class="token punctuation">,</span> <span class="token number">12</span><span class="token punctuation">)</span><span class="token punctuation">,</span> width<span class="token operator">=</span><span class="token number">10</span><span class="token punctuation">,</span> height<span class="token operator">=</span><span class="token number">2</span><span class="token punctuation">,</span> command<span class="token operator">=</span>f_exit<span class="token punctuation">)</span>
+button_b<span class="token punctuation">.</span>place<span class="token punctuation">(</span>x<span class="token operator">=</span><span class="token number">800</span><span class="token punctuation">,</span> y<span class="token operator">=</span><span class="token number">320</span><span class="token punctuation">)</span>
+
+panel <span class="token operator">=</span> tk<span class="token punctuation">.</span>Label<span class="token punctuation">(</span>window<span class="token punctuation">,</span> width<span class="token operator">=</span><span class="token number">500</span><span class="token punctuation">,</span> height<span class="token operator">=</span><span class="token number">350</span><span class="token punctuation">)</span>  <span class="token comment"># 摄像头模块大小</span>
+panel<span class="token punctuation">.</span>place<span class="token punctuation">(</span>x<span class="token operator">=</span><span class="token number">10</span><span class="token punctuation">,</span> y<span class="token operator">=</span><span class="token number">100</span><span class="token punctuation">)</span>  <span class="token comment"># 摄像头模块的位置</span>
+window<span class="token punctuation">.</span>config<span class="token punctuation">(</span>cursor<span class="token operator">=</span><span class="token string">"arrow"</span><span class="token punctuation">)</span>
+
+
+<span class="token keyword">def</span> <span class="token function">video_loop</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 用于在label内动态展示摄像头内容（摄像头嵌入控件）</span>
+    <span class="token comment"># success, img = camera.read()  # 从摄像头读取照片</span>
+    <span class="token keyword">global</span> success
+    <span class="token keyword">global</span> img
+    <span class="token keyword">if</span> success<span class="token punctuation">:</span>
+        cv2<span class="token punctuation">.</span>waitKey<span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span>
+        cv2image <span class="token operator">=</span> cv2<span class="token punctuation">.</span>cvtColor<span class="token punctuation">(</span>img<span class="token punctuation">,</span> cv2<span class="token punctuation">.</span>COLOR_BGR2RGBA<span class="token punctuation">)</span>  <span class="token comment"># 转换颜色从BGR到RGBA</span>
+        current_image <span class="token operator">=</span> Image<span class="token punctuation">.</span>fromarray<span class="token punctuation">(</span>cv2image<span class="token punctuation">)</span>  <span class="token comment"># 将图像转换成Image对象</span>
+        imgtk <span class="token operator">=</span> ImageTk<span class="token punctuation">.</span>PhotoImage<span class="token punctuation">(</span>image<span class="token operator">=</span>current_image<span class="token punctuation">)</span>
+        panel<span class="token punctuation">.</span>imgtk <span class="token operator">=</span> imgtk
+        panel<span class="token punctuation">.</span>config<span class="token punctuation">(</span>image<span class="token operator">=</span>imgtk<span class="token punctuation">)</span>
+        window<span class="token punctuation">.</span>after<span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> video_loop<span class="token punctuation">)</span>
+
+
+video_loop<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token comment">#  窗口循环，用于显示</span>
+window<span class="token punctuation">.</span>mainloop<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token triple-quoted-string string">'''
+============================================================================================
+以上是关于界面的设计
+============================================================================================
+'''</span>
+
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

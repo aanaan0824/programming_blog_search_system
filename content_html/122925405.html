@@ -1,0 +1,974 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="_0"></a>概要</h1>
+<p>在开发过程中，LINQ代码库中的Select方法经常被使用，为了更好的了解该方法，我们从源码的角度对其进行分析。了解如何以最优的方式，使用该方法，从而提升代码的性能。</p>
+<h1><a id="Select_3"></a>Select方法介绍</h1>
+<p>Select方法的基本功能是将序列中的每个元素投影为新形式。LINQ提供了两个重载方法</p>
+<table><thead><tr><th>方法名称</th><th>基本介绍</th></tr></thead><tbody><tr><td>Select&lt;TSource,TResult&gt;(IEnumerable, Func&lt;TSource,TResult&gt;)</td><td>将序列中的每个元素投影为新形式。</td></tr><tr><td>Select&lt;TSource,TResult&gt;(IEnumerable, Func&lt;TSource,Int32,TResult&gt;)</td><td>通过合并元素的索引，将序列中的每个元素投影为新形式。</td></tr></tbody></table>
+<p>两个方法的主要区别是第二个方法支持序列的索引参数。</p>
+<h1><a id="Select_13"></a>Select方法关键代码结构</h1>
+<p>与其他LINQ方法类似，Select方法是实现基础也是迭代器。基于不同的数据结构，定义了不同的迭代器。这些迭代器都继承了基类迭代器Iterator，从而获得了多线程支持和嵌套循环的支持。如果要了解更过的迭代器基础内容，请参考我的博文 <a href="https://blog.csdn.net/weixin_43263355/article/details/122862222">C# LINQ源码分析之迭代器</a></p>
+<table><thead><tr><th>编号</th><th>类名或方法名</th><th>基本功能</th></tr></thead><tbody><tr><td>1.</td><td>SelectEnumerableIterator迭代器</td><td>按顺序投影集合中的每个元素到一个新的集合中，投影方法作为构造方法的参数</td></tr><tr><td>2.</td><td>SelectArrayIterator迭代器</td><td>按顺序投影数组中的每个元素到一个新的数组中，投影方法作为构造方法的参数</td></tr><tr><td>3.</td><td>SelectListIterator迭代器</td><td>按顺序投影iList中的每个元素到一个新的数组中，投影方法作为构造方法的参数</td></tr><tr><td>4.</td><td>SelectIListIterator 迭代器</td><td>按顺序投影List中的每个元素到一个新的数组中，投影方法作为构造方法的参数</td></tr><tr><td>5.</td><td>SelectIterator 方法</td><td>将给定集合的每个元素投影到指定结合中，投影方法作为构造方法的参数 ，投影方法支持索引参数</td></tr></tbody></table>
+<h1><a id="Select_24"></a>Select关键源码分析</h1>
+<p>Select的各种迭代器，从源码的角度上看，差别不大。而List在项目开发中，因为其简单易用，功能强大，使用更加广泛。因此，本文主要分析SelectListIterator迭代器的源码实现。即通过List的实例来调用Select方法。</p>
+<h2><a id="Select_27"></a>Select方法源码分析</h2>
+<p>Select是IEnumerable接口的一个扩展方法，代码如下：</p>
+<pre><code class="prism language-csharp">  <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span>
+    <span class="token keyword">this</span> <span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        ThrowHelper<span class="token punctuation">.</span><span class="token function">ThrowArgumentNullException</span><span class="token punctuation">(</span>ExceptionArgument<span class="token punctuation">.</span>source<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>selector <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        ThrowHelper<span class="token punctuation">.</span><span class="token function">ThrowArgumentNullException</span><span class="token punctuation">(</span>ExceptionArgument<span class="token punctuation">.</span>selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> iterator<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> iterator<span class="token punctuation">.</span><span class="token function">Select</span><span class="token punctuation">(</span>selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">IList<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> ilist<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> array<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> array<span class="token punctuation">.</span>Length <span class="token operator">==</span> <span class="token number">0</span> <span class="token punctuation">?</span>
+                <span class="token generic-method"><span class="token function">Empty</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">:</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>array<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> list<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>list<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectIListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>ilist<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>source<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<ol><li>该方法有两个参数，第一个是集合的扩展方法参数，TSource是集合内元素的类型，第二个参数是一个委托类型，它封装了一个投影方法，TResult是集合元素投影后的数据类型。</li><li>如果调用Select方法的数据源为空，抛出异常。</li><li>如果Select方法的第二个参数，投影方法为空，抛出异常。</li><li>如果调用Select方法的对象是一个Iterator的实例，例如出现xx.Select().Select()或xx.Where().Select()的情况，对于第二个Select方法，则调用迭代器自身的Select方法，此处代码是Select优化的基础，这样做可以将Where/Select或Select/Select的迭代循环合并，以优化迭代过程。</li><li>如果调用Select方法的对象是一个IList<br/> （1）如果source的类型是一个数组，并且是空数组，则返回一个空数组<br/> （2）如果source的类型是一个数组，并且不是空数组，则返回数组的Select迭代器SelectArrayIterator实例<br/> （3）如果source的类型是一个List，则返回SelectListIterator实例<br/> （4）返回SelectIListIterator实例</li><li>返回集合元素的投影迭代的迭代器实例 SelectEnumerableIterator，作为默认情况。</li></ol>
+<h2><a id="SelectListIterator_78"></a>SelectListIterator源码分析</h2>
+<pre><code class="prism language-csharp">  <span class="token keyword">private</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">SelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> _selector<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span><span class="token punctuation">.</span>Enumerator</span> _enumerator<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">SelectListIterator</span><span class="token punctuation">(</span><span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>selector <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _selector <span class="token operator">=</span> selector<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> CountForDebugger <span class="token operator">=&gt;</span> _source<span class="token punctuation">.</span>Count<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">switch</span> <span class="token punctuation">(</span>_state<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">case</span> <span class="token number">1</span><span class="token punctuation">:</span>
+                        _enumerator <span class="token operator">=</span> _source<span class="token punctuation">.</span><span class="token function">GetEnumerator</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        _state <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                        <span class="token keyword">goto</span> <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                    <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">:</span>
+                        <span class="token keyword">if</span> <span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span><span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">{<!-- --></span>
+                            _current <span class="token operator">=</span> <span class="token function">_selector</span><span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span>Current<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                            <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span>
+
+                        <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">break</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> <span class="token function">CombineSelectors</span><span class="token punctuation">(</span>_selector<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<ol><li>SelectListIterator类继承自Iterator类，从而获得多线程安全的支持和多重循环嵌套访问的支持。</li><li>该类包含私有成员_source，用于存储要迭代的List对象，在构造函数中初始化。</li><li>该类包含封装投影方法的系统委托_selector，在构造函数中初始化。</li><li>该类的克隆方法返回SelectListIterator对象，在多线程访问同一个SelectListIterator对象时候被调用。</li><li>该类覆写了基类的MoveNext方法，以支持List类型数据的投影操作。<br/> （1）其实状态_state为0，在通过foreach或其他方式调用基类中定义的GetEnumertator方法后，被修改为1。<br/> （2）case 1:下，实例化List对象内部迭代List数据的迭代器，将_state改为2，进入case 2。<br/> （3）case 2:下，调用List对象的MoveNext方法，获取List的元素，执行调用Select方法，完成投影操作。将基类对属性_current赋值为投影操作的返回值。如果以及是最后一个元素，调用Dispose方法，释放当前Select迭代器。</li><li>该类覆写了基类的Select方法，用于优化xx.Select().Select()情况，该方法调用CombineSelectors方法，将两个投影操作合并为一个投影操作。CombineSelectors源码见附录。</li></ol>
+<h1><a id="Select_135"></a>Select的基本执行流程</h1>
+<p>本文将源码中的Select.cs文件抽取了出来，增加了一些日志，以方便我们更好的了解Select方法的执行流程。增加日志的源码文件详见附录。为了避免命名冲突，我们将Select方法名称改为Select2。</p>
+<h2><a id="_138"></a>延迟加载</h2>
+<p>我们以一个学生列表的List对象执行Select2方法，将学生的名字和数学成绩筛选出来。</p>
+<pre><code class="prism language-csharp"> <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+ <span class="token punctuation">{<!-- --></span>
+     <span class="token class-name">Student</span> s <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x001"</span><span class="token punctuation">,</span> <span class="token string">"Tom"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span><span class="token punctuation">,</span> <span class="token number">88</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+     <span class="token class-name">List<span class="token punctuation">&lt;</span>Student<span class="token punctuation">&gt;</span></span> studentList <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>Student<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span> 
+         <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x001"</span><span class="token punctuation">,</span> <span class="token string">"Tom"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span> <span class="token punctuation">,</span> <span class="token number">90</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+         <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x002"</span><span class="token punctuation">,</span> <span class="token string">"Jack"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span><span class="token punctuation">,</span> <span class="token number">88</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+         <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x003"</span><span class="token punctuation">,</span> <span class="token string">"Mary"</span><span class="token punctuation">,</span> <span class="token string">"CN-2"</span><span class="token punctuation">,</span> <span class="token number">87</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+         <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x004"</span><span class="token punctuation">,</span> <span class="token string">"Frank"</span><span class="token punctuation">,</span> <span class="token string">"CN-2"</span><span class="token punctuation">,</span> <span class="token number">97</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+     <span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+     <span class="token class-name"><span class="token keyword">var</span></span> iterator <span class="token operator">=</span> studentList<span class="token punctuation">.</span><span class="token function">Select2</span><span class="token punctuation">(</span>s <span class="token operator">=&gt;</span><span class="token keyword">new</span> <span class="token punctuation">{<!-- --></span>Name<span class="token operator">=</span> s<span class="token punctuation">.</span>Name<span class="token punctuation">,</span> Math <span class="token operator">=</span> s<span class="token punctuation">.</span>MathResult<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token punctuation">}</span>
+</code></pre>
+<p>执行结果如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f5f300e35a3e4021989a0ca97d3cf5d7.png"/></p>
+<ol><li>Select2方法被调用，当前集合是一个List<br/> (1) List继承自iList，所以首先被判断为是一个iList<br/> (2) 最后成功推断出source是一个List</li><li>实例化一个SelectListIterator对象，先调用基类的构造方法，再调用派生类的构造方法。</li></ol>
+<p>Select方法是支持延迟加载的，所以在不真正使用投影操作的返回值的时候，它也只返回一个投影操作迭代器SelectListIterator对象，不返回具体迭代结果。</p>
+<h2><a id="foreach_164"></a>foreach循环遍历迭代器</h2>
+<pre><code class="prism language-csharp"> <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+ <span class="token punctuation">{<!-- --></span>
+     <span class="token class-name">Student</span> s <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x001"</span><span class="token punctuation">,</span> <span class="token string">"Tom"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span><span class="token punctuation">,</span> <span class="token number">88</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+     <span class="token class-name">List<span class="token punctuation">&lt;</span>Student<span class="token punctuation">&gt;</span></span> studentList <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>Student<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span> 
+         <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x001"</span><span class="token punctuation">,</span> <span class="token string">"Tom"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span> <span class="token punctuation">,</span> <span class="token number">90</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+         <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x002"</span><span class="token punctuation">,</span> <span class="token string">"Jack"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span><span class="token punctuation">,</span> <span class="token number">88</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+         <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x003"</span><span class="token punctuation">,</span> <span class="token string">"Mary"</span><span class="token punctuation">,</span> <span class="token string">"CN-2"</span><span class="token punctuation">,</span> <span class="token number">87</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+         <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x004"</span><span class="token punctuation">,</span> <span class="token string">"Frank"</span><span class="token punctuation">,</span> <span class="token string">"CN-2"</span><span class="token punctuation">,</span> <span class="token number">97</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+     <span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+     <span class="token class-name"><span class="token keyword">var</span></span> iterator <span class="token operator">=</span> studentList<span class="token punctuation">.</span><span class="token function">Select2</span><span class="token punctuation">(</span>s <span class="token operator">=&gt;</span><span class="token keyword">new</span> <span class="token punctuation">{<!-- --></span>Name<span class="token operator">=</span> s<span class="token punctuation">.</span>Name<span class="token punctuation">,</span> Math <span class="token operator">=</span> s<span class="token punctuation">.</span>MathResult<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+     <span class="token keyword">foreach</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">var</span></span> stu <span class="token keyword">in</span> iterator<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+         System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span>stu<span class="token punctuation">)</span><span class="token punctuation">;</span>
+     <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+</code></pre>
+<p>执行结果如下：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ff2716eef1344345a028714c8961341f.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5oeS5Lq6RXRoYW4=,size_15,color_FFFFFF,t_70,g_se,x_16"/></p>
+<ol><li>Select2方法被调用，当前集合是一个List<br/> (1) List继承自iList，所以首先被判断为是一个iList<br/> (2) 最后成功推断出source是一个List</li><li>实例化一个SelectListIterator对象，先调用基类的构造方法，再调用派生类的构造方法。</li><li>foreach调用SelectListIterator实例的GetEnumerator方法，判断是否当前迭代器是否可用，包含是否被其他线程使用，是否被其他代码调用。如果可用，给当前迭代器加锁，将_state改为1，否则调用SelectListIterator对象的Clone方法，返回一个新的迭代器对象。</li><li>foreach调用SelectListIterator对象的MoveNext方法。开始为每个元素执行投影操作。</li></ol>
+<h1><a id="Select_192"></a>Select的优化处理</h1>
+<p>Select方法的迭代器在和其它LINQ扩展方放在一起，可以自动触发其优化的特性，加速完成整个投影过程。</p>
+<h2><a id="SelectSelect__195"></a>Select.Select 情况</h2>
+<pre><code class="prism language-csharp"><span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+ <span class="token punctuation">{<!-- --></span>
+      <span class="token class-name">Student</span> s <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x001"</span><span class="token punctuation">,</span> <span class="token string">"Tom"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span><span class="token punctuation">,</span> <span class="token number">88</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token class-name">List<span class="token punctuation">&lt;</span>Student<span class="token punctuation">&gt;</span></span> studentList <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>Student<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span> 
+          <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x001"</span><span class="token punctuation">,</span> <span class="token string">"Tom"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span> <span class="token punctuation">,</span> <span class="token number">90</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+          <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x002"</span><span class="token punctuation">,</span> <span class="token string">"Jack"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span><span class="token punctuation">,</span> <span class="token number">88</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+          <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x003"</span><span class="token punctuation">,</span> <span class="token string">"Mary"</span><span class="token punctuation">,</span> <span class="token string">"CN-2"</span><span class="token punctuation">,</span> <span class="token number">87</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+          <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x004"</span><span class="token punctuation">,</span> <span class="token string">"Frank"</span><span class="token punctuation">,</span> <span class="token string">"CN-2"</span><span class="token punctuation">,</span> <span class="token number">97</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+      <span class="token punctuation">}</span><span class="token punctuation">;</span>            
+      <span class="token class-name"><span class="token keyword">var</span></span> iterator <span class="token operator">=</span> studentList
+          <span class="token punctuation">.</span><span class="token function">Select2</span><span class="token punctuation">(</span>s <span class="token operator">=&gt;</span> <span class="token keyword">new</span> <span class="token punctuation">{<!-- --></span>Id <span class="token operator">=</span> s<span class="token punctuation">.</span>Id <span class="token punctuation">,</span>Name<span class="token operator">=</span> s<span class="token punctuation">.</span>Name<span class="token punctuation">,</span> Math <span class="token operator">=</span> s<span class="token punctuation">.</span>MathResult<span class="token punctuation">}</span><span class="token punctuation">)</span>
+          <span class="token punctuation">.</span><span class="token function">Select2</span><span class="token punctuation">(</span>s <span class="token operator">=&gt;</span> <span class="token keyword">new</span> <span class="token punctuation">{<!-- --></span>Name<span class="token operator">=</span> s<span class="token punctuation">.</span>Name<span class="token punctuation">,</span> Math <span class="token operator">=</span> s<span class="token punctuation">.</span>Math <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+       <span class="token keyword">foreach</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">var</span></span> stu <span class="token keyword">in</span> iterator<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+          System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span>stu<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>执行结果如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/37d998797c0c4a29920e9be4f665a53c.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5oeS5Lq6RXRoYW4=,size_14,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>从执行结果来看，Select2方法被执行了两次， 虽然有两个SelectListIterator对象的被创建，但是MoveNext方法只执行了4次，并不是8次。</p>
+<p>原因很明显，两个selector的投影方法被合并成了一个，所以MoveNext方法被调用4次就可以了。</p>
+<p>具体优化流程如下：</p>
+<ol><li>第一个Select2方法被调用，创建SelectListIterator对象。该对象内包含要执行投影操作的List对象和投影方法。Select2返回SelectListIterator对象。</li><li>第二个Select2方法被调用，此时souce不再是List对象而是一个terator的派生类SelectListIterator的对象，所以 if (source is Iterator iterator)判断成立，直接返回SelectListIterator对象。</li><li>第二个Select直接调用SelectListIterator对象自身的Select方法作为返回结果，而SelectListIterator的Select方法是包含两个投影器的合并操作的，所以最后是将两个投影器方法合并后，再进行迭代的。</li></ol>
+<p>因此List对象只被遍历了一次。</p>
+<h2><a id="WhereSelect__228"></a>Where.Select 情况</h2>
+<pre><code class="prism language-csharp">  <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">Student</span> s <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x001"</span><span class="token punctuation">,</span> <span class="token string">"Tom"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span><span class="token punctuation">,</span> <span class="token number">88</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name">List<span class="token punctuation">&lt;</span>Student<span class="token punctuation">&gt;</span></span> studentList <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>Student<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span> 
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x001"</span><span class="token punctuation">,</span> <span class="token string">"Tom"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span> <span class="token punctuation">,</span> <span class="token number">90</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x002"</span><span class="token punctuation">,</span> <span class="token string">"Jack"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span><span class="token punctuation">,</span> <span class="token number">88</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x003"</span><span class="token punctuation">,</span> <span class="token string">"Mary"</span><span class="token punctuation">,</span> <span class="token string">"CN-2"</span><span class="token punctuation">,</span> <span class="token number">87</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x004"</span><span class="token punctuation">,</span> <span class="token string">"Frank"</span><span class="token punctuation">,</span> <span class="token string">"CN-2"</span><span class="token punctuation">,</span> <span class="token number">97</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token punctuation">}</span><span class="token punctuation">;</span>
+            <span class="token class-name"><span class="token keyword">var</span></span> iterator <span class="token operator">=</span> studentList
+                <span class="token punctuation">.</span><span class="token function">Where2</span><span class="token punctuation">(</span>s<span class="token operator">=&gt;</span>s<span class="token punctuation">.</span>MathResult <span class="token operator">&gt;=</span> <span class="token number">90</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">Select2</span><span class="token punctuation">(</span>s <span class="token operator">=&gt;</span> <span class="token keyword">new</span> <span class="token punctuation">{<!-- --></span>Name<span class="token operator">=</span> s<span class="token punctuation">.</span>Name<span class="token punctuation">,</span> Math <span class="token operator">=</span> s<span class="token punctuation">.</span>MathResult<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">foreach</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">var</span></span> stu <span class="token keyword">in</span> iterator<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span>stu<span class="token punctuation">.</span>Name <span class="token operator">+</span> <span class="token string">" "</span> <span class="token operator">+</span> stu<span class="token punctuation">.</span>Math<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> 
+       <span class="token punctuation">}</span>
+</code></pre>
+<p>执行结果如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/49333e63093741bfb344fffb79f65dcc.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5oeS5Lq6RXRoYW4=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 从执行结果来看，Where2和Select2方法各自被执行了1次，但是MoveNext方法只执行了4次，并不是8次。</p>
+<p>原因很明显，两个selector的投影方法和Where的过滤操作被合并到一起执行了，所以MoveNext方法被调用4次就可以了。</p>
+<p>具体优化过程请参考我的博文<a href="https://blog.csdn.net/weixin_43263355/article/details/119027030">C# Linq源码分析之Where</a></p>
+<h2><a id="SelectWhere__256"></a>Select.Where 情况</h2>
+<pre><code class="prism language-csharp"><span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+   <span class="token punctuation">{<!-- --></span>
+       <span class="token class-name">Student</span> s <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x001"</span><span class="token punctuation">,</span> <span class="token string">"Tom"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span><span class="token punctuation">,</span> <span class="token number">88</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+       <span class="token class-name">List<span class="token punctuation">&lt;</span>Student<span class="token punctuation">&gt;</span></span> studentList <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">List<span class="token punctuation">&lt;</span>Student<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span> 
+           <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x001"</span><span class="token punctuation">,</span> <span class="token string">"Tom"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span> <span class="token punctuation">,</span> <span class="token number">90</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+           <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x002"</span><span class="token punctuation">,</span> <span class="token string">"Jack"</span><span class="token punctuation">,</span> <span class="token string">"CN-1"</span><span class="token punctuation">,</span> <span class="token number">88</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+           <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x003"</span><span class="token punctuation">,</span> <span class="token string">"Mary"</span><span class="token punctuation">,</span> <span class="token string">"CN-2"</span><span class="token punctuation">,</span> <span class="token number">87</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+           <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token string">"x004"</span><span class="token punctuation">,</span> <span class="token string">"Frank"</span><span class="token punctuation">,</span> <span class="token string">"CN-2"</span><span class="token punctuation">,</span> <span class="token number">97</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+       <span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+       <span class="token class-name"><span class="token keyword">var</span></span> iterator <span class="token operator">=</span> studentList
+           <span class="token punctuation">.</span><span class="token function">Select2</span><span class="token punctuation">(</span>s <span class="token operator">=&gt;</span><span class="token keyword">new</span> <span class="token punctuation">{<!-- --></span>Name<span class="token operator">=</span> s<span class="token punctuation">.</span>Name<span class="token punctuation">,</span> Math <span class="token operator">=</span> s<span class="token punctuation">.</span>MathResult<span class="token punctuation">}</span><span class="token punctuation">)</span>
+           <span class="token punctuation">.</span><span class="token function">Where2</span><span class="token punctuation">(</span>s <span class="token operator">=&gt;</span> s<span class="token punctuation">.</span>Math <span class="token operator">&gt;=</span> <span class="token number">90</span> <span class="token punctuation">)</span><span class="token punctuation">;</span>
+       <span class="token keyword">foreach</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">var</span></span> stu <span class="token keyword">in</span> iterator<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+           System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span>stu<span class="token punctuation">)</span><span class="token punctuation">;</span>
+       <span class="token punctuation">}</span> 
+     <span class="token punctuation">}</span>
+</code></pre>
+<p>执行结果如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/997605a0bc9c447ba83c095451cb645b.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5oeS5Lq6RXRoYW4=,size_18,color_FFFFFF,t_70,g_se,x_16"/><br/> 从执行结果来看，很遗憾，MoveNext方法执行了8次，没有获得优化。</p>
+<p>原因如下：</p>
+<ol><li>在Select2方法执行完成后，返回了SelectListIterator对象</li><li>在进入Where2方法后 if (source is Iterator iterator)返回为真，执行iterator.Where(predicate); 此时的iterator是SelectListIterator对象，SelectListIterator类不包含Where方法，其基类Iterator才包含Where方法，因此调用的是基类的Where方法，返回的是WhereEnumerableIterator对象，该对象的MoveNext方法被直接调用。WhereEnumerableIterator优化方法并没有被触发。</li></ol>
+<p>Where相关的代码分析请参考我的博文<a href="https://blog.csdn.net/weixin_43263355/article/details/119027030">C# Linq源码分析之Where</a></p>
+<h1><a id="_288"></a>附录</h1>
+<h1><a id="Select_290"></a>增加日志的Select代码</h1>
+<pre><code class="prism language-csharp"><span class="token keyword">namespace</span> <span class="token namespace">Iterator<span class="token punctuation">.</span>MyLinq</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+    <span class="token keyword">using</span> <span class="token namespace">System</span><span class="token punctuation">;</span>
+    <span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Diagnostics</span><span class="token punctuation">;</span>
+    <span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Diagnostics<span class="token punctuation">.</span>CodeAnalysis</span><span class="token punctuation">;</span>
+     <span class="token keyword">using</span> <span class="token keyword">static</span> <span class="token class-name">Iterator<span class="token punctuation">.</span>MyLinq<span class="token punctuation">.</span>Utilities</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">MyEnumerable</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select2</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span>
+            <span class="token keyword">this</span> <span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"Select2 function is called"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                ThrowHelper<span class="token punctuation">.</span><span class="token function">ThrowArgumentNullException</span><span class="token punctuation">(</span>ExceptionArgument<span class="token punctuation">.</span>source<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>selector <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                ThrowHelper<span class="token punctuation">.</span><span class="token function">ThrowArgumentNullException</span><span class="token punctuation">(</span>ExceptionArgument<span class="token punctuation">.</span>selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> iterator<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"source is Iterator&lt;TSource&gt; iterator"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> iterator<span class="token punctuation">.</span><span class="token function">Select</span><span class="token punctuation">(</span>selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">IList<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> ilist<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"source is IList&lt;TSource&gt; ilist"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> array<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">return</span> array<span class="token punctuation">.</span>Length <span class="token operator">==</span> <span class="token number">0</span> <span class="token punctuation">?</span>
+                        <span class="token keyword">null</span> <span class="token punctuation">:</span>
+                        <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>array<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> list<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"source is List&lt;TSource&gt; list"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>list<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"SelectIListIterator is created"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectIListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>ilist<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token comment">/* if (source is IPartition&lt;TSource&gt; partition)
+            {
+                IEnumerable&lt;TResult&gt;? result = null;
+                CreateSelectIPartitionIterator(selector, partition, ref result);
+                if (result != null)
+                {
+                    return result;
+                }
+            } */</span>
+            System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"SelectEnumerableIterator is created"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>source<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+      <span class="token comment">/*   static partial void CreateSelectIPartitionIterator&lt;TResult, TSource&gt;(
+            Func&lt;TSource, TResult&gt; selector, IPartition&lt;TSource&gt; partition, [NotNull] ref IEnumerable&lt;TResult&gt;? result);
+ */</span>
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select2</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token keyword">this</span> <span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">int</span><span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                ThrowHelper<span class="token punctuation">.</span><span class="token function">ThrowArgumentNullException</span><span class="token punctuation">(</span>ExceptionArgument<span class="token punctuation">.</span>source<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>selector <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                ThrowHelper<span class="token punctuation">.</span><span class="token function">ThrowArgumentNullException</span><span class="token punctuation">(</span>ExceptionArgument<span class="token punctuation">.</span>selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">return</span> <span class="token function">SelectIterator</span><span class="token punctuation">(</span>source<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">SelectIterator</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">int</span><span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">int</span></span> index <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+            <span class="token keyword">foreach</span> <span class="token punctuation">(</span><span class="token class-name">TSource</span> element <span class="token keyword">in</span> source<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"SelectIterator"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">checked</span>
+                <span class="token punctuation">{<!-- --></span>
+                    index<span class="token operator">++</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">yield</span> <span class="token keyword">return</span> <span class="token function">selector</span><span class="token punctuation">(</span>element<span class="token punctuation">,</span> index<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// An iterator that maps each item of an &lt;see cref="IEnumerable{TSource}"/&gt;.</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TSource"&gt;The type of the source enumerable.&lt;/typeparam&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TResult"&gt;The type of the mapped items.&lt;/typeparam&gt;</span>
+        <span class="token keyword">private</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">SelectEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> _selector<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token class-name">IEnumerator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span><span class="token punctuation">?</span></span> _enumerator<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">SelectEnumerableIterator</span><span class="token punctuation">(</span><span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>selector <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _selector <span class="token operator">=</span> selector<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>_enumerator <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    _enumerator<span class="token punctuation">.</span><span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    _enumerator <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">base</span><span class="token punctuation">.</span><span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"SelectEnumerableIterator move next"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">switch</span> <span class="token punctuation">(</span>_state<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">case</span> <span class="token number">1</span><span class="token punctuation">:</span>
+                        _enumerator <span class="token operator">=</span> _source<span class="token punctuation">.</span><span class="token function">GetEnumerator</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        _state <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                        <span class="token keyword">goto</span> <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                    <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">:</span>
+                        Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>_enumerator <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">if</span> <span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span><span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">{<!-- --></span>
+                            _current <span class="token operator">=</span> <span class="token function">_selector</span><span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span>Current<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                            <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span>
+
+                        <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">break</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> <span class="token function">CombineSelectors</span><span class="token punctuation">(</span>_selector<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// An iterator that maps each item of a array.</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TSource"&gt;The type of the source array.&lt;/typeparam&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TResult"&gt;The type of the mapped items.&lt;/typeparam&gt;</span>
+        <span class="token punctuation">[</span><span class="token function">DebuggerDisplay</span><span class="token punctuation">(</span><span class="token string">"Count = {CountForDebugger}"</span><span class="token punctuation">)</span><span class="token punctuation">]</span>
+        <span class="token keyword">private</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">SelectArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> _selector<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">SelectArrayIterator</span><span class="token punctuation">(</span><span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>selector <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source<span class="token punctuation">.</span>Length <span class="token operator">&gt;</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// Caller should check this beforehand and return a cached result</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _selector <span class="token operator">=</span> selector<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> CountForDebugger <span class="token operator">=&gt;</span> _source<span class="token punctuation">.</span>Length<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>_state <span class="token operator">&lt;</span> <span class="token number">1</span> <span class="token operator">|</span> _state <span class="token operator">==</span> _source<span class="token punctuation">.</span>Length <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token class-name"><span class="token keyword">int</span></span> index <span class="token operator">=</span> _state<span class="token operator">++</span> <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                _current <span class="token operator">=</span> <span class="token function">_selector</span><span class="token punctuation">(</span>_source<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> <span class="token function">CombineSelectors</span><span class="token punctuation">(</span>_selector<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// An iterator that maps each item of a &lt;see cref="List{TSource}"/&gt;.</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TSource"&gt;The type of the source list.&lt;/typeparam&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TResult"&gt;The type of the mapped items.&lt;/typeparam&gt;</span>
+        <span class="token punctuation">[</span><span class="token function">DebuggerDisplay</span><span class="token punctuation">(</span><span class="token string">"Count = {CountForDebugger}"</span><span class="token punctuation">)</span><span class="token punctuation">]</span>
+        <span class="token keyword">private</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">SelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> _selector<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span><span class="token punctuation">.</span>Enumerator</span> _enumerator<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">SelectListIterator</span><span class="token punctuation">(</span><span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"SelectListIterator is created"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>selector <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _selector <span class="token operator">=</span> selector<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> CountForDebugger <span class="token operator">=&gt;</span> _source<span class="token punctuation">.</span>Count<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">switch</span> <span class="token punctuation">(</span>_state<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">case</span> <span class="token number">1</span><span class="token punctuation">:</span>
+                        _enumerator <span class="token operator">=</span> _source<span class="token punctuation">.</span><span class="token function">GetEnumerator</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        _state <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                        <span class="token keyword">goto</span> <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                    <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">:</span>
+                        <span class="token keyword">if</span> <span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span><span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">{<!-- --></span>
+                            System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"SelectListIterator move next"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                            _current <span class="token operator">=</span> <span class="token function">_selector</span><span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span>Current<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                            <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span>
+
+                        <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">break</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> <span class="token function">CombineSelectors</span><span class="token punctuation">(</span>_selector<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// An iterator that maps each item of an &lt;see cref="IList{TSource}"/&gt;.</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TSource"&gt;The type of the source list.&lt;/typeparam&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TResult"&gt;The type of the mapped items.&lt;/typeparam&gt;</span>
+        <span class="token punctuation">[</span><span class="token function">DebuggerDisplay</span><span class="token punctuation">(</span><span class="token string">"Count = {CountForDebugger}"</span><span class="token punctuation">)</span><span class="token punctuation">]</span>
+        <span class="token keyword">private</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">SelectIListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">IList<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> _selector<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token class-name">IEnumerator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span><span class="token punctuation">?</span></span> _enumerator<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">SelectIListIterator</span><span class="token punctuation">(</span><span class="token class-name">IList<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>selector <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _selector <span class="token operator">=</span> selector<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> CountForDebugger <span class="token operator">=&gt;</span> _source<span class="token punctuation">.</span>Count<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectIListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">switch</span> <span class="token punctuation">(</span>_state<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">case</span> <span class="token number">1</span><span class="token punctuation">:</span>
+                        _enumerator <span class="token operator">=</span> _source<span class="token punctuation">.</span><span class="token function">GetEnumerator</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        _state <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                        <span class="token keyword">goto</span> <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                    <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">:</span>
+                        Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>_enumerator <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">if</span> <span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span><span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">{<!-- --></span>
+                            _current <span class="token operator">=</span> <span class="token function">_selector</span><span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span>Current<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                            <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span>
+
+                        <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">break</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>_enumerator <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    _enumerator<span class="token punctuation">.</span><span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    _enumerator <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">base</span><span class="token punctuation">.</span><span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">SelectIListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> <span class="token function">CombineSelectors</span><span class="token punctuation">(</span>_selector<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h1><a id="Where_605"></a>增加日志的Where代码</h1>
+<pre><code class="prism language-csharp"><span class="token keyword">namespace</span> <span class="token namespace">Iterator<span class="token punctuation">.</span>MyLinq</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+    <span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Diagnostics</span><span class="token punctuation">;</span>
+    <span class="token keyword">using</span> <span class="token namespace">System</span><span class="token punctuation">;</span>
+    <span class="token keyword">using</span> <span class="token keyword">static</span> <span class="token class-name">Iterator<span class="token punctuation">.</span>MyLinq<span class="token punctuation">.</span>Utilities</span><span class="token punctuation">;</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">MyEnumerable</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Where2</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token keyword">this</span> <span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"Where2 is called"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                ThrowHelper<span class="token punctuation">.</span><span class="token function">ThrowArgumentNullException</span><span class="token punctuation">(</span>ExceptionArgument<span class="token punctuation">.</span>source<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>predicate <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                ThrowHelper<span class="token punctuation">.</span><span class="token function">ThrowArgumentNullException</span><span class="token punctuation">(</span>ExceptionArgument<span class="token punctuation">.</span>predicate<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> iterator<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">return</span> iterator<span class="token punctuation">.</span><span class="token function">Where</span><span class="token punctuation">(</span>predicate<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> array<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">return</span> array<span class="token punctuation">.</span>Length <span class="token operator">==</span> <span class="token number">0</span> <span class="token punctuation">?</span>
+                    <span class="token keyword">null</span> <span class="token punctuation">:</span>
+                    <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>array<span class="token punctuation">,</span> predicate<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token keyword">is</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> list<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"source is List&lt;TSource&gt; list"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>list<span class="token punctuation">,</span> predicate<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>source<span class="token punctuation">,</span> predicate<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Where2</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token keyword">this</span> <span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">int</span><span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>source <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                ThrowHelper<span class="token punctuation">.</span><span class="token function">ThrowArgumentNullException</span><span class="token punctuation">(</span>ExceptionArgument<span class="token punctuation">.</span>source<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>predicate <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                ThrowHelper<span class="token punctuation">.</span><span class="token function">ThrowArgumentNullException</span><span class="token punctuation">(</span>ExceptionArgument<span class="token punctuation">.</span>predicate<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">return</span> <span class="token function">WhereIterator</span><span class="token punctuation">(</span>source<span class="token punctuation">,</span> predicate<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">WhereIterator</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">int</span><span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">int</span></span> index <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+            <span class="token keyword">foreach</span> <span class="token punctuation">(</span><span class="token class-name">TSource</span> element <span class="token keyword">in</span> source<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"WhereIterator"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">checked</span>
+                <span class="token punctuation">{<!-- --></span>
+                    index<span class="token operator">++</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">predicate</span><span class="token punctuation">(</span>element<span class="token punctuation">,</span> index<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">yield</span> <span class="token keyword">return</span> element<span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// An iterator that filters each item of an &lt;see cref="IEnumerable{TSource}"/&gt;.</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TSource"&gt;The type of the source enumerable.&lt;/typeparam&gt;</span>
+        <span class="token keyword">private</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">WhereEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> _predicate<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token class-name">IEnumerator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span><span class="token punctuation">?</span></span> _enumerator<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">WhereEnumerableIterator</span><span class="token punctuation">(</span><span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"WhereEnumerableIterator is created"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>predicate <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _predicate <span class="token operator">=</span> predicate<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>_enumerator <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    _enumerator<span class="token punctuation">.</span><span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    _enumerator <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">base</span><span class="token punctuation">.</span><span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">switch</span> <span class="token punctuation">(</span>_state<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">case</span> <span class="token number">1</span><span class="token punctuation">:</span>
+                        _enumerator <span class="token operator">=</span> _source<span class="token punctuation">.</span><span class="token function">GetEnumerator</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        _state <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                        <span class="token keyword">goto</span> <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                    <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">:</span>
+                        Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>_enumerator <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">while</span> <span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span><span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">{<!-- --></span>
+                            System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"WhereEnumerableIterator move next"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                            <span class="token class-name">TSource</span> item <span class="token operator">=</span> _enumerator<span class="token punctuation">.</span>Current<span class="token punctuation">;</span>
+                            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">_predicate</span><span class="token punctuation">(</span>item<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                            <span class="token punctuation">{<!-- --></span>
+                                _current <span class="token operator">=</span> item<span class="token punctuation">;</span>
+                                <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                            <span class="token punctuation">}</span>
+                        <span class="token punctuation">}</span>
+
+                        <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">break</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereSelectEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token function">Where</span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> <span class="token function">CombinePredicates</span><span class="token punctuation">(</span>_predicate<span class="token punctuation">,</span> predicate<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// An iterator that filters each item of an array.</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TSource"&gt;The type of the source array.&lt;/typeparam&gt;</span>
+        <span class="token keyword">internal</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">WhereArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> _predicate<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">WhereArrayIterator</span><span class="token punctuation">(</span><span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span> <span class="token operator">&amp;&amp;</span> source<span class="token punctuation">.</span>Length <span class="token operator">&gt;</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>predicate <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _predicate <span class="token operator">=</span> predicate<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token class-name"><span class="token keyword">int</span></span> index <span class="token operator">=</span> _state <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                <span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> source <span class="token operator">=</span> _source<span class="token punctuation">;</span>
+
+                <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token keyword">unchecked</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword">uint</span><span class="token punctuation">)</span>index <span class="token operator">&lt;</span> <span class="token punctuation">(</span><span class="token keyword">uint</span><span class="token punctuation">)</span>source<span class="token punctuation">.</span>Length<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token class-name">TSource</span> item <span class="token operator">=</span> source<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">;</span>
+                    index <span class="token operator">=</span> _state<span class="token operator">++</span><span class="token punctuation">;</span>
+                    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">_predicate</span><span class="token punctuation">(</span>item<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                    <span class="token punctuation">{<!-- --></span>
+                        _current <span class="token operator">=</span> item<span class="token punctuation">;</span>
+                        <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereSelectArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token function">Where</span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> <span class="token function">CombinePredicates</span><span class="token punctuation">(</span>_predicate<span class="token punctuation">,</span> predicate<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// An iterator that filters each item of a &lt;see cref="List{TSource}"/&gt;.</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TSource"&gt;The type of the source list.&lt;/typeparam&gt;</span>
+        <span class="token keyword">private</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">WhereListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> _predicate<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span><span class="token punctuation">.</span>Enumerator</span> _enumerator<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">WhereListIterator</span><span class="token punctuation">(</span><span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"WhereListIterator is created"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>predicate <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _predicate <span class="token operator">=</span> predicate<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">switch</span> <span class="token punctuation">(</span>_state<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">case</span> <span class="token number">1</span><span class="token punctuation">:</span>
+                        _enumerator <span class="token operator">=</span> _source<span class="token punctuation">.</span><span class="token function">GetEnumerator</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        _state <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                        <span class="token keyword">goto</span> <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                    <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">:</span>
+                        <span class="token keyword">while</span> <span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span><span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">{<!-- --></span>
+                            <span class="token class-name">TSource</span> item <span class="token operator">=</span> _enumerator<span class="token punctuation">.</span>Current<span class="token punctuation">;</span>
+                            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">_predicate</span><span class="token punctuation">(</span>item<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                            <span class="token punctuation">{<!-- --></span>
+                                _current <span class="token operator">=</span> item<span class="token punctuation">;</span>
+                                <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                            <span class="token punctuation">}</span>
+                        <span class="token punctuation">}</span>
+
+                        <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">break</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereSelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> <span class="token function">Where</span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> <span class="token function">CombinePredicates</span><span class="token punctuation">(</span>_predicate<span class="token punctuation">,</span> predicate<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// An iterator that filters, then maps, each item of an array.</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TSource"&gt;The type of the source array.&lt;/typeparam&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TResult"&gt;The type of the mapped items.&lt;/typeparam&gt;</span>
+        <span class="token keyword">private</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">WhereSelectArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> _predicate<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> _selector<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">WhereSelectArrayIterator</span><span class="token punctuation">(</span><span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span> <span class="token operator">&amp;&amp;</span> source<span class="token punctuation">.</span>Length <span class="token operator">&gt;</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>predicate <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>selector <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _predicate <span class="token operator">=</span> predicate<span class="token punctuation">;</span>
+                _selector <span class="token operator">=</span> selector<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereSelectArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">,</span> _selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token class-name"><span class="token keyword">int</span></span> index <span class="token operator">=</span> _state <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">;</span>
+                <span class="token class-name">TSource<span class="token punctuation">[</span><span class="token punctuation">]</span></span> source <span class="token operator">=</span> _source<span class="token punctuation">;</span>
+
+                <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token keyword">unchecked</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword">uint</span><span class="token punctuation">)</span>index <span class="token operator">&lt;</span> <span class="token punctuation">(</span><span class="token keyword">uint</span><span class="token punctuation">)</span>source<span class="token punctuation">.</span>Length<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token class-name">TSource</span> item <span class="token operator">=</span> source<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">;</span>
+                    index <span class="token operator">=</span> _state<span class="token operator">++</span><span class="token punctuation">;</span>
+                    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">_predicate</span><span class="token punctuation">(</span>item<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                    <span class="token punctuation">{<!-- --></span>
+                        _current <span class="token operator">=</span> <span class="token function">_selector</span><span class="token punctuation">(</span>item<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereSelectArrayIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">,</span> <span class="token function">CombineSelectors</span><span class="token punctuation">(</span>_selector<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// An iterator that filters, then maps, each item of a &lt;see cref="List{TSource}"/&gt;.</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TSource"&gt;The type of the source list.&lt;/typeparam&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TResult"&gt;The type of the mapped items.&lt;/typeparam&gt;</span>
+        <span class="token keyword">private</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">WhereSelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> _predicate<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> _selector<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span><span class="token punctuation">.</span>Enumerator</span> _enumerator<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">WhereSelectListIterator</span><span class="token punctuation">(</span><span class="token class-name">List<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"WhereSelectListIterator is created"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>predicate <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>selector <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _predicate <span class="token operator">=</span> predicate<span class="token punctuation">;</span>
+                _selector <span class="token operator">=</span> selector<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereSelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">,</span> _selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">switch</span> <span class="token punctuation">(</span>_state<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">case</span> <span class="token number">1</span><span class="token punctuation">:</span>
+                        _enumerator <span class="token operator">=</span> _source<span class="token punctuation">.</span><span class="token function">GetEnumerator</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        _state <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                        <span class="token keyword">goto</span> <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                    <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">:</span>
+                        <span class="token keyword">while</span> <span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span><span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">{<!-- --></span>
+                            System<span class="token punctuation">.</span>Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"WhereSelectListIterator move next"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                            <span class="token class-name">TSource</span> item <span class="token operator">=</span> _enumerator<span class="token punctuation">.</span>Current<span class="token punctuation">;</span>
+                            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">_predicate</span><span class="token punctuation">(</span>item<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                            <span class="token punctuation">{<!-- --></span>
+                                _current <span class="token operator">=</span> <span class="token function">_selector</span><span class="token punctuation">(</span>item<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                                <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                            <span class="token punctuation">}</span>
+                        <span class="token punctuation">}</span>
+
+                        <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">break</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereSelectListIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">,</span> <span class="token function">CombineSelectors</span><span class="token punctuation">(</span>_selector<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// An iterator that filters, then maps, each item of an &lt;see cref="IEnumerable{TSource}"/&gt;.</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TSource"&gt;The type of the source enumerable.&lt;/typeparam&gt;</span>
+        <span class="token comment">/// &lt;typeparam name="TResult"&gt;The type of the mapped items.&lt;/typeparam&gt;</span>
+        <span class="token keyword">private</span> <span class="token keyword">sealed</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">WhereSelectEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span></span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> _source<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> _predicate<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token keyword">readonly</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> _selector<span class="token punctuation">;</span>
+            <span class="token keyword">private</span> <span class="token class-name">IEnumerator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span><span class="token punctuation">?</span></span> _enumerator<span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">WhereSelectEnumerableIterator</span><span class="token punctuation">(</span><span class="token class-name">IEnumerable<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">&gt;</span></span> source<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token punctuation">&gt;</span></span> predicate<span class="token punctuation">,</span> <span class="token class-name">Func<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>source <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>predicate <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>selector <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                _source <span class="token operator">=</span> source<span class="token punctuation">;</span>
+                _predicate <span class="token operator">=</span> predicate<span class="token punctuation">;</span>
+                _selector <span class="token operator">=</span> selector<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">Iterator<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">&gt;</span></span> <span class="token function">Clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereSelectEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">,</span> _selector<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>_enumerator <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    _enumerator<span class="token punctuation">.</span><span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    _enumerator <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">base</span><span class="token punctuation">.</span><span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">switch</span> <span class="token punctuation">(</span>_state<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token keyword">case</span> <span class="token number">1</span><span class="token punctuation">:</span>
+                        _enumerator <span class="token operator">=</span> _source<span class="token punctuation">.</span><span class="token function">GetEnumerator</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        _state <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                        <span class="token keyword">goto</span> <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">;</span>
+                    <span class="token keyword">case</span> <span class="token number">2</span><span class="token punctuation">:</span>
+                        Debug<span class="token punctuation">.</span><span class="token function">Assert</span><span class="token punctuation">(</span>_enumerator <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">while</span> <span class="token punctuation">(</span>_enumerator<span class="token punctuation">.</span><span class="token function">MoveNext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">{<!-- --></span>
+                            <span class="token class-name">TSource</span> item <span class="token operator">=</span> _enumerator<span class="token punctuation">.</span>Current<span class="token punctuation">;</span>
+                            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">_predicate</span><span class="token punctuation">(</span>item<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                            <span class="token punctuation">{<!-- --></span>
+                                _current <span class="token operator">=</span> <span class="token function">_selector</span><span class="token punctuation">(</span>item<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                                <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+                            <span class="token punctuation">}</span>
+                        <span class="token punctuation">}</span>
+
+                        <span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">break</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+
+                <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name">IEnumerable<span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span> <span class="token generic-method"><span class="token function">Select</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>TResult2<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token class-name">Func<span class="token punctuation">&lt;</span>TResult<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span> selector<span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+                <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WhereSelectEnumerableIterator<span class="token punctuation">&lt;</span>TSource<span class="token punctuation">,</span> TResult2<span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span>_source<span class="token punctuation">,</span> _predicate<span class="token punctuation">,</span> <span class="token function">CombineSelectors</span><span class="token punctuation">(</span>_selector<span class="token punctuation">,</span> selector<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h1><a id="Student_1026"></a>Student类</h1>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+
+<span class="token keyword">namespace</span> <span class="token namespace">Iterator</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Student</span> <span class="token punctuation">{<!-- --></span>
+
+        <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> Id <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> Name <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> Classroom <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> MathResult <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>        
+        <span class="token keyword">public</span> <span class="token function">Student</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> id<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> name<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> classroom<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> math<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">this</span><span class="token punctuation">.</span>Id <span class="token operator">=</span> id<span class="token punctuation">;</span>
+            <span class="token keyword">this</span><span class="token punctuation">.</span>Name <span class="token operator">=</span> name<span class="token punctuation">;</span>
+            <span class="token keyword">this</span><span class="token punctuation">.</span>Classroom <span class="token operator">=</span> classroom<span class="token punctuation">;</span>
+            <span class="token keyword">this</span><span class="token punctuation">.</span>MathResult <span class="token operator">=</span> math<span class="token punctuation">;</span>     
+        <span class="token punctuation">}</span>
+              
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

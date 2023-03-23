@@ -1,0 +1,171 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<blockquote>
+<p>🍊 Java学习：<a href="https://blog.csdn.net/HNU_Csee_wjw/article/details/108082426">Java从入门到精通总结</a><br/> <br/></p>
+<p>🍊 深入浅出RocketMQ设计思想：<a href="https://blog.csdn.net/hnu_csee_wjw/category_11789299.html">深入浅出RocketMQ设计思想</a><br/> <br/></p>
+<p>🍊 绝对不一样的职场干货：<a href="https://blog.csdn.net/hnu_csee_wjw/category_11693862.html">大厂最佳实践经验指南</a><br/> <br/><br/> 📆 最近更新：2022年8月26日<br/> <br/></p>
+<p>🍊 个人简介：通信工程本硕💪、Java程序员🌕。做过科研paper，发过专利，优秀的程序员不应该只是CRUD<br/> <br/></p>
+<p>🍊 点赞 👍 收藏 ⭐留言 📝 都是我最大的动力！</p>
+</blockquote>
+<hr/>
+<p>作为一个消息中间件，消息存储的效率直接影响到消息存取的效率，<code>RocketMQ</code>的单机吞吐量达到10w级别也和其存储设计有关，文本就对其进行一些探索。</p>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#RocketMQ_23">RocketMQ整体存储架构</a></li><li><ul><li><a href="#_28">消息生产与消费消息互相隔离</a></li><li><a href="#CommitLog_33">CommitLog文件采用混合型存储</a></li><li><a href="#_44">顺序读写</a></li></ul>
+</li><li><a href="#mmap_60">mmap内存映射技术</a></li><li><ul><li><a href="#_68">技术特点</a></li><li><a href="#MappedByteBuffer__79">`MappedByteBuffer` 分析</a></li><li><a href="#mmap_180">使用`mmap`的注意点</a></li></ul>
+</li><li><a href="#PageCache_192">操作系统PageCache机制</a></li><li><ul><li><a href="#RocketMQ_204">RocketMQ里的实现方式</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<h1><a id="RocketMQ_23"></a>RocketMQ整体存储架构</h1>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/16fc90a3f10e425186e1e3f98ab13c2a.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5bCP546L5pu-5piv5bCR5bm0,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/><br/> <br/></p>
+<h2><a id="_28"></a>消息生产与消费消息互相隔离</h2>
+<p><code>Producer</code>发送的消息最终写入的是<code>CommitLog</code>文件，<code>Consumer</code>首先从<code>ConsumerQueue</code>里读取持久化消息的<code>offset</code>，消息大小、消息<code>tag</code>属性的<code>Hash</code>值，之后再从<code>CommitLog</code>中读取消息的真正内容<br/> <br/></p>
+<h2><a id="CommitLog_33"></a>CommitLog文件采用混合型存储</h2>
+<p>所有<code>Topic</code>下的消息队列公用同一个<code>CommitLog</code>，并通过建立类似索引的方式来区分不同<code>Topic</code>下的不同<code>MessageQueue</code>的消息。</p>
+<p>此外，只有异步线程通过<code>doDispatch</code>方法异步生成了<code>ConsumerQueue</code>里的元素后，<code>Consumer</code>才能进行消息的消费。</p>
+<p>由此看来，只要消息写入到<code>CommitLog</code>之后，即使<code>ConsumerQueue</code>里的消息丢失了，也可以通过<code>CommitLog</code>来恢复。</p>
+<br/>
+<h2><a id="_44"></a>顺序读写</h2>
+<p>发送消息时，<code>Producer</code>发送的消息是按照顺序写入<code>CommitLog</code>的；消费消息时，<code>Consumer</code>也是顺序从<code>ConsumerQueue</code>里读取消息的。</p>
+<blockquote>
+<p>从<code>CommitLog</code>文件中读取数据时是随机读取，根据消息在<code>CommitLog</code>文件中的起始<code>offset</code>来读取消息的内容</p>
+</blockquote>
+<p>在<code>RocketMQ</code>集群的并发量很高的情况下，文件的随机IO开销还是很大的，<code>RocketMQ</code>会使用其他的手段来避免这个问题，将在后面分析~</p>
+<hr/>
+<p>总结一下，<code>RocketMQ</code>的存储架构设计的优缺点如下：</p>
+<ul><li><font color="#ffaa33"><strong>优点：</strong></font> <code>ConsumerQueue</code>消息逻辑队列比较轻量级；串行访问磁盘避免了磁盘竞争，避免了因为队列个数的增大而导致IO等待时间增大</li><li><font color="#33aa33"><strong>缺点：</strong></font> <code>CommitLog</code>是随机读取；<code>Consumer</code>如果想要消费一条消息的话，需要先读<code>ConsumerQueue</code>，再读<code>CommitLog</code>，额外增加了一次开销</li></ul>
+<br/>
+<h1><a id="mmap_60"></a>mmap内存映射技术</h1>
+<p><code>mmap</code>和<code>write/read</code>一样需要从<code>PageCache</code>中刷盘，但<code>mmap</code>可以直接将<code>PageCache</code>刷到硬盘上而不需要经过内核态，减少了1次数据复制的过程。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3737ce1a561e454da6636d4b1b0793ca.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5bCP546L5pu-5piv5bCR5bm0,size_14,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<br/>
+<h2><a id="_68"></a>技术特点</h2>
+<p><code>mmap</code>的特点就是他不用像普通IO操作那样将文件中的数据先拷贝到操作系统的内核IO缓冲区，而是直接将<font color="#ffaa33">客户端进程的私有地址空间中的一块区域</font>和<font color="#ffaa33">文件对象</font>建立映射关系。</p>
+<p>这样一来，程序就像直接从内存中完成对文件的读写操作一样。</p>
+<p>当缺页中断发生时，直接将文件从磁盘拷贝到客户端的进程空间内只需要进行一次数据拷贝。对于大文件来说</p>
+<br/>
+<h2><a id="MappedByteBuffer__79"></a><code>MappedByteBuffer</code> 分析</h2>
+<p>JDK中的源码如下：</p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">abstract</span> <span class="token keyword">class</span> <span class="token class-name">MappedByteBuffer</span> <span class="token keyword">extends</span> <span class="token class-name">ByteBuffer</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">private</span> <span class="token keyword">final</span> <span class="token class-name">FileDescriptor</span> fd<span class="token punctuation">;</span>
+
+    <span class="token comment">// This should only be invoked by the DirectByteBuffer constructors</span>
+    <span class="token comment">//</span>
+    <span class="token class-name">MappedByteBuffer</span><span class="token punctuation">(</span><span class="token keyword">int</span> mark<span class="token punctuation">,</span> <span class="token keyword">int</span> pos<span class="token punctuation">,</span> <span class="token keyword">int</span> lim<span class="token punctuation">,</span> <span class="token keyword">int</span> cap<span class="token punctuation">,</span> <span class="token comment">// package-private</span>
+                     <span class="token class-name">FileDescriptor</span> fd<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">super</span><span class="token punctuation">(</span>mark<span class="token punctuation">,</span> pos<span class="token punctuation">,</span> lim<span class="token punctuation">,</span> cap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>fd <span class="token operator">=</span> fd<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token class-name">MappedByteBuffer</span><span class="token punctuation">(</span><span class="token keyword">int</span> mark<span class="token punctuation">,</span> <span class="token keyword">int</span> pos<span class="token punctuation">,</span> <span class="token keyword">int</span> lim<span class="token punctuation">,</span> <span class="token keyword">int</span> cap<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> <span class="token comment">// package-private</span>
+        <span class="token keyword">super</span><span class="token punctuation">(</span>mark<span class="token punctuation">,</span> pos<span class="token punctuation">,</span> lim<span class="token punctuation">,</span> cap<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>fd <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">private</span> <span class="token keyword">void</span> <span class="token function">checkMapped</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>fd <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+            <span class="token comment">// Can only happen if a luser explicitly casts a direct byte buffer</span>
+            <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token class-name">UnsupportedOperationException</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// Returns the distance (in bytes) of the buffer from the page aligned address</span>
+    <span class="token comment">// of the mapping. Computed each time to avoid storing in every direct buffer.</span>
+    <span class="token keyword">private</span> <span class="token keyword">long</span> <span class="token function">mappingOffset</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">int</span> ps <span class="token operator">=</span> <span class="token class-name">Bits</span><span class="token punctuation">.</span><span class="token function">pageSize</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">long</span> offset <span class="token operator">=</span> address <span class="token operator">%</span> ps<span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token punctuation">(</span>offset <span class="token operator">&gt;=</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token operator">?</span> offset <span class="token operator">:</span> <span class="token punctuation">(</span>ps <span class="token operator">+</span> offset<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">private</span> <span class="token keyword">long</span> <span class="token function">mappingAddress</span><span class="token punctuation">(</span><span class="token keyword">long</span> mappingOffset<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> address <span class="token operator">-</span> mappingOffset<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">private</span> <span class="token keyword">long</span> <span class="token function">mappingLength</span><span class="token punctuation">(</span><span class="token keyword">long</span> mappingOffset<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> <span class="token punctuation">(</span><span class="token keyword">long</span><span class="token punctuation">)</span><span class="token function">capacity</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">+</span> mappingOffset<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">final</span> <span class="token keyword">boolean</span> <span class="token function">isLoaded</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">checkMapped</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>address <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token operator">||</span> <span class="token punctuation">(</span><span class="token function">capacity</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+            <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+        <span class="token keyword">long</span> offset <span class="token operator">=</span> <span class="token function">mappingOffset</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">long</span> length <span class="token operator">=</span> <span class="token function">mappingLength</span><span class="token punctuation">(</span>offset<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token function">isLoaded0</span><span class="token punctuation">(</span><span class="token function">mappingAddress</span><span class="token punctuation">(</span>offset<span class="token punctuation">)</span><span class="token punctuation">,</span> length<span class="token punctuation">,</span> <span class="token class-name">Bits</span><span class="token punctuation">.</span><span class="token function">pageCount</span><span class="token punctuation">(</span>length<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">// not used, but a potential target for a store, see load() for details.</span>
+    <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token keyword">byte</span> unused<span class="token punctuation">;</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">final</span> <span class="token class-name">MappedByteBuffer</span> <span class="token function">load</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">checkMapped</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>address <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token operator">||</span> <span class="token punctuation">(</span><span class="token function">capacity</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+            <span class="token keyword">return</span> <span class="token keyword">this</span><span class="token punctuation">;</span>
+        <span class="token keyword">long</span> offset <span class="token operator">=</span> <span class="token function">mappingOffset</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">long</span> length <span class="token operator">=</span> <span class="token function">mappingLength</span><span class="token punctuation">(</span>offset<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">load0</span><span class="token punctuation">(</span><span class="token function">mappingAddress</span><span class="token punctuation">(</span>offset<span class="token punctuation">)</span><span class="token punctuation">,</span> length<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// Read a byte from each page to bring it into memory. A checksum</span>
+        <span class="token comment">// is computed as we go along to prevent the compiler from otherwise</span>
+        <span class="token comment">// considering the loop as dead code.</span>
+        <span class="token class-name">Unsafe</span> unsafe <span class="token operator">=</span> <span class="token class-name">Unsafe</span><span class="token punctuation">.</span><span class="token function">getUnsafe</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">int</span> ps <span class="token operator">=</span> <span class="token class-name">Bits</span><span class="token punctuation">.</span><span class="token function">pageSize</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">int</span> count <span class="token operator">=</span> <span class="token class-name">Bits</span><span class="token punctuation">.</span><span class="token function">pageCount</span><span class="token punctuation">(</span>length<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">long</span> a <span class="token operator">=</span> <span class="token function">mappingAddress</span><span class="token punctuation">(</span>offset<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">byte</span> x <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span> i<span class="token operator">&lt;</span>count<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            x <span class="token operator">^=</span> unsafe<span class="token punctuation">.</span><span class="token function">getByte</span><span class="token punctuation">(</span>a<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            a <span class="token operator">+=</span> ps<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>unused <span class="token operator">!=</span> <span class="token number">0</span><span class="token punctuation">)</span>
+            unused <span class="token operator">=</span> x<span class="token punctuation">;</span>
+
+        <span class="token keyword">return</span> <span class="token keyword">this</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">final</span> <span class="token class-name">MappedByteBuffer</span> <span class="token function">force</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">checkMapped</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>address <span class="token operator">!=</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span> <span class="token punctuation">(</span><span class="token function">capacity</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">!=</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">long</span> offset <span class="token operator">=</span> <span class="token function">mappingOffset</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token function">force0</span><span class="token punctuation">(</span>fd<span class="token punctuation">,</span> <span class="token function">mappingAddress</span><span class="token punctuation">(</span>offset<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">mappingLength</span><span class="token punctuation">(</span>offset<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">return</span> <span class="token keyword">this</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">private</span> <span class="token keyword">native</span> <span class="token keyword">boolean</span> <span class="token function">isLoaded0</span><span class="token punctuation">(</span><span class="token keyword">long</span> address<span class="token punctuation">,</span> <span class="token keyword">long</span> length<span class="token punctuation">,</span> <span class="token keyword">int</span> pageCount<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token keyword">native</span> <span class="token keyword">void</span> <span class="token function">load0</span><span class="token punctuation">(</span><span class="token keyword">long</span> address<span class="token punctuation">,</span> <span class="token keyword">long</span> length<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token keyword">native</span> <span class="token keyword">void</span> <span class="token function">force0</span><span class="token punctuation">(</span><span class="token class-name">FileDescriptor</span> fd<span class="token punctuation">,</span> <span class="token keyword">long</span> address<span class="token punctuation">,</span> <span class="token keyword">long</span> length<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>可以看出， <code>MappedByteBuffer</code>继承了<code>ByteBuffer</code>，<code>ByteBuffer</code>内部维护了一个变量<code>address</code>表示逻辑地址。在建立映射关系时，使用<code>FileChannel</code>类下的<code>map()</code>方法把文件对象映射到虚拟内存<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6a028ad8ab274ab285c1d66fc07ef020.png#pic_center"/><br/> <code>map()</code>方法底层调用了本地方法来完成文件的映射操作；<code>get()</code>方法是通过底层以 地址 + 偏移量 的方式来获取指定映射到内存中的数据。</p>
+<br/>
+<h2><a id="mmap_180"></a>使用<code>mmap</code>的注意点</h2>
+<p><strong>1. 内存空间释放：</strong></p>
+<p>映射的内存空间不属于JVM的堆内存区域，所以不会被JVM的垃圾回收机制所回收，释放这部分空间需要通过系统调用<code>unmap()</code>实现，因为该方法是类私有方法，所以<code>RocketMQ</code>采用了反射机制调用<code>sum.misc.Cleaner#clean()</code>方法来释放空间。</p>
+<p><strong>2. 内存映射大小：</strong><br/> 内存映射的大小收到操作系统虚拟内存的限制，一般一次只能映射2G以内的文件到用户态的的虚拟内存空间，因此<code>RocketMQ</code>的单个<code>CommitLog</code>文件大小就是1G</p>
+<br/>
+<h1><a id="PageCache_192"></a>操作系统PageCache机制</h1>
+<p>Linux对文件的读写会先走<code>PageCache</code>，这是一块内存中的区域，这样一来在写入文件文件时就可以写入内存，可以加速写，后续操作系统会自动将数据刷到磁盘上。</p>
+<p><strong>1. 读取文件</strong><br/> 如果读取文件时未命中<code>PageCache</code>，基于<font color="#ffaa33">局部热点理论</font>，操作系统会从物理磁盘上读取文件，除此之外还会读取相邻的数据文件。这样一来，读取已经被加载到<code>PageCache</code>里的文件时，速度就和访问内存差不多。</p>
+<p><strong>2. 写入文件</strong><br/> 操作系统会先将文件写入到缓存内，之后会通过<code>pdflush</code>异步线程将缓存内的数据刷到磁盘上。</p>
+<br/>
+<h2><a id="RocketMQ_204"></a>RocketMQ里的实现方式</h2>
+<p><strong>写消息：</strong></p>
+<p>首先写入<code>PageCache</code>，并通过异步刷盘的方式将消息批量刷盘</p>
+<br/>
+<p><strong>读取消息：</strong><br/> 大部分消息还是从<code>PageCache</code>里读取</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/afc5f56dba75434088b0655755fc5421.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5bCP546L5pu-5piv5bCR5bm0,size_12,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>此外，<code>RocketMQ</code>还使用了多种优化技术，比如内存预分配、预热等，来尽可能减少<code>PageCache</code>可能带来的读写延迟问题。</p>
+<blockquote>
+<p>当操作系统在进行内存回收、内存swap等操作时，<code>PageCache</code>写入到磁盘的过程可能会遇到延迟</p>
+</blockquote>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

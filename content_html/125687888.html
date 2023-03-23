@@ -1,0 +1,299 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>目录</h3>
+<ul><li><a href="#_1">本章要点</a></li><li><a href="#JVM_7">JVM执行流程</a></li><li><a href="#_25">内存区域划分</a></li><li><ul><li><a href="#_41">程序计数器</a></li><li><a href="#_45">栈</a></li><li><a href="#_86">堆(线程共享)</a></li><li><a href="#_101">方法区</a></li></ul>
+</li><li><a href="#_114">类加载过程</a></li><li><ul><li><a href="#_149">经典面试代码题</a></li></ul>
+</li><li><a href="#_189">双亲委派模型</a></li><li><a href="#GC_217">垃圾回收策略(GC)</a></li><li><ul><li><a href="#_246">基于引用计数</a></li><li><a href="#_269">基于可达性分析</a></li><li><a href="#_291">标记清除</a></li><li><a href="#_297">复制算法</a></li><li><a href="#_304">标记整理</a></li><li><a href="#_313">分代回收</a></li><li><a href="#_336">垃圾收集器</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<h1><a id="_1"></a>本章要点</h1>
+<ul><li>JVM内存区域组成和内存区域划分后不同区域的功能</li><li>JVM类加载机制和类加载流程</li><li>双亲委派模型</li><li>JVM中的垃圾回收机制(GC)</li></ul>
+<h1><a id="JVM_7"></a>JVM执行流程</h1>
+<blockquote>
+<p>我们知道JVM就我们的java虚拟机(Java Virtual Machine)的简称!</p>
+</blockquote>
+<blockquote>
+<p><strong>java执行一个java文件的流程:</strong><br/> 程序在执行之前先要把java代码转换成字节码（class文件），JVM 首先需要把字节码通过一定的方式类加载器（ClassLoader） 把文件加载到内存中 运行时数据区（Runtime Data Area） ，而字节码文件是 JVM 的一套指令集规范，并不能直接交个底层操作系统去执行，因此需要特定的命令解析器 执<br/> 行引擎（Execution Engine）将字节码翻译成底层系统指令再交由CPU去执行，而这个过程中需要调用其他语言的接口 本地库接口（Native Interface） 来实现整个程序的功能，这就是这4个主要组成部分的职责与功能。</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/efee4e78f4f24ccebccc66f98cec8de7.png"/></p>
+<p>JVM大致通过4个部分来执行我们的java程序:</p>
+<ul><li>类加载器</li><li>运行时数据区</li><li>执行引擎</li><li>本地库接口</li></ul>
+<p>而上述4个部分中我们的java运行时数据区也叫内存布局,我们重点了解一些这块空间的内存是如何布局的即可!</p>
+<h1><a id="_25"></a>内存区域划分</h1>
+<blockquote>
+<p><em>为啥要将内存区域进行划分呢?</em><br/> 对内存区域进行划分,就让不同的内存空间具有不同的功能,就好比我们的学校不同区域具有不同的功能,教学楼是用来学习的,寝室是用来睡觉的,食堂是用来吃饭的!<br/> 而我们的JVM中的内存区域也是按照不同区域行使的功能进行了划分!</p>
+</blockquote>
+<p>java运行时数据区(内存布局划分如下)<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/36138714be4b43299935fb03e85d1b72.png"/><br/> <strong>主要分为4个重要的区域</strong></p>
+<ul><li>程序计数器</li><li>栈</li><li>堆</li><li>方法区</li></ul>
+<p>我们下面来分别介绍这个4个不同区域的功能</p>
+<h2><a id="_41"></a>程序计数器</h2>
+<blockquote>
+<p>程序计数器这块空间保存了下一条要执行指令的地址,我们通过这个地址空间,就可以让程序顺利执行下去!<br/> 这里的程序计数器每个线程都有一个,我们知道线程是程序调度的基本单位嘛!<br/> 而我们的CUP是需要并发执行的,并不能保证某一时刻连贯的就把某一进程执行结束,我们的CPU需要服务于多个线程,所有程序计数器很好的对程序的执行的位置进行了存档,当我们的该线程再次被CPU调用时根据程序计数器中记录的指令就可以找到上次执行的位置继续执行程序!</p>
+</blockquote>
+<h2><a id="_45"></a>栈</h2>
+<blockquote>
+<p>这里的栈和我们数据结构中的栈结构类似,不过这里的栈保存的信息是<code>栈帧</code></p>
+</blockquote>
+<p>栈中主要保存2种信息</p>
+<ul><li>方法调用信息</li><li>局部变量</li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/31ea145df48c4302a19aae27eaee1881.png"/></p>
+<blockquote>
+<p><strong>栈帧(方法调用信息):</strong><br/> 方法的实参<br/> 局部变量<br/> 方法调用的位置<br/> 方法执行结束的位置</p>
+</blockquote>
+<p>我们通过下面代码进一步了解:</p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Main</span> <span class="token punctuation">{<!-- --></span>
+   <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">fun1</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+       <span class="token function">fun2</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+   <span class="token punctuation">}</span>
+   <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">fun2</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+       <span class="token function">fun3</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+   <span class="token punctuation">}</span>
+   <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">fun3</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+       <span class="token function">fun4</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+   <span class="token punctuation">}</span>
+   <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">fun4</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"fun4"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">fun1</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b2ea4e92f15543908346eb7e2527ba91.png"/></p>
+<blockquote>
+<p>当我们需要执行<code>fun1</code>方法,首先我们需要将<code>main</code>栈帧入栈,通过<code>main</code>栈帧中的信息,我们可以知道此时我们需要调用<code>fun1</code>,然后就将<code>fun1</code>栈帧入栈,紧接着<code>fun3</code>入栈,最后调用<code>fun4</code>然后进行打印,当我们的<code>fun4</code>方法调用结束,此时<code>fun4</code>栈帧就会出栈,然后回到<code>fun3</code>调用位置,<code>fun3</code>结束,<code>fun3</code>出栈,回到<code>fun2</code>,<code>fun2</code>出栈,<code>fun1</code>,<code>main</code>栈帧出栈,整个程序就执行结束了!</p>
+</blockquote>
+<p>这里就需要注意的是我们的栈空间有限,一般只有几M到十几M大小,虽然可以自行设置,但是当我们递归时如果递归次数过多,或者递归出口没有设置很有可能导致栈溢出<code>StackOverflow</code><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4f6aa4ed5ccc45d8908596b4fc8ffa2a.png"/></p>
+<h2><a id="_86"></a>堆(线程共享)</h2>
+<ul><li>成员变量</li><li><code>new</code>出来的对象</li></ul>
+<pre><code class="prism language-java"><span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">public</span> <span class="token class-name">String</span>  name1 <span class="token operator">=</span> <span class="token string">"张三"</span><span class="token punctuation">;</span>
+	<span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">fun</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+		<span class="token class-name">String</span> name2 <span class="token operator">=</span> <span class="token keyword">new</span><span class="token punctuation">(</span><span class="token string">"李四"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>name2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>我们的上述代码中成员变量 <code>name1</code>保存在堆中,<code>fun</code>方法中的<code>name2</code>引用属于局部变量保存在栈中,而其引用指向的本体<code>new("李四")</code>对象本体保存在堆!</p>
+<blockquote>
+<p><strong>注意:</strong><br/> 这里的堆空间是<strong>线程共享</strong>空间,一个进程只要一个堆空间,所有这里的堆空间大小最大!</p>
+</blockquote>
+<h2><a id="_101"></a>方法区</h2>
+<blockquote>
+<p>方法区存放的是类对象</p>
+</blockquote>
+<p><em><strong>啥是类对象呢?</strong></em></p>
+<blockquote>
+<p>我们<code>JVM</code>执行一个<code>.java</code>程序,第一步要先将这个通过<code>javac</code>指令将该文件转成二进制字节码文件<code>.class</code>,而<code>.class</code>文件就会来到内存中,通过<code>JVM</code>加载将其构造成类对象,这里的加载过程就叫做类加载!</p>
+</blockquote>
+<p><em><strong>类对象都有些啥呢?</strong></em></p>
+<blockquote>
+<p>类对象就是描述这个类长啥样!<br/> 类名,有哪些成员,成员名,成员类型,public/private,方法,方法名,方法中的指令…<br/> 类对象中还有一个重要东西,静态成员~<br/> 就是<code>static</code>修饰的成员雷属性,而普通的成员叫做实例属性!</p>
+</blockquote>
+<p>上面就是对内存区域划分及其功能的大致介绍,指的注意的是不同版本的JVM可能有不同的划分方式,但是大致都是一样的!</p>
+<h1><a id="_114"></a>类加载过程</h1>
+<blockquote>
+<p>我们刚刚了解到我们的<code>JVM</code>执行流程,就是将一个<code>.class</code>文件加载到内存中,然后根据<code>.class</code>文件构造一个类对象,当类对象结束使用后,一个类的生命周期也就结束!</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/422afdfe7603447aa850d5b7a02d3c9e.png"/></p>
+<p>而我们的类加载过程一共分为3个步骤!</p>
+<ul><li>加载(Loading)</li></ul>
+<blockquote>
+<p>加载过程主要做的,就是先找到对应的<code>.class</code>文件,然后打开并读取<code>.class</code>文件,同时初步生成一个类对象!</p>
+</blockquote>
+<p><code>Loading</code>阶段最关键就是找到对应的<code>.class</code>文件,并且将其解析成类对象,那么<em>如何去找到一个<code>.class</code>文件呢?</em></p>
+<blockquote>
+<p>1）通过一个类的全限定名来获取定义此类的二进制字节流。<br/> 2）将这个字节流所代表的静态存储结构转化为方法区的运行时数据结构。<br/> 3）在内存中生成一个代表这个类的java.lang.Class对象，作为方法区这个类的各种数据的访问入口</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9acedb976a3540fcac271add6d05b1ad.png"/><br/> 我们的<code>JVM</code>通过上述格式,就可以将一个<code>.class</code>文件找到,然后通过这个格式进行加载初步构造一个类对象!</p>
+<ul><li> <p>连接(Linking)<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/83888a9e445246d8a6929cecda9cd2e1.png"/><br/> 连接又分为3个步骤:</p>
+<ul><li>验证(Verification)</li></ul>
+<blockquote>
+<p>这里验证就是通过<code>.class</code>文件中的内容对照JVM中提供的class文件标准格式信息进行对照,如果不符合格式,就会类加载失败,然后抛出异常</p>
+</blockquote>
+<ul><li>准备(Preparation)</li></ul>
+<blockquote>
+<p>准备阶段就是给静态变量(类变量)分配内存,并且统一初始化置为0</p>
+</blockquote>
+<ul><li>解析(Resolution)</li></ul>
+<blockquote>
+<p>解析阶段是JVM将常量池内的符号引用替换成直接引用的过程,也就是初始化常量的过程<br/> 我们的<code>.class</code>文件中的常量是集中放置的.然后每个常量都会对应一个标号引用,而我们的class文件结构体初始只是记录了标号引用,所以我们要根据标号引用拿到对应常量,对常量进行初始化,填充到类对象中!</p>
+</blockquote> </li><li> <p>初始化(Initialization)</p> </li></ul>
+<blockquote>
+<p>这里才是真正对类进行初始化,尤其是静态变量!<br/> 初始化阶段，Java 虚拟机真正开始执行类中编写的 Java 程序代码，将主导权移交给应用程序。初始化阶段就是执行类构造器方法的过程。</p>
+</blockquote>
+<h2><a id="_149"></a>经典面试代码题</h2>
+<pre><code class="prism language-java"><span class="token keyword">class</span> <span class="token class-name">A</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token class-name">A</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"A构造方法"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"A构造代码块"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">static</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"A静态代码块"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+<span class="token keyword">class</span> <span class="token class-name">B</span> <span class="token keyword">extends</span> <span class="token class-name">A</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token class-name">B</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"B构造方法"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"B构造代码块"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">static</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"B静态代码块"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Main</span> <span class="token keyword">extends</span> <span class="token class-name">B</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">new</span> <span class="token class-name">B</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">new</span> <span class="token class-name">B</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p>输出上述代码的打印结果:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9fb43c8a2fa8431fbbad9d6151ffc440.png"/></p>
+<p>上述类型题目抓住3个要点即可攻破!</p>
+<ul><li>类加载要优先加载类属性(所以这里的静态代码块优先加载),而创建实例之前需要执行类加载过程,并且类加载自进行一次!</li><li>构造方法在构造代码块前,并且每次实例化都会调用对应的构造方法!</li><li>父类执行完再子类!</li></ul>
+<h1><a id="_189"></a>双亲委派模型</h1>
+<blockquote>
+<p>提到类加载机制，不得不提的一个概念就是“双亲委派模型”!<br/> 我们通过对类加载机制的学习了解了类的一个生命周期!<br/> 在第一个Loading加载环节!我们需要通过类名去找到对应的类,而双亲委派模型就是JVM使用的找到一个类的机制!</p>
+</blockquote>
+<p>我们的<code>JVM</code>对类加载目录扫描进行了分工!<br/> 通过不同的加载器扫描不同的目录,主要有3个类加载器!</p>
+<ul><li>启动类加载器（Bootstrap ClassLoader)</li></ul>
+<blockquote>
+<p>类启动加载器,就是负责加载JDK中标准库中的类(scanner,String,ArrayList…)</p>
+</blockquote>
+<ul><li>扩展类加载器（Extension ClassLoader）</li></ul>
+<blockquote>
+<p>负责加载JDK中扩展的类!</p>
+</blockquote>
+<ul><li>应用程序类加载器（Application ClassLoader）</li></ul>
+<blockquote>
+<p>应用程序类加载器负责加载我们开发人员自己构造的类!</p>
+</blockquote>
+<p><em><strong>我们的JVM如何通过上述类加载器找到对应的类呢?</strong></em></p>
+<ul><li>实例一:找到 <code>java.lang.String</code>类!</li></ul>
+<blockquote>
+<p>首先第一步来到应用程序类加载器,然后应用程序类加载器会首先检查他的父类加载器是否加载过,如果没有就就调用父类,也就是扩展类加载器,扩展类加载器,也是先检查父类是否加载过,没有就调用父类加载器,启动类加载器,然后检查父类是否加载过,显然他没有父类,就对其下的目录进行扫描,然后在标准库目录找到了该类,也就加载结束!</p>
+</blockquote>
+<p>实例二: 找到加载一个 <code>Test</code>类</p>
+<blockquote>
+<p>也是和实例一的步骤一样,逐层向上调用加载,到达启动类加载器后扫描后并没有找到,就再次回到扩展类加载器,扫描结束,回到程序类加载器,扫描后在其目录,将其类加载!</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/306aa722edc44bb19643d9b2b409f5c2.png"/><br/> <em><strong>JVM为啥这样设计呢?</strong></em></p>
+<blockquote>
+<ul><li>安全性: 我们通过这样父类优先类加载的过程,就保证了一个如果我们开发人员写的一个类名和标志库中类一样时,优先加载标志库中的类,也能顺利加载到标志库中的类!</li><li>避免重复加载类:如果A类和B类都有一个相同的父类C的话,当A启动后,就会将C类加载起来,那么B类启动会无需重复加载C类了!</li></ul>
+</blockquote>
+<h1><a id="GC_217"></a>垃圾回收策略(GC)</h1>
+<blockquote>
+<p>我们知道内存的申请是由我们程序员控制的,当我们创建了一个变量,就是申请了一块内存空间,而当我们这个变量不用时,应该将这块空间释放!这里释放归还的过程就会用到垃圾回收策略<code>garbage collection</code>简称<code>GC</code>!<br/> 而有的编程语言像<code>C/C++</code>内存的释放还是通过程序员自己释放,但是这样通过程序员自己释放就会降低开发效率!我们程序员有时候很难控制释放的时间,如果释放的早,就会导致申请释放内存的开销,如果释放的晚,或者没有进行释放,就会导致内存泄漏问题!<br/> 大部分主流语言还是通过一个专门的进程,对内存空间进行释放,也就是我们这里说的垃圾回收!像<code>Python/java/go/PHP</code>等都是如此,不过不同语言的垃圾回收策略会有不同,我们主要学习<code>java</code>中的<code>JVM</code>是如何进行<code>GC</code>的!<br/> 垃圾回收策略的缺点:<br/> 1).消化额外的开销(我们在JVM下搞一个需要一个专门进程,这样消化的资源就多了)<br/> 2).可能影响程序运行的流畅度(垃圾回收会导致<code>STW</code>(<code>Stop The World</code>)问题,就是程序中断,注意这里说的中断并不是我们多线程学的中断,这里指的是<code>GC</code>要对垃圾进行回收,使得我们的业务程序不得不停止!)</p>
+</blockquote>
+<blockquote>
+<p>我们知道了内存区域是如何划分的,而我们划分的空间如果不用了,就需要回收!<br/> 我们JVM的内存空间是想操作系统申请的!当我们不使用时,就需要将其归还,有借有还再借不难!<br/> <em><strong>我们的<code>JVM</code>是如何判断一块空间是不用的,又是如何进行回收的呢?</strong></em></p>
+</blockquote>
+<p><em><strong>垃圾回收都回收啥内存?</strong></em></p>
+<blockquote>
+<p>我们将<code>JVM</code>的内存空间进行了划分,<code>GC</code>主要回收的内存空间就是<strong>堆上的空间</strong>,因为这块空间最大,也是我们需要回收的空间,不像栈会根据程序的执行,自己释放!程序计数器的空间大小是固定了也不需要释放,方法区存放的是类对象,而类对象只在类加载时加载一次创建一次,最后该类结束后,进行类卸载,需要释放内存,这里是比较低频的操作!我们GC的关键就是针对堆上的空间进行回收,因为我们代码中大量的内存空间都是在堆上的!</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5192ba0a23184330b0fae68f1b410d93.png"/><br/> 上图就是大致我们堆上的内存的使用分布!<br/> 我们可以知道我们这里的<code>CG</code>基本单位是对象,并不是字节,就好比对象1,有些变量还在使用,有一些不在使用,我们就要保留这块内存空间,自制所有的内存都不在使用,就将其回收!我们主要针对一整个对象回收!</p>
+<p><em><strong>如何定位垃圾?</strong></em><br/> 当下垃圾回收机制有2个主流的定位垃圾的机制</p>
+<ul><li>基于引用计数</li><li>基于可达性分析</li></ul>
+<h2><a id="_246"></a>基于引用计数</h2>
+<blockquote>
+<p>我们堆上主要的保存的就是我们<code>new</code>的对象和成员变量,我们可以根据一块空间记录指向一个对象的引用个数,然后根据记录的引用数决定是否需要将这块空间回收,如果引用为0说明这个对象已不再使用,就可以进行垃圾回收,这就是引用计数的方式!</p>
+</blockquote>
+<pre><code class="prism language-java">t1 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">A</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//new A()对象的引用加一!</span>
+t2 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">B</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//new B()对象的引用加一!</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/57efdd06bae147dabdec6061adaa0cd7.png"/><br/> 我们的<code>A</code>对象只有有<code>t1</code>引用指向,所以引用数为1,<code>B</code>对象也是如此!<br/> 当某一时刻,该引用变量释放,对应的对象引用计数也会减1,然后为0时就会将这块内存空间视为垃圾,将其回收!<br/> <strong>循环引用问题:</strong></p>
+<pre><code class="prism language-java">t1 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">A</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+t1<span class="token punctuation">.</span>t <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">B</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+t2 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">B</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+t2<span class="token punctuation">.</span>t <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">A</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9c91d68a77594d399e46ea0849e34cf9.png"/><br/> 循环引用就是某一引用变量<code>t1</code>下面的属性也有引用<code>t</code>指向一个对象,当外面的引用变量<code>t1</code>释放后,<code>new A()</code>对象的引用计数是减1了,但是<code>new B()</code>对象的引用计数不会减少,<code>t2</code>也是如此,最后虽然<code>t1</code>和<code>t2</code>引用已经不存在,但是对象<code>A</code>和对象<code>B</code>的引用数还是1,这就尴尬了,虽然没人能拿到这两个对象,但是引用计数还是1,不能释放…</p>
+<p><strong>引用计数的缺点</strong></p>
+<ul><li>要消耗额外空间,我们需要一块特点的空间记录引用数!当我们的对象本身空间就不大时,引用计数空间就很费资源!</li><li>循环引用问题,不能进准定位到垃圾!</li></ul>
+<h2><a id="_269"></a>基于可达性分析</h2>
+<blockquote>
+<p>我们上述的引用计数是其他语言(<code>PHP/Python</code>)使用的定位垃圾的手段,而我们的<code>java</code>使用的定位垃圾的策略是可达性分析!</p>
+</blockquote>
+<blockquote>
+<p><strong>可达性分析:</strong> 就是通过额外的线程,对内存进行扫描,然后可以扫描到的对象就将其标记,这里就需要规定扫描的起始位置<code>GCRoots</code>,通过起始位置,类似于二叉树的深度优先遍历一样,将能够访问到的对象都标记一遍,访问不到的就是是不在使用的内存空间,也就是垃圾了!</p>
+</blockquote>
+<p><code>GCRoots:</code></p>
+<blockquote>
+<p>1).栈上的局部变量!<br/> 2).常量池中引用指向的对象<br/> 3).方法区中静态变量指向的对象</p>
+</blockquote>
+<p>我们用二叉树遍历来模拟GC可达性分析:<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b888cfb896e2479b9c51f9b1cf6d357d.png"/><br/> 我们通过<code>GCRoots</code>起始位置对内存空间进行深度优先扫描,我们可以扫描到的节点对象就是真正使用内存的对象(<code>a,b,d,e,f,g</code>),我们将其标记,而没有扫描到的对象(<code>h,j</code>)也就是垃圾,我们将其空间回收即可!</p>
+<p><em><strong>我们通过引用计数和可达性分析可以将垃圾定位,那应该如何对垃圾进行处理呢也就是回收内存?</strong></em><br/> 我们通过3种算法机制对垃圾进行回收:</p>
+<ul><li>标记清楚</li><li>复制算法</li><li>标记整理</li></ul>
+<h2><a id="_291"></a>标记清除</h2>
+<blockquote>
+<p>标记清楚就是对垃圾进行标记,然后将该标记的空间进行清楚回收即可!</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ae7de661145a475ca7d0c1f4ca4f4bd2.png"/><br/> 可以看到这种清除垃圾的算法,将内存空间回收后,会造成大量内存碎片,造成空间浪费!</p>
+<h2><a id="_297"></a>复制算法</h2>
+<blockquote>
+<p>复制算法就是空间分成2分,一份用于对象使用,一份用于复制!<br/> 当标记到了垃圾,我们需要对这一半空间中的对象复制到另外一半空间,然后整体回收这一半的空间!</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/631eb3e0b3b041a89a310e1aad0e9470.png"/><br/> 虽然这个算法解决了标记清楚的内存碎片问题,但是空间利用率低!有一半的空间未被使用到!</p>
+<h2><a id="_304"></a>标记整理</h2>
+<blockquote>
+<p>标记整理,就类似数组中删除 某一元素,需要将数组元素进行整理!</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/cefb6b09527f4910adccc8fdaddd9565.png"/><br/> 显然这种算法解决了上述2个算法的缺点,但是效率比较低,每次整理都要耗费大量时间开销!</p>
+<p>我们<code>GC</code>在进行垃圾回收时会根据不同的情况,使用不同的算法进行回收垃圾!</p>
+<h2><a id="_313"></a>分代回收</h2>
+<blockquote>
+<p>我们<code>JVM</code>下的垃圾回收,将多种方案进行了结合, 一起使用,叫做分代回收!<br/> 这里的分代是根据"年龄"进行划分的,这里的年龄并不是传统意义上的年龄,是指经过一轮<code>GC</code>扫描后,如果对象还在,那这个对象就长一岁!根据不同岁数的对象进行了划分!</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/8c942ab3527e4d77b570e2a412a337ee.png"/><br/> 我们将堆空间进行分区,首先2个大类,新生代和老年代,然后新生代下又进行了划分,伊甸区和2个幸存区!</p>
+<ul><li> <p>新生代</p>
+<ul><li>伊甸区</li></ul>
+<blockquote>
+<p>我们的创建好的对象直接放入到新生代中的伊甸区下!并且伊甸区大部分对象经过一轮<code>GC</code>扫描后就会进行回收,只有少部分还存在!</p>
+</blockquote>
+<ul><li>幸存区</li></ul>
+<blockquote>
+<p>当伊甸区经过一轮<code>GC</code>扫描后,幸存的对象,就来到辛存区!辛存区的对象也会经过多轮<code>GC</code>扫描,这里的垃圾回收算法采用的是复制算法!然后经过多轮的<code>GC</code>扫描后没有被淘汰的对象就来到了老年代!</p>
+</blockquote> </li><li> <p>老年代</p> </li></ul>
+<blockquote>
+<p>老年代下的对象,<code>GC</code>扫描的频率会大大减低,并且这里垃圾回收的算法采用的是标记整理算法!这里的<code>GC</code>扫描会经过很长的时间进行扫描,因为一般能来到老年代下的对象,命都比较硬!<br/> 注意:这里老年代下的对象除了是辛存区下来的,还有就是所占空间比较大的对象,直接就来到老年代,因为大对象,不适合复制算法进行回收,并且大对象一般存活的时间也比较长!</p>
+</blockquote>
+<p>我们类比我们找工作的过程来理解分代回收机制:</p>
+<blockquote>
+<p>首先投简历直接来到伊甸区,啪的一下,面试官进行一轮简历筛选,大部分简历直接就丢了,然后剩下的人就来到了辛存区,好比我们通过简历后要经过很多轮的笔试和面试,最后才能拿到offer,拿到offer后,我们就来到了老年代,虽然已经进公司了,但也不是就稳定了,如果干的不好,就会将其淘汰!而这里有一些牛逼大大佬,直接就免了笔试和面试,直接就进公司了,就好比大对象一样!</p>
+</blockquote>
+<h2><a id="_336"></a>垃圾收集器</h2>
+<p>我们上述介绍的回收机制只是思想,如果要具体落地实现,要通过JVM中的垃圾收集器具体进行回收,因为随着JVM版本的更迭,收集器也不断的更新!所以我们就大致了解一下即可!<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/33aa5b4105274248bb3a52877516ce7d.png"/></p>
+<ul><li>串行收集</li></ul>
+<blockquote>
+<p><code>Serial</code> 针对新生代<br/> <code>Serial Old</code>针对老年代<br/> 在进行垃圾回收时,我们的业务线程需要停止工作,这种方式扫描的慢释放的页慢,产生了严重的<code>STW</code>!</p>
+</blockquote>
+<ul><li>并发收集</li></ul>
+<blockquote>
+<p><code> ParNew</code><br/> <code> Parallel Scavenge</code>上面2个都是针对新生代<br/> <code>Parallel Old</code>:针对老年代<br/> 并发收集,引入了多线程,但是也是比较低效的收集方式!</p>
+</blockquote>
+<ul><li><code>CMS</code>收集器</li></ul>
+<blockquote>
+<p>设计比较巧妙,尽可能减少<code>STW</code></p>
+<ul><li>可达性分析<br/> 1).初始标记,速度很快,会引起短时间的STW,这里的标记只是为了找到<code>Roots</code><br/> 2).并发标记,比较慢,但是这是和业务线程并发的,不会产生STW<br/> 3).重新标记,在并发标记时,并发的业务代码可能会影响标记结果,所以对标记进行微调,速度较快,会引起短时间的STW</li><li>标记整理<br/> 4).回收内存,和业务线程并发!</li></ul>
+</blockquote>
+<p>-<code>G1</code>收集器</p>
+<blockquote>
+<p>把整个内存分成很多个小的区域<code>Region</code>,给这些<code>Region</code>进行标记,然后根据年龄放入不同的分代区域,扫描的时候一次扫描若干个<code>Region</code>,分多次扫描,所以影响业务代码最小,可以使<code>STW</code>减小到<code>1ms</code></p>
+</blockquote>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,198 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>Unity用的是2020.2.25</p>
+<p>Pico SDK用的版本是 v2.0.5  </p>
+<p>直接上代码，C#篇：</p>
+<pre>using System.Collections;
+using System.Collections.Generic;
+using Unity.XR.PXR;
+using UnityEngine;
+using UnityEngine.XR;
+using UnityEngine.XR.Interaction.Toolkit;
+
+public class PicoInputTest : MonoBehaviour
+{
+    //手柄控制器
+    private InputDevice leftController;
+    private InputDevice rightController;
+    private InputDevice headController;
+
+    private bool isTriggerDown;
+    private Vector2 axis;
+    
+    //手柄射线
+    XRRayInteractor leftInteractor;
+    XRRayInteractor rightInteractor;
+    //手柄射线光线
+    private XRInteractorLineVisual leftRayLine;
+    private XRInteractorLineVisual rightRayLine;
+    
+    //射线
+    RaycastHit leftRayInfo;
+
+    public GameObject cube;
+    public GameObject sphere;
+
+    void Start()
+    {
+        InitDevice();
+        InitData();
+        SetRayLineVisual();
+    }
+
+    //初始化设备
+    void InitDevice()
+    {
+        //设备举例，其他的需要的也可以检测一下
+        if (PXR_Input.IsControllerConnected(PXR_Input.Controller.LeftController))
+        {
+            leftController = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
+            rightController = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+            headController = InputDevices.GetDeviceAtXRNode(XRNode.Head);
+        }
+       
+        //注意路径根节点！
+        leftInteractor = transform.Find("Camera Offset/LeftHand Controller").GetComponent&lt;XRRayInteractor&gt;();
+        rightInteractor = transform.Find("Camera Offset/RightHand Controller").GetComponent&lt;XRRayInteractor&gt;();
+        
+        //左右手射线
+        leftRayLine = transform.Find("Camera Offset/LeftHand Controller").GetComponent&lt;XRInteractorLineVisual&gt;();
+        rightRayLine = transform.Find("Camera Offset/LeftHand Controller").GetComponent&lt;XRInteractorLineVisual&gt;();
+    }
+
+    //数据初始化
+    void InitData()
+    {
+        isTriggerDown = false;
+        axis = Vector2.zero;
+    }
+
+    //获取所有设备列表
+    private List&lt;InputDevice&gt; GetAllDevs()
+    {
+        List&lt;InputDevice&gt; deviceList = new List&lt;InputDevice&gt;();
+        InputDevices.GetDevices(deviceList);
+        return deviceList;
+    }
+    // Update is called once per frame
+    void Update()
+    {
+        //设备输入系统检测
+        DevicesInputUpdate();
+        //射线检测
+        RayCheck();
+    }
+
+    //设置射线颜色等属性
+    public void SetRayLineVisual()
+    {
+        Gradient g;
+        g = new Gradient();
+        GradientColorKey[] gck;
+        gck= new GradientColorKey[2];
+        GradientAlphaKey[] gak;
+        gak = new GradientAlphaKey[2];
+        
+        gck[0].color=Color.blue;
+        gck[0].time = 0.0f;
+        gck[1].color=Color.red;
+        gck[1].time = 1.0f;
+
+        gak[0].alpha = 1.0f;
+        gak[0].time = 0.0f;
+        gak[1].alpha = 1.0f;
+        gak[1].time = 1.0f;
+        
+        g.SetKeys(gck,gak);
+
+        leftRayLine.lineWidth = 0.01f;//范围0.0001-0.05
+        leftRayLine.invalidColorGradient = g;//默认状态时无交互射线颜色
+        //leftRayLine.validColorGradient = g2;//再定义个颜色g2、即产生交互时射线颜色；
+
+    }
+    //设备按钮检测
+    private void DevicesInputUpdate()
+    {
+        //板机键检测，其他的按钮一样原理，直接看API定义就行
+        if (leftController.TryGetFeatureValue(CommonUsages.triggerButton,out isTriggerDown)&amp;&amp;isTriggerDown)
+        {
+            //TODO:
+            cube.SetActive(false);
+        }
+
+        //摇杆检测，也可以直接通过0——1去判断
+        if (leftController.TryGetFeatureValue(CommonUsages.primary2DAxis,out axis)&amp;&amp;!axis.Equals(Vector2.zero))
+        {
+            //TODO:
+            float angle = VectorAngle(new Vector2(1, 0), axis);
+            //上    
+            if (angle &gt; 45 &amp;&amp; angle &lt; 135)
+            {
+             transform.Translate(Camera.main.transform.forward*5*Time.deltaTime);
+            }
+            //下      
+            else if (angle &lt; -45 &amp;&amp; angle &gt; -135)
+            {
+                transform.Translate(Camera.main.transform.forward*-5*Time.deltaTime);
+            }
+            //左      
+            else if ((angle &lt; 180 &amp;&amp; angle &gt; 135) || (angle &lt; -135 &amp;&amp; angle &gt; -180))
+            {
+                transform.Rotate(Vector3.up*-30*Time.deltaTime);
+            }
+            //右      
+            else if ((angle &gt; 0 &amp;&amp; angle &lt; 45) || (angle &gt; -45 &amp;&amp; angle &lt; 0))
+            {
+                transform.Rotate(Vector3.up*30*Time.deltaTime);
+            }
+            
+        }
+
+      
+    }
+
+    //update手柄射线检测
+    //右键 XR-UICanvas 创建Canvas只有在此Canvas下的UI组件才能和手柄射线产生正常的交互
+    private void RayCheck()
+    {
+        if (leftInteractor.GetCurrentRaycastHit(out leftRayInfo))
+        {
+            if (leftRayInfo.collider != null &amp;&amp; leftRayInfo.collider.CompareTag("Player"))
+            {
+                //TODO:
+                sphere.transform.localScale = Vector3.one * 5;
+            }
+            else
+            {
+                sphere.transform.localScale = Vector3.one * 1;
+            }
+
+            if (leftRayInfo.collider.gameObject.name == "look1Obj")
+            {
+                if (leftController.TryGetFeatureValue(CommonUsages.triggerButton, out isTriggerDown) &amp;&amp; isTriggerDown)
+                {
+                    sphere.GetComponent&lt;MeshRenderer&gt;().material.color = Color.red;
+                    //Ui3DTest._onVrCLick.Invoke("look1Obj");
+                }
+            }
+            else
+            {
+                sphere.GetComponent&lt;MeshRenderer&gt;().material.color = Color.blue;
+            }
+        }
+    }
+
+    float VectorAngle(Vector2 from,Vector2 to)
+    {
+        float angle;
+        Vector3 cross = Vector3.Cross(from, to);
+        angle = Vector2.Angle(from, to);
+        return cross.z &gt; 0 ? angle : -angle;
+    }
+
+}</pre>
+<p>附上Pico API官方文档：</p>
+<p><a href="https://developer.pico-interactive.com/docs/cn/12050/unity-xr-sdk-overview/" title="概览 - Pico开发者文档">概览 - Pico开发者文档</a></p>
+</div>
+</div>

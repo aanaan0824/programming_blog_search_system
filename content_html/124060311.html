@@ -1,0 +1,121 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>官网下载：<a href="http://winscp.net/eng/docs/lang:chs" title="WinSCP :: WinSCP">WinSCP :: WinSCP</a></p>
+<p>官网C#示例：<a href="http://winscp.net/eng/docs/library#csharp" title="WinSCP .NET Assembly and COM Library :: WinSCP">WinSCP .NET Assembly and COM Library :: WinSCP</a> （全程英文，其他内容建议在园内搜索，其他地方好多没有用的内容浪费时间）</p>
+<p>引用类库：WinSCPnet.dll</p>
+<p>执行程序：WinSCP.exe  （放在项目根目录中，没有此文件类库无法独立运行）</p>
+<p>难点： SshHostKeyFingerprint =  “ 给定的密钥” 如果你不知道密钥没有关系，使用WinSCP.exe 程序，添加一个连接方式并登录。 登录后在Session选项中 选择 Generate Session URL/Code .查询软件生成的代码即可获取 密钥。</p>
+<p>不同的版本密钥也不一样。</p>
+<p>待解决问题：下载、上传指定的文件类型 (如果有做完的同学请@我学习一下)</p>
+<p class="img-center"><img alt="" src="image\4453e0f79a64990a568a16294c049dbc.png"/></p>
+<p><strong>方式一 使用类库操作</strong></p>
+<p>下载 PutFiles ， 上传 PutFiles</p>
+<pre>        /// &lt;summary&gt;
+        /// WinSCP数据传输
+        /// &lt;/summary&gt;
+        /// &lt;param name="winscptype"&gt;选择操作方式：上传、下载&lt;/param&gt;
+        /// &lt;param name="srcPath"&gt;源目录&lt;/param&gt;
+        /// &lt;param name="objPath"&gt;目标目录&lt;/param&gt;
+        /// &lt;param name="hostName"&gt;IP地址&lt;/param&gt;
+        /// &lt;param name="userName"&gt;账户&lt;/param&gt;
+        /// &lt;param name="password"&gt;密码&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public int WinSCP(WinSCPType winscptype, string srcPath, string objPath, string hostName, string userName, string password, int portNumber, string sshHostKeyFingerprint)
+        {
+            try
+            {
+             Setup session options
+            SessionOptions sessionOptions = new SessionOptions
+            {
+                Protocol = Protocol.Sftp,
+                HostName = hostName,
+                UserName = userName,
+                Password = password,
+                PortNumber = portNumber,
+                SshHostKeyFingerprint = sshHostKeyFingerprint,
+                //SshHostKeyFingerprint = "ssh-rsa 2048 xxxxxxxxxxx...="
+            };
+
+            using (Session session = new Session())
+            {
+                // Connect
+                session.Open(sessionOptions);
+
+                // Upload files
+                TransferOptions transferOptions = new TransferOptions();
+                transferOptions.TransferMode = TransferMode.Binary;
+
+                TransferOperationResult transferResult;
+                switch (winscptype)
+                {
+                    case WinSCPType.Download:
+                        transferResult = session.GetFiles(srcPath, objPath, false, transferOptions);
+                        break;
+                    case WinSCPType.Upload:
+                        transferResult = session.PutFiles(srcPath, objPath, false, transferOptions);
+                        break;
+                    default:
+                        transferResult = session.GetFiles(srcPath, objPath, false, transferOptions);
+                        break;
+                }
+
+                // Throw on any error
+                transferResult.Check();
+
+                // Print results
+                foreach (TransferEventArgs transfer in transferResult.Transfers)
+                {
+                    Console.WriteLine("{1} of {0} succeeded", transfer.FileName, Enum.Parse(typeof(WinSCPType), winscptype.GetHashCode().ToString()).ToString());
+                }
+            }
+
+            return 0;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Error: {0}", e);
+                return 1;
+            }
+        }
+
+
+</pre>
+<p>　操作枚举</p>
+<pre>public enum WinSCPType
+{
+    Download = 0,
+    Upload = 1
+
+}
+</pre>
+<p>　</p>
+<p><strong>方法二  使用脚本执行操作</strong></p>
+<pre>     private string winSCPDefaultPath = System.AppDomain.CurrentDomain.SetupInformation.ApplicationBase + "WinSCP.exe";
+
+        public string GetWinSCPBackupScript(string name, string pass, string ip, string backup_src, string backup_obj)
+        {
+            if (!File.Exists(winSCPDefaultPath))
+            {
+                Console.WriteLine("WinSCP.exe 执行程序不存在. 无法执行");
+                return "WinSCP.exe 执行程序不存在. 无法执行";
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.AppendFormat("{0} /console /command", winSCPDefaultPath);
+            sb.Append(" "option batch continue"");
+            sb.Append(" "option echo on"");
+            sb.Append(" "option transfer binary"");
+            sb.AppendFormat(" "open {0}:{1}@{2}"", name, pass, ip);
+            sb.AppendFormat(" "cd {0}"", backup_src);
+            sb.AppendFormat(" "lcd {0}"", backup_obj);
+            sb.AppendFormat(" "get *.dat"");
+
+            //sb.AppendFormat(" "get {0}/{2}  {1}\{2} "", backup_src, backup_obj, GetWeek() - 1);
+            sb.AppendFormat(" "exit"");
+            return sb.ToString();
+
+        }</pre>
+<p> </p>
+</div>
+</div>

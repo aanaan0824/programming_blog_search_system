@@ -1,0 +1,116 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>Minimal API 是 .NET 6 提供的最新功能 ， 对比传统的 ASP.NET Core Web API 方式更加直接 , 你可以用几行代码编写好 REST API 。 没有了祖传的 Startup.cs 和 Controller ，通过简单的代码就可以完成 API 的开发。在第二阶段的 .NET 挑战赛中就以 .NET 6 中 的 Minimal API 作为学习的主线来完成相关的云原生应用。 有小伙伴问怎么可以用好 Minimal API ，如何去架构一个 Minimal API 的云原生解决方案 ，下面我和大家说说 。</p>
+<h1 id="%E5%86%8D%E6%9D%A5%E8%AE%A4%E8%AF%86%E4%B8%80%E4%B8%8B-minimal-api"><strong>再来认识一下 Minimal API</strong></h1>
+<div>
+<img alt="" src="image\06b7dfd1d36face0420a966e684de738.png"/>
+</div>
+<p>对比起传统的 Web API ， Minimal API 取消了 Controller , 文件的组织方式更像 Node.js . 在以前要启动一个 Web API ， .NET 对比起 JavaScript , Go , Rust , Python 等语言的 Web 框架还是相对复杂的。 .NET 团队希望通过 Minimal API 简化 .NET Web 框架 ，让开发者能在一个文件完成简单 API 构建。以下是一个最基本的 Minimal API 项目。</p>
+<p style="text-align:center;"><img alt="" src="image\c76035745eb24379ae0a3c91bd7c66c7.png"/></p>
+<p>MapGet 是 EndpointRouteBuilderExtensions 类的扩展方法， 你可以看到它设定了路由规则后， 会传递一个委托参数 ， 编译器会将它转换为 RequestDelegate ，通过它来取代 Controller 的工作。然后使用 app.Run() 方法来运行我们的 Minimal API 应用程序。<br/>  </p>
+<h1 id="%E6%9E%B6%E6%9E%84-net-6-minimal-api-%E9%A1%B9%E7%9B%AE"><strong>架构 .NET 6 Minimal API 项目</strong></h1>
+<p></p>
+<p>在传统的 Web API 通过 Controller ，针对不同的功能进行 CRUD 的开发， 但如果我们是 Minimal API 呢 ， 要如何组织呢 ？ 还有我们是否还能用 Repository Pattern 呢 ？</p>
+<h2 id="1-controller-%E5%86%8D%E8%A7%81"><strong>1. Controller 再见</strong></h2>
+<p>假设我们要搭建一个关于课程信息的 API， 有课程基本信息(课程类型，课程列表)和选课信息(学生选课，每门课学生选课信息)，如果从传统 Web API 你需要添加 CourseController 和 BookController 两个控制器，通过不同 Action 去对应相关路由 ，但对于 Minimal API 如果我们涉及很多的路由就会让我们的 Program.cs 文件过大，非常不好管理。那我们把功能点切分，或者说重新模拟 Controller 去划分还是非常好的。</p>
+<p style="text-align:center;"><img alt="" src="image\ddb260c5d34b40abb1abb0896c0f09a8.png"/></p>
+<p></p>
+<p>如上图 ，是我画的一个图 ，通过把 Course 和 Book 划分为两个 Module ， 在 Module 里都包含了路由的设置 。这个时候我们做一个接口 ，因为每个 Module 都需要包含添加路由的方法，所以把它做成一个接口 IBaseModule ，以后不同的 Module 都可以用 。</p>
+<p style="text-align:center;"><img alt="" src="image\d2699bf055c743e9a6dc695d0115cf8a.png"/></p>
+<p> 如何添加进去 Program.cs ? 我们来用一个 IEndpointRouteBuilder 的扩展方法 ，把路由添加都归类进来</p>
+<pre><code class="language-cs">public static class ModuleExtensions
+{
+
+    public static void Routers(this IEndpointRouteBuilder builder)
+    {
+
+        CourseModule courseModule = new CourseModule();
+        BookModule bookModule = new BookModule();
+        courseModule.AddModuleRoutes(builder);
+        bookModule.AddModuleRoutes(builder);
+
+
+    }
+}</code></pre>
+<p>这里有一个技巧就是我们可以通过以下 typeof 找到继承于 IBaseModule 的 Module 并将它实例化后调用添加路由的方法。</p>
+<pre><code class="language-cs">    public static void Routers(this IEndpointRouteBuilder builder)
+    {
+
+        var modules = typeof(IBaseModule).Assembly
+            .GetTypes()
+            .Where(p =&gt; p.IsClass &amp;&amp; p.IsAssignableTo(typeof(IBaseModule)))
+            .Select(Activator.CreateInstance)
+            .Cast&lt;IBaseModule&gt;();
+
+        foreach(var module in modules)
+        {
+            module.AddModuleRoutes(builder);
+        }
+
+    }</code></pre>
+<h2 id="2-repostitory-%E6%A8%A1%E5%BC%8F%E8%83%BD%E5%BB%B6%E7%BB%AD%E5%90%97"><strong>2. Repostitory 模式能延续吗 ？</strong></h2>
+<p>这是毫无疑问可以继续使用。 通过 Repository 模式你不需要去关心你所使用的 ORM 是什么 ， 与 ORM 的所有处理过程都在 Repository 层中处理掉 , 通过这样去减少耦合， 提供更好的可测试性。在微软文档中，有以下的比较</p>
+<p style="text-align:center;"><img alt="" src="image\a43a878c61be423c8fab916238015a6d.png"/></p>
+<p></p>
+<p>在 Minimal API 使用 Repository Pattern 在整体上和传统的 ASP.NET MVC 没有不同 ，这里是我用 Repository 模式架构的 Minimal API 的截图</p>
+<p style="text-align:center;"><img alt="" src="image\050dc0fcb4114abfb6a547743d82eb0a.png"/></p>
+<p> 注意一点有人认为 Repository 模式有点过时 ，和过度架构 ， 但我觉得还是非常有必要的，因为这样可以更好管理你的项目。</p>
+<h2 id="3-%E4%BE%9D%E8%B5%96%E6%B3%A8%E5%85%A5"><strong>3. 依赖注入</strong></h2>
+<p>依赖注入解决了应用程序如何独立于对象创建方式的问题。 当您需要可配置的应用程序单元测试时，这非常有用。 随着应用程序的规模和复杂性的增长，依赖注入可帮助您更轻松地更改应用程序。 在 ASP.NET Core 中有非常好用的依赖注入方式 ， 这点在 Minimal API 也是。 由于我们针对功能模块去管理 ，所以在依赖注入时也可以针对模块功能去进行 。以下是我针对模块依赖注入的设计， 结合 Repository 模式以及上面提到的 ModuleExtension.cs 进行的调整 ， 我也把关于数据连接公用的依赖注入也抽象了出来。</p>
+<p></p>
+<pre><code class="language-cs">public static class ModuleExtensions
+{
+
+    static readonly List&lt;IBaseModule&gt; moduleList = new List&lt;IBaseModule&gt;(); 
+
+    private static IEnumerable&lt;IBaseModule&gt; GetModules()
+    {
+        
+        var modules = typeof(IBaseModule).Assembly
+            .GetTypes()
+            .Where(p =&gt; p.IsClass &amp;&amp; p.IsAssignableTo(typeof(IBaseModule)))
+            .Select(Activator.CreateInstance)
+            .Cast&lt;IBaseModule&gt;();
+
+        return modules;
+    }
+
+    public static void Routers(this IEndpointRouteBuilder builder)
+    {
+
+        foreach(var module in moduleList)
+        {
+            module.AddModuleRoutes(builder);
+        }
+
+    }
+
+    public static void AddIoC(this IServiceCollection services)
+    {
+
+        foreach(var module in GetModules())
+        {
+            module.AddModuleIoC(services);
+            moduleList.Add(module);
+        }
+
+    }
+
+    public static void AddGlobalConfig(this IServiceCollection services)
+    {
+        services.AddScoped&lt;CourseDataContext&gt;();
+        services.AddScoped&lt;IUnitOfWork, UnitOfWork&gt;();
+    }
+
+}</code></pre>
+<p> 注意一些地方 ， 虽然在 Minimal API 上 ，我们的依赖注入虽然把不同的Services 注册了单例给 RequestDelegate 所调用 ， 但在作为参数传送时，要添加 [FromServices] 属性标签才有效 , 如下</p>
+<pre><code class="language-cs">app.MapGet("/Course/GetCourse" ,([FromServices] ICourseService courseService , int typeID)=&gt; { return courseService.GetCourseList(typeID); });</code></pre>
+<h1><strong>Minimal API or Web API</strong></h1>
+<p>在 ASP.NET Core 中开发 API 时，你 90% 都在使用 ASP.NET Core MVC。 而当你使用 ASP.NET Core MVC 架构 Web API 时 ， 你会发现有点复杂 ， 你需要符合 ASP.NET Core MVC 的所有要求 。 而 Minimal API 正好解决了这些问题 ， 特别对于一些只做 API 或者 入门的开发者， 只需要简洁的代码就能完成类似 Node.js 一样的工作 。有人问我 Minimal API 会取代传统的 Web API 吗 ？ 我可以告诉大家不会。还是那句话 , 选择符合项目需求的方法才是正道的。</p>
+<h1><strong>小结</strong></h1>
+<p>在云原生的年代 ， Minimal API 是 .NET 的又一把利器 。 .NET 6 的 Minimal API 要用好 ，实际上还是用到不少旧知识，像 Module 的构建方式，我参考了开源的 Carter( <a href="https://github.com/CarterCommunity/Carter" title="GitHub - CarterCommunity/Carter: Carter is framework that is a thin layer of extension methods and functionality over ASP.NET Core allowing code to be more explicit and most importantly more enjoyable.">GitHub - CarterCommunity/Carter: Carter is framework that is a thin layer of extension methods and functionality over ASP.NET Core allowing code to be more explicit and most importantly more enjoyable.</a> ) ， 像 Repository 模式还是没有变 ，当然还是那些熟悉的语法 C# ， 这就是我们常说的 ”万变不离其中“ 。 Minimal API 不是要取代 Web API , 更多是给开发人员多一个选择 。作为 .NET 学习挑战赛知识点的补充 ， 希望能给各位小伙伴更深刻了解 Minimal API 在实际应用场景的技巧 。本次的示例代码也放到我的 GitHub 上了 ，如果各位小伙伴感兴趣可以访问该链接获取完整的代码 <a href="https://github.com/kinfey/MinimalAPIDemo" title="GitHub - kinfey/MinimalAPIDemo">GitHub - kinfey/MinimalAPIDemo</a> 。</p>
+<h2 id="%E7%9B%B8%E5%85%B3%E8%B5%84%E6%BA%90"><strong>相关资源</strong></h2>
+<ol><li> <p>学习 Minimal API , 请访问该链接 <a href="https://docs.microsoft.com/zh-cn/aspnet/core/fundamentals/minimal-apis?view=aspnetcore-6.0" title="最小 API 概述 | Microsoft Docs">最小 API 概述 | Microsoft Docs</a></p> </li><li> <p>学习 Repository 模式 ， 请访问该链接 <a href="https://docs.microsoft.com/zh-cn/aspnet/mvc/overview/older-versions/getting-started-with-ef-5-using-mvc-4/implementing-the-repository-and-unit-of-work-patterns-in-an-asp-net-mvc-application" title="在 MVC 应用程序中实现存储库和工作单元模式 ASP.NET 10 (9) | Microsoft Docs">在 MVC 应用程序中实现存储库和工作单元模式 ASP.NET 10 (9) | Microsoft Docs</a></p> <p></p> </li></ol>
+</div>
+</div>

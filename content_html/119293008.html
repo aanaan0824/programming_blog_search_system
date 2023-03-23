@@ -1,0 +1,68 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>谦虚的话就不说了，我也是小白，仅供参考（还是说了）</p>
+<p>先讲原理，只有明白原理之后才能开始做事。</p>
+<p>首先需要明白，view在整个视图框架中的角色是用于显示scene的，所以决定了如何展示scene，包括scale()函数，用于放大缩小所展示的scene；centerOn()函数，决定scene的中心在何方。所有的操作，都不会直接改变scene，改变的只是如何展现scene。</p>
+<p>view就像窗户，我们可以透过窗户看到窗外的景色。scene就像窗外的景色，需要窗户作为媒介才能够让我们看到，只不过这里的景色（scene）不一定会比窗户（view）大。并且，在窗户如何显示窗外的景色，也可以通过函数设置，比如我家窗户是个哈哈镜，那就可以放大缩小甚至扭曲景色。item就像是景色当中的花鸟鱼虫。如果懂PhotoShop的话，view就像是图层上的蒙版，scene就像是蒙版下的图像。</p>
+<h1>一、缩放</h1>
+<p>先来说缩放，因为缩放最为简单。</p>
+<p>主要使用到scale()函数。该函数用于缩放场景，但是并不是改变了scene的大小尺寸，仅仅是改变了显示比例。</p>
+<pre><code>void QGraphicsView::scale(qreal sx, qreal sy)</code></pre>
+<p>我们需要两个参数，sx,sy，指的是沿x,y缩放的比例，而不是大小。举个栗子：</p>
+<pre><code class="language-cpp">void MyView::wheelEvent(QWheelEvent *event)
+{
+    int wheelValue = event-&gt;angleDelta().y();
+    double ratio = (double)wheelValue / (double)1200 + 1;
+    scale(ratio, ratio);
+}</code></pre>
+<p>MyView继承了QGraphicsView，并重写wheelEvent。每次滚动滚轮，都将放大原来的1.1倍，或是缩小原来的0.9倍。</p>
+<h1>二、移动</h1>
+<p>主要使用到centerOn()函数，用于定义view的中心位置应该展示哪里的scene，这句话有点绕，不急，听我娓娓道来。各种mapTo函数，用于坐标变换，这个看文档解释的很清楚了。<em>P.S. 虽然此处使用这个函数虽然能够达到我想要的效果，原理也讲得通，但是总感觉很奇怪，请大佬评论告诉我我做得对吗。</em></p>
+<p><strong>先讲坐标</strong></p>
+<p><img alt="" height="1080" src="image\20210801091125864.jpg" width="1200"/></p>
+<p> view和scene的原点都位于左上角，对就是这样，你知道这些就够了。</p>
+<p><strong>再讲特点</strong></p>
+<p><span style="background-color:#ffd900;">这才是重点</span>。在Qt的视图框架中，如果在scene中直接添加一个item，scene的大小就是这个item的boundingRect尺寸，也就是item的最大边界矩形。如果这个item是小于view的，那么这个item会显示在view的中心，就像这样。<span style="color:#0d0016;"><span style="background-color:#fbd4d0;">如果scene的尺寸是小于view的，也就是说view可以完全包含scene，那么是不能够通过centerOn来移动scene。只有当scene大于view，以至于view不能完全展示scene时，才可以通过centerOn移动。</span>这里特别注意，我就是这里踩了坑。</span></p>
+<p><img alt="" height="1080" src="image\20210801092427334.jpg" width="1200"/></p>
+<p><span style="background-color:#f9eda6;">（此段为可选择阅读段）</span>此时，如果事件传播正常，且item设置了QGraphicsItem::ItemIsMovable（可以在item的setFlag函数中设置），这个item可以直接移动，scene会自动变化大小以适应item。如果将item向scene的左上角移动，scene的原点依旧还是左上角，以view的视角来看，是scene右下角不变，向左上角延伸。如果将已经移动的item再移动回来，scene的大小也不会变化，换言之，scene只可能被item撑得更大，不能自动变小。</p>
+<pre><code>void QGraphicsView::centerOn(const QPointF &amp;pos)</code></pre>
+<p>cneterOn函数接受一个point参数，用于定义view的中心位置，应该展示scene坐标的什么位置。</p>
+<p><img alt="" height="1080" src="image\20210801100325363.jpg" width="1200"/></p>
+<p> 注意，这个移动是有极限的，如果scene尺寸本身就大于view，那么不会将scene移出view的范围，换言之，如论如何移动，scene一定会完全包围view。</p>
+<p>那么我们思路就十分清晰了。如果我们想移动一个距离，假设移动的距离为offsetPoint，获取一个当前view视图中中心点在scene的坐标，currentScenePoint = mapToScene(MyView.width() / 2, MyView.height() / 2)，那么计算出新的点并传入centerOn函数，centerOn( - (currentScenePoint -  offsetPoint))；</p>
+<p>下面是示例，这个示例中展示了当鼠标点击空白区域时，通过拖拽移动scene。</p>
+<pre><code class="language-cpp">void FunctionView::mousePressEvent(QMouseEvent *event)
+{
+    QGraphicsView::mousePressEvent(event);
+    if(this-&gt;scene() == nullptr)
+    {
+        qDebug() &lt;&lt; "The scene is null";
+        return;
+    }
+    // 记录鼠标按下时的中心点坐标
+    centerAnchor = mapToScene(event-&gt;pos()) - event-&gt;pos() + QPointF(width() / 2, height() / 2);
+    // 记录当前鼠标在view中的位置，用来在mouseMove事件中计算偏移
+    // 此处不将view坐标转换成scene坐标的原因是优化性能，在move的过程中会产生抖动
+    posAnchor = event-&gt;pos();
+    isMousePressed = true;
+}
+
+void FunctionView::mouseMoveEvent(QMouseEvent *event)
+{
+    QGraphicsView::mouseMoveEvent(event);
+    QPointF offsetPos = event-&gt;pos() - posAnchor;
+    if(isMousePressed){
+        setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+        centerOn(centerAnchor - offsetPos);
+    }
+}
+
+void FunctionView::mouseReleaseEvent(QMouseEvent *event)
+{
+    QGraphicsView::mouseReleaseEvent(event);
+    isMousePressed = false;
+}</code></pre>
+<p>Tips:视图框架事件的传递顺序是view-&gt;scene-&gt;item，如果需要将事件继续向后传递，使用event-&gt;ignore()是没用的，猜测因为view看做是一个控件，scene和item都是控件内的组件，ignore只能处理控件到控件的事件，但是控件内的事件无能为力。这里可以使用QGraphicsView::mousexxxEvent(event)这样的函数，将event事件再次传入视图。上面的例子也是用到了这样的方法。</p>
+</div>
+</div>

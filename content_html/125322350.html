@@ -1,0 +1,169 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>对于 <strong>vxe-table</strong> 的介绍这里就不说了，常规用法也不多累赘，应该按文档撸就可以了。这里主要讲下关于自定义渲染的一些方式</p>
+<h2><a id="1_2"></a>1、先看看部分自定义的效果</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4b13def307a34192a6969d50ba3c3559.gif#pic_center"/><br/> 熟悉 Element 的朋友可能已经发现了，这个表格里面用了相关组件，比如：<br/> <strong>tooltip</strong> — 实现了hover气泡<br/> <strong>el-link</strong> — 渲染了表格内容<br/> <strong>el-dropdown</strong> — 实现下拉菜单<br/> 最后还有一个空数据的渲染 <strong>el-empty</strong>，同时细心的朋友可能也发现了，<strong>排序</strong>那里也是自定义的图标。</p>
+<p><strong>小总结：</strong><br/> 我们知道了，<strong>表头的内容</strong>、<strong>单元格的内容</strong>、部分<strong>图标</strong>都可以自定义实现，进而完成我们的需求。</p>
+<h2><a id="2_14"></a>2、如何实现上述需求？</h2>
+<p>通过查阅文档，我们发现要是实现自定义渲染有两种方式：<br/> 1、<strong>插槽</strong> 就跟 vue 中插槽一个意思<br/> 2、<strong>渲染器</strong> 好比是注册了一个 vxe-table 的组件</p>
+<p>插槽的方式这里不讲，应该来说都能理解到，主要示范下 <strong>渲染器</strong> 的方式 。（我推荐先大致浏览下 <a href="https://vxetable.cn/v3/#/grid/api">文档</a>，我个人比较倾向于看 <strong>API</strong> 那栏，就可以看到自己使用的组件有哪些props和其他需要的）</p>
+<h2><a id="3___21"></a>3、先搞定一个简单的吧 — 实现一个空内容渲染器</h2>
+<p>声明：本人采用的 <strong>vxe-grid</strong> 组件<br/> 老规矩，看文档<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a89be09ecc154b6b937f32119db8206d.png"/><br/> 可以看到，可以通过 <strong>empty-text</strong> 直接传递，也可以通过<strong>渲染器</strong>，那我们肯定是通过渲染器来搞撒（vxe 属性中带-render的通常是渲染器）</p>
+<p>渲染器文档<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/20802b7df6e54281b7ddd29baa49ab29.png"/><br/> 那么，先照抄</p>
+<pre><code class="prism language-javascript"><span class="token comment">// 这样就算注册了一个渲染器 name 为 NotData</span>
+VXETable<span class="token punctuation">.</span>renderer<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">'NotData'</span><span class="token punctuation">,</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// 空内容模板 这个函数是 vxe 固定的，渲染表格头部为 renderHeader，其他科看文档</span>
+    <span class="token function">renderEmpty</span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+     <span class="token comment">// 渲染器接收的返回值类型为 []vnode 因此，这样返回</span>
+      <span class="token keyword">return</span> <span class="token punctuation">[</span>
+        <span class="token operator">&lt;</span>el<span class="token operator">-</span>empty description<span class="token operator">=</span><span class="token string">"暂时没有数据"</span><span class="token operator">&gt;</span><span class="token operator">&lt;</span><span class="token operator">/</span>el<span class="token operator">-</span>empty<span class="token operator">&gt;</span>
+      <span class="token punctuation">]</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span>
+
+<span class="token comment">// 使用 直接通过 props 传入</span>
+<span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+       <span class="token keyword">return</span> <span class="token punctuation">{<!-- --></span>
+           <span class="token literal-property property">gridOptions</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+               <span class="token operator">...</span>
+               <span class="token literal-property property">emptyRender</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+                   <span class="token literal-property property">name</span><span class="token operator">:</span> <span class="token string">'NotData'</span>
+               <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+     <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>可以发现，其实这就跟注册组件一样，有人可能问，那我怎么传递参数或者绑定时间呢？下面以渲染一个<strong>单元格</strong>为例</p>
+<h2><a id="4_57"></a>4、渲染单元格</h2>
+<p>还是老规矩，先看文档<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/1f3b5350ed024199b0443abb1549def7.png"/><br/> 上面渲染空内容我们大概知道渲染器大致格式，xxx.add（name,option），要求我们提供一个 name ,这个name就是 prop 中渲染器参数的name选项，同时 option 选项中内置了渲染函数（也就是上图的配置参数）</p>
+<p>对于<strong>渲染器</strong>，vxe 其实已经给你定好了，比如你想渲染<strong>空内容</strong>，就得用 <strong>empty-render</strong> ，想渲染<strong>单元格</strong>的内容，就得用<strong>cell-render</strong>…对于这个建议好好理解下，不然估计会乱用</p>
+<p>总的来说，就是你得先知道你想自定义渲染的地方是属于哪一种渲染器，然后再去看对应文档。比如现在我们是想渲染单元格，那么就得看 <strong>cell-render</strong>，每个 render 其实提供的函数也不太一样，所以最好是仔细看</p>
+<pre><code class="prism language-javascript"><span class="token comment">// 简单再解释下 以cell-render为例</span>
+renderHeader <span class="token operator">--</span><span class="token operator">--</span> 你想自定义渲染那一列的表头内容
+renderDefault <span class="token operator">--</span><span class="token operator">-</span> 你想自定义渲染那一列单元格的内容，就好比我们现在想渲染操作那一列（更多操作），就得用这个去渲染单元格
+<span class="token operator">...</span>
+
+这些渲染函数都提供了三个参数
+<span class="token function">renderHeader</span> <span class="token punctuation">(</span>h<span class="token punctuation">,</span> renderOpts<span class="token punctuation">,</span> <span class="token literal-property property">params</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span> column<span class="token punctuation">,</span> columnIndex<span class="token punctuation">,</span> columnIndex<span class="token punctuation">,</span> $rowIndex<span class="token punctuation">,</span> $table <span class="token punctuation">}</span><span class="token punctuation">)</span> 
+
+h <span class="token operator">--</span><span class="token operator">-</span> 应该类似vue render 函数的 h（具体我们看）
+
+renderOpts <span class="token operator">--</span><span class="token operator">-</span> 渲染的时候传递的参数（你想传递的数据、事件等，都通过这个参数去获取）
+
+params <span class="token operator">--</span><span class="token operator">-</span> 从文档应该可以看出，大致就是些当前列的一些信息
+</code></pre>
+<p>换句话说，当我们通过<strong>自定义</strong>的方式去渲染了一个单元格，那我怎么给这个单元格<strong>传递参数</strong>？<strong>绑定事件</strong>？事件响应时如何获取当<strong>前列的信息</strong>呢？答案就是通过这些<strong>render</strong>函数提供的参数来获取</p>
+<h2><a id="5_83"></a>5、来渲染下表格中操作那列</h2>
+<p>渲染器的编写：</p>
+<pre><code class="prism language-javascript">VXETable<span class="token punctuation">.</span>renderer<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">'Operation'</span><span class="token punctuation">,</span> <span class="token punctuation">{<!-- --></span>
+	<span class="token comment">// Default --- 默认的表格单元格内容</span>
+    <span class="token function">renderDefault</span><span class="token punctuation">(</span><span class="token parameter">_<span class="token punctuation">,</span> renderOpts<span class="token punctuation">,</span> params</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    	<span class="token comment">// 直接从 renderOpts 解构出我们传递的事件、参数、包括ele组件的一些自定义事件</span>
+        <span class="token keyword">const</span> <span class="token punctuation">{<!-- --></span> events<span class="token punctuation">,</span><span class="token literal-property property">props</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span> option<span class="token punctuation">,</span>command <span class="token punctuation">}</span> <span class="token punctuation">}</span> <span class="token operator">=</span> renderOpts
+        <span class="token keyword">return</span> <span class="token punctuation">[</span>
+            <span class="token operator">&lt;</span>div<span class="token operator">&gt;</span>
+                <span class="token operator">&lt;</span>span <span class="token keyword">class</span><span class="token operator">=</span><span class="token string">"editor-box pointer"</span> onClick<span class="token operator">=</span><span class="token punctuation">{<!-- --></span> <span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">=&gt;</span> <span class="token function">events</span><span class="token punctuation">(</span>params<span class="token punctuation">)</span> <span class="token punctuation">}</span> <span class="token operator">&gt;</span>编辑<span class="token operator">&lt;</span><span class="token operator">/</span>span<span class="token operator">&gt;</span>
+                <span class="token operator">&lt;</span>span style<span class="token operator">=</span><span class="token string">"margin: 0 10px"</span> <span class="token operator">&gt;</span> <span class="token operator">|</span> <span class="token operator">&lt;</span><span class="token operator">/</span>span<span class="token operator">&gt;</span>
+                <span class="token operator">&lt;</span>el<span class="token operator">-</span>dropdown placement<span class="token operator">=</span><span class="token string">"bottom"</span> oncommand<span class="token operator">=</span><span class="token punctuation">{<!-- --></span> <span class="token punctuation">(</span><span class="token parameter">val</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span> <span class="token function">command</span><span class="token punctuation">(</span>val<span class="token punctuation">,</span>params<span class="token punctuation">.</span>row<span class="token punctuation">)</span> <span class="token punctuation">}</span> <span class="token punctuation">}</span> <span class="token operator">&gt;</span>
+                    <span class="token operator">&lt;</span>span <span class="token keyword">class</span><span class="token operator">=</span><span class="token string">"el-dropdown-link pointer"</span> <span class="token operator">&gt;</span>
+                        更多
+                    <span class="token operator">&lt;</span><span class="token operator">/</span>span<span class="token operator">&gt;</span>
+                    <span class="token operator">&lt;</span>el<span class="token operator">-</span>dropdown<span class="token operator">-</span>menu slot<span class="token operator">=</span><span class="token string">"dropdown"</span><span class="token operator">&gt;</span>
+                        <span class="token punctuation">{<!-- --></span>
+                            option<span class="token punctuation">.</span><span class="token function">map</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token parameter">item</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+                                <span class="token keyword">return</span> <span class="token punctuation">(</span>
+                                    <span class="token operator">&lt;</span>el<span class="token operator">-</span>dropdown<span class="token operator">-</span>item command<span class="token operator">=</span><span class="token punctuation">{<!-- --></span>item<span class="token punctuation">.</span>id<span class="token punctuation">}</span> <span class="token operator">&gt;</span><span class="token punctuation">{<!-- --></span>item<span class="token punctuation">.</span>text<span class="token punctuation">}</span><span class="token operator">&lt;</span><span class="token operator">/</span>el<span class="token operator">-</span>dropdown<span class="token operator">-</span>item<span class="token operator">&gt;</span>
+                                <span class="token punctuation">)</span>
+                            <span class="token punctuation">}</span><span class="token punctuation">)</span>
+                        <span class="token punctuation">}</span>
+                    <span class="token operator">&lt;</span><span class="token operator">/</span>el<span class="token operator">-</span>dropdown<span class="token operator">-</span>menu<span class="token operator">&gt;</span>
+                <span class="token operator">&lt;</span><span class="token operator">/</span>el<span class="token operator">-</span>dropdown<span class="token operator">&gt;</span>
+            <span class="token operator">&lt;</span><span class="token operator">/</span>div<span class="token operator">&gt;</span>
+        <span class="token punctuation">]</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span>
+</code></pre>
+<p>在 props 中 columns 属性里定义我们的渲染器</p>
+<pre><code class="prism language-javascript"><span class="token comment">// data</span>
+columns <span class="token operator">=</span> <span class="token punctuation">[</span> 
+            <span class="token punctuation">{<!-- --></span> <span class="token literal-property property">field</span><span class="token operator">:</span> <span class="token string">'operation'</span><span class="token punctuation">,</span> <span class="token literal-property property">title</span><span class="token operator">:</span> <span class="token string">'操作'</span><span class="token punctuation">,</span> <span class="token literal-property property">showOverflow</span><span class="token operator">:</span> <span class="token boolean">true</span> <span class="token punctuation">,</span><span class="token literal-property property">fixed</span><span class="token operator">:</span> <span class="token string">'right'</span><span class="token punctuation">,</span><span class="token literal-property property">width</span><span class="token operator">:</span> <span class="token number">200</span><span class="token punctuation">,</span>
+                <span class="token literal-property property">cellRender</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+                    <span class="token literal-property property">name</span><span class="token operator">:</span> <span class="token string">'Operation'</span><span class="token punctuation">,</span>
+                    <span class="token function-variable function">events</span><span class="token operator">:</span> <span class="token punctuation">(</span><span class="token parameter">e</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span> <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token function">onTabMoreEditor</span><span class="token punctuation">(</span>e<span class="token punctuation">)</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+                    <span class="token literal-property property">props</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+                        <span class="token literal-property property">option</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+                            <span class="token punctuation">{<!-- --></span>
+                                <span class="token literal-property property">id</span><span class="token operator">:</span> <span class="token string">'a'</span><span class="token punctuation">,</span>
+                                <span class="token literal-property property">text</span><span class="token operator">:</span> <span class="token string">'删除'</span>
+                            <span class="token punctuation">}</span><span class="token punctuation">,</span>
+                            <span class="token punctuation">{<!-- --></span>
+                                <span class="token literal-property property">id</span><span class="token operator">:</span> <span class="token string">'b'</span><span class="token punctuation">,</span>
+                                <span class="token literal-property property">text</span><span class="token operator">:</span> <span class="token string">'狮子头'</span>
+                            <span class="token punctuation">}</span><span class="token punctuation">,</span>
+                            <span class="token punctuation">{<!-- --></span>
+                                <span class="token literal-property property">id</span><span class="token operator">:</span> <span class="token string">'c'</span><span class="token punctuation">,</span>
+                                <span class="token literal-property property">text</span><span class="token operator">:</span> <span class="token string">'螺蛳粉'</span>
+                            <span class="token punctuation">}</span>
+                        <span class="token punctuation">]</span><span class="token punctuation">,</span>
+                        <span class="token literal-property property">command</span><span class="token operator">:</span> <span class="token keyword">this</span><span class="token punctuation">.</span>onTabCommand
+                  <span class="token punctuation">}</span>
+             <span class="token punctuation">}</span>
+         <span class="token punctuation">}</span>
+    <span class="token punctuation">]</span>
+
+<span class="token literal-property property">methods</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+	<span class="token comment">/** 更多-编辑 **/</span>
+    <span class="token function">onTabMoreEditor</span><span class="token punctuation">(</span><span class="token parameter"><span class="token punctuation">{<!-- --></span> <span class="token literal-property property">row</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span> name <span class="token punctuation">}</span> <span class="token punctuation">}</span></span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span>name<span class="token punctuation">)</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token comment">/** 更多 **/</span>  
+    <span class="token function">onTabCommand</span><span class="token punctuation">(</span><span class="token parameter">val<span class="token punctuation">,</span>row</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">switch</span> <span class="token punctuation">(</span>val<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">case</span> <span class="token string">'a'</span><span class="token operator">:</span>
+                console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">'当前选择 删除'</span><span class="token punctuation">)</span>
+                <span class="token keyword">this</span><span class="token punctuation">.</span>gridOptions1<span class="token punctuation">.</span>data <span class="token operator">=</span> <span class="token keyword">this</span><span class="token punctuation">.</span>gridOptions1<span class="token punctuation">.</span>data<span class="token punctuation">.</span><span class="token function">filter</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token parameter">item</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> item<span class="token punctuation">.</span>id <span class="token operator">!=</span> row<span class="token punctuation">.</span>id<span class="token punctuation">)</span>
+                <span class="token keyword">break</span><span class="token punctuation">;</span>
+            <span class="token keyword">case</span> <span class="token string">'b'</span><span class="token operator">:</span>
+                console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">'当前选择 狮子头'</span><span class="token punctuation">)</span>
+                <span class="token keyword">break</span><span class="token punctuation">;</span>
+            <span class="token keyword">case</span> <span class="token string">'c'</span><span class="token operator">:</span>
+                console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">'当前选择 螺蛳粉'</span><span class="token punctuation">)</span>
+                <span class="token keyword">break</span><span class="token punctuation">;</span>
+            <span class="token keyword">default</span><span class="token operator">:</span>
+                <span class="token keyword">break</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+<span class="token punctuation">}</span>
+</code></pre>
+<p>如上所示，我们编写好了渲染器，需要传递的事件和绑定的参数都可以通过渲染器提供的 props和events选项传递到渲染器组件中，进而完成业务功能</p>
+<h2><a id="6vxetable_mixin__172"></a>6、vxe-table mixin 的用法</h2>
+<p>当我们需要写多个渲染器时，又懒得通过 VXETable.renderer.add 方式去挨个添加，于是有了 mixin 的用法，就跟vue全局注册组件一样</p>
+<pre><code class="prism language-javascript"><span class="token keyword">const</span> renderMap <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span>
+	<span class="token comment">// 这种方式应该不用多说吧</span>
+    <span class="token literal-property property">MyLink</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">renderDefault</span> <span class="token punctuation">(</span><span class="token parameter">h<span class="token punctuation">,</span> renderOpts<span class="token punctuation">,</span> params</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">let</span> <span class="token punctuation">{<!-- --></span> row<span class="token punctuation">,</span> column <span class="token punctuation">}</span> <span class="token operator">=</span> params
+            <span class="token keyword">let</span> <span class="token punctuation">{<!-- --></span> events <span class="token punctuation">}</span> <span class="token operator">=</span> renderOpts
+            <span class="token keyword">return</span> <span class="token punctuation">[</span>
+                <span class="token operator">&lt;</span>el<span class="token operator">-</span>link type<span class="token operator">=</span><span class="token string">"primary"</span> onClick<span class="token operator">=</span><span class="token punctuation">{<!-- --></span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token function">events</span><span class="token punctuation">(</span>params<span class="token punctuation">)</span> <span class="token punctuation">}</span> <span class="token operator">&gt;</span>
+                    <span class="token punctuation">{<!-- --></span>row<span class="token punctuation">[</span>column<span class="token punctuation">.</span>property<span class="token punctuation">]</span><span class="token punctuation">}</span>
+                <span class="token operator">&lt;</span><span class="token operator">/</span>el<span class="token operator">-</span>link<span class="token operator">&gt;</span>
+            <span class="token punctuation">]</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+<span class="token comment">// mixin 接收一个 map 结构</span>
+VXETable<span class="token punctuation">.</span>renderer<span class="token punctuation">.</span><span class="token function">mixin</span><span class="token punctuation">(</span>renderMap<span class="token punctuation">)</span>
+</code></pre>
+<h2><a id="7_193"></a>7、个人小总结</h2>
+<p><strong>渲染器</strong></p>
+<ul><li>用来自定义渲染表格内容，使用 renderer.add(name,option = {}) option 可以理解为像 vue 的组件选项</li><li></li><li>通常有几个渲染的api</li><li>renderDefault — 单元格的显示内容</li><li>renderHeader — 表格表头的渲染器</li><li>…</li><li>这些渲染的 api 大部分都是三个参数</li><li>h – 渲染函数(一般用不到)</li><li>renderOpts – 像cellRender时传递的prop、event等参数</li><li>params – 表格当前行、列数据等(xxindex等)</li><li></li><li>tips</li><li></li><li>1、在编写时，应先考虑是属于哪种渲染器，单元格？内容？空数据？等</li><li>2、渲染器函数返回值都是 []vnode 类型</li><li>3、如果编写的渲染器不显示(甚至不执行且编写无误)时，考虑是否和 vxe 默认配置重叠了</li><li>笔者在编写 SeqIcon 时就遇到了，始终渲染的是默认的序号，原因就是 columns 配置项中，我又写了 type=seq 因此就渲染了默认的序号</li><li></li><li>渲染器和插槽区别</li><li>其实两者自由度都高，相对来说渲染器更加符合组件的思想，性能要好些</li></ul>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

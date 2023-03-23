@@ -1,0 +1,225 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2>一、LDA主题模型简介</h2>
+<p>        LDA主题模型主要用于推测文档的主题分布，可以将文档集中每篇文档的主题以概率分布的形式给出根据主题进行主题聚类或文本分类。</p>
+<p>        LDA主题模型不关心文档中单词的顺序，通常使用词袋特征（bag-of-word feature）来代表文档。词袋模型介绍可以参考这篇文章：<a href="https://zhuanlan.zhihu.com/p/70314114" title="文本向量化表示——词袋模型 - 知乎">文本向量化表示——词袋模型 - 知乎</a></p>
+<p>        了解LDA模型，我们需要先了解<strong>LDA的生成模型</strong>，LDA认为一篇文章是怎么形成的呢？</p>
+<p>        LDA模型认为<strong>主题可以由一个词汇分布来表示，而文章可以由主题分布来表示</strong>。</p>
+<p>        比如有两个主题，<strong>美食</strong>和<strong>美妆</strong>。LDA说两个主题可以由词汇分布表示，他们分别是：</p>
+<p style="text-align:center;">{面包：0.4，火锅：0.5，眉笔：0.03，腮红：0.07}<br/> {眉笔：0.4，腮红：0.5，面包：0.03，火锅：0.07}</p>
+<p>        同样，对于两篇文章，LDA认为文章可以由主题分布这么表示：</p>
+<p style="text-align:center;">《美妆日记》{美妆：0.8，美食：0.1，其他：0.1}</p>
+<p style="text-align:center;">《美食探索》{美食：0.8，美妆：0.1，其他：0.1}</p>
+<p>        所以想要生成一篇文章，可以先以一定的概率选取上述某个主题，再以一定的概率选取那个主题下的某个单词，不断重复这两步就可以生成最终文章。</p>
+<p>        在LDA模型中，一篇文档生成的方式如下：</p>
+<p> <img alt="" height="141" src="image\1e830a8d662046aba6fdedaae7baaa7b.png" width="457"/></p>
+<p>        其中，类似Beta分布是二项式分布的共轭先验概率分布，而狄利克雷分布（Dirichlet分布）是多项式分布的共轭先验概率分布。</p>
+<p style="text-align:center;"><img alt="" height="494" src="image\36667699cd0f48a7bc8e8eebf115ad75.png" width="568"/></p>
+<p style="margin-left:0;">        如果我们要生成一篇文档，它里面的每个词语出现的概率为：</p>
+<p style="margin-left:0;"><img alt="" height="452" src="image\fcc4ace3fe0344499ed3fbe7de9c146a.png" width="1200"/></p>
+<p>         更详细的数学推导可以见：<a href="https://blog.csdn.net/v_JULY_v/article/details/41209515?spm=1001.2101.3001.6650.1&amp;utm_medium=distribute.pc_relevant.none-task-blog-2~default~CTRLIST~default-1.no_search_link&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2~default~CTRLIST~default-1.no_search_link&amp;utm_relevant_index=2" title="通俗理解LDA主题模型_结构之法 算法之道-CSDN博客_lda模型">通俗理解LDA主题模型_结构之法 算法之道-CSDN博客_lda模型</a></p>
+<p>        看到文章推断其隐藏的主题分布，就是建模的目的。换言之，人类根据文档生成模型写成了各类文章，然后丢给了计算机，相当于计算机看到的是一篇篇已经写好的文章。现在计算机需要根据一篇篇文章中看到的一系列词归纳出当篇文章的主题，进而得出各个主题各自不同的出现概率：主题分布。</p>
+<p>        至于LDA主题模型在计算机中具体是怎么实现的，我们也可以不必细究，现在有很多可以直接用来进行LDA主题分析的包，我们直接用就行。（没错，我就是调包侠）</p>
+<h2>二、Python实现</h2>
+<p>        在用Python进行LDA主题模型分析之前，我先对文档进行了分词和去停用词处理（详情可以看我之前的文章：<a href="https://blog.csdn.net/weixin_41168304/article/details/121707533?spm=1001.2014.3001.5501" title="用python对单一微博文档进行分词——jieba分词（加保留词和停用词）_阿丢是丢心心的博客-CSDN博客_jieba 停用词">用python对单一微博文档进行分词——jieba分词（加保留词和停用词）_阿丢是丢心心的博客-CSDN博客_jieba 停用词</a>）</p>
+<p>        我下面的输入文件也是已经分好词的文件</p>
+<h3>1.导入算法包</h3>
+<pre><code class="language-python">import gensim
+from gensim import corpora
+import matplotlib.pyplot as plt
+import matplotlib
+import numpy as np
+import warnings
+warnings.filterwarnings('ignore')  # To ignore all warnings that arise here to enhance clarity
+
+from gensim.models.coherencemodel import CoherenceModel
+from gensim.models.ldamodel import LdaModel
+</code></pre>
+<h3>2.加载数据</h3>
+<p>        先将文档转化为一个二元列表，其中每个子列表代表一条微博：</p>
+<pre><code class="language-python">PATH = "E:/data/output.csv"
+
+file_object2=open(PATH,encoding = 'utf-8',errors = 'ignore').read().split('\n')  #一行行的读取内容
+data_set=[]  #建立存储分词的列表
+for i in range(len(file_object2)):
+    result=[]
+    seg_list = file_object2[i].split()
+    for w in seg_list :  #读取每一行分词
+        result.append(w)
+    data_set.append(result)
+print(data_set)
+</code></pre>
+<p>        构建词典，语料向量化表示：</p>
+<pre><code class="language-python">dictionary = corpora.Dictionary(data_set)  # 构建词典
+corpus = [dictionary.doc2bow(text) for text in data_set]  #表示为第几个单词出现了几次</code></pre>
+<h3>3.构建LDA模型</h3>
+<pre><code class="language-python">ldamodel = LdaModel(corpus, num_topics=10, id2word = dictionary, passes=30,random_state = 1)   #分为10个主题
+print(ldamodel.print_topics(num_topics=num_topics, num_words=15))  #每个主题输出15个单词</code></pre>
+<p>        这是确定主题数时LDA模型的构建方法，一般我们可以用指标来评估模型好坏，也可以用这些指标来确定最优主题数。一般用来评价LDA主题模型的指标有困惑度（perplexity）和主题一致性（coherence），困惑度越低或者一致性越高说明模型越好。一些研究表明perplexity并不是一个好的指标，所以一般我用coherence来评价模型并选择最优主题，但下面代码两种方法我都用了。</p>
+<pre><code class="language-python">#计算困惑度
+def perplexity(num_topics):
+    ldamodel = LdaModel(corpus, num_topics=num_topics, id2word = dictionary, passes=30)
+    print(ldamodel.print_topics(num_topics=num_topics, num_words=15))
+    print(ldamodel.log_perplexity(corpus))
+    return ldamodel.log_perplexity(corpus)
+#计算coherence
+def coherence(num_topics):
+    ldamodel = LdaModel(corpus, num_topics=num_topics, id2word = dictionary, passes=30,random_state = 1)
+    print(ldamodel.print_topics(num_topics=num_topics, num_words=10))
+    ldacm = CoherenceModel(model=ldamodel, texts=data_set, dictionary=dictionary, coherence='c_v')
+    print(ldacm.get_coherence())
+    return ldacm.get_coherence()</code></pre>
+<h3>4.绘制主题-coherence曲线，选择最佳主题数</h3>
+<pre><code class="language-python">x = range(1,15)
+# z = [perplexity(i) for i in x]  #如果想用困惑度就选这个
+y = [coherence(i) for i in x]
+plt.plot(x, y)
+plt.xlabel('主题数目')
+plt.ylabel('coherence大小')
+plt.rcParams['font.sans-serif']=['SimHei']
+matplotlib.rcParams['axes.unicode_minus']=False
+plt.title('主题-coherence变化情况')
+plt.show()</code></pre>
+<p>        最终能得到各主题的词语分布和这样的图形：</p>
+<p><img alt="" height="275" src="image\0834ada9efd3490591e78a021ed5dca9.png" width="406"/></p>
+<h3> 5.结果输出与可视化</h3>
+<p>        通过上述主题评估，我们发现可以选择5作为主题个数，接下来我们可以再跑一次模型，设定主题数为5，并输出每个文档最有可能对应的主题</p>
+<pre><code class="language-python">from gensim.models import LdaModel
+import pandas as pd
+from gensim.corpora import Dictionary
+from gensim import corpora, models
+import csv
+
+# 准备数据
+PATH = "E:/data/output1.csv"
+
+file_object2=open(PATH,encoding = 'utf-8',errors = 'ignore').read().split('\n')  #一行行的读取内容
+data_set=[] #建立存储分词的列表
+for i in range(len(file_object2)):
+    result=[]
+    seg_list = file_object2[i].split()
+    for w in seg_list :#读取每一行分词
+        result.append(w)
+    data_set.append(result)
+
+dictionary = corpora.Dictionary(data_set)  # 构建词典
+corpus = [dictionary.doc2bow(text) for text in data_set]
+
+lda = LdaModel(corpus=corpus, id2word=dictionary, num_topics=5, passes = 30,random_state=1)
+topic_list=lda.print_topics()
+print(topic_list)
+
+for i in lda.get_document_topics(corpus)[:]:
+    listj=[]
+    for j in i:
+        listj.append(j[1])
+    bz=listj.index(max(listj))
+    print(i[bz][0])</code></pre>
+<p>        同时我们可以用pyLDAvis对LDA模型结果进行可视化：</p>
+<pre><code class="language-python">import pyLDAvis.gensim
+pyLDAvis.enable_notebook()
+data = pyLDAvis.gensim.prepare(lda, corpus, dictionary)
+pyLDAvis.save_html(data, 'E:/data/3topic.html')</code></pre>
+<p>        大概能得到这样的结果：</p>
+<p><img alt="" height="909" src="image\ecd0784b65a7455ea393bde8e413087a.png" width="1200"/></p>
+<p> 左侧圆圈表示主题，右侧表示各个词语对主题的贡献度。</p>
+<h2>所有代码如下：</h2>
+<pre><code class="language-python">import gensim
+from gensim import corpora
+import matplotlib.pyplot as plt
+import matplotlib
+import numpy as np
+import warnings
+warnings.filterwarnings('ignore')  # To ignore all warnings that arise here to enhance clarity
+
+from gensim.models.coherencemodel import CoherenceModel
+from gensim.models.ldamodel import LdaModel
+
+
+
+ # 准备数据
+PATH = "E:/data/output.csv"
+
+file_object2=open(PATH,encoding = 'utf-8',errors = 'ignore').read().split('\n')  #一行行的读取内容
+data_set=[] #建立存储分词的列表
+for i in range(len(file_object2)):
+    result=[]
+    seg_list = file_object2[i].split()
+    for w in seg_list :#读取每一行分词
+        result.append(w)
+    data_set.append(result)
+print(data_set)
+
+
+dictionary = corpora.Dictionary(data_set)  # 构建 document-term matrix
+corpus = [dictionary.doc2bow(text) for text in data_set]
+#Lda = gensim.models.ldamodel.LdaModel  # 创建LDA对象
+
+#计算困惑度
+def perplexity(num_topics):
+    ldamodel = LdaModel(corpus, num_topics=num_topics, id2word = dictionary, passes=30)
+    print(ldamodel.print_topics(num_topics=num_topics, num_words=15))
+    print(ldamodel.log_perplexity(corpus))
+    return ldamodel.log_perplexity(corpus)
+
+#计算coherence
+def coherence(num_topics):
+    ldamodel = LdaModel(corpus, num_topics=num_topics, id2word = dictionary, passes=30,random_state = 1)
+    print(ldamodel.print_topics(num_topics=num_topics, num_words=10))
+    ldacm = CoherenceModel(model=ldamodel, texts=data_set, dictionary=dictionary, coherence='c_v')
+    print(ldacm.get_coherence())
+    return ldacm.get_coherence()
+
+# 绘制困惑度折线图
+x = range(1,15)
+# z = [perplexity(i) for i in x]
+y = [coherence(i) for i in x]
+plt.plot(x, y)
+plt.xlabel('主题数目')
+plt.ylabel('coherence大小')
+plt.rcParams['font.sans-serif']=['SimHei']
+matplotlib.rcParams['axes.unicode_minus']=False
+plt.title('主题-coherence变化情况')
+plt.show()</code></pre>
+<pre><code class="language-python">from gensim.models import LdaModel
+import pandas as pd
+from gensim.corpora import Dictionary
+from gensim import corpora, models
+import csv
+
+# 准备数据
+PATH = "E:/data/output1.csv"
+
+file_object2=open(PATH,encoding = 'utf-8',errors = 'ignore').read().split('\n')  #一行行的读取内容
+data_set=[] #建立存储分词的列表
+for i in range(len(file_object2)):
+    result=[]
+    seg_list = file_object2[i].split()
+    for w in seg_list :#读取每一行分词
+        result.append(w)
+    data_set.append(result)
+
+dictionary = corpora.Dictionary(data_set)  # 构建 document-term matrix
+corpus = [dictionary.doc2bow(text) for text in data_set]
+
+lda = LdaModel(corpus=corpus, id2word=dictionary, num_topics=5, passes = 30,random_state=1)
+topic_list=lda.print_topics()
+print(topic_list)
+
+result_list =[]
+for i in lda.get_document_topics(corpus)[:]:
+    listj=[]
+    for j in i:
+        listj.append(j[1])
+    bz=listj.index(max(listj))
+    result_list.append(i[bz][0])
+print(result_list)</code></pre>
+<pre><code class="language-python">import pyLDAvis.gensim
+pyLDAvis.enable_notebook()
+data = pyLDAvis.gensim.prepare(lda, corpus, dictionary)
+pyLDAvis.save_html(data, 'E:/data/topic.html')</code></pre>
+<p>有需要自取~</p>
+<p>还可以关注我，之后我还会发更多关于数据分析的干货文章~</p>
+</div>
+</div>

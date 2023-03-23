@@ -1,0 +1,431 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>NPOI可以通过右键解决方案-&gt;管理解决方案的NuGet程序包-&gt;下载NPOI控件，也可以在网上下载好<a href="https://download.csdn.net/download/zcn596785154/85290874">NPOI DLL</a>包然后倒入项目。</p>
+<p><strong>1.新建Windows窗体应用程序员项目，重命名为TestNOPIOperateExcel</strong><br/> <img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/3174473da0e64e3c88e405238798ea55.png"/><br/> <strong>2.在Form1界面中控件。添加button1、button2控件用于倒入、导出excel，label1、label2用来显示倒入、导出所需时间，dataGridView1用来查看Excel文件。</strong><br/> <img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/9c8233b8577a4e9f825ad9c065bdb10f.png"/><br/> <strong>3.右键Form1.cs-&gt;查看代码，切换到代码界面。</strong><br/> <img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/2ddc3066165a4d6c867200c575e838a8.png"/><br/> <strong>4.右键TestNOPIOperateExcel-&gt;添加引用</strong><br/> <img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/d2448a1a4cab4ed5bc5478bd619264c3.png"/><br/> <strong>5.浏览-&gt;选择NPOI所需要的的DLL文件-&gt;确定</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ddcc60a0da264e1bba31ec23faa9ea01.png"/><br/> <strong>6.右键TestNOPIOperateExcel-&gt;添加-&gt;类</strong><br/> <img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/d296c17cbea04f66b70b30bb610ea8ab.png"/><br/> <strong>7.将类命名为NPOIExcel.cs-&gt;添加。</strong><br/> <img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/21fbc6d63a304d29a3e28c0294c830d5.png"/><br/> <strong>8.为NPOIExcel.cs添加代码。</strong></p>
+<pre><code>using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Data;
+using System.IO;
+using NPOI.SS.UserModel;
+using NPOI.XSSF.UserModel;
+using NPOI.HSSF.UserModel;
+
+namespace TestNPOIOperateExcel
+{
+    public class NPOIExcel
+    {
+        /// &lt;summary&gt;
+        /// 将excel导入到datatable
+        /// &lt;/summary&gt;
+        /// &lt;param name="filePath"&gt;excel路径&lt;/param&gt;
+        /// &lt;param name="isColumnName"&gt;第一行是否是列名&lt;/param&gt;
+        /// &lt;returns&gt;返回datatable&lt;/returns&gt;
+        public static DataTable ExcelToDataTable(string filePath, bool isColumnName)
+        {
+            DataTable dataTable = null;
+            FileStream fs = null;
+            DataColumn column = null;
+            DataRow dataRow = null;
+            IWorkbook workbook = null;
+            ISheet sheet = null;
+            IRow row = null;
+            ICell cell = null;
+            int startRow = 0;
+            try
+            {
+                using (fs = File.OpenRead(filePath))
+                {
+                    // 2007版本
+                    if (filePath.IndexOf(".xlsx") &gt; 0)
+                        workbook = new XSSFWorkbook(fs);
+                    // 2003版本
+                    else if (filePath.IndexOf(".xls") &gt; 0)
+                        workbook = new HSSFWorkbook(fs);
+
+                    if (workbook != null)
+                    {
+                        sheet = workbook.GetSheetAt(0);//读取第一个sheet，当然也可以循环读取每个sheet
+                        dataTable = new DataTable();
+                        if (sheet != null)
+                        {
+                            int rowCount = sheet.LastRowNum;//总行数
+                            if (rowCount &gt; 0)
+                            {
+                                IRow firstRow = sheet.GetRow(0);//第一行
+                                int cellCount = firstRow.LastCellNum;//列数
+
+                                //构建datatable的列
+                                if (isColumnName)
+                                {
+                                    startRow = 1;//如果第一行是列名，则从第二行开始读取
+                                    for (int i = firstRow.FirstCellNum; i &lt; cellCount; ++i)
+                                    {
+                                        cell = firstRow.GetCell(i);
+                                        if (cell != null)
+                                        {
+                                            if (cell.StringCellValue != null)
+                                            {
+                                                column = new DataColumn(cell.StringCellValue);
+                                                dataTable.Columns.Add(column);
+                                            }
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    for (int i = firstRow.FirstCellNum; i &lt; cellCount; ++i)
+                                    {
+                                        column = new DataColumn("column" + (i + 1));
+                                        dataTable.Columns.Add(column);
+                                    }
+                                }
+
+                                //填充行
+                                for (int i = startRow; i &lt;= rowCount; ++i)
+                                {
+                                    row = sheet.GetRow(i);
+                                    if (row == null) continue;
+
+                                    dataRow = dataTable.NewRow();
+                                    for (int j = row.FirstCellNum; j &lt; cellCount; ++j)
+                                    {
+                                        cell = row.GetCell(j);
+                                        if (cell == null)
+                                        {
+                                            dataRow[j] = "";
+                                        }
+                                        else
+                                        {
+                                            //CellType(Unknown = -1,Numeric = 0,String = 1,Formula = 2,Blank = 3,Boolean = 4,Error = 5,)
+                                            switch (cell.CellType)
+                                            {
+                                                case CellType.Blank:
+                                                    dataRow[j] = "";
+                                                    break;
+                                                case CellType.Numeric:
+                                                    short format = cell.CellStyle.DataFormat;
+                                                    //对时间格式（2015.12.5、2015/12/5、2015-12-5等）的处理
+                                                    if (format == 14 || format == 31 || format == 57 || format == 58)
+                                                        dataRow[j] = cell.DateCellValue;
+                                                    else
+                                                        dataRow[j] = cell.NumericCellValue;
+                                                    break;
+                                                case CellType.String:
+                                                    dataRow[j] = cell.StringCellValue;
+                                                    break;
+                                            }
+                                        }
+                                    }
+                                    dataTable.Rows.Add(dataRow);
+                                }
+                            }
+                        }
+                    }
+                }
+                return dataTable;
+            }
+            catch (Exception)
+            {
+                if (fs != null)
+                {
+                    fs.Close();
+                }
+                return null;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 写入excel
+        /// &lt;/summary&gt;
+        /// &lt;param name="dt"&gt;datatable&lt;/param&gt;
+        /// &lt;param name="strFile"&gt;strFile&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public static bool DataTableToExcel(DataTable dt, string strFile)
+        {
+            bool result = false;
+            IWorkbook workbook = null;
+            FileStream fs = null;
+            IRow row = null;
+            ISheet sheet = null;
+            ICell cell = null;
+            try
+            {
+                if (dt != null &amp;&amp; dt.Rows.Count &gt; 0)
+                {
+                    workbook = new XSSFWorkbook();//HSSFWorkbook:是操作Excel2003以前（包括2003）的版本，扩展名是.xls  XSSFWorkbook:是操作Excel2007的版本，扩展名是.xlsx
+                    sheet = workbook.CreateSheet("Sheet0");//创建一个名称为Sheet0的表
+                    int rowCount = dt.Rows.Count;//行数
+                    int columnCount = dt.Columns.Count;//列数
+
+                    //设置列头
+                    row = sheet.CreateRow(0);//excel第一行设为列头
+                    for (int c = 0; c &lt; columnCount; c++)
+                    {
+                        cell = row.CreateCell(c);
+                        cell.SetCellValue(dt.Columns[c].ColumnName);
+                    }
+
+                    //设置每行每列的单元格,
+                    for (int i = 0; i &lt; rowCount; i++)
+                    {
+                        row = sheet.CreateRow(i + 1);
+                        for (int j = 0; j &lt; columnCount; j++)
+                        {
+                            cell = row.CreateCell(j);//excel第二行开始写入数据
+                            cell.SetCellValue(dt.Rows[i][j].ToString());
+                        }
+                    }
+                    using (fs = File.OpenWrite(strFile))
+                    {
+                        workbook.Write(fs);//向打开的这个xls文件中写入数据
+                        result = true;
+                    }
+                }
+                return result;
+            }
+            catch (Exception ex)
+            {
+                if (fs != null)
+                {
+                    fs.Close();
+                }
+                Console.WriteLine(ex.StackTrace + ex.Message);
+                return false;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// Excel导入成Datable
+        /// &lt;/summary&gt;
+        /// &lt;param name="file"&gt;导入路径(包含文件名与扩展名)&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public static String EXCEL_XLS = "application/vnd.ms-excel";
+        public static String EXCEL_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        public static DataTable ExcelToTable(string file)
+        {
+            DataTable dt = new DataTable();
+            IWorkbook workbook;
+            string fileExt = Path.GetExtension(file).ToLower();
+            using (FileStream fs = new FileStream(file, FileMode.Open, FileAccess.Read))
+            {
+                //XSSFWorkbook 适用XLSX格式，HSSFWorkbook 适用XLS格式
+                if (fileExt == ".xlsx") { workbook = new XSSFWorkbook(fs); }
+                else if (fileExt == ".xls")
+                {
+                    workbook = new HSSFWorkbook(fs);
+                }
+                else { workbook = null; }
+
+                if (workbook == null) { return null; }
+                ISheet sheet = workbook.GetSheetAt(0);
+
+                //表头
+                IRow header = sheet.GetRow(sheet.FirstRowNum);
+                List&lt;int&gt; columns = new List&lt;int&gt;();
+                for (int i = 0; i &lt; header.LastCellNum; i++)
+                {
+                    object obj = GetValueType(header.GetCell(i));
+                    if (obj == null || obj.ToString() == string.Empty)
+                    {
+                        dt.Columns.Add(new DataColumn("Columns" + i.ToString()));
+                    }
+                    else
+                        dt.Columns.Add(new DataColumn(obj.ToString()));
+                    columns.Add(i);
+                }
+                //数据
+                for (int i = sheet.FirstRowNum + 1; i &lt;= sheet.LastRowNum; i++)
+                {
+                    DataRow dr = dt.NewRow();
+                    bool hasValue = false;
+                    foreach (int j in columns)
+                    {
+                        dr[j] = GetValueType(sheet.GetRow(i).GetCell(j));
+                        if (dr[j] != null &amp;&amp; dr[j].ToString() != string.Empty)
+                        {
+                            hasValue = true;
+                        }
+                    }
+                    if (hasValue)
+                    {
+                        dt.Rows.Add(dr);
+                    }
+                }
+            }
+            return dt;
+        }
+
+        /// &lt;summary&gt;
+        /// Datable导出成Excel
+        /// &lt;/summary&gt;
+        /// &lt;param name="dt"&gt;&lt;/param&gt;
+        /// &lt;param name="file"&gt;导出路径(包括文件名与扩展名)&lt;/param&gt;
+        public static void TableToExcel(DataTable dt, string file)
+        {
+            IWorkbook workbook;
+            string fileExt = Path.GetExtension(file).ToLower();
+            if (fileExt == ".xlsx") { workbook = new XSSFWorkbook(); } else if (fileExt == ".xls") { workbook = new HSSFWorkbook(); } else { workbook = null; }
+            if (workbook == null) { return; }
+            ISheet sheet = string.IsNullOrEmpty(dt.TableName) ? workbook.CreateSheet("Sheet1") : workbook.CreateSheet(dt.TableName);
+
+            //表头
+            IRow row = sheet.CreateRow(0);
+            for (int i = 0; i &lt; dt.Columns.Count; i++)
+            {
+                ICell cell = row.CreateCell(i);
+                cell.SetCellValue(dt.Columns[i].ColumnName);
+            }
+
+            //数据
+            for (int i = 0; i &lt; dt.Rows.Count; i++)
+            {
+                IRow row1 = sheet.CreateRow(i + 1);
+                for (int j = 0; j &lt; dt.Columns.Count; j++)
+                {
+                    ICell cell = row1.CreateCell(j);
+                    cell.SetCellValue(dt.Rows[i][j].ToString());
+                }
+            }
+
+            //转为字节数组
+            MemoryStream stream = new MemoryStream();
+            workbook.Write(stream);
+            var buf = stream.ToArray();
+
+            //保存为Excel文件
+            using (FileStream fs = new FileStream(file, FileMode.Create, FileAccess.Write))
+            {
+                fs.Write(buf, 0, buf.Length);
+                fs.Flush();
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 获取单元格类型
+        /// &lt;/summary&gt;
+        /// &lt;param name="cell"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private static object GetValueType(ICell cell)
+        {
+            if (cell == null)
+                return null;
+            switch (cell.CellType)
+            {
+                case CellType.Blank: //BLANK:
+                    return null;
+                case CellType.Boolean: //BOOLEAN:
+                    return cell.BooleanCellValue;
+                case CellType.Numeric: //NUMERIC:
+                    return cell.NumericCellValue;
+                case CellType.String: //STRING:
+                    return cell.StringCellValue;
+                case CellType.Error: //ERROR:
+                    return cell.ErrorCellValue;
+                case CellType.Formula: //FORMULA:
+                default:
+                    return "=" + cell.CellFormula;
+
+            }
+        }
+
+    }
+}
+
+</code></pre>
+<p><strong>9.在Form1.cs中分别双击button1、button2控件，为按钮添加按钮点击事件。</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b18c91849a3240d2b0de192553863c50.png"/><br/> <strong>10.添加按钮处理事件。</strong></p>
+<pre><code>using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Windows.Forms;
+using System.Diagnostics;
+
+namespace TestNPOIOperateExcel
+{
+    public partial class Form1 : Form
+    {
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+
+            OpenFileDialog openfile = new OpenFileDialog();
+            openfile.Multiselect = false;
+            if (openfile.ShowDialog() == DialogResult.OK)
+            {
+                //dataGridView1.DataSource = NPOIExcel.ExcelToDataTable("数据表.xlsx", true);//方式1
+                dataGridView1.DataSource = NPOIExcel.ExcelToTable(openfile.FileName);//方式2
+                sw.Stop();
+                label1.Text = sw.ElapsedMilliseconds.ToString("数据导入耗时：" + "0000" + "ms");
+                MessageBox.Show("数据导入完成");
+            }
+        }
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+            DataTable dt = DgvToDt(dataGridView1);
+            
+            SaveFileDialog save = new SaveFileDialog();
+            //设置文件类型
+            save.Filter = "Excel表格（*.xls）|*.xls|Excel表格（*.xlsx）|*.xlsx";
+            //设置默认文件类型显⽰顺序
+            save.FilterIndex = 1;
+            //保存对话框是否记忆上次打开的记录
+            save.RestoreDirectory = true;
+            if (save.ShowDialog() == DialogResult.OK)
+            {
+                //string localFilePath = save.FileName.ToString(); //获得⽂件路径
+                //string fileNameExt =localFilePath.Substring(localFilePath.LastIndexOf("\\") + 1); //获取⽂件名，不带路径
+
+                NPOIExcel.TableToExcel(dt, save.FileName);
+                sw.Stop();
+                label2.Text = sw.ElapsedMilliseconds.ToString("数据导出耗时：" + "0000" + "ms");
+                MessageBox.Show("数据导出完成");
+            }
+        }
+
+	    private DataTable DgvToDt(DataGridView dgv){
+            DataTable dt = new DataTable();
+            //把DataGridView控件数据，转成DataTable
+            for (int count = 0; count &lt; dgv.Columns.Count; count++)
+            {
+                DataColumn dc = new DataColumn(dgv.Columns[count].Name.ToString());
+                dt.Columns.Add(dc);
+            }
+            for (int count = 0; count &lt; dgv.Rows.Count; count++)
+            {
+                DataRow dr = dt.NewRow();
+                for (int countsub = 0; countsub &lt; dgv.Columns.Count; countsub++)
+                {
+                    dr[countsub] = Convert.ToString(dgv.Rows[count].Cells[countsub].Value);
+                }
+                dt.Rows.Add(dr);
+            }
+
+            return dt;
+        }  
+    }
+}
+
+</code></pre>
+<p><strong>11.点击运行按钮运行项目。</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2b0071fce2014fdd9d0b4edd3aae074a.png"/><br/> <strong>12.可以导入导出Excel文件。</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f8a7c9aae995444f99b85a33862b7456.png"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

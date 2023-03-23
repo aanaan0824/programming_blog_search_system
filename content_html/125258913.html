@@ -1,0 +1,288 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>最近想学习一下分类算法的内容，恰好opencv有SVM的函数，故先从这个下手。找了许多资料，发现要么是opencv2、3的，要么就没有具体实现代码，学习还是把代码与原理一起结合来看比较好。</p>
+<p>其中，我主要参考的是这一篇文章：</p>
+<p><a class="link-info has-card" href="https://blog.csdn.net/chaipp0607/article/details/68067098" title="学习SVM（一） SVM模型训练与分类的OpenCV实现"><span class="link-card-box"><span class="link-title">学习SVM（一） SVM模型训练与分类的OpenCV实现</span><span class="link-link"><img alt="icon-default.png?t=M4AD" class="link-link-icon" src="https://csdnimg.cn/release/blog_editor_html/release2.1.3/ckeditor/plugins/CsdnLink/icons/icon-default.png?t=M4AD"/>https://blog.csdn.net/chaipp0607/article/details/68067098</span></span></a>写得非常好！但是是2017年发布的文章，其中许多内容都做了更新，我用的是opencv 4.5.1版本，win10系统，vs2019作开发工具。具体opencv配置不说了，我对上面那篇文章的代码进行了更新。</p>
+<p>步骤一样.</p>
+<h1>一、数据准备</h1>
+<p>首先找到opencv库自带的digits图片，我的电脑上路径在：D:\app\opencv4.5.1\opencv\opencv\sources\samples\data\digits.png</p>
+<p>然后在D盘建立如下文件夹：</p>
+<p><img alt="" height="88" src="image\ea25725f10004ebcad0f9a98ef666fa2.png" width="304"/></p>
+<p>只需新建命名就好了，不用往里面放东西。接下来建立vs2019项目工程，新建源文件</p>
+<p class="img-center"><img alt="" height="172" src="image\c7460054928b46739394e33901cb4c2d.png" width="229"/></p>
+<p>复制如下代码：</p>
+<pre><code class="language-cpp">#include &lt;windows.h&gt;
+#include &lt;iostream&gt;
+#include &lt;opencv2/core/core.hpp&gt;
+#include &lt;opencv2/highgui/highgui.hpp&gt;
+#include &lt;opencv2/imgproc/imgproc.hpp&gt;
+#include &lt;opencv2/core/utils/logger.hpp&gt;
+#include &lt;thread&gt;
+#include &lt;time.h&gt;
+//#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+
+using namespace std;
+using namespace cv;
+
+int main()
+{
+	char ad[128] = { 0 };
+	int  filename = 0, filenum = 0;
+	Mat img = imread("digits.png");
+	Mat gray;
+	cvtColor(img, gray, COLOR_BGR2GRAY);
+	int b = 20;
+	int m = gray.rows / b;   //原图为1000*2000
+	int n = gray.cols / b;   //裁剪为5000个20*20的小图块
+
+	for (int i = 0; i &lt; m; i++)
+	{
+		int offsetRow = i * b;  //行上的偏移量
+		if (i % 5 == 0 &amp;&amp; i != 0)
+		{
+			filename++;
+			filenum = 0;
+		}
+		for (int j = 0; j &lt; n; j++)
+		{
+			int offsetCol = j * b; //列上的偏移量
+			sprintf_s(ad, "D:\\data\\%d\\%d.jpg", filename, filenum++);
+			//截取20*20的小块
+			Mat tmp;
+			gray(Range(offsetRow, offsetRow + b), Range(offsetCol, offsetCol + b)).copyTo(tmp);
+			imwrite(ad, tmp);
+		}
+	}
+	return 0;
+
+
+}
+
+</code></pre>
+<p> 运行结束后，在刚刚新建的文件夹中，0、1文件夹内各有500张分割好的图片。</p>
+<p class="img-center"><img alt="" height="353" src="image\7756b9fa2a4542218fa18617354559e1.png" width="652"/></p>
+<p>最后在test_image、train_image分别新建0、1文件夹。</p>
+<p>把data\0中的0-399复制到data\test_image\0,399-499复制到data\train_image\0；</p>
+<p>把data\1中的0-399复制到data\test_image\1,399-499复制到data\train_image\1。第一步完成。</p>
+<pre><code>--D：
+  --data
+    --0
+    --1
+    --train_image
+      --0（400张）
+      --1（400张）
+    --test_image
+      --0（100张）
+      --1（100张）
+</code></pre>
+<h1> 二、模型训练</h1>
+<p> 再新建一个源文件：SVM模型训练.cpp，将第一步的SVM数据准备文件从项目中移除。</p>
+<p class="img-center"><img alt="" height="161" src="image\572c4628a22b49829139676a6e1716df.png" width="239"/></p>
+<p>复制上如下代码，其中最主要的就是opencv4中的SVM函数改变很大，配置参数上与原文完全不同</p>
+<pre><code class="language-cpp">#include &lt;stdio.h&gt;  
+#include &lt;time.h&gt;  
+#include &lt;opencv2/opencv.hpp&gt;  
+
+#include &lt;iostream&gt; 
+#include &lt;opencv2/core/core.hpp&gt;
+#include &lt;opencv2/highgui/highgui.hpp&gt;
+#include &lt;opencv2/imgproc/imgproc.hpp&gt;
+#include "opencv2/imgcodecs.hpp"
+#include &lt;opencv2/core/utils/logger.hpp&gt;
+#include &lt;opencv2/ml/ml.hpp&gt;  
+#include &lt;io.h&gt;
+
+using namespace std;
+using namespace cv;
+using namespace cv::ml;
+
+void getFiles(string path, vector&lt;string&gt;&amp; files);
+void get_1(Mat&amp; trainingImages, vector&lt;int&gt;&amp; trainingLabels);
+void get_0(Mat&amp; trainingImages, vector&lt;int&gt;&amp; trainingLabels);
+
+int main()
+{
+	//获取训练数据
+	Mat classes;
+	Mat trainingData;
+	Mat trainingImages;
+	vector&lt;int&gt; trainingLabels;
+	get_1(trainingImages, trainingLabels);
+	//waitKey(2000);
+	get_0(trainingImages, trainingLabels);
+	Mat(trainingImages).copyTo(trainingData);
+	trainingData.convertTo(trainingData, CV_32FC1);
+	Mat(trainingLabels).copyTo(classes);
+	//配置SVM训练器参数
+	Ptr&lt;SVM&gt; svm = SVM::create();
+	svm-&gt;setType(SVM::C_SVC);
+	svm-&gt;setKernel(SVM::LINEAR);
+	svm-&gt;setDegree(0);
+	svm-&gt;setGamma(1);
+	svm-&gt;setCoef0(0);
+	svm-&gt;setC(1);
+	svm-&gt;setNu(0);
+	svm-&gt;setP(0);
+	svm-&gt;setTermCriteria(TermCriteria(TermCriteria::MAX_ITER, 1000, 0.01));
+	//训练
+	svm-&gt;train(trainingData, ROW_SAMPLE, classes );
+	//保存模型
+	svm-&gt;save("svm.xml");
+	
+	cout &lt;&lt; "训练好了！！！" &lt;&lt; endl;
+
+	getchar();
+	return 0;
+}
+void getFiles(string path, vector&lt;string&gt;&amp; files)
+{
+	long long  hFile = 0;
+	struct _finddata_t fileinfo;
+	string p;
+	if ((hFile = _findfirst(p.assign(path).append("\\*").c_str(), &amp;fileinfo)) != -1)
+	{
+		do
+		{
+			if ((fileinfo.attrib &amp; _A_SUBDIR))
+			{
+				if (strcmp(fileinfo.name, ".") != 0 &amp;&amp; strcmp(fileinfo.name, "..") != 0)
+					getFiles(p.assign(path).append("\\").append(fileinfo.name), files);
+			}
+			else
+			{
+				files.push_back(p.assign(path).append("\\").append(fileinfo.name));
+			}
+		} while (_findnext(hFile, &amp;fileinfo) == 0);
+
+		_findclose(hFile);
+	}
+}
+
+void get_1(Mat&amp; trainingImages, vector&lt;int&gt;&amp; trainingLabels)
+{
+	string filePath = "D:\\data\\train_image\\1";
+	cout &lt;&lt; "获取D:\\data\\1" &lt;&lt; endl;
+	vector&lt;string&gt; files;
+	getFiles(filePath, files);
+	int number = files.size();
+	for (int i = 0; i &lt; number; i++)
+	{
+		Mat  SrcImage = imread(files[i].c_str());
+		SrcImage = SrcImage.reshape(1, 1);
+		trainingImages.push_back(SrcImage);
+		trainingLabels.push_back(1);
+	}
+}
+void get_0(Mat&amp; trainingImages, vector&lt;int&gt;&amp; trainingLabels)
+{
+	string filePath = "D:\\data\\train_image\\0";
+	cout &lt;&lt; "获取D:\\data\\0" &lt;&lt; endl;
+	vector&lt;string&gt; files;
+	getFiles(filePath, files);
+	int number = files.size();
+	for (int i = 0; i &lt; number; i++)
+	{
+		Mat  SrcImage = imread(files[i].c_str());
+		SrcImage = SrcImage.reshape(1, 1);
+		trainingImages.push_back(SrcImage);
+		
+		trainingLabels.push_back(0);
+	}
+}
+</code></pre>
+<p> 训练完毕后，在这个解决方案文件夹下就生成了一个.xml文件，即是我们训练出来的模型。</p>
+<p>训练时还可以选择自动训练，会自己寻找最优参数，效果也很好。</p>
+<pre><code class="language-cpp">//训练
+	svm-&gt;trainAuto(trainingData, ROW_SAMPLE, classes );</code></pre>
+<h1>三、加载模型实现分类</h1>
+<p>同样的，新建一个源文件：<img alt="" height="123" src="image\c7506169588e471ab56122c489eef446.png" width="214"/></p>
+<p>复制如下代码：</p>
+<pre><code class="language-cpp">#include &lt;stdio.h&gt;  
+#include &lt;time.h&gt;  
+#include &lt;opencv2/opencv.hpp&gt;  
+
+#include &lt;iostream&gt; 
+#include &lt;opencv2/core/core.hpp&gt;
+#include &lt;opencv2/highgui/highgui.hpp&gt;
+#include &lt;opencv2/imgproc/imgproc.hpp&gt;
+#include "opencv2/imgcodecs.hpp"
+#include &lt;opencv2/core/utils/logger.hpp&gt;
+#include &lt;opencv2/ml/ml.hpp&gt;  
+#include &lt;io.h&gt;
+
+using namespace std;
+using namespace cv;
+using namespace cv::ml;
+
+void getFiles(string path, vector&lt;string&gt;&amp; files);
+int main()
+{
+	int result = 0;
+	string filePath = "D:\\data\\test_image\\1";
+	vector&lt;string&gt; files;
+	getFiles(filePath, files);
+	int number = files.size();
+	cout &lt;&lt; number &lt;&lt; endl;
+	string modelpath = "svm.xml";
+	cv::Ptr&lt;cv::ml::SVM&gt; svm;
+	svm = cv::Algorithm::load&lt;cv::ml::SVM&gt;(modelpath);
+
+
+	/*CvSVM svm;
+	svm.clear();
+	string modelpath = "svm.xml";
+	FileStorage svm_fs(modelpath, FileStorage::READ);
+	if (svm_fs.isOpened())
+	{
+		svm.load(modelpath.c_str());
+	}*/
+	for (int i = 0; i &lt; number; i++)
+	{
+		Mat inMat = imread(files[i].c_str());
+		Mat p = inMat.reshape(1, 1);
+		p.convertTo(p, CV_32FC1);
+		int response = (int)svm-&gt;predict(p);
+		if (response == 1)//要预测1，如果用0来做测试集就改成response == 0
+		{
+			result++;
+		}
+		else
+		{
+			cout &lt;&lt; files[i] &lt;&lt; endl;
+		}
+	}
+	cout &lt;&lt; result &lt;&lt; endl;
+	getchar();
+	return  0;
+}
+void getFiles(string path, vector&lt;string&gt;&amp; files)
+{
+	long long   hFile = 0;
+	struct _finddata_t fileinfo;
+	string p;
+	if ((hFile = _findfirst(p.assign(path).append("\\*").c_str(), &amp;fileinfo)) != -1)
+	{
+		do
+		{
+			if ((fileinfo.attrib &amp; _A_SUBDIR))
+			{
+				if (strcmp(fileinfo.name, ".") != 0 &amp;&amp; strcmp(fileinfo.name, "..") != 0)
+					getFiles(p.assign(path).append("\\").append(fileinfo.name), files);
+			}
+			else
+			{
+				files.push_back(p.assign(path).append("\\").append(fileinfo.name));
+			}
+		} while (_findnext(hFile, &amp;fileinfo) == 0);
+		_findclose(hFile);
+	}
+}
+</code></pre>
+<p> 如果想要检测0的分类准确率就让第46行的response == 0。</p>
+<p class="img-center"><img alt="" height="237" src="image\f59949eb3cba4d70a50ec372f7aac069.png" width="454"/></p>
+<p> 可以看到，100张1有99张被识别出来，有一张452没有识别成功。100张0都识别出来了。</p>
+</div>
+</div>

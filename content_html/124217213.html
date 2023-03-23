@@ -1,0 +1,291 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1>uni-app中调取接口的三种方式与封装uni.request()</h1>
+<h2><a id="uniapp_1"></a>一、uni-app中调取接口的三种方式</h2>
+<p><a id="1unirequest_3"></a>1、uni.request({})</p>
+<pre><code class="language-javascript">uni.request({
+	url:'/api/getIndexCarousel.jsp',
+	method:'get',
+	success:res=&gt;{
+		console.log(res.data);
+		this.carouselData = res.data
+	}
+})
+</code></pre>
+<p><a id="2unirequestthen_16"></a>2、uni.request({}).then()</p>
+<pre><code class="language-javascript">uni.request({
+	url:'/api/getIndexCarousel.jsp',
+	method:'get',
+}).then((result)=&gt;{
+	let [error,res] = result;
+	//result将返回一个数组[error,{NativeData}]
+	//NativeData：调取接口后返回的原生数据
+	if(res.statusCode === 200){
+		this.carouselData = res.data
+	}
+	if(res.statusCode === 404){
+		console.log('请求的接口没有找到');
+	}
+})
+
+</code></pre>
+<p><a id="3asyncawait_36"></a>3、async/await</p>
+<pre><code class="language-javascript">async：用在函数定义的前面
+async request(){	//函数体;}
+await：用在标明了async关键字的函数内部，异步操作的前面。
+</code></pre>
+<pre><code class="language-javascript">onLoad() {
+	this.request();
+},
+methods: {
+	async request(){
+		let result = await uni.request({
+			url:'/api/getIndexCarousel.jsp'
+		})
+		console.log(result)
+		let [err,res] = result;
+		if(res.statusCode === 200){
+			this.carouselData = res.data;
+		}
+	}
+}
+</code></pre>
+<h2><a id="unirequest_62"></a>二、封装uni.request();</h2>
+<p><a id="1Vue_64"></a>1、创建一个对象，将该对象挂在Vue的原型下</p>
+<p>新建<code>@/common/request.js</code>文件</p>
+<p>初步写法（仅供参考）：</p>
+<pre><code class="language-javascript">export default {
+	request(options){
+		uni.request({
+			...options,
+			success:res=&gt;{
+				console.log(res)
+			}
+		})
+	},
+	get(url,data={},options={}){
+		options.url=url,
+		options.data=data,
+		options.method='get',
+		this.request(options)
+	},
+	post(url,data={},options={}){
+		options.url=url,
+		options.data=data,
+		options.method='post',
+		this.request(options)
+	}
+}
+</code></pre>
+<p>二次更改：</p>
+<pre><code class="language-javascript">export default{
+	//封装uni.request()：
+	request(options){
+		return new Promise((resolve,reject)=&gt;{
+			//书写异步操作的代码
+			uni.request({
+				...options,
+				success:res=&gt;{
+					if(options.native){
+						resolve(res)	//调取接口后返回的原生数据	
+					}
+					if(res.statusCode === 200){
+						resolve(res.data)	//异步操作执行成功
+					}else{
+						console.log('请求的接口没有找到');
+						reject(res) 	//异步操作执行失败
+					}
+				}
+			})
+		})
+	},
+	get(url,data={},options={}){
+		options.url=url;
+		options.data=data;
+		options.method='get';
+		return this.request(options)
+	},
+	post(url,data={},options={}){
+		options.url=url;
+		options.data=data;
+		options.method='post';
+		return this.request(options)
+	}
+
+}
+</code></pre>
+<p><a id="2mainjs_135"></a>2、进入main.js文件</p>
+<pre><code class="language-javascript">import request from '@/common/request.js';
+Vue.prototype.$Z = request;
+</code></pre>
+<p>例：在任意文件中书写下列代码可以调用。<code>this.$Z.get();</code></p>
+<p><a id="3_144"></a>3、在页面中调用</p>
+<pre><code class="language-javascript">//封装uni.request()：
+this.$Z.get('/api/getIndexCarousel.jsp',{},{
+	native:false
+}).then(res=&gt;{
+	//异步操作成功
+	console.log(res)
+}).catch(res=&gt;{
+	//异步操作失败
+	console.log(res)
+}).finally(res=&gt;{
+	//异步操作完成
+});</code></pre>
+<p>uniapp的网络请求方法</p>
+<p><a id="more"></a></p>
+<p>CODE</p>
+<table><tbody><tr><td> <pre>1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+</pre> </td><td> <pre>uni.request({
+    url: 'https://www.example.com/request', //仅为示例，并非真实接口地址。
+    data: {
+        name: 'name',
+        age: 18
+    },
+    header: {
+        'custom-header': 'hello' //自定义请求头信息
+    },
+    success: function (res) {
+        console.log(res.data);
+    }
+});
+</pre> </td></tr></tbody></table>
+<p>uniapp网络请求的get和post</p>
+<p>对于 GET 方法，会将数据转换为 query string。例如 { name: ‘name’, age: 18 } 转换后的结果是 name=name&amp;age=18。<br/> 对于 POST 方法且 header[‘content-type’] 为 application/json 的数据，会进行 JSON 序列化。<br/> 对于 POST 方法且 header[‘content-type’] 为 application/x-www-form-urlencoded 的数据，会将数据转换为 query string。</p>
+<p>请求的 header 中 content-type 默认为 application/json</p>
+<h1 id="注意-post请求必须加header-‘content-type’">注意 post请求必须加header[‘content-type’]</h1>
+<p></p>
+<h2>uni-app 封装接口request请求</h2>
+<p>我们知道一个项目中对于前期架构的搭建工作对于后期的制作有多么重要，所以不管做什么项目我们拿到需求后一定要认真的分析一下，要和产品以及后台沟通好，其中尤为重要的一个环节莫过于封装接口请求了。因为前期封装好了，后面我们真的可以实现粘贴复制了。所以今天<a href="https://www.aliyue.net/" title="小月博客">小月博客</a>给大家分享一个在<a href="https://www.aliyue.net/9697.html" title="uni-app">uni-app</a>中如何封装一个request请求。</p>
+<h3>第一步、根目录下新建 config.js 文件</h3>
+<pre><code class="language-javascript">const config = {
+base_url: '这里可以是生产环境或者测试环境'
+}
+export { config }</code></pre>
+<p>这里主要配置接口的基本路径</p>
+<h3>第二步、根目录下新建 utils/http.js 文件</h3>
+<pre><code class="language-javascript">import {
+	config
+} from '../config.js'
+
+export const apiResquest = (prams) =&gt; { //prams 为我们需要调用的接口API的参数 下面会贴具体代码
+
+	// 判断请求类型
+	let headerData = {
+		'content-type': 'application/json'
+	}
+
+	let dataObj = null
+        //因为我们的GET和POST请求结构不同这里我们做处理，大家根据自己后台接口所需结构灵活做调整吧
+	if (prams.method === "GET") {
+		headerData = {
+			'content-type': 'application/json',
+			'token': uni.getStorageSync('token')
+		}
+	} else {
+		dataObj = {
+			'data': prams.query,
+			'token': uni.getStorageSync('token')
+		}
+	}
+	return new Promise((resolve, reject) =&gt; {
+		let url = config.base_url + prams.url; //请求的网络地址和局地的api地址组合
+		uni.showLoading({
+			title: '加载中',
+			mask: true
+		})
+		return uni.request({
+			url: url,
+			data: dataObj,
+			method: prams.method,
+			header: headerData,
+			success: (res) =&gt; {
+				uni.hideLoading()
+                                //这里是成功的返回码，大家根据自己的实际情况调整
+				if (res.data.code !== '00000') {
+					uni.showToast({
+						title: '获取数据失败:' + res.data.msg,
+						duration: 1000,
+						icon: "none"
+					})
+					return;
+				}
+				resolve(res.data);
+				console.log(res.data)
+			},
+			fail: (err) =&gt; {
+				reject(err);
+				console.log(err)
+				uni.hideLoading()
+			},
+			complete: () =&gt; {
+				console.log('请求完成')
+				uni.hideLoading()
+			}
+		});
+	})
+}</code></pre>
+<h3>第三步、 创建model 层 根目录下新建 models/index.js 文件</h3>
+<p>——-⚠️注意： 这里可以根据自己的项目功能需求分解models 层——-</p>
+<pre><code class="language-javascript">import { apiResquest } from '../utils/http.js'
+
+//POST 请求案例
+
+export const login = (query) =&gt; {
+	return apiResquest({
+		url: '这里是API的地址',
+		method: 'POST',
+		query: {...query}
+	})
+}
+
+//GET 请求案例可以传递参数也可以不传递
+export const validateCode  = (query) =&gt; {
+	let str = query
+	return apiResquest({
+		url: `您的API地址 ?${str}`,
+		method: 'GET'
+	})
+}</code></pre>
+<h3>第四步、页面中调用</h3>
+<pre><code class="language-javascript">import { login } from '../../models/index.js'
+//页面中的 methods 里面就可以直接调用了
+Login(){
+        //这里可以设置需要传递的参数
+	let uid = uni.getStorageSync('userId')
+	login(uid).then((res) =&gt; {
+		console.log(res)
+	}).catch(err =&gt; {
+		console.log(err)
+	})
+}</code></pre>
+<p>以上代码就是完整的接口封装了，真的超级实用，其实网上有很多关于uni-app接口封装的案例，但是个人感觉亲测了好几种，这种是最好用的。分享在这里希望和大家一起交流。</p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p> </p>
+</div>
+</div>

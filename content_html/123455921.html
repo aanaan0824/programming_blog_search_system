@@ -1,0 +1,224 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1 id="1%20%E7%AE%80%E4%BB%8B%C2%A0">1 简介 </h1>
+<p>         如果程序调用某个方法，等待其执行全部处理后才能继续执行，我们称其为<strong>同步</strong>的。相反，在处理完成之前就返回调用方法则是<strong>异步</strong>的。<br/>         我们在编程语言的流程中添加了异步控制的部分，这部分的编程可以称之为<strong>异步编程</strong>。 *.NET Framework提供了执行异步操作的三种模式[3]：</p>
+<p>(1) 异步编程模型（APM）模式（也称为IAsyncResult的模式），其中异步操作要求Begin和End方法（例如，BeginWrite和EndWrite异步写入操作）。这种模式不再被推荐用于新开发。有关更多信息，请参阅异步编程模型（APM）。</p>
+<p>(2) 基于事件的异步模式（EAP），它需要一个具有Async后缀的方法，并且还需要一个或多个事件，事件处理程序委托类型和被EventArg派生类型。EAP在.NET Framework 2.0中引入。不再推荐新的开发。有关更多信息，请参阅基于事件的异步模式（EAP）。</p>
+<p>(3) 基于任务的异步模式（TAP），它使用单一方法来表示异步操作的启动和完成。TAP在.NET Framework 4中引入，是.NET Framework中推荐的异步编程方法。C＃中的async和等待关键字，Visual Basic语言中的Async和Await运算符为TAP添加语言支持。有关更多信息，请参阅基于任务的异步模式（TAP）。</p>
+<p>        本文仅介绍IAsyncResult的模式。</p>
+<h1 id="2%20C%23%20IAsyncResult%E7%9A%84%E6%A8%A1%E5%BC%8F%E7%BC%96%E7%A8%8B">2 C# IAsyncResult的模式编程</h1>
+<h2 id="2.1%C2%A0%C2%A0BeginInvoke%2FEndInvoke">2.1  BeginInvoke/EndInvoke[4]</h2>
+<p>         要使用异步，就是用委托进行处理，如果委托对象在调用列表中只有一个方法，它就可以异步执行这个方法。委托类有两个方法，叫做BeginInvoke和EndInvoke，它们是用来异步执行使用。BeginInvoke方法可以使用线程异步地执行委托所指向的方法。然后通过EndInvoke方法获得方法的返回值（EndInvoke方法的返回值就是被调用方法的返回值），或是确定方法已经被成功调用。我们可以通过四种方法从EndInvoke方法来获得返回值</p>
+<p>        异步有三种模式：</p>
+<ol><li>等待模式，在发起了异步方法以及做了一些其它处理之后，原始线程就中断，并且等待异步方法完成之后再继续。</li><li>轮询模式，原始线程定期检查发起的线程是否完成，如果没有则可以继续做一些其它的事情。</li><li>回调模式，原始线程一直在执行，无需等待或检查发起的线程是否完成。在发起的线程中的引用方法完成之后，发起的线程就会调用回调方法，由回调方法在调用EndInvoke之前处理异步方法的结构。</li></ol>
+<p> 本文讨论的是第3中情况。在学习异步编程之前，先看看BeginInvoke和EndInvoke方法。</p>
+<h3 id="2.1.1BeginInvoke%E6%96%B9%E6%B3%95">2.1.1BeginInvoke方法</h3>
+<ol><li>在调用BeginInvoke时，参数列表中的实参组成如下：<br/> 1）  引用方法需要的参数。<br/> 2）  两个额外的参数——callback参数和state参数。</li><li>BeginInvoke从线程池中获取一个线程并且在新的线程开始时运行引用方法。</li><li>BeginInvoke返回给调用线程一个实现IasyncResult接口的对象。这个接口引用包含了异步方法的当前状态，原始线程然后可以继续执行。</li></ol>
+<h3 id="2.1.2%20EndInvoke%E6%96%B9%E6%B3%95">2.1.2 EndInvoke方法</h3>
+<ol><li>它接受一个由BeginInvoke方法返回的IasyncResult对象的引用，并找到它关联的线程。</li><li>如果线程池的线程已经退出，EndInvoke做如下的事情。<br/> 1）  它清理退出线程的状态并且释放它的资源。<br/> 2）  它找到引用方法返回的值并且把它的值作为返回值。</li><li>如果当EndInvoke被调用时线程池的线程仍然在运行，调用线程就会停止并等待，直到清理完毕并返回值。因为EndInvoke是为开启的线程进行清理，所以必须确保对每一个BeginInvoke都调用EndInvoke。</li><li>如果异步方法触发了异常，在调用EndInvoke时会抛出异常。</li></ol>
+<p></p>
+<h2>2.2 IAsyncResult 接口</h2>
+<p>        表示异步操作的状态。原型如下：<br/>                public interface IAsyncResult</p>
+<p>        支持 <strong>IAsyncResult</strong> 接口的对象存储异步操作的状态信息，并提供同步对象以允许线程在操作完成时终止。<strong>IAsyncResult</strong> 接口由包含可异步操作的方法的类实现。它是启动异步操作的方法的返回类型，也是结束异步操作的方法的第三个参数的类型。当异步操作完成时，<strong>IAsyncResult</strong> 对象也将传递给由委托调用的方法。主要属性如下：</p>
+<table><tbody><tr><td><a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.iasyncresult.asyncstate?view=net-6.0#system-iasyncresult-asyncstate" title="AsyncState">AsyncState</a></td><td> <p>获取一个用户定义的对象，该对象限定或包含有关异步操作的信息。</p> </td></tr><tr><td><a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.iasyncresult.asyncwaithandle?view=net-6.0#system-iasyncresult-asyncwaithandle" title="AsyncWaitHandle">AsyncWaitHandle</a></td><td> <p>获取用于等待异步操作完成的 <a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.threading.waithandle?view=net-6.0" title="WaitHandle">WaitHandle</a>。</p> </td></tr><tr><td><a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.iasyncresult.completedsynchronously?view=net-6.0#system-iasyncresult-completedsynchronously" title="CompletedSynchronously">CompletedSynchronously</a></td><td> <p>获取一个值，该值指示异步操作是否同步完成。</p> </td></tr><tr><td><a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.iasyncresult.iscompleted?view=net-6.0#system-iasyncresult-iscompleted" title="IsCompleted">IsCompleted</a></td><td> <p>获取一个值，该值指示异步操作是否已完成。</p> </td></tr></tbody></table>
+<p>其中：</p>
+<p>（1）IAsyncResult.AsyncWaitHandle 属性，获取用于等待异步操作完成的 <a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.threading.waithandle?view=net-6.0" title="WaitHandle">WaitHandle</a> 。当异步调用完成时 <a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.threading.waithandle?view=net-6.0" title="WaitHandle">WaitHandle</a> 会收到信号，而你可以通过调用 <a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.threading.waithandle.waitone?view=net-6.0" title="WaitOne">WaitOne</a> 方法来等待它。</p>
+<p>（2）WaitHandle.WaitOne 方法。阻止当前线程，直到当前 <a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.threading.waithandle?view=net-6.0" title="WaitHandle">WaitHandle</a> 收到信号。</p>
+<p>示例(代码来自文[0])</p>
+<pre><code class="language-cs">using System;
+using System.Threading;
+
+namespace Examples.AdvancedProgramming.AsynchronousOperations
+{
+    public class AsyncDemo
+    {
+        // The method to be executed asynchronously.
+        public string TestMethod(int callDuration, out int threadId)
+        {
+            Console.WriteLine("Test method begins.");
+            Thread.Sleep(callDuration);
+            threadId = Thread.CurrentThread.ManagedThreadId;
+            return String.Format("My call time was {0}.", callDuration.ToString());
+        }
+    }
+    // The delegate must have the same signature as the method
+    // it will call asynchronously.
+    public delegate string AsyncMethodCaller(int callDuration, out int threadId);
+}</code></pre>
+<p></p>
+<pre><code class="language-cs">using System;
+using System.Threading;
+
+namespace Examples.AdvancedProgramming.AsynchronousOperations
+{
+    public class AsyncMain
+    {
+        static void Main()
+        {
+            // The asynchronous method puts the thread id here.
+            int threadId;
+
+            // Create an instance of the test class.
+            AsyncDemo ad = new AsyncDemo();
+
+            // Create the delegate.
+            AsyncMethodCaller caller = new AsyncMethodCaller(ad.TestMethod);
+
+            // Initiate the asychronous call.
+            IAsyncResult result = caller.BeginInvoke(3000,
+                out threadId, null, null);
+
+            Thread.Sleep(0);
+            Console.WriteLine("Main thread {0} does some work.",
+                Thread.CurrentThread.ManagedThreadId);
+
+            // Wait for the WaitHandle to become signaled.
+            result.AsyncWaitHandle.WaitOne();
+
+            // Perform additional processing here.
+            // Call EndInvoke to retrieve the results.
+            string returnValue = caller.EndInvoke(out threadId, result);
+
+            // Close the wait handle.
+            result.AsyncWaitHandle.Close();
+
+            Console.WriteLine("The call executed on thread {0}, with return value \"{1}\".",
+                threadId, returnValue);
+        }
+    }
+}
+
+/* This example produces output similar to the following:
+
+Main thread 1 does some work.
+Test method begins.
+The call executed on thread 3, with return value "My call time was 3000.".
+ */</code></pre>
+<h2>    2.3    AsyncCallback 委托 </h2>
+<h3> 2.3.1 原型</h3>
+<p>        AsyncCallback为客户端应用程序提供完成异步操作的方法该回调委托被提供给客户端。AsyncCallback引用的数据处理程序包含客户端异步任务的程序逻辑，原型如下：</p>
+<p style="text-align:center;">public delegate void AsyncCallback(IAsyncResult ar);</p>
+<p>它使用IAsyncResult接口获得异步操作的状态。</p>
+<h2 id="examples">2.3.2 例子</h2>
+<p>下面的代码示例展示了如何使用 <a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.net.dns?view=net-6.0" title="Dns">Dns</a> 类中的异步方法，检索用户指定计算机的域名系统 (DNS) 信息。 此示例创建引用 <code>ProcessDnsInformation</code> 方法的 <a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.asynccallback?view=net-6.0" title="AsyncCallback">AsyncCallback</a> 委托。 每次异步请求获取 DNS 信息，都会调用一次此方法。代码来自文[1]</p>
+<pre><code class="language-cs">/*
+The following example demonstrates using asynchronous methods to
+get Domain Name System information for the specified host computers.
+This example uses a delegate to obtain the results of each asynchronous
+operation.
+*/
+
+using System;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading;
+using System.Collections.Specialized;
+using System.Collections;
+
+namespace Examples.AdvancedProgramming.AsynchronousOperations
+{
+    public class UseDelegateForAsyncCallback
+    {
+        static int requestCounter;
+        static ArrayList hostData = new ArrayList();
+        static StringCollection hostNames = new StringCollection();
+        static void UpdateUserInterface()
+        {
+            // Print a message to indicate that the application
+            // is still working on the remaining requests.
+            Console.WriteLine("{0} requests remaining.", requestCounter);
+        }
+        public static void Main()
+        {
+            // Create the delegate that will process the results of the
+            // asynchronous request.
+            AsyncCallback callBack = new AsyncCallback(ProcessDnsInformation);
+            string host;
+            do
+            {
+                Console.Write(" Enter the name of a host computer or &lt;enter&gt; to finish: ");
+                host = Console.ReadLine();
+                if (host.Length &gt; 0)
+                {
+                    // Increment the request counter in a thread safe manner.
+                    Interlocked.Increment(ref requestCounter);
+                    // Start the asynchronous request for DNS information.
+                    Dns.BeginGetHostEntry(host, callBack, host);
+                 }
+            } while (host.Length &gt; 0);
+            // The user has entered all of the host names for lookup.
+            // Now wait until the threads complete.
+            while (requestCounter &gt; 0)
+            {
+                UpdateUserInterface();
+            }
+            // Display the results.
+            for (int i = 0; i&lt; hostNames.Count; i++)
+            {
+                object data = hostData [i];
+                string message = data as string;
+                // A SocketException was thrown.
+                if (message != null)
+                {
+                    Console.WriteLine("Request for {0} returned message: {1}",
+                        hostNames[i], message);
+                    continue;
+                }
+                // Get the results.
+                IPHostEntry h = (IPHostEntry) data;
+                string[] aliases = h.Aliases;
+                IPAddress[] addresses = h.AddressList;
+                if (aliases.Length &gt; 0)
+                {
+                    Console.WriteLine("Aliases for {0}", hostNames[i]);
+                    for (int j = 0; j &lt; aliases.Length; j++)
+                    {
+                        Console.WriteLine("{0}", aliases[j]);
+                    }
+                }
+                if (addresses.Length &gt; 0)
+                {
+                    Console.WriteLine("Addresses for {0}", hostNames[i]);
+                    for (int k = 0; k &lt; addresses.Length; k++)
+                    {
+                        Console.WriteLine("{0}",addresses[k].ToString());
+                    }
+                }
+            }
+       }
+
+        // The following method is called when each asynchronous operation completes.
+        static void ProcessDnsInformation(IAsyncResult result)
+        {
+            string hostName = (string) result.AsyncState;
+            hostNames.Add(hostName);
+            try
+            {
+                // Get the results.
+                IPHostEntry host = Dns.EndGetHostEntry(result);
+                hostData.Add(host);
+            }
+            // Store the exception message.
+            catch (SocketException e)
+            {
+                hostData.Add(e.Message);
+            }
+            finally
+            {
+                // Decrement the request counter in a thread-safe manner.
+                Interlocked.Decrement(ref requestCounter);
+            }
+        }
+    }
+}</code></pre>
+<p></p>
+<p>参考文献</p>
+<p>[0]<a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.iasyncresult?view=net-6.0" title="IAsyncResult 接口 (System) | Microsoft Docs">IAsyncResult 接口 (System) | Microsoft Docs</a></p>
+<p><a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.asynccallback?view=net-6.0" title="[1] AsyncCallback 委托 (System) | Microsoft Docs">[1] AsyncCallback 委托 (System) | Microsoft Docs</a></p>
+<p><a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.threading.eventwaithandle?view=net-6.0" title="[2]EventWaitHandle 类 (System.Threading) | Microsoft Docs">[2]EventWaitHandle 类 (System.Threading) | Microsoft Docs</a></p>
+<p><a href="https://blog.csdn.net/kebi007/article/details/76899078" title="[3]C#异步编程基础入门总结_dotNet全栈开发-CSDN博客_c# 异步">[3]C#异步编程基础入门总结_dotNet全栈开发-CSDN博客_c# 异步</a></p>
+<p><a href="https://www.cnblogs.com/rennix/p/6562267.html" title="[4]C#如何使用异步编程【BeginInvoke/EndInvoke】 - __Mr.Ren - 博客园">[4]C#如何使用异步编程【BeginInvoke/EndInvoke】 - __Mr.Ren - 博客园</a></p>
+<p><a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.net.dns.begingethostentry?view=net-6.0" title="[5]Dns.BeginGetHostEntry 方法 (System.Net) | Microsoft Docs">[5]Dns.BeginGetHostEntry 方法 (System.Net) | Microsoft Docs</a><a href="https://docs.microsoft.com/zh-cn/dotnet/api/system.net.dns.endgethostentry?view=net-6.0" title="[6]Dns.EndGetHostEntry(IAsyncResult) 方法 (System.Net) | Microsoft Docs">[6]Dns.EndGetHostEntry(IAsyncResult) 方法 (System.Net) | Microsoft Docs</a></p>
+</div>
+</div>

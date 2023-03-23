@@ -1,0 +1,190 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night-eighties" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="_0"></a>前言</h1>
+<blockquote>
+<p>一文给你介绍的清清楚楚， 伪装Selenium特征的N种方式✨✨</p>
+</blockquote>
+<p>在使用 Selenium 访问某些网站时候，会不成功。像很多url中带<code>gov</code> 字眼的，往往都无法正常打开。</p>
+<p>因为网站检测到了 我们使用自动化工具，所以就给ban掉了，所以这篇文章就来说说怎么过掉它。</p>
+<p>值得一提的是，这篇文章不针对任何一个网站，只用下面的这个网站来做参照~</p>
+<ul><li><a href="https://bot.sannysoft.com/"><strong>https://bot.sannysoft.com/</strong></a></li></ul>
+<p>访问这个网站时候，可以看到它会检测很多项浏览器的信息。明显可以看到 正常浏览器 和 Selenium打开浏览器是有区别的~</p>
+<p><img alt="" src="image\aa8697ef55364fdebd64878266aa0df9.png"/></p>
+<p>输入 <code>window.navigator.webdriver</code> 时候，正常浏览器是 false，Selenium打开的是true</p>
+<p><img alt="" src="image\0280cb57762545b9ba4bbc424c9f54f1.png"/></p>
+<p>下面去看看怎么绕过检测 &amp; 隐藏特征。</p>
+<hr/>
+<h1><a id="_35"></a>三种方式</h1>
+<p>这里主要介绍三大类隐藏 <strong>Selenium</strong> 特征的方式，分别是以下：</p>
+<ol><li>注入JS代码</li><li>中间人修改文件</li><li>接管已打开浏览器</li></ol>
+<h2><a id="1_JS_47"></a>1. 注入JS代码</h2>
+<blockquote>
+<p>在 <strong>注入JS代码</strong> 的大类中，分了三个方式来讲，大体上差别不是很大</p>
+</blockquote>
+<h3><a id="11_cdp_52"></a>1.1 执行cdp</h3>
+<p><strong>hide_features.py</strong></p>
+<pre><code class="prism language-py"><span class="token comment"># -*- coding: utf-8 -*-</span>
+<span class="token comment"># Name:         hide_features.py</span>
+<span class="token comment"># Author:       小菜</span>
+<span class="token comment"># Date:         2022/8/29 2:43</span>
+<span class="token comment"># Description:</span>
+
+<span class="token keyword">from</span> selenium <span class="token keyword">import</span> webdriver
+
+
+driver <span class="token operator">=</span> webdriver<span class="token punctuation">.</span>Chrome<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token comment"># 代码的关键所在</span>
+driver<span class="token punctuation">.</span>execute_cdp_cmd<span class="token punctuation">(</span><span class="token string">"Page.addScriptToEvaluateOnNewDocument"</span><span class="token punctuation">,</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token string">"source"</span><span class="token punctuation">:</span> <span class="token triple-quoted-string string">"""
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () =&gt; false
+    })
+  """</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span>
+
+
+driver<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'https://bot.sannysoft.com/'</span><span class="token punctuation">)</span>
+
+</code></pre>
+<p>代码释义：</p>
+<ul><li>driver.execute_cdp_cmd ：执行 <code>Chrome Devtools Protocol </code>命令</li><li>Page.addScriptToEvaluateOnNewDocument：在浏览器启动之前执行给定的JS脚本</li><li>Object.defineProperty：JS语法，直接在一个对象上定义一个新属性，或者修改一个对象的现有属性，并返回此对象（代码中是将 <code>navigator.webdriver</code> 设置为 <code>undefined</code></li></ul>
+<p><strong>CDP文档</strong>：<a href="https://chromedevtools.github.io/devtools-protocol/tot/Page/"><strong>https://chromedevtools.github.io/devtools-protocol/tot/Page/</strong></a></p>
+<p><img alt="" src="image\e15b47dd188645e9958891bd05b202a5.png"/></p>
+<p>代码运行效果如下：</p>
+<ul><li>明明 <code>window.navigator.webdriver</code> 输出已经是 false 了，为啥还是不通过？</li></ul>
+<p><img alt="" src="image\52ec74a94510427cb647b8f5bd96fc72.png"/></p>
+<p>看下图，差别在这里</p>
+<ul><li>注：有部分网站不会检测的这么深，在这一步其实就可以绕过检测了</li></ul>
+<p><img alt="" src="image\1dfa228988a943bc8ac8945e61782f60.png"/></p>
+<p>继续讲如何更深入的绕过检测~</p>
+<hr/>
+<h3><a id="12_cdp_2_105"></a>1.2 执行cdp_2</h3>
+<blockquote>
+<p>这里分两步走，需要先获取 隐藏特征的JS文件，然后再将JS代码注入到Selenium中</p>
+</blockquote>
+<h4><a id="121__109"></a>1.2.1 获取隐藏特征文件</h4>
+<blockquote>
+<p>隐藏特征文件的官方文档：<a href="https://github.com/berstend/puppeteer-extra"><strong>https://github.com/berstend/puppeteer-extra</strong></a></p>
+</blockquote>
+<p>如果没有科学的话，生成一份还是比较耗时间的，所以我也准备了一份，点击即可下载<br/> <a href="https://download.csdn.net/download/weixin_45081575/86502704"><strong>https://download.csdn.net/download/weixin_45081575/86502704</strong></a></p>
+<p>隐藏特征文件的简介和获取如下图所示：</p>
+<ul><li>可以将最新的隐身规避从 <code>puppeteer-extra-stealth</code> 提取到一个js文件中。生成的JS文件可以用于纯CDP实现，也可以用于测试devtools中的规避。</li><li>只要安装了<code>NodeJS</code>，就可以一行代码即可拿下~</li><li>将在当前文件夹中创建一个 <code>stealth.min.js</code> 文件。</li></ul>
+<p><img alt="" src="image\b6eaa29f9b434e15a55aeaaba5c10673.png"/></p>
+<hr/>
+<p>在cmd窗口输入 <code>npx extract-stealth-evasions</code>，稍后便可以看到生成的 <code>stealth.min.js</code> 文件了。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/277439926eb843c88be870a1773ab2d4.png"/></p>
+<pre><code class="prism language-py"><span class="token comment"># -*- coding: utf-8 -*-</span>
+<span class="token comment"># Name:         hide_features.py</span>
+<span class="token comment"># Author:       小菜</span>
+<span class="token comment"># Date:         2022/8/29 122:43</span>
+<span class="token comment"># Description:</span>
+
+<span class="token keyword">from</span> selenium <span class="token keyword">import</span> webdriver
+
+driver <span class="token operator">=</span> webdriver<span class="token punctuation">.</span>Chrome<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token keyword">with</span> <span class="token builtin">open</span><span class="token punctuation">(</span><span class="token string">'stealth.min.js'</span><span class="token punctuation">,</span> mode<span class="token operator">=</span><span class="token string">'r'</span><span class="token punctuation">)</span> <span class="token keyword">as</span> f<span class="token punctuation">:</span>
+    js <span class="token operator">=</span> f<span class="token punctuation">.</span>read<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+
+<span class="token comment"># 关键代码</span>
+driver<span class="token punctuation">.</span>execute_cdp_cmd<span class="token punctuation">(</span>
+    cmd_args<span class="token operator">=</span><span class="token punctuation">{<!-- --></span><span class="token string">'source'</span><span class="token punctuation">:</span> js<span class="token punctuation">}</span><span class="token punctuation">,</span>
+    cmd<span class="token operator">=</span><span class="token string">"Page.addScriptToEvaluateOnNewDocument"</span><span class="token punctuation">,</span>
+<span class="token punctuation">)</span>
+
+driver<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'https://bot.sannysoft.com/'</span><span class="token punctuation">)</span>
+
+</code></pre>
+<p>代码运行如下图所示：</p>
+<ul><li>现在，正常的浏览器和Selenium浏览器都一样了，都可以通过检测~</li><li>虽然一个是 false 一个是undefined（但并不影响~</li></ul>
+<p><img alt="" src="image\2a0b438bac9a4a818240f83d53cea197.png"/></p>
+<hr/>
+<p>后续再访问任何网页都能成功隐藏Selenium 的特征了，但是只能在当前页面去操作~</p>
+<p>值得注意的是：如果新开一个网页再去访问，那就没法隐藏特征了，看下图</p>
+<ul><li>所以这个方法也是不够完美的~</li></ul>
+<p><img alt="" src="image\f34147910b264f43a26a20e0bcb58347.png"/></p>
+<hr/>
+<h3><a id="13__ChromeOptions___179"></a>1.3 添加 ChromeOptions &amp; 修改默认参数</h3>
+<blockquote>
+<p>这个不算是注入JS的内容，是修改默认参数的，只是并到了一块儿；<br/> 到第三种方法了，这个只需要添加一个参数即可~</p>
+</blockquote>
+<p>这个方法的出处在这里：<a href="https://stackoverflow.com/questions/53039551/selenium-webdriver-modifying-navigator-webdriver-flag-to-prevent-selenium-detec"><strong>https://stackoverflow.com/questions/53039551/selenium-webdriver-modifying-navigator-webdriver-flag-to-prevent-selenium-detec</strong></a></p>
+<p><strong>代码</strong></p>
+<pre><code class="prism language-py"><span class="token comment"># -*- coding: utf-8 -*-</span>
+<span class="token comment"># Name:         hide_features.py</span>
+<span class="token comment"># Author:       小菜</span>
+<span class="token comment"># Date:         2022/8/29 22:43</span>
+<span class="token comment"># Description:</span>
+
+<span class="token keyword">from</span> selenium <span class="token keyword">import</span> webdriver
+
+options <span class="token operator">=</span> webdriver<span class="token punctuation">.</span>ChromeOptions<span class="token punctuation">(</span><span class="token punctuation">)</span>
+options<span class="token punctuation">.</span>add_argument<span class="token punctuation">(</span><span class="token string">"disable-blink-features=AutomationControlled"</span><span class="token punctuation">)</span>
+driver <span class="token operator">=</span> webdriver<span class="token punctuation">.</span>Chrome<span class="token punctuation">(</span>options<span class="token operator">=</span>options<span class="token punctuation">)</span>
+
+
+driver<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'https://bot.sannysoft.com/'</span><span class="token punctuation">)</span>
+
+</code></pre>
+<p>代码释义：</p>
+<ul><li><code>disable-blink-features=AutomationControlled</code>：禁用 blink 特征</li></ul>
+<p><a href="https://baike.baidu.com/item/blink%E5%BC%95%E6%93%8E/871884">百度百科：Blink – https://baike.baidu.com/item/blink引擎/871884</a></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/72b884ea3d4c4ecaa93dbcd91eccd9bd.png"/></p>
+<p>代码运行效果如下：</p>
+<ul><li>通过检测，且新开的窗口也同样可以通过检测<br/> <img alt="" src="image\82b08ab3b8f24fae8b8e41c62370227d.png"/></li></ul>
+<p>新开一个窗口<br/> <img alt="" src="image\716214fa608f421898f584e80d14120d.png"/></p>
+<p>可见，这个操作是相对完美了。<br/> 因为没有做过详尽的测试，所以我无法保证这个方法是否能100%适用~<br/> 如果网站检测的信息有很多，甚至检测 经纬度、ip代理等。那可能就会失效！</p>
+<hr/>
+<h2><a id="2_226"></a>2：中间人抓包修改文件</h2>
+<blockquote>
+<p>一个思路，不属于是好方法的思路</p>
+</blockquote>
+<p>这个方法就介绍一下思路吧，<br/> 在可以找到网站检测代码的前提下，去替换检测代码的文件。<br/> 可以使用抓包工具，如 <code>Charles、fiddler、mitmproxy</code>等去监听检测文件，然后替换它<br/> 也可以使用 <code>Chrome浏览器 -&gt; 开发者工具 -&gt; Sources -&gt; Overrides</code> 去做替换<br/> 替换的方法有很多，</p>
+<p>但我觉得这不是一个好方法，只是也是一种方法。</p>
+<hr/>
+<h2><a id="3__240"></a>3. 接管已打开浏览器</h2>
+<blockquote>
+<p>这个网站没法检测出来，完美如斯。正常的浏览器是咋样的，这个就是咋样的</p>
+</blockquote>
+<p>接管已经打开的浏览器（强烈推荐</p>
+<p>如何接管已经打开的浏览器，参考这两篇文章，这里不再赘述</p>
+<table><thead><tr><th align="left">标题</th><th>链接</th></tr></thead><tbody><tr><td align="left"><a href="https://blog.csdn.net/weixin_45081575/article/details/112621581"><strong>【Selenium】控制当前已经打开的 chrome浏览器窗口</strong></a></td><td>https://blog.csdn.net/weixin_45081575/article/details/112621581</td></tr><tr><td align="left"><a href="https://blog.csdn.net/weixin_45081575/article/details/126389273"><strong>【Selenium】控制当前已经打开的 chrome浏览器窗口（高级篇）</strong></a></td><td>https://blog.csdn.net/weixin_45081575/article/details/126389273</td></tr></tbody></table>
+<p><strong>代码</strong></p>
+<pre><code class="prism language-py"><span class="token comment"># -*- coding: utf-8 -*-</span>
+<span class="token comment"># Name:         hide_features.py</span>
+<span class="token comment"># Author:       小菜</span>
+<span class="token comment"># Date:         2022/8/29 22:43</span>
+<span class="token comment"># Description:</span>
+
+<span class="token keyword">import</span> os
+<span class="token keyword">from</span> selenium <span class="token keyword">import</span> webdriver
+<span class="token keyword">from</span> selenium<span class="token punctuation">.</span>webdriver<span class="token punctuation">.</span>chrome<span class="token punctuation">.</span>options <span class="token keyword">import</span> Options
+
+<span class="token keyword">if</span> __name__ <span class="token operator">==</span> <span class="token string">'__main__'</span><span class="token punctuation">:</span>
+    os<span class="token punctuation">.</span>system<span class="token punctuation">(</span><span class="token string">r'start chrome --remote-debugging-port=9527 --user-data-dir="F:\selenium"'</span><span class="token punctuation">)</span>
+    options <span class="token operator">=</span> Options<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    options<span class="token punctuation">.</span>add_experimental_option<span class="token punctuation">(</span><span class="token string">"debuggerAddress"</span><span class="token punctuation">,</span> <span class="token string">"127.0.0.1:9527"</span><span class="token punctuation">)</span>
+    driver <span class="token operator">=</span> webdriver<span class="token punctuation">.</span>Chrome<span class="token punctuation">(</span>options<span class="token operator">=</span>options<span class="token punctuation">)</span>
+    driver<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">'https://bot.sannysoft.com/'</span><span class="token punctuation">)</span>
+
+</code></pre>
+<p>代码运行如下：</p>
+<ul><li>无论打开多少个窗口，都是可以通过检测的</li></ul>
+<p><img alt="" src="image\ad4091aec5e44ac7ac4e7a3110aaac03.png"/></p>
+<hr/>
+<h2><a id="_282"></a>总结</h2>
+<p>上面介绍了三大类隐藏 <strong>Selenium</strong> 特征的方式，但是最好用是 第三种，即</p>
+<ul><li>接管已经打开的浏览器端口，不用担心被网站所检测到，因为它就是你正常使用的浏览器</li></ul>
+<p>使用起来也很简单，调用cmd命令去打开浏览器然后再使用 <strong>Selenium</strong> 去接管即可。</p>
+<h1><a id="_296"></a>后话</h1>
+<p>自己动手，试验一番，岂不美哉~<br/> see you🐱‍🏍🐱‍🏍</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,303 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1>一、系统环境</h1>
+<ol><li> <h2>设置系统交换分区（本文使用云主机安装）</h2> <p>      设置交换分区，现在很多云主机，默认都是关闭交换分区，关于交换分区的优缺点，可以自百度，这一步非必须，可以跳过。</p> <pre><code class="language-bash">1、设置交换文件为 8GB (128MB x 64)
+dd if=/dev/zero of=/swapfile bs=128M count=64
+
+2、更新交换文件的读取权限和写入权限
+chmod 600 /swapfile
+
+3、设置 Linux 交换区域
+mkswap /swapfile
+
+4、通过将交换文件添加到交换空间，使交换文件立即可供使用
+swapon /swapfile
+
+5、确认过程已成功完成
+swapon -s
+
+6、通过编辑 /etc/fstab 文件，在启动时启用交换文件
+ vi /etc/fstab
+#在文件末尾添加以下新行，保存文件，然后退出
+/swapfile swap swap defaults 0 0</code></pre> </li><li>升级内核开启BBR <a class="has-card" href="http://t.csdn.cn/Ub9bs" title="http://t.csdn.cn/Ub9bs"><span class="link-card-box"><span class="link-title">http://t.csdn.cn/Ub9bs</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon-default.png"/>http://t.csdn.cn/Ub9bs</span></span></a> <p></p> </li><li>编译环境 <pre><code>yum install  gcc gcc-c++ make
+</code></pre> <h1>二、基础服务安装</h1> </li></ol>
+<p></p>
+<ol><li>安装mysql <pre><code class="language-bash">卸载mariadb（如果有在用，就不要卸载了，可以直接弄一个库就行）
+#yum remove mariadb*
+
+#下载二进制包
+wget https://dev.mysql.com/get/Downloads/MySQL-8.0/mysql-8.0.28-linux-glibc2.12-x86_64.tar.xz
+
+#解压二进制包
+tar -xf mysql-8.0.28-linux-glibc2.12-x86_64.tar.xz
+
+#配置环境变量
+mv mysql-8.0.28-linux-glibc2.12-x86_64 mysql
+
+vi /etc/profile
+# 添加以下内容
+PATH=/usr/local/mysql/bin:$PATH
+
+
+#创建mysql用户
+groupadd mysql
+useradd -r -g mysql -s /sbin/nologin mysql
+
+#创建日志文件
+touch /var/log/mysql/mysql-error.log
+touch /var/log/mysql/mysql.log
+touch  /var/log/mysql/slow-query.log
+
+
+#给予对应的权限
+chown mysql.mysql /data/mysql -R
+chown mysql.mysql /var/log/mysql -R
+
+#初始化mysql
+mysqld  --defaults-file=/etc/my.cnf --initialize #需要先配置好my.cnf
+ 
+或者
+MySQL_Data_Dir=/data/mysql
+mysqld --initialize-insecure --basedir=/app/mysql --datadir=${MySQL_Data_Dir} --user=mysql 
+
+#启动mysql
+cp mysql/support-files/mysql.server /etc/init.d/
+/etc/init.d/mysql.server start
+
+mysql -uroot -p  #初始密码在mysql-error.log 文件里
+ALTER USER 'root'@'localhost' identified by  'password';
+flush privileges;
+
+
+#创建Zabbix库
+create database zabbix character set utf8 collate utf8_bin;
+create user zabbix@'127.0.0.1' identified by 'password';
+grant all privileges  on zabbix.* to zabbix@'127.0.0.1';
+flush privileges;
+
+</code></pre> <p></p> </li><li>安装PHP <pre><code class="language-bash">添加源
+yum install epel-release 
+#安装依赖
+yum install  openssl-devel bzip2-devel libffi-devel  sqlite-devel gpm-libs oniguruma oniguruma-devel libsodium libsodium-devel xz-devel libxml2-devel libcurl-devel
+yum install  bash-completion bash-completion-extras libicu-devel libjpeg libjpeg-devel  nss_ldap cmake  boost-devel libevent libevent-devel gd gd-devel openjpeg-devel 
+yum install  libgcrypt-devel libpng-devel libgpg-error-devel libxslt-devel cmake libmcrypt-devel libmcrypt  recode-devel recode  
+ 
+#下载安装包
+wget https://www.php.net/distributions/php-7.4.28.tar.gz
+
+#编译安装
+./configure --prefix=/usr/local/php --with-config-file-path=//usr/local/php/etc --with-fpm-user=nginx --with-fpm-group=nginx --with-curl  --enable-gd --with-gettext --with-iconv-dir --with-kerberos --with-libdir=lib64  --with-mysqli --with-openssl  --with-pdo-mysql --with-pdo-sqlite --with-pear   --with-xmlrpc --with-xsl --with-zlib --with-bz2 --with-mhash --enable-fpm --enable-bcmath  --enable-inline-optimization --enable-mbregex --enable-mbstring --enable-opcache --enable-pcntl --enable-shmop --enable-soap --enable-sockets --enable-sysvsem --enable-sysvshm --enable-xml  --enable-fpm  --with-freetype --with-jpeg  --with-xpm
+
+make -j4
+
+make install
+
+#配置环境变量
+vim /etc/profile 
+PATH=/usr/local/php/bin:/usr/local/php/sbin:$PATH
+source /etc/profile
+# 输入 php -v 检查是否安装成功，环境变量并生效
+
+#配置PHP
+cp php.ini-production  /usr/local/php/etc/php.ini
+cp /usr/local/php/etc/php-fpm.conf.default /usr/local/php/etc/php-fpm.conf
+cp /usr/local/php/etc/php-fpm.d/www.conf.default /usr/local/php/etc/php-fpm.d/www.conf
+cp sapi/fpm/init.d.php-fpm /etc/init.d/php-fpm
+chmod +x /etc/init.d/php-fpm
+
+vim /usr/local/php/etc/php.ini
+max_execution_time = 300 改为 300
+max_input_time = 300 改为300
+post_max_size = 16M
+
+#创建运行用户
+groupadd nginx
+useradd -r -g nginx -s /sbin/nologin nginx
+
+#启动
+/etc/init.d/php-fpm start
+
+
+</code></pre> <p></p> </li><li>安装NGINX <pre><code class="language-bash">#下载源包
+ wget https://nginx.org/download/nginx-1.20.2.tar.gz
+
+#安装ngx_brotli
+yum install git
+cd /usr/local/
+git clone https://github.com/google/ngx_brotli
+cd ngx_brotli 
+git submodule update --init
+
+#编译安装nginx
+tar -zxf nginx-1.20.2.tar.gz 
+cd nginx-1.20.2/
+./configure --prefix=/usr/local/nginx --with-http_stub_status_module --with-http_v2_module --with-http_ssl_module --with-openssl-opt=enable-tlsext --with-stream --with-http_gzip_static_module --with-http_realip_module --with-http_image_filter_module --with-http_sub_module --add-module=/usr/local/ngx_brotli
+
+make install 
+
+#配置nginx, zabbix web的路径，本文放在/var/local/www
+#配置过于简单，度娘太多，可自行抄
+关健配置如下：
+##########zabbix web server###############
+    root /var/local/www/zabbix;
+
+    location / {
+        index  index.html index.htm index.php;
+         #stub_status on;
+        access_log off;
+    }
+
+
+    location ~ \.php$ {
+        include        fastcgi_params;
+        fastcgi_pass   127.0.0.1:9000;
+        fastcgi_index  index.php;
+        fastcgi_param SCRIPT_FILENAME /var/local/www/zabbix$fastcgi_script_name;
+        #fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_script_name;
+    }
+
+
+#####nginx.conf#####
+    brotli on;
+    brotli_comp_level 6;
+    brotli_types text/plain application/x-javascript text/css application/xml text/javascript application/x-httpd-php image/jpeg image/gif image/png application/javascript font/ttf;
+
+
+
+#启动Nginx
+/usr/local/nginx/sbin/nginx</code></pre> <p></p> </li><li>安装JDK <pre><code class="language-bash">wget https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.tar.gz
+tar -zxf jdk-17_linux-x64_bin.tar.gz
+
+配置环境变量
+ vim /etc/profile #加入以下内容
+
+JAVA_HOME=/usr/local/jdk-17.0.2
+export PATH=$PATH:$JAVA_HOME/bin
+
+source /etc/profile #马上生效</code></pre> <p></p> </li><li>GO安装 <pre><code>#下载源包
+https://golang.google.cn/dl/go1.18.linux-amd64.tar.gz
+
+#解压包
+tar -zxf go1.18.linux-amd64.tar.gz 
+
+#配置环境变量
+ vim /etc/profile
+PATH=/usr/local/go/bin:$PATH</code></pre> <h1>三、编译安装Zabbix</h1> </li><li>编译安装Zabbix server，jvm ，Agent2，zabbix_web_service <pre><code>升级GCC
+#安装scl源：
+yum install centos-release-scl scl-utils-build
+#升级GCC
+yum install -y devtoolset-8-toolchain
+scl enable devtoolset-8 bash
+gcc --version
+
+安装依赖
+yum install openssl-devel pcre-devel zlib-devel  unixODBC-devel net-snmp-devel  libssh2-devel OpenIPMI-devel  openldap-devel
+
+#下载源码包
+ wget https://cdn.zabbix.com/zabbix/sources/stable/6.0/zabbix-6.0.2.tar.gz
+
+#解压
+ tar -zxf zabbix-6.0.2.tar.gz 
+
+#编译安装
+groupadd zabbix
+useradd -M -s /sbin/nologin -g zabbix zabbix
+ 
+ 
+./configure  --prefix=/usr/local/zabbix --enable-java  --enable-server  -enable-proxy   --with-mysql  --with-ssh2 --with-net-snmp --with-libcurl --with-libxml2 --with-iconv  --with-unixodbc  --with-openipmi   --with-openssl --enable-agent2 --enable-webservice   --with-ldap</code></pre> <p>GCC需要升级，系统4.8版本编译有问题，报“collect2: error: ld returned 1 exit status”错误，升级到8，完美解决</p> <p><img alt="" height="68" src="image\32e88256e906469bb3ea06356115efc9.png" width="1076"/></p> </li></ol>
+<p>启动Zabbix-Server</p>
+<pre><code>#配置Zabbix Server，例如：
+vi /usr/local/zabbix/etc/zabbix_server.conf 
+LogFile=/tmp/zabbix_server.log
+DBHost=127.0.0.1
+DBName=zabbix
+DBUser=zabbix
+DBPassword=password
+DBPort=3306
+Timeout=4
+LogSlowQueries=3000
+StatsAllowedIP=127.0.0.1
+StartReportWriters=2
+WebServiceURL=http://localhost:10053/report
+
+#启动
+/usr/local/zabbix/sbin/zabbix_server   #如果没有报错，恭喜你很幸运
+
+#启动Zabbix server可能会因为缺少连接mysql的lib库，导致启动失败，根据提示，从mysql的二进包复制进到/lib64
+cp mysql-8.0.28-linux-glibc2.12/lib/libmysqlclient.so.21 /lib64/
+cp mysql-8.0.28-linux-glibc2.12/lib/libcrypto.so.1.1 /lib64/
+cp mysql-8.0.28-linux-glibc2.12/lib/libssl.so.1.1 /lib64/
+
+ldconfig #马上生效,再启动
+</code></pre>
+<p>启动Zabbix Agent2   #2需要用go</p>
+<pre><code>#配置Zabbix Agent2，例如：
+vi /usr/local/zabbix/etc/zabbix_agent2.conf 
+
+Server=127.0.0.1
+ServerActive=127.0.0.1
+Hostname=Zabbix server
+ControlSocket=/tmp/agent.sock
+Include=./zabbix_agent2.d/plugins.d/*.conf
+
+
+vi /usr/lib/systemd/system/zabbix-agent2.service 
+
+[Unit]
+Description=Zabbix Agent 2
+After=syslog.target
+After=network.target
+
+[Service]
+Environment="CONFFILE=/usr/local/zabbix/etc/zabbix_agent2.conf"
+EnvironmentFile=-/etc/sysconfig/zabbix-agent2
+Type=simple
+Restart=on-failure
+PIDFile=/tmp/zabbix_agent2.pid
+KillMode=control-group
+ExecStart=/usr/local/zabbix/sbin/zabbix_agent2 -c $CONFFILE
+ExecStop=/bin/kill -SIGTERM $MAINPID
+RestartSec=10s
+User=zabbix
+Group=zabbix
+
+[Install]
+WantedBy=multi-user.target
+
+ #启动
+systemctl start zabbix-agent2
+#开机启动
+systemctl enable zabbix-agent2</code></pre>
+<p>启动zabbix web service   #此功能用来导出报表</p>
+<pre><code>#使用system启动
+vi /usr/lib/systemd/system/zabbix-web-service.service
+[Unit]
+Description=Zabbix Web Service
+After=syslog.target
+After=network.target
+
+[Service]
+Environment="CONFFILE=/usr/local/zabbix/etc/zabbix_web_service.conf"
+EnvironmentFile=-/etc/default/zabbix-web_service
+Type=simple
+Restart=on-failure
+KillMode=control-group
+ExecStart=/usr/local/zabbix/sbin/zabbix_web_service -c $CONFFILE
+ExecStop=/bin/kill -SIGTERM $MAINPID
+RestartSec=10s
+User=zabbix
+Group=zabbix
+
+[Install]
+WantedBy=multi-user.target
+
+#启动
+systemctl start zabbix-web-service
+#设置开机启动
+systemctl enable zabbix-web-service</code></pre>
+<p></p>
+<p><a class="link-info has-card" href="http://t.csdn.cn/eZmSh" title="下一章：Zabbix WEB配置"><span class="link-card-box"><span class="link-title">下一章：Zabbix WEB配置</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon-default.png"/>http://t.csdn.cn/eZmSh</span></span></a></p>
+</div>
+</div>

@@ -1,0 +1,120 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night-eighties" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="_0"></a>说在前面</h2>
+<h1><a id="_1"></a>此方法需要自己有一台云服务器</h1>
+<h3><a id="openidphpnginx_2"></a>用云开发应该能更快更高效的获取openid，但是我也想熟练下云服务器的使用，因为后续数据库等（若不使用云开发）也需要php+nginx部署到云服务器上</h3>
+<hr/>
+<p>梳理下顺序，大概流程如下：</p>
+<ol><li><strong>调用 wx.login(),获取临时 code</strong></li></ol>
+<blockquote>
+<p>相关文档 https://developers.weixin.qq.com/miniprogram/dev/api/open-api/login/wx.login.html</p>
+</blockquote>
+<ol start="2"><li><strong>通过request方式，调用一个api，将获取到的 code 发送给后台换取 openid</strong></li></ol>
+<blockquote>
+<p>相关文档 https://developers.weixin.qq.com/miniprogram/dev/framework/open-ability/login.html<br/> （api：https://api.weixin.qq.com/sns/jscode2session?appid=APPID&amp;secret=SECRET&amp;js_code=CODE&amp;grant_type=authorization_code）<br/> 四个变量：</p>
+<ul><li>APPID：开发者的appid</li><li>SECRET： 开发者的appsecret（一串不可修改的随机码）</li><li>js_code： wx.login(res)中的res.code</li><li>grant_type： ‘authorization_code’（就是这个）</li></ul>
+</blockquote>
+<p>本来有了这些东西就能获得openid，unionid了，但是微信鬼精得很，使用浏览器可以直接访问那个api，但是在微信开发者工具里面不行。</p>
+<h3><a id="_21"></a>因为——</h3>
+<p><strong>微信api开头是“api.weixin.qq.com”，微信官方不允许直接request这个链接</strong></p>
+<p>因此有了第三步</p>
+<ol start="3"><li><strong>在自己的服务器上通过nginx+php部署，将request发到自己php，并由此php发送请求</strong><br/> 港真，很麻烦吼，只是获取一个openid，还要自己租个服务器，部署这么多东西，没办法嗷，谁让我们不使用人家自己给的云服务器（云开发）喏</li></ol>
+<h4><a id="_29"></a>指路文章：</h4>
+<blockquote>
+<p><a href="https://blog.csdn.net/weixin_41779718/article/details/110176140?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522164839357516780269874599%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fall.%2522%257D&amp;request_id=164839357516780269874599&amp;biz_id=0&amp;utm_medium=distribute.pc_search_result.none-task-blog-2~all~first_rank_ecpm_v1~rank_v31_ecpm-4-110176140.142%5Ev5%5Epc_search_insert_es_download,143%5Ev6%5Econtrol&amp;utm_term=centos%E9%85%8D%E7%BD%AEphp%20nginx&amp;spm=1018.2226.3001.4187"><strong>CentOS 7配置php+nginx 环境</strong></a></p>
+</blockquote>
+<p>修改了：<br/> A. nginx.conf修改部分配置A：</p>
+<pre><code class="prism language-python"> location <span class="token operator">~</span> \<span class="token punctuation">.</span>php$ <span class="token punctuation">{<!-- --></span>
+            root           <span class="token operator">/</span>var<span class="token operator">/</span>www<span class="token operator">/</span>html<span class="token punctuation">;</span>  <span class="token comment"># 项目的根目录</span>
+            fastcgi_pass   <span class="token number">127.0</span><span class="token number">.0</span><span class="token number">.1</span><span class="token punctuation">:</span><span class="token number">9000</span><span class="token punctuation">;</span>  <span class="token comment"># 应该是随便选，如果用socket通信就不行不知为何</span>
+            <span class="token comment">#fastcgi_index  DIR/test.php;  # 注释本行和注释下面的index效果是一样的</span>
+            index         DIR<span class="token operator">/</span>test<span class="token punctuation">.</span>php<span class="token punctuation">;</span>  <span class="token comment"># 这里的路径是在root下的相对路径</span>
+            fastcgi_param  SCRIPT_FILENAME  <span class="token operator">/</span>scripts$fastcgi_script_name<span class="token punctuation">;</span>  <span class="token comment"># 照抄</span>
+            include        <span class="token operator">/</span>usr<span class="token operator">/</span>local<span class="token operator">/</span>nginx<span class="token operator">/</span>conf<span class="token operator">/</span>fastcgi<span class="token punctuation">.</span>conf<span class="token punctuation">;</span>  <span class="token comment"># 若不在（通常都不在）nginx安装文件内， 需要通过绝对路径include到安装的nginx里</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<p>B. conf修改部分配置B：ssl部分（需要先把域名解析到服务器公网ip上，教程参考服务器平台官方解析教程）</p>
+<pre><code class="prism language-python">server<span class="token punctuation">{<!-- --></span>
+       listen <span class="token number">6002</span> ssl<span class="token punctuation">;</span>
+
+       server_name <span class="token number">182</span><span class="token punctuation">.</span>XXX<span class="token punctuation">.</span>XXX<span class="token punctuation">.</span><span class="token number">6</span> www<span class="token punctuation">.</span>XXXX<span class="token punctuation">.</span>com XXXX<span class="token punctuation">.</span>com<span class="token punctuation">;</span> <span class="token comment"># 公网ip 域名</span>
+
+       <span class="token comment"># ssl on;</span>
+   
+       ssl_certificate <span class="token operator">/</span>usr<span class="token operator">/</span>local<span class="token operator">/</span>nginx<span class="token operator">/</span>cert<span class="token operator">/</span>server<span class="token punctuation">.</span>crt<span class="token punctuation">;</span>  <span class="token comment"># ssl证书 .crt格式</span>
+       
+       ssl_certificate_key <span class="token operator">/</span>usr<span class="token operator">/</span>local<span class="token operator">/</span>nginx<span class="token operator">/</span>cert<span class="token operator">/</span>server<span class="token punctuation">.</span>key<span class="token punctuation">;</span>  <span class="token comment"># ssl证书 .key格式</span>
+   
+       ssl_session_timeout 5m<span class="token punctuation">;</span>
+       ssl_protocols TLSv1 TLSv1<span class="token punctuation">.</span><span class="token number">1</span> TLSv1<span class="token punctuation">.</span><span class="token number">2</span><span class="token punctuation">;</span>
+   
+       ssl_ciphers ECDHE<span class="token operator">-</span>RSA<span class="token operator">-</span>AES128<span class="token operator">-</span>GCM<span class="token operator">-</span>SHA256<span class="token punctuation">:</span>HIGH<span class="token punctuation">:</span>!aNULL<span class="token punctuation">:</span>!MD5<span class="token punctuation">:</span>!RC4<span class="token punctuation">:</span>!DHE<span class="token punctuation">;</span>
+   
+       ssl_prefer_server_ciphers on<span class="token punctuation">;</span>
+   <span class="token punctuation">}</span>
+</code></pre>
+<hr/>
+<h3><a id="testphp_67"></a>test.php文件填写</h3>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+    <span class="token variable">$code</span> <span class="token operator">=</span> <span class="token variable">$_GET</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'js_code'</span><span class="token punctuation">]</span><span class="token punctuation">;</span>  <span class="token comment"># 由小程序端发送此参数</span>
+    <span class="token variable">$secret</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"c88e029182dXXXXXXX1bbb44"</span><span class="token punctuation">;</span>  <span class="token comment"># 开发者的appsecret</span>
+    <span class="token variable">$appid</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"wxbXXXXXXXX4f1c1"</span><span class="token punctuation">;</span>  <span class="token comment"># 开发者的appid</span>
+    <span class="token variable">$url</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"https://api.weixin.qq.com/sns/jscode2session?appid="</span><span class="token operator">.</span><span class="token variable">$appid</span><span class="token operator">.</span><span class="token string double-quoted-string">"&amp;secret="</span><span class="token operator">.</span><span class="token variable">$secret</span><span class="token operator">.</span><span class="token string double-quoted-string">"&amp;js_code="</span><span class="token operator">.</span><span class="token variable">$code</span><span class="token operator">.</span><span class="token string double-quoted-string">"&amp;grant_type=authorization_code"</span><span class="token punctuation">;</span>
+
+    <span class="token variable">$ch</span> <span class="token operator">=</span> <span class="token function">curl_init</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">curl_setopt</span><span class="token punctuation">(</span><span class="token variable">$ch</span><span class="token punctuation">,</span><span class="token constant">CURLOPT_URL</span><span class="token punctuation">,</span><span class="token variable">$url</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">curl_setopt</span><span class="token punctuation">(</span><span class="token variable">$ch</span><span class="token punctuation">,</span><span class="token constant">CURLOPT_RETURNTRANSFER</span><span class="token punctuation">,</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">curl_setopt</span><span class="token punctuation">(</span><span class="token variable">$ch</span><span class="token punctuation">,</span><span class="token constant">CURLOPT_TIMEOUT</span><span class="token punctuation">,</span><span class="token number">30</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token variable">$content</span> <span class="token operator">=</span> <span class="token function">curl_exec</span><span class="token punctuation">(</span><span class="token variable">$ch</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token variable">$status</span> <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword type-casting">int</span><span class="token punctuation">)</span><span class="token function">curl_getinfo</span><span class="token punctuation">(</span><span class="token variable">$ch</span><span class="token punctuation">,</span><span class="token constant">CURLINFO_HTTP_CODE</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token variable">$status</span> <span class="token operator">==</span> <span class="token number">404</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> <span class="token variable">$status</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token function">curl_close</span><span class="token punctuation">(</span><span class="token variable">$ch</span><span class="token punctuation">)</span><span class="token punctuation">;</span>  <span class="token comment"># 养成close的好习惯</span>
+    
+    
+    <span class="token function">print_r</span><span class="token punctuation">(</span><span class="token variable">$content</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> <span class="token variable">$content</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>参数也可以通过在url后面加 <strong>“?js_code=【res.code】”</strong> 查看效果<br/> <strong>不过每个code只能request一次</strong>，所以需要先将下文中.wx.request部分注释</p>
+<hr/>
+<h3><a id="js_97"></a>微信小程序端.js文件填写</h3>
+<pre><code class="prism language-js">wx<span class="token punctuation">.</span><span class="token function">login</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>
+                <span class="token function-variable function">success</span><span class="token operator">:</span> <span class="token keyword">function</span> <span class="token punctuation">(</span><span class="token parameter">res</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                  console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">'code为————'</span> <span class="token operator">+</span> res<span class="token punctuation">.</span>code<span class="token punctuation">)</span>
+                  <span class="token keyword">if</span> <span class="token punctuation">(</span>res<span class="token punctuation">.</span>code<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">'通过login接口的code换取openid'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token comment">//通过code 换取openid--开始</span>
+                    wx<span class="token punctuation">.</span><span class="token function">request</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span><span class="token comment">//通常获取openid需要从后端获取，因为appid 和 secret最好不要在前端展示</span>
+                        <span class="token literal-property property">url</span><span class="token operator">:</span> <span class="token string">'https://XXXX.cn:6002/hitsz/test_openid.php'</span><span class="token punctuation">,</span><span class="token comment">//如果未勾选 不校验合法域名会报错  请在小程序开发工具，右上角点击详情，的本地设置</span>
+                        <span class="token literal-property property">data</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+                        <span class="token literal-property property">js_code</span><span class="token operator">:</span> res<span class="token punctuation">.</span>code
+                        <span class="token punctuation">}</span><span class="token punctuation">,</span>
+                        <span class="token literal-property property">method</span><span class="token operator">:</span> <span class="token string">'GET'</span><span class="token punctuation">,</span>
+                        <span class="token literal-property property">header</span><span class="token operator">:</span> <span class="token punctuation">{<!-- --></span> <span class="token string-property property">'content-type'</span><span class="token operator">:</span> <span class="token string">'application/json'</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+                        <span class="token function-variable function">success</span><span class="token operator">:</span> <span class="token keyword">function</span> <span class="token punctuation">(</span><span class="token parameter">openIdRes</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                        	console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">"登录成功返回的值："</span> <span class="token operator">+</span> openIdRes<span class="token punctuation">.</span>data<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span><span class="token punctuation">,</span>
+                        <span class="token function-variable function">fail</span><span class="token operator">:</span> <span class="token keyword">function</span> <span class="token punctuation">(</span><span class="token parameter">error</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                        	console<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span><span class="token string">"获取用户openId失败"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        	console<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span>error<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span>
+                    <span class="token punctuation">}</span><span class="token punctuation">)</span>
+                  <span class="token comment">//通过code 换取openid--结束</span>
+                  <span class="token punctuation">}</span>
+                <span class="token punctuation">}</span>
+              <span class="token punctuation">}</span><span class="token punctuation">)</span>
+</code></pre>
+<hr/>
+<h2><a id="_128"></a>结果展示</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/43d3a302a50747049ec66e8b909aff04.png"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

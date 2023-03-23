@@ -1,0 +1,371 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>mqtt的功能请看百度百科，<a href="https://baike.baidu.com/item/MQTT/3618851?fr=aladdin" title="MQTT_百度百科">MQTT_百度百科</a>。</p>
+<p>这里简单说一下，mqtt的功能就是一个发布/订阅的功能</p>
+<p>例如，接下来，我们做一个例子。现在有A服务器作为发布方，B客户端作为订阅方。如果A发布了消息，那么会向B发送消息，反之亦然，从而进行通信的功能。</p>
+<p>一、A服务端代码</p>
+<p>1.建立一个.net5的web api项目</p>
+<p>2.nuget引用mqttnet</p>
+<p><img alt="" height="380" src="image\a9f00c29926a43f4a88b7ecfc90d1f9b.png" width="1200"/></p>
+<p>3.MqttService代码</p>
+<pre><code>using MQTTnet;
+using MQTTnet.Protocol;
+using MQTTnet.Server;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace mqtt
+{
+    public class MqttService
+    {
+        public static MqttServer _mqttServer { get; set; }
+
+        public static void PublishData(string data)
+        {
+            var message = new MqttApplicationMessage
+            {
+                Topic = "topic1",
+                Payload = Encoding.Default.GetBytes(data),
+                QualityOfServiceLevel = MqttQualityOfServiceLevel.AtLeastOnce,
+                Retain = true  // 服务端是否保留消息。true为保留，如果有新的订阅者连接，就会立马收到该消息。
+            };
+
+            _mqttServer.InjectApplicationMessage(new InjectedMqttApplicationMessage(message) // 发送消息给有订阅 topic_01的客户端
+            {
+                SenderClientId = "Server_01"
+            }).GetAwaiter().GetResult();
+        }
+
+    }
+}
+</code></pre>
+<p>4.MqttHostService代码</p>
+<pre><code class="language-cs">using Microsoft.Extensions.Hosting;
+using MQTTnet;
+using MQTTnet.Protocol;
+using MQTTnet.Server;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace mqtt
+{
+    public class MqttHostService : IHostedService, IDisposable
+    {
+        public void Dispose()
+        {
+
+        }
+        const string ServerClientId = "SERVER";
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            MqttServerOptionsBuilder optionsBuilder = new MqttServerOptionsBuilder();
+            optionsBuilder.WithDefaultEndpoint();
+            //optionsBuilder.WithDefaultEndpointBoundIPAddress(IPAddress.Parse("127.0.0.1"));
+            optionsBuilder.WithDefaultEndpointPort(10086); // 设置 服务端 端口号
+            optionsBuilder.WithConnectionBacklog(1000); // 最大连接数
+            MqttServerOptions options = optionsBuilder.Build();
+
+            MqttService._mqttServer = new MqttFactory().CreateMqttServer(options);
+
+            MqttService._mqttServer.ClientConnectedAsync += _mqttServer_ClientConnectedAsync; //客户端连接事件
+            MqttService._mqttServer.ClientDisconnectedAsync += _mqttServer_ClientDisconnectedAsync; // 客户端关闭事件
+            MqttService._mqttServer.ApplicationMessageNotConsumedAsync += _mqttServer_ApplicationMessageNotConsumedAsync; // 消息接收事件
+
+            MqttService._mqttServer.ClientSubscribedTopicAsync += _mqttServer_ClientSubscribedTopicAsync; // 客户端订阅主题事件
+            MqttService._mqttServer.ClientUnsubscribedTopicAsync += _mqttServer_ClientUnsubscribedTopicAsync; // 客户端取消订阅事件
+            MqttService._mqttServer.StartedAsync += _mqttServer_StartedAsync; // 启动后事件
+            MqttService._mqttServer.StoppedAsync += _mqttServer_StoppedAsync; // 关闭后事件
+            MqttService._mqttServer.InterceptingPublishAsync += _mqttServer_InterceptingPublishAsync; // 消息接收事件
+            MqttService._mqttServer.ValidatingConnectionAsync += _mqttServer_ValidatingConnectionAsync; // 用户名和密码验证有关
+
+            MqttService._mqttServer.StartAsync();
+            return Task.CompletedTask;
+        }
+
+        /// &lt;summary&gt;
+        /// 客户端订阅主题事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Task _mqttServer_ClientSubscribedTopicAsync(ClientSubscribedTopicEventArgs arg)
+        {
+            Console.WriteLine($"ClientSubscribedTopicAsync：客户端ID=【{arg.ClientId}】订阅的主题=【{arg.TopicFilter}】 ");
+            return Task.CompletedTask;
+        }
+
+        /// &lt;summary&gt;
+        /// 关闭后事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Task _mqttServer_StoppedAsync(EventArgs arg)
+        {
+            Console.WriteLine($"StoppedAsync：MQTT服务已关闭……");
+            return Task.CompletedTask;
+        }
+
+        /// &lt;summary&gt;
+        /// 用户名和密码验证有关
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Task _mqttServer_ValidatingConnectionAsync(ValidatingConnectionEventArgs arg)
+        {
+            arg.ReasonCode = MqttConnectReasonCode.Success;
+            if ((arg.Username ?? string.Empty) != "admin" || (arg.Password ?? String.Empty) != "123456")
+            {
+                arg.ReasonCode = MqttConnectReasonCode.Banned;
+                Console.WriteLine($"ValidatingConnectionAsync：客户端ID=【{arg.ClientId}】用户名或密码验证错误 ");
+
+            }
+            return Task.CompletedTask;
+        }
+
+        /// &lt;summary&gt;
+        /// 消息接收事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Task _mqttServer_InterceptingPublishAsync(InterceptingPublishEventArgs arg)
+        {
+            if (string.Equals(arg.ClientId, ServerClientId))
+            {
+                return Task.CompletedTask;
+            }
+
+            Console.WriteLine($"InterceptingPublishAsync：客户端ID=【{arg.ClientId}】 Topic主题=【{arg.ApplicationMessage.Topic}】 消息=【{Encoding.UTF8.GetString(arg.ApplicationMessage.Payload)}】 qos等级=【{arg.ApplicationMessage.QualityOfServiceLevel}】");
+            return Task.CompletedTask;
+
+        }
+
+        /// &lt;summary&gt;
+        /// 启动后事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Task _mqttServer_StartedAsync(EventArgs arg)
+        {
+            Console.WriteLine($"StartedAsync：MQTT服务已启动……");
+            return Task.CompletedTask;
+        }
+
+        /// &lt;summary&gt;
+        /// 客户端取消订阅事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Task _mqttServer_ClientUnsubscribedTopicAsync(ClientUnsubscribedTopicEventArgs arg)
+        {
+            Console.WriteLine($"ClientUnsubscribedTopicAsync：客户端ID=【{arg.ClientId}】已取消订阅的主题=【{arg.TopicFilter}】  ");
+            return Task.CompletedTask;
+        }
+
+        private Task _mqttServer_ApplicationMessageNotConsumedAsync(ApplicationMessageNotConsumedEventArgs arg)
+        {
+            Console.WriteLine($"ApplicationMessageNotConsumedAsync：发送端ID=【{arg.SenderId}】 Topic主题=【{arg.ApplicationMessage.Topic}】 消息=【{Encoding.UTF8.GetString(arg.ApplicationMessage.Payload)}】 qos等级=【{arg.ApplicationMessage.QualityOfServiceLevel}】");
+            return Task.CompletedTask;
+
+        }
+
+        /// &lt;summary&gt;
+        /// 客户端断开时候触发
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        /// &lt;exception cref="NotImplementedException"&gt;&lt;/exception&gt;
+        private Task _mqttServer_ClientDisconnectedAsync(ClientDisconnectedEventArgs arg)
+        {
+            Console.WriteLine($"ClientDisconnectedAsync：客户端ID=【{arg.ClientId}】已断开, 地址=【{arg.Endpoint}】  ");
+            return Task.CompletedTask;
+
+        }
+
+        /// &lt;summary&gt;
+        /// 客户端连接时候触发
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Task _mqttServer_ClientConnectedAsync(ClientConnectedEventArgs arg)
+        {
+            Console.WriteLine($"ClientConnectedAsync：客户端ID=【{arg.ClientId}】已连接, 用户名=【{arg.UserName}】地址=【{arg.Endpoint}】  ");
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+}
+</code></pre>
+<p>5.在Startup注入代码</p>
+<p><img alt="" height="488" src="image\32c99f689ba54728add2fb1148e4bb9f.png" width="1200"/></p>
+<pre><code class="language-cs"> services.AddHostedService&lt;MqttHostService&gt;();</code></pre>
+<p>6.增加一个服务器发送消息的方法</p>
+<p><img alt="" height="498" src="image\63fc0de4ec4f4e628298d061aa551daf.png" width="1200"/></p>
+<pre><code class="language-cs">  public IActionResult Test(string data)
+        {
+            MqttService.PublishData(data);
+            return Ok();
+        }</code></pre>
+<p> 二、B客户端</p>
+<p>1.建立一个.net5  web api项目</p>
+<p>2.nuget引用mqttnet</p>
+<p><img alt="" height="309" src="image\e9b69b4e814742598589d02ba5f0121d.png" width="1200"/></p>
+<p> 3.MqttClientService代码</p>
+<pre><code class="language-cs">using MQTTnet;
+using MQTTnet.Client;
+using MQTTnet.Protocol;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace mqttClient
+{
+    public class MqttClientService
+    {
+        public static IMqttClient _mqttClient;
+        public void MqttClientStart()
+        {
+            var optionsBuilder = new MqttClientOptionsBuilder()
+                .WithTcpServer("127.0.0.1", 10086) // 要访问的mqtt服务端的 ip 和 端口号
+                .WithCredentials("admin", "123456") // 要访问的mqtt服务端的用户名和密码
+                .WithClientId("testclient02") // 设置客户端id
+                .WithCleanSession()
+                .WithTls(new MqttClientOptionsBuilderTlsParameters
+                {
+                    UseTls = false  // 是否使用 tls加密
+                });
+
+            var clientOptions = optionsBuilder.Build();
+            _mqttClient = new MqttFactory().CreateMqttClient();
+
+            _mqttClient.ConnectedAsync += _mqttClient_ConnectedAsync; // 客户端连接成功事件
+            _mqttClient.DisconnectedAsync += _mqttClient_DisconnectedAsync; // 客户端连接关闭事件
+            _mqttClient.ApplicationMessageReceivedAsync += _mqttClient_ApplicationMessageReceivedAsync; // 收到消息事件
+
+            _mqttClient.ConnectAsync(clientOptions);
+
+
+        }
+
+        /// &lt;summary&gt;
+        /// 客户端连接关闭事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Task _mqttClient_DisconnectedAsync(MqttClientDisconnectedEventArgs arg)
+        {
+            Console.WriteLine($"客户端已断开与服务端的连接……");
+            return Task.CompletedTask;
+        }
+
+        /// &lt;summary&gt;
+        /// 客户端连接成功事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Task _mqttClient_ConnectedAsync(MqttClientConnectedEventArgs arg)
+        {
+            Console.WriteLine($"客户端已连接服务端……");
+
+            // 订阅消息主题
+            // MqttQualityOfServiceLevel: （QoS）:  0 最多一次，接收者不确认收到消息，并且消息不被发送者存储和重新发送提供与底层 TCP 协议相同的保证。
+            // 1: 保证一条消息至少有一次会传递给接收方。发送方存储消息，直到它从接收方收到确认收到消息的数据包。一条消息可以多次发送或传递。
+            // 2: 保证每条消息仅由预期的收件人接收一次。级别2是最安全和最慢的服务质量级别，保证由发送方和接收方之间的至少两个请求/响应（四次握手）。
+            _mqttClient.SubscribeAsync("topic1", MqttQualityOfServiceLevel.AtLeastOnce); //topic_02
+
+            return Task.CompletedTask;
+        }
+
+        /// &lt;summary&gt;
+        /// 收到消息事件
+        /// &lt;/summary&gt;
+        /// &lt;param name="arg"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Task _mqttClient_ApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs arg)
+        {
+            Console.WriteLine($"ApplicationMessageReceivedAsync：客户端ID=【{arg.ClientId}】接收到消息。 Topic主题=【{arg.ApplicationMessage.Topic}】 消息=【{Encoding.UTF8.GetString(arg.ApplicationMessage.Payload)}】 qos等级=【{arg.ApplicationMessage.QualityOfServiceLevel}】");
+            return Task.CompletedTask;
+        }
+
+        public void Publish(string data)
+        {
+            var message = new MqttApplicationMessage
+            {
+                Topic = "topic2",
+                Payload = Encoding.Default.GetBytes(data),
+                QualityOfServiceLevel = MqttQualityOfServiceLevel.AtLeastOnce,
+                Retain = true  // 服务端是否保留消息。true为保留，如果有新的订阅者连接，就会立马收到该消息。
+            };
+            _mqttClient.PublishAsync(message);
+        }
+    }
+}
+</code></pre>
+<p>4.启动的时候，实例化调用，并且发送消息456</p>
+<p><img alt="" height="418" src="image\68d411dc402542d7b73fe6e70bf4dffc.png" width="1200"/>  三、效果</p>
+<p>1.同时启动2个项目</p>
+<p><img alt="" height="868" src="image\28f51ec05d5444a391d8fcc2bd34f348.png" width="1200"/></p>
+<p> 2.在服务端的api中输入发送的消息。</p>
+<p><img alt="" height="722" src="image\91616e4f7f034c81ab645f578aaad8eb.png" width="1200"/></p>
+<p>3.可以看到B客户端收到了消息</p>
+<p><img alt="" height="519" src="image\be69b7fc6f2842d38cd0cb157fb4fc42.png" width="993"/></p>
+<p>4.我在B客户端中点击回车，就把刚才说的456发送给了A服务端。</p>
+<p><img alt="" height="519" src="image\078f9e861ebc4e55869a7a8ced76b2b5.png" width="993"/></p>
+<p><span style="color:#fe2c24;"> 注意：一个发布，一个订阅，发布的Topic和订阅的Topic一定要是同一个，就如同打电话一样，双方要在同一条线上。</span></p>
+<p><span style="color:#fe2c24;">如果运行不了，就换一台电脑，可能是系统组件的问题，我就遇到了这个问题。</span></p>
+<p>拓展</p>
+<p>实际上，服务器的代码可以不用写，我们只用写客户端的代码就行了。客户端控制发布和订阅的Topic即可，服务器只是一个转换的作用。</p>
+<p>一、服务器安装</p>
+<p>1.目前MQTT代理的主流平台有下面几个</p>
+<ul><li>Mosquitto：<a href="https://link.zhihu.com/?target=https%3A//mosquitto.org/" title="https://mosquitto.org/">https://mosquitto.org/</a></li><li>VerneMQ：<a href="https://link.zhihu.com/?target=https%3A//vernemq.com/" title="https://vernemq.com/">https://vernemq.com/</a></li><li>EMQTT：<a href="https://link.zhihu.com/?target=http%3A//emqtt.io/" title="http://emqtt.io/">http://emqtt.io/</a></li></ul>
+<p> 2.我们选择第一个进行下载，直接安装</p>
+<p><img alt="" height="623" src="image\98024d90c8ee42a0ade5a480ea966392.png" width="1200"/></p>
+<p>3.安装完成后，进入文件夹，按住<code>Shift</code>，右键鼠标点击空白处，然后打开<code>Powershell</code>，正常打开一个终端软件即可</p>
+<p><img alt="" height="410" src="image\dd38a1c863354dfe8b2e349c4d1bf785.png" width="710"/></p>
+<ul><li>输入<code>./mosquitto.exe -h</code> 可以查看相应的帮助；</li><li>输入<code>./mosquitto.exe -p 10086</code>，就开启了MQTT服务，监听的地址是<code>127.0.0.1</code>，端口是<code>10086</code>；</li></ul>
+<p> <img alt="" height="445" src="image\dc35cdb481924b1f8ece27701fdde319.png" width="549"/></p>
+<p>二、客户端依然使用上面的代码</p>
+<p>1.因为我们要进行2个客户端直接通信，那么就要修改对应发布和订阅的Topic </p>
+<p>客户端1</p>
+<p><img alt="" height="48" src="image\72edd14d147e49f8a6515ac9b6c0037a.png" width="594"/></p>
+<p><img alt="" height="60" src="image\1fe80a38b15c4662aab625901db2047b.png" width="714"/></p>
+<p><img alt="" height="50" src="image\5c27dfc700f64006875668567bb28e32.png" width="691"/></p>
+<p>修改3个地方，生产一个EXE </p>
+<p>客户端2 </p>
+<p><img alt="" height="58" src="image\8db681de70314c0fab8b1187527eb235.png" width="692"/></p>
+<p><img alt="" height="45" src="image\34c6428faebd4704aaf10b46dcc781f5.png" width="633"/></p>
+<p><img alt="" height="39" src="image\0318da0391324306bf70be444db0d981.png" width="603"/></p>
+<p> 修改3个地方，生产一个EXE 。</p>
+<p>2.分别生产了2个文件夹的EXE</p>
+<p><img alt="" height="76" src="image\8b7a014e72ff47199f6873a7be61d16a.png" width="222"/></p>
+<p>3.分别运行，效果，可以看到2个客户端互相给对方发送了456的消息。</p>
+<p><img alt="" height="359" src="image\c56c4a5935344ef9b3f5463ff84a8e3f.png" width="986"/></p>
+<p>三、代码链接</p>
+<p><a href="https://download.csdn.net/download/u012563853/85936777" title="mqtt，mqtt，mqtt，mqtt-C#文档类资源-CSDN下载">mqtt，mqtt，mqtt，mqtt-C#文档类资源-CSDN下载</a></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

@@ -1,0 +1,84 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>在Redis中提供了三种实现消息队列的方式：</p>
+<ol><li>List结构：基于List结构来模拟消息队列</li><li>PubSub：基本的点对点消息模型</li><li>Stream：较完善的消息队列模型</li></ol>
+<h1><a id="1_List_6"></a>1. List实现消息队列</h1>
+<p>Redis的List数据结构类型是一个双向链表，而队列要求进，出口不能在同一个位置，所以可以利用List的添加取出命令来实现模拟消息队列。</p>
+<ol><li>LPUSH，RPOP</li><li>RPUSH，LPOP</li></ol>
+<p>但是java在消费消息的时候，如果没有消息了，消费者应该是阻塞等待，等到有消息投递了，再继续消费信息，而上述命令不是阻塞式的，如果没有消息了还在获取的话会获取到Null。所以应该实现阻塞的效果用下列命令</p>
+<ol><li>BRPOP</li><li>BLPOP</li></ol>
+<p>上述两个命令的取出效果是阻塞式的。</p>
+<p>List实现消息队列的缺点：</p>
+<ol><li>无法避免消息丢失：例如消费者拿到消息还没有消费就宕机了</li><li>只能支持单个消费</li></ol>
+<h1><a id="2_PubSub_24"></a>2. 基于PubSub的消息队列</h1>
+<p>PubSub（发布订阅）是Redis2.0版本引入的消息传递模型。顾名思义，消费者可以订阅一个或多个channel，生产者向对应channel发送消息后，所有订阅者都能收到相关消息。</p>
+<ol><li>SUBSCRIBE channel [channel] ：订阅一个或多个频道</li><li>PUBLISH channel msg ：向一个频道发送消息</li><li>PSUBSCRIBE pattern[pattern] ：订阅与pattern格式匹配的所有频道</li></ol>
+<p>这里的PSUBSCRIBE与RabbitMQ的匹配相似。</p>
+<p>基于PubSub的消息队列的缺点：</p>
+<ol><li>List支持数据持久化，但是PubSub不支持数据持久化</li></ol>
+<h1><a id="3_Stream_38"></a>3. 基于Stream的消息队列</h1>
+<p>Stream是Redis5.0引入的新的数据类型，可以实现一个功能较为完善的消息队列</p>
+<p><strong>添加命令</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f2b47843d0f24b83aa709eb3775c35a9.png"/></p>
+<p>例如</p>
+<pre><code class="prism language-java">XADD users <span class="token operator">*</span> name jack age <span class="token number">21</span>
+</code></pre>
+<p>users是队列，*表示消息id ，后面的部分表示消息体</p>
+<p><strong>消费命令</strong></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/54436f31431d4bcc8cab48d5db2a2bc5.png"/><br/> 当ID为$时代表读取最新的消息。</p>
+<p>例如</p>
+<pre><code class="prism language-java">XREAD COUNT <span class="token number">1</span> STREAMS users <span class="token number">0</span>
+</code></pre>
+<p>COUNT 1 代表每次只读取一条，STREAMS users 表示从users这个队列里读取</p>
+<p><strong>注意：Stream的消息队列消费消息后是不会剔除该消息的</strong></p>
+<p><strong>缺点：当指定ID为$，代表读取最新的消息，如果在处理一条新消息的时候，突然来了5条消息，当再次读取最新消息时，只能读取到5条消息的最后一条，造成消息漏读的现象</strong></p>
+<p><strong>Stream消息队列的优点：</strong></p>
+<ol><li>消息可回溯（消费后不会被剔除）</li><li>消息可以被多个消费者读取</li><li>可以阻塞读取</li></ol>
+<h2><a id="31__77"></a>3.1 消费者组</h2>
+<p>消费者组（Consumer Group）：将多个消费者划分到一个组中，监听同一个队列。具备下列特点：</p>
+<ol><li>消息分流：队列中的消息会分流给组内的不同消费者，而不是重复消费，从而加快消息处理的速度，同一个消费者组里的消费者之间处于一种竞争的关系，消息是不会出现消费重复的，同时一定程度上也可以避免消息漏读的现象</li><li>消息标识：消费者组会维护一个标示，记录最后一个被处理的消息，哪怕消费者宕机重启，还会从标示之后读取消息。确保每一个消息都会被消费</li><li>消息确认：消费者获取消息后，消息处于pending状态，并存入一个pending-list。当处理完成后需要通过XACK来确认消息，标记消息为已处理，才会从pending-list移</li></ol>
+<p><strong>如何创建消费者组？</strong></p>
+<pre><code class="prism language-java">XGROUP CREATE key groupName ID <span class="token punctuation">[</span>MKSTREAM<span class="token punctuation">]</span>
+</code></pre>
+<ol><li>key：队列名称</li><li>groupName：消费者组名称</li><li>ID：起始ID标识，$代表队列中最后一个消息，0代表队列中第一个消息</li><li>MKSTREAM：队列不存在时自动创建</li></ol>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9233fd7eb27b44e4b6861d2671e0fa15.png"/></p>
+<p><strong>如何从消费者组读取消息？</strong></p>
+<pre><code class="prism language-java">XREADGROUP GROUP group consumer <span class="token punctuation">[</span>COUNT count<span class="token punctuation">]</span> <span class="token punctuation">[</span>BLOCK milliseconds<span class="token punctuation">]</span> <span class="token punctuation">[</span>NOACK<span class="token punctuation">]</span> STREAMS key <span class="token punctuation">[</span>key<span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">]</span> ID <span class="token punctuation">[</span>ID<span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">]</span>
+</code></pre>
+<ol><li>group：消费者组名称</li><li>consumer：消费者名称，如果消费者不存在，会自动创建一个消费者</li><li>count：本次查询最大数量</li><li>BLOCK milliseconds：是否阻塞？阻塞的时间</li><li>NOACK：消费消息后不响应</li><li>STREAMS key：指定队列名称</li><li>ID：获取消息的起始ID &gt;表示从下一个未消费的消息开始 。其它：根据指定id从pending-list中获取已消费但未确认的消息，例如0，是从pending-list中的第一个消息开始</li></ol>
+<p><strong>那么消费者消费完消息后如何确认消息呢？</strong></p>
+<pre><code class="prism language-java">XACK key group ID <span class="token punctuation">[</span>ID<span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">]</span>
+</code></pre>
+<ol><li>key：队列名称</li><li>group：消费者组名称</li><li>ID：消息的ID</li></ol>
+<p>java手动模拟消费者监听消息的代码</p>
+<pre><code class="prism language-java"><span class="token keyword">while</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">Object</span> message <span class="token operator">=</span> redis<span class="token punctuation">.</span><span class="token function">call</span><span class="token punctuation">(</span><span class="token string">"XREADGROUP GROUP 你的消费组名称 消费者名称 COUNT 每次读取消息的数量 BLOCK 阻塞时间毫秒 STREAMS 队列名称 &gt;"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>message <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">continue</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">try</span><span class="token punctuation">{<!-- --></span>
+                <span class="token comment">// 处理消息的逻辑 处理完毕后要ACK</span>
+                <span class="token function">handleMessage</span><span class="token punctuation">(</span>message<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span><span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> e<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                    <span class="token comment">// 从等待响应的队列里拿消息</span>
+                    <span class="token class-name">Object</span> unAckMessage <span class="token operator">=</span> redis<span class="token punctuation">.</span><span class="token function">call</span><span class="token punctuation">(</span><span class="token string">"XREADGROUP GROUP 你的消费组名称 消费者名称 COUNT 每次读取消息的数量 BLOCK 阻塞时间毫秒 STREAMS 队列名称 &gt;"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">if</span> <span class="token punctuation">(</span>unAckMessage <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                        <span class="token keyword">continue</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                    <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+                        <span class="token function">handleMessage</span><span class="token punctuation">(</span>unAckMessage<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span><span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> e1<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                        <span class="token keyword">continue</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

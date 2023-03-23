@@ -1,0 +1,183 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2>效果图：</h2>
+<p><img alt="" height="663" src="image\3a9f2b4617d34fe7ab683aa833f5ae5a.png" width="378"/></p>
+<p> </p>
+<h2>场景：</h2>
+<blockquote>
+<p>当你对接websocket时，或者轮询也好，你需要获取到最新的信息，并且在任何页面弹出一个组件进行后续操作</p>
+</blockquote>
+<h2>思路：</h2>
+<blockquote>
+<p>1、先封装好要弹出的公共组件</p>
+<p>2、向vue原型上挂载全局方法，拿到组件真实dom，从而对组件进行显隐操作</p>
+</blockquote>
+<h2>第一步：</h2>
+<blockquote>
+<p>创建一个公共组件，以下是组件全部的结构及样式，你需要把html中的两个image标签的路径换掉或者直接注释掉也行，html 和 css就不做解释了</p>
+</blockquote>
+<p>invite.vue </p>
+<pre><code class="language-html">&lt;template&gt;
+  &lt;div class="invite-box"&gt;
+    &lt;view class="center-box"&gt;
+      &lt;image class="logo" src="/static/invite-logo.png"&gt;&lt;/image&gt;
+      &lt;image class="close" src="/static/close.png" v-on:click="$closeInvite"&gt;&lt;/image&gt;
+      &lt;view class="title"&gt;邀请函&lt;/view&gt;
+      &lt;view class="content"&gt;您好！您的朋友xxx邀请您对&lt;text&gt;“为什么小朋友到了一定年龄需要打疫苗？”&lt;/text&gt;进行专家答疑，您是否接受？&lt;/view&gt;
+      &lt;view class="btn-group"&gt;
+        &lt;view class="invite-specia"&gt;邀请专家&lt;/view&gt;
+      &lt;/view&gt;
+    &lt;/view&gt;     
+  &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;script&gt;
+
+export default {
+  name: 'invite',
+
+  props: {
+    _specia: String
+  },
+
+  data() {
+    return {}
+  },
+
+  mounted() {
+    console.log('this.specia', this._specia);
+  }
+}
+&lt;/script&gt;
+
+&lt;style scoped lang='scss'&gt;
+.invite-box {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.5);
+  z-index: 9999;
+
+  .center-box {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 622rpx;
+    padding: 32rpx;
+    border-radius: 16rpx;
+    opacity: 1;
+    background: rgba(255,255,255,1);
+
+    .logo {
+      position: absolute;
+      top: -48rpx;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 136rpx;
+      height: 144rpx;
+    }
+    .close {
+      position: absolute;
+      top: 24rpx;
+      right: 24rpx;
+      width: 48rpx;
+      height: 48rpx;
+    }
+    
+    .title {
+      margin-top: 66rpx;
+      text-align: center;
+      color: rgba(0,0,0,1);
+      font-size: 36rpx;
+      font-weight: 500;
+      font-family: "PingFang SC";
+      letter-spacing: 0.6rpx;
+    }
+
+    .content {
+      margin: 40rpx 0;
+      font-size: 26rpx;
+      font-family: "PingFang SC";
+      letter-spacing: 0.6rpx;
+      color: #343434;
+      text {
+        font-size: 32rpx;
+        letter-spacing: 0.6rpx;
+        color: rgba(69,108,255,1);
+      }
+    }
+
+    .btn-group {
+      display: flex;
+      justify-content: center;
+      padding: 0 16rpx;
+      .invite-specia {
+        width: 526rpx;
+        height: 88rpx;
+        line-height: 88rpx;
+        border-radius: 16rpx;
+        text-align: center;
+        background: linear-gradient(-46.8deg, rgba(63,101,255,1) 0%, rgba(97,141,255,1) 100%);
+        color: #fff;
+      }
+    }
+  }
+}
+&lt;/style&gt;</code></pre>
+<h2>第二步：</h2>
+<blockquote>
+<p> 注册一个全局函数，使用 Vue.prototype，首先创建一个js文件来存放你的全局方法，之后在main.js中引入挂载</p>
+<p></p>
+<p>以下代码中几个关键点：</p>
+<p>1、install，参数可以拿到Vue函数，等价于 main.js 中 import 进来的 Vue</p>
+<p>2、Vue.extend(Invite)，这里可以看到 Invite 是我导入的组件实例对象，该方法传入组件实例对象可以返回给你该组件的实例构造器，方便我们后续多次构建并操作该组件</p>
+<p>3、instance._props._specia = params，这里只是向新构建的组件内传递一个props参数</p>
+<p>4、instance.vm = instance.$mount()，挂载模板，生成真实dom，作用和$el一致</p>
+<p>5、invite-box是组件最外层盒子的类名</p>
+<p>6、setTimeout，因为要添加到最后，需要异步添加</p>
+</blockquote>
+<p> invite.js</p>
+<pre><code class="language-javascript">import Invite from '../components/invite.vue'
+
+export default {
+  install(Vue) {
+    const Profile = Vue.extend(Invite)
+    
+    // 弹出邀请
+    Vue.prototype.$openInvite = function(params) {
+      const instance = new Profile()
+      instance._props._specia = params
+      instance.vm = instance.$mount()
+      const InviteEle = document.body.lastElementChild
+      if(InviteEle.className === 'invite-box') return
+      setTimeout(() =&gt; document.body.appendChild(instance.vm.$el))
+      return instance
+    }
+
+    // 关闭邀请
+    Vue.prototype.$closeInvite = function() {
+      const instance = new Profile()
+      instance.vm = instance.$mount()
+      const InviteEle = document.body.lastElementChild
+      if(InviteEle.className !== 'invite-box') return
+      document.body.removeChild(InviteEle)
+      return instance
+    }
+  }
+}</code></pre>
+<p>main.js</p>
+<pre><code class="language-javascript">// 导入invite.js
+import invite from './utils/invite'
+// 安装插件
+Vue.use(invite)</code></pre>
+<h2> 第三部：使用</h2>
+<blockquote>
+<h3>在你任何组件内调用 this.$openInvite() 即可弹出组件，调用 this.$closeInvite()即可关闭组件</h3>
+</blockquote>
+<p>以上就是整个过程，是不是很好用呢</p>
+</div>
+</div>

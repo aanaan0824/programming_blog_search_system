@@ -1,0 +1,215 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="unity__Modbus_TcpIP__0"></a>unity Modbus Tcp/IP 通讯协议</h1>
+<p>提示：unity通过Modbus Tcp协议进行工控软件的交互<br/> 前段时间自己有个需求需要unity通过Modbus协议去读取数据，然后在网上找了很多博客实现方法很多，但是Modbus依赖的DLL文件再CSDN很多前辈都在收费搞得很是头大，进过几番周折才搞到Nmodbus4.dll这个程序集，为乐方便后来者直接给你们免费挂上，坚决杜绝那种有点东西就乱收费的现象。</p>
+<hr/>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#unity__Modbus_TcpIP__0">unity Modbus Tcp/IP 通讯协议</a></li><li><a href="#NModbus4DLL_18">一、NModbus4.DLL下载链接</a></li><li><a href="#dllUnity_23">二、讲dll导入Unity中</a></li><li><ul><li><a href="#1_AssetsPlugins_24">1.引入库 放置Assets下创建Plugins文件夹下</a></li><li><a href="#2__ModbusDevice_28">2.脚本中引用 Modbus.Device;</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<hr/>
+<hr/>
+<p>废话不多说，直接上连接</p>
+<h1><a id="NModbus4DLL_18"></a>一、NModbus4.DLL下载链接</h1>
+<p>链接：https://pan.baidu.com/s/1sRUmpzfzYlbHERdE8VW-Lg?pwd=zll8<br/> 提取码：zll8</p>
+<h1><a id="dllUnity_23"></a>二、讲dll导入Unity中</h1>
+<h2><a id="1_AssetsPlugins_24"></a>1.引入库 放置Assets下创建Plugins文件夹下</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2d04b1b72f19498f8d4475684223dda0.png"/></p>
+<h2><a id="2__ModbusDevice_28"></a>2.脚本中引用 Modbus.Device;</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d58f4090b8eb4b9ea9eaa17627964db1.png"/></p>
+<pre><code>
+实现代码如下：
+
+代码如下（示例）：
+
+using Modbus.Device;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+using UnityEngine;
+using UnityEngine.UI;
+/// &lt;summary&gt;
+/// Modbus Tcp/IP
+/// &lt;/summary&gt;
+public class Concent_ : MonoBehaviour
+{
+    public ModbusMaster modbusIpMaster;
+    public TcpClient tcpClient;
+    IPAddress Address = new IPAddress(new byte[] { 127, 0, 0, 1 }); 
+    public int Port = 502;
+    public bool Conen = false;
+    public bool Reda_White;
+    private ushort[] Udata = new ushort[] {0x03};
+    private ushort star = 1;
+    Thread mythread;
+    public bool isconect = false;
+
+
+    public Button Connect_Bt;
+    public Button Read_Bt;
+    public InputField Ip_;
+    public InputField Port_;
+    public Text Sta_;
+    public Text Data_;
+    // Start is called before the first frame update
+    void Start()
+    {
+        Connect_Bt.onClick.AddListener(() =&gt;
+        {
+            if (Ip_.textComponent.text=="")
+            {
+                Debug.Log(Ip_.textComponent.text + "     " + Port_.textComponent.text);
+            }
+            OpenConnect_(Ip_.textComponent.text, int.Parse(Port_.textComponent.text));
+        });
+        Read_Bt.onClick.AddListener(()=&gt; {
+            Data_.text = null;
+            ushort[] AoData = modbusIpMaster.ReadHoldingRegisters(0x00, 0, 0x14);
+            //string str = AoData.ToString();
+            //Debug.Log(AoData.Length);
+            foreach (var item in AoData)
+            {
+                //Debug.Log();
+                Data_.text += "数据:" + item;
+            }
+        });
+    }
+
+
+    public void OpenConnect_(string ip,int port)
+    {
+        
+        if (Connect(ip, port))
+        {
+            Debug.Log("连接成功");
+            Sta_.text = "连接成功";
+            Sta_.color = Color.green;
+            Read_Bt.interactable = true;
+        }
+        else
+        {
+            Debug.Log("连接失败");
+            Sta_.text = "连接失败";
+            Sta_.color = Color.red;
+        }
+    }
+    public bool Connect(string ip,int port)
+    {
+        try
+        {
+            tcpClient = new TcpClient(ip, port);
+
+            tcpClient.SendTimeout = 1;
+            modbusIpMaster = ModbusIpMaster.CreateIp(tcpClient);
+
+            mythread = new Thread(WriteMessageFromClient);
+
+            mythread.Start();
+            Conen = true;
+            return true;
+        }
+        catch(Exception ex)
+        {
+            tcpClient.Close();
+            Debug.LogError(ex.Message);
+            return false;
+        }
+    }
+    public void WriteMessageFromClient()
+    {
+        while (Conen)
+        {
+            try
+            {
+                if (Reda_White)
+                {
+                    Write_jiChunQi(star,Udata);
+                    Debug.Log("发送成功");
+                }
+                if (kuse)
+                {
+                    //READ HOLDING REGISTER
+                    ushort[] msg = modbusIpMaster.ReadHoldingRegisters(0x01, 1, 0x01);
+                }
+            }
+            catch
+            {
+                break;
+            }
+        }
+        tcpClient.Close();
+    }
+    public void Write_jiChunQi(ushort star, ushort[] data)
+    {
+        modbusIpMaster.WriteMultipleRegisters(1, star, data);
+    }
+    private byte GetHex(string msg)
+    {
+        byte hex = Convert.ToByte(msg);
+        return hex;
+    }
+    public int GetDexx(string msg)
+    {
+        int res = Convert.ToInt32(msg, 16);
+        return res;
+    }
+    private void OnApplicationQuit()
+    {
+        tcpClient.Close();
+    }
+    public bool kuse = false;
+    // Update is called once per frame
+    void Update()
+    {
+        //if (Input.GetMouseButtonDown(0))
+        //{
+        //    modbusIpMaster.WriteMultipleRegisters(0x01, star, Udata);
+        //    Debug.Log("发送成功");
+        //}
+        //if (Input.GetKeyDown(KeyCode.Space))
+        //{
+        //    ushort[] msg = modbusIpMaster.ReadInputRegisters(0x01, 1, 0x06);
+        //    foreach (var item in msg)
+        //    {
+        //        Debug.Log(item);
+        //    }
+        //}
+        //if (Input.GetKeyDown(KeyCode.W))
+        //{
+        //    ushort[] AoData = modbusIpMaster.ReadHoldingRegisters(0x00, 0, 0x14);
+        //    //string str = AoData.ToString();
+        //    //Debug.Log(AoData.Length);
+        //    foreach (var item in AoData)
+        //    {
+        //        Debug.Log("读取到的数据:"+item);
+        //    }
+        //}
+    }
+}
+
+
+后期调试工具Modbus Slave 以及Modbus Poll下载链接：
+
+链接：https://pan.baidu.com/s/1RwLHzXKKxpgPAHm5O0So6Q?pwd=16t1 
+提取码：16t1
+
+   
+
+以上就是今天要讲的内容，希望能帮到大家，同时呢也不要吝啬手中的赞哦！
+
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

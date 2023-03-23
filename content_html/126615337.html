@@ -1,0 +1,610 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="51__0"></a>基于51单片交通灯控制器_紧急+行人+总开关</h1>
+<p></p>
+<div class="toc">
+<h3>目录标题</h3>
+<ul><li><a href="#51__0">基于51单片交通灯控制器_紧急+行人+总开关</a></li><li><ul><li><a href="#_15">基本功能</a></li><li><a href="#_31">仿真图</a></li><li><ul><li><a href="#_33">正常显示</a></li><li><a href="#_39">强制南北方向通行</a></li><li><a href="#_45">强制东西方向通行</a></li><li><a href="#_51">总开关</a></li></ul>
+</li><li><a href="#_59">程序</a></li><li><ul><li><a href="#_65">关键程序代码</a></li><li><a href="#_317">程序讲解</a></li><li><ul><li><a href="#_323">倒计时的产生</a></li><li><a href="#_400">红黄绿灯状态处理</a></li><li><ul><li><a href="#_404">正常运行状态</a></li><li><a href="#_499">强制南北绿灯通行</a></li><li><a href="#_541">总开关关断</a></li></ul>
+</li></ul>
+</li><li><a href="#_559">数码管倒计时处理</a></li><li><a href="#_597">按键驱动</a></li></ul>
+</li><li><a href="#_704">资料清单</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<p>（程序+仿真+仿真视频）</p>
+<p>仿真：proteus 7.8</p>
+<p>程序编译器：keil 4/keil 5</p>
+<p>编程语言：C语言</p>
+<p>设计编号：J004</p>
+<h2><a id="_15"></a>基本功能</h2>
+<p>\1. 设计一个十字路口交通灯控制器；</p>
+<p>\2. 用单片机控制LED灯模拟指示，设置人行道；</p>
+<p>\3. 东西通行时间为8s，南北通行时间为6s，缓冲时间为3s黄灯闪烁；</p>
+<p>\4. 设置紧急按键，可强制使东西通行，或南北通行；</p>
+<p>\5. 设置清除按键，如遇特殊清除，按下按键，所有灯灭；</p>
+<p>\6. 具体秒数可在程序改数字实现。</p>
+<h2><a id="_31"></a>仿真图</h2>
+<h3><a id="_33"></a>正常显示</h3>
+<p>1.正常倒计时和红黄绿灯显示</p>
+<p><img alt="image-20220830234343295" src="image\6456dd4b41456a704988334b7a10e181.png"/></p>
+<h3><a id="_39"></a>强制南北方向通行</h3>
+<p>设置紧急按键，强制南北方向绿灯通行</p>
+<p><img alt="image-20220830234416267" src="image\4df9a694b9f43b55b244fc24fedea575.png"/></p>
+<h3><a id="_45"></a>强制东西方向通行</h3>
+<p>设置紧急按键，强制东西方向绿灯通行</p>
+<p><img alt="image-20220830234427533" src="image\3c796c128e9f31a739dfb7667748cf61.png"/></p>
+<h3><a id="_51"></a>总开关</h3>
+<p>设置清除按键，如遇特殊清除，按下按键，所有灯灭；</p>
+<p><img alt="image-20220830234435579" src="image\98363d7ce9d5b4370bab2e71972a3a15.png"/></p>
+<h2><a id="_59"></a>程序</h2>
+<p><img alt="image-20220830234505780" src="image\c5d3e63b0af891fb3a7f3e94c92e5801.png"/></p>
+<h3><a id="_65"></a>关键程序代码</h3>
+<pre><code class="prism language-C">#include&lt;reg51.h&gt;
+#include&lt;intrins.h&gt;
+
+//数据类型定义
+typedef unsigned char uchar;
+typedef unsigned int  uint;
+#define ON  1//给led灯引脚高电平，亮灯
+#define OFF 0//给led灯引脚低电平，灭灯
+void led_sacn();
+void delay_ms(ms);
+void seg_disp(uchar number,uchar wei);
+void KeyAction(uchar key);		
+void KeyScan();
+void KeyDriver();		
+
+//通用IO引脚分配  位选引脚P00-p07
+sbit W0=P3^4; //段选引脚0
+sbit W1=P3^5; //段选引脚1
+sbit W2=P3^6; //段选引脚2
+sbit W3=P3^7; //段选引脚3
+//按键选择
+sbit KEY1=P1^0; //按键1
+sbit KEY2=P1^1;	//按键2
+sbit KEY3=P1^2; //按键3
+sbit KEY4=P1^3;	//按键4
+//红绿灯选择
+sbit ns_green  = P2^0;//南北方向绿灯
+sbit ns_yellow = P2^1;//南北方向黄灯
+sbit ns_red    = P2^2;//南北方向红灯
+sbit we_green  = P2^3;//东西方向绿灯
+sbit we_yellow = P2^4;//东西方向黄灯
+sbit we_red    = P2^5;//东西方向红灯
+sbit ns_p_green= P2^6;//南北方向人行绿灯
+sbit ns_p_red  = P2^7;//南北方向人行红灯
+
+bit flag1s;
+uchar one_sec_flag,half_sec_flag,main_road_time,secondary_road_time;
+//1秒标志位  _0.5标志位_南北方向倒计时_东西方向倒计时
+uchar state=0;//正常模式不同的状态 0123 
+uchar run_mode = 0;//0是正常模式，1是紧急模式 2东西通行 3南北通行
+uchar code seg_du[]={0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f, 0x77, 0x7c, 0x39, 0x5e, 0x79, 0x71};
+
+uchar ns_green_cnt=6,yellow_cnt =3,we_green_cnt=8;
+//红灯时间        _黄灯时间    _绿灯时间
+
+
+uchar half_flag1s;//0.5秒标志位
+
+void main()
+{
+	EA=1;	//开总中断
+	TMOD|= 0X01;
+	TH0=0X4C;
+	TL0=0X00;//11.0592M晶振 50ms定时初值
+	ET0=1; //允许定时器1中断
+	TR0=1;//启动定时器0  
+	
+	while(1)
+	{	
+		led_sacn();				  		//LED和数码管显示，时刻刷新
+		KeyDriver();
+
+		if(flag1s)//一秒执行一次
+		{
+			flag1s=0;
+			main_road_time--;			//红绿灯倒计时时间减
+			secondary_road_time--;
+			if (state == 2){
+				ns_yellow =~ns_yellow;
+			}else if(state == 0){
+					we_yellow=~we_yellow;
+			}
+		}		
+	}
+}
+
+void led_sacn()
+{
+	 if(run_mode==0)			 //0 正常运行
+	 {
+		if(main_road_time==0 || secondary_road_time==0)//当主干道或者次干道倒数到0，切换状态。
+		//这一段程序只有倒计时为0才执行一次，执行完一次等下一次倒计时为0才再执行一次
+		{
+			switch(state)//改变红绿灯的状态
+			{
+				case 0:
+				{
+					state=1;//下次切换到下一个模式
+					main_road_time=ns_green_cnt;//主干道绿灯通行时间
+					secondary_road_time=ns_green_cnt+yellow_cnt; 
+					 we_red    = ON;
+					 we_yellow = OFF;
+					 we_green  = OFF;
+					 ns_red    = OFF;
+					 ns_yellow = OFF;
+					 ns_green  = ON;
+					 ns_p_green= ON;
+					 ns_p_red  = OFF;
+				}break;
+				case 1:
+				{
+					state=2;
+					main_road_time = yellow_cnt;//主干道直行黄灯时间
+					we_red	  = ON;
+					we_yellow = OFF;
+					we_green  = OFF;
+					ns_red	  = OFF;
+					ns_yellow = ON;
+					ns_green  = OFF;
+					ns_p_green= OFF;
+					ns_p_red  = ON;	
+				}break;
+				case 2:
+				{
+					state=3;
+					main_road_time=we_green_cnt;
+					secondary_road_time =we_green_cnt+yellow_cnt;
+					we_red	  = OFF;
+					we_yellow = OFF;
+					we_green  = ON;
+					ns_red	  = ON;
+					ns_yellow = OFF;
+					ns_green  = OFF;
+					ns_p_green= OFF;
+					ns_p_red  = ON;		
+				}break;
+				case 3:
+				{
+					state=0;
+					main_road_time=yellow_cnt;
+					we_red	  = OFF;
+					we_yellow = ON;
+					we_green  = OFF;
+					ns_red	  = ON;
+					ns_yellow = OFF;
+					ns_green  = OFF;
+					ns_p_green= OFF;
+					ns_p_red  = ON;		
+				}break;
+				
+				default:break;
+			}
+		}
+		
+		seg_disp(main_road_time/10,0);//显示W0控制的数码管 时刻刷新
+		seg_disp(main_road_time%10,1);//显示W1控制的数码管
+		seg_disp(secondary_road_time/10,2);//显示W2控制的数码管
+		seg_disp(secondary_road_time%10,3);//显示W3控制的数码管
+		
+	}else if(run_mode==1){//设置南北绿灯通行时间
+		    seg_disp(ns_green_cnt/10,0);//显示W0控制的数码管
+		    seg_disp(ns_green_cnt%10,1);//显示W1控制的数码管
+			ns_red	  = OFF;
+			ns_yellow = OFF;
+			ns_green  = ON;
+			we_red	  = OFF;
+			we_yellow = OFF;
+			we_green  = OFF;
+	  		ns_p_green= ON;
+			ns_p_red  = OFF;
+
+	}	else if(run_mode==2){//设置东西方向绿灯时间
+	   		seg_disp(we_green_cnt/10,2);//显示W2控制的数码管
+	    	seg_disp(we_green_cnt%10,3);//显示W3控制的数码管
+			ns_red	  = OFF;
+			ns_yellow = OFF;
+			ns_green  = OFF;
+			we_red	  = OFF;
+			we_yellow = OFF;
+			we_green  = ON;
+			ns_p_green= OFF;
+			ns_p_red  = ON;
+
+
+	}else if(run_mode==3){		
+			ns_red	  = OFF;
+			ns_yellow = OFF;
+			ns_green  = OFF;
+			we_red	  = OFF;
+			we_yellow = OFF;
+			we_green  = OFF;
+		  	ns_p_green= OFF;
+			ns_p_red  = OFF;
+
+	}
+}
+
+void seg_disp(uchar number,uchar wei)	//数码管动态显示程序 wei代表数码管W0 W1 W2 W3的位选
+{
+	P0=0XFF;//清零，防止重影
+	W0=W1=W2=W3=1;
+	if(wei == 0){//显示第一位
+		W0=0;
+		P0=seg_du[number];
+		delay_ms(2);
+		W0=1;
+	}
+	if(wei == 1){//显示第二位
+		W1=0;
+		P0=seg_du[number];
+		delay_ms(2);
+		W1=1;
+	}
+	if(wei == 2){//显示第三位
+		W2=0;
+		P0=seg_du[number];
+		delay_ms(2);
+		W2=1;
+	}
+	if(wei == 3){//显示第四位
+		W3=0;	
+		P0=seg_du[number];
+		delay_ms(2);
+		W3=1;
+	}
+}
+
+void delay_ms(ms)	  //演示函数，大概精度
+{
+	uchar value=ms,i;
+	while(value--) 
+	for(i=0;i&lt;110;i++);
+}
+void Timer0() interrupt 1
+{
+	TH0=0XBB;
+	TL0=0X00;
+	KeyScan();
+	if(++half_sec_flag&gt;25){
+		half_sec_flag=0;
+		half_flag1s=1;
+
+	}
+	if(++one_sec_flag&lt;50){
+		return;//提前结束函数
+		}
+	
+	one_sec_flag=0;
+	if(run_mode==0){//不是正常运行时，不红绿灯数值不减一 
+		flag1s=1;	
+	}
+}
+
+</code></pre>
+<h3><a id="_317"></a>程序讲解</h3>
+<p>主要的核心点是倒计时，主干道直行绿灯时间+黄灯时间=次干道红灯时间，</p>
+<p>在次干道红灯的过程中，主干道完成了绿灯倒计时+黄灯倒计时两个步骤。</p>
+<h4><a id="_323"></a>倒计时的产生</h4>
+<p>记住这个点就可以设计软件了。首先要有时间基础，倒计时从哪来呢？</p>
+<p>一般两个来源：</p>
+<p>1，延时</p>
+<pre><code class="prism language-C">delay(1000ms);
+</code></pre>
+<p>通过死循环卡主软件的运行来达到延时效果，程序执行效率极低，不可取。</p>
+<p>2，定时</p>
+<p>通过定时器产生时基。软件设置50ms产生一次定时中断，在中断执行函数中做计数。</p>
+<pre><code class="prism language-C">	EA=1;	//开总中断
+	TMOD|= 0X01;
+	TH0=0X4C;
+	TL0=0X00;//11.0592M晶振 50ms定时初值
+	ET0=1; //允许定时器1中断
+	TR0=1;//启动定时器0  
+</code></pre>
+<p>20ms执行一次中断函数，通过one_sec_flag累加到50判断时间过去了一秒。设置一秒标志位flag1s置一。</p>
+<pre><code class="prism language-C">void Timer0() interrupt 1
+{
+	TH0=0XBB;
+	TL0=0X00;
+	KeyScan();
+	if(++half_sec_flag&gt;25){
+		half_sec_flag=0;
+		half_flag1s=1;
+
+	}
+	if(++one_sec_flag&lt;50){
+		return;//提前结束函数
+		}
+	
+	one_sec_flag=0;
+	if(run_mode==0){//不是正常运行时，不红绿灯数值不减一 
+		flag1s=1;	
+	}
+}
+</code></pre>
+<p>在主函数while循环里判断标志位，如果是1，则倒计时计数值减一，即完成了倒计时的软件设计思路</p>
+<pre><code class="prism language-C">if(flag1s)//一秒执行一次
+		{
+			flag1s=0;
+			main_road_time--;			//红绿灯倒计时时间减
+			secondary_road_time--;
+			if (state == 2){
+				ns_yellow =~ns_yellow;//黄灯闪烁
+			}else if(state == 0){
+					we_yellow=~we_yellow;//黄灯闪烁
+			}
+		}		
+</code></pre>
+<h4><a id="_400"></a>红黄绿灯状态处理</h4>
+<p>分为三个主要状态</p>
+<h5><a id="_404"></a>正常运行状态</h5>
+<p>交通灯状态实际上分为四个状态：</p>
+<p>1.主干道绿灯通行，次干道红灯</p>
+<p>2.主干道黄灯通行，次干道红灯</p>
+<p>3.主干道红灯，次干道绿灯通行</p>
+<p>4.主干道红灯，次干道黄灯通行</p>
+<p>做一个状态机，设置四个状态，在四个状态的变化中，设置红绿黄灯的亮和灭实现基础交通灯运行逻辑</p>
+<p><img alt="image-20220829214546328" src="image\28f574010214a9e35c350a829fadcd51.png"/></p>
+<pre><code class="prism language-C"> if(run_mode==0)			 //0 正常运行
+	 {
+		if(main_road_time==0 || secondary_road_time==0)//当主干道或者次干道倒数到0，切换状态。
+		//这一段程序只有倒计时为0才执行一次，执行完一次等下一次倒计时为0才再执行一次
+		{
+			switch(state)//改变红绿灯的状态
+			{
+				case 0:
+				{
+					state=1;//下次切换到下一个模式
+					main_road_time=ns_green_cnt;//主干道绿灯通行时间
+					secondary_road_time=ns_green_cnt+yellow_cnt; 
+					 we_red    = ON;
+					 we_yellow = OFF;
+					 we_green  = OFF;
+					 ns_red    = OFF;
+					 ns_yellow = OFF;
+					 ns_green  = ON;
+					 ns_p_green= ON;
+					 ns_p_red  = OFF;
+				}break;
+				case 1:
+				{
+					state=2;
+					main_road_time = yellow_cnt;//主干道直行黄灯时间
+					we_red	  = ON;
+					we_yellow = OFF;
+					we_green  = OFF;
+					ns_red	  = OFF;
+					ns_yellow = ON;
+					ns_green  = OFF;
+					ns_p_green= OFF;
+					ns_p_red  = ON;	
+				}break;
+				case 2:
+				{
+					state=3;
+					main_road_time=we_green_cnt;
+					secondary_road_time =we_green_cnt+yellow_cnt;
+					we_red	  = OFF;
+					we_yellow = OFF;
+					we_green  = ON;
+					ns_red	  = ON;
+					ns_yellow = OFF;
+					ns_green  = OFF;
+					ns_p_green= OFF;
+					ns_p_red  = ON;		
+				}break;
+				case 3:
+				{
+					state=0;
+					main_road_time=yellow_cnt;
+					we_red	  = OFF;
+					we_yellow = ON;
+					we_green  = OFF;
+					ns_red	  = ON;
+					ns_yellow = OFF;
+					ns_green  = OFF;
+					ns_p_green= OFF;
+					ns_p_red  = ON;		
+				}break;
+				
+				default:break;
+			}
+		}
+		
+		seg_disp(main_road_time/10,0);//显示W0控制的数码管 时刻刷新
+		seg_disp(main_road_time%10,1);//显示W1控制的数码管
+		seg_disp(secondary_road_time/10,2);//显示W2控制的数码管
+		seg_disp(secondary_road_time%10,3);//显示W3控制的数码管
+		
+	}
+</code></pre>
+<h5><a id="_499"></a>强制南北绿灯通行</h5>
+<pre><code class="prism language-C">else if(run_mode==1){//设置南北绿灯通行时间
+		    seg_disp(ns_green_cnt/10,0);//显示W0控制的数码管
+		    seg_disp(ns_green_cnt%10,1);//显示W1控制的数码管
+			ns_red	  = OFF;
+			ns_yellow = OFF;
+			ns_green  = ON;
+			we_red	  = OFF;
+			we_yellow = OFF;
+			we_green  = OFF;
+	  		ns_p_green= ON;
+			ns_p_red  = OFF;
+
+	}
+
+</code></pre>
+<p>强制东西绿灯通行</p>
+<pre><code class="prism language-C">else if(run_mode==2){//设置东西方向绿灯时间
+	   		seg_disp(we_green_cnt/10,2);//显示W2控制的数码管
+	    	seg_disp(we_green_cnt%10,3);//显示W3控制的数码管
+			ns_red	  = OFF;
+			ns_yellow = OFF;
+			ns_green  = OFF;
+			we_red	  = OFF;
+			we_yellow = OFF;
+			we_green  = ON;
+			ns_p_green= OFF;
+			ns_p_red  = ON;
+
+
+	}
+</code></pre>
+<h5><a id="_541"></a>总开关关断</h5>
+<p>实际上就是把灯关掉，把显示关掉，倒计时数值归零</p>
+<pre><code class="prism language-C">else if(run_mode==3){		
+			ns_red	  = OFF;
+			ns_yellow = OFF;
+			ns_green  = OFF;
+			we_red	  = OFF;
+			we_yellow = OFF;
+			we_green  = OFF;
+		  	ns_p_green= OFF;
+			ns_p_red  = OFF;
+
+	}
+</code></pre>
+<h3><a id="_559"></a>数码管倒计时处理</h3>
+<p>动态显示倒计时时间</p>
+<pre><code class="prism language-C">void seg_disp(uchar number,uchar wei)	//数码管动态显示程序 wei代表数码管W0 W1 W2 W3的位选
+{
+	P0=0XFF;//清零，防止重影
+	W0=W1=W2=W3=1;
+	if(wei == 0){//显示第一位
+		W0=0;
+		P0=seg_du[number];
+		delay_ms(2);
+		W0=1;
+	}
+	if(wei == 1){//显示第二位
+		W1=0;
+		P0=seg_du[number];
+		delay_ms(2);
+		W1=1;
+	}
+	if(wei == 2){//显示第三位
+		W2=0;
+		P0=seg_du[number];
+		delay_ms(2);
+		W2=1;
+	}
+	if(wei == 3){//显示第四位
+		W3=0;	
+		P0=seg_du[number];
+		delay_ms(2);
+		W3=1;
+	}
+}
+</code></pre>
+<h3><a id="_597"></a>按键驱动</h3>
+<p>主要是做扫描，扫描后做相应的标志位，状态机处理</p>
+<pre><code class="prism language-C">uchar keystr[]={1,1,1,1},backup[]={1,1,1,1};
+void KeyScan()						        	//键盘扫描
+{
+	static uchar keybuf[4]={0XFF,0XFF,0XFF,0XFF};
+	uchar i;
+	keybuf[0]=(keybuf[0]&lt;&lt;1)|KEY1;
+	keybuf[1]=(keybuf[1]&lt;&lt;1)|KEY2;
+	keybuf[2]=(keybuf[2]&lt;&lt;1)|KEY3;
+	keybuf[3]=(keybuf[3]&lt;&lt;1)|KEY4;
+	for(i=0;i&lt;4;i++)
+	{
+		if(keybuf[i]==0X00)			keystr[i]=0;
+		else if(keybuf[i]==0XFF) 	keystr[i]=1;
+	}
+}
+void KeyAction(uchar key)					 	//键盘执行
+{
+	switch(key)
+	{
+		case 0:	
+			if(run_mode==0){	//紧急
+					run_mode=1;//设置南北
+			}else if(run_mode==1){
+				    run_mode=2;//设置东西
+			}else if(run_mode==2){
+				     run_mode=0;
+					 //重新开始运行
+					 main_road_time=0;
+					 secondary_road_time=0;
+					 state=0;
+					 
+			}
+		  break;	
+		case 3: //紧急
+			if(run_mode==0){
+			 run_mode=3; 
+			}else if(run_mode==3){
+				run_mode=0;//正常
+			switch(state)//恢复进入紧急模式前的状态
+			{
+				case 1:
+				{
+					 we_red    = ON;
+					 we_yellow = OFF;
+					 we_green  = OFF;
+					 ns_red    = OFF;
+					 ns_yellow = OFF;
+					 ns_green  = ON;
+				  	 ns_p_green= ON;
+					 ns_p_red  = OFF;
+				}break;
+				case 2:
+				{
+					we_red	  = OFF;
+					we_yellow = ON;
+					we_green  = OFF;
+					ns_red	  = OFF;
+					ns_yellow = ON;
+					ns_green  = OFF;
+					ns_p_green= OFF;
+					ns_p_red  = OFF;	
+				}break;
+				case 3:
+				{
+					we_red	  = OFF;
+					we_yellow = OFF;
+					we_green  = ON;
+					ns_red	  = ON;
+					ns_yellow = OFF;
+					ns_green  = OFF;
+					ns_p_green= OFF;
+					ns_p_red  = OFF;
+						
+				}break;
+				case 0:
+				{
+					we_red	  = OFF;
+					we_yellow = ON;
+					we_green  = OFF;
+					ns_red	  = OFF;
+					ns_yellow = ON;
+					ns_green  = OFF;
+					ns_p_green= OFF;
+					ns_p_red  = OFF;
+						
+				}break;
+				
+				default:break;
+			 }	
+			}
+
+			break;
+			  default:break;
+	}
+}
+
+</code></pre>
+<h2><a id="_704"></a>资料清单</h2>
+<p><img alt="img" src="image\f0154b4565f1143dad78ba4f72796832.png"/></p>
+<p><a href="https://docs.qq.com/doc/DS0phaU9ZbWNsaXZi">资料下载</a></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

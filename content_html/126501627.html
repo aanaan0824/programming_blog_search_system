@@ -1,0 +1,147 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p><div class="toc"><h3>文章目录</h3><ul><li><a href="#13MapReduce_2">13.MapReduce框架原理</a></li><ul><li><a href="#131InputFormat_3">13.1InputFormat数据输入</a></li><ul><li><a href="#1311MapTask_4">13.1.1切片与MapTask并行度决定机制</a></li><ul><li><a href="#13111_5">13.1.1.1问题引出</a></li><li><a href="#13112MapTask_8">13.1.1.2MapTask并行度决定机制</a></li></ul><li><a href="#1312Job_14">13.1.2Job提交流程源码</a></li><ul><li><a href="#13121Job_15">13.1.2.1Job提交流程源码详解</a></li><ul><li><a href="#131211Job_16">13.1.2.1.1Job提交流程源码断点在哪断并且介绍相关源码：</a></li><li><a href="#131212Job_170">13.1.2.1.2Job提交流程源码详解</a></li></ul></ul></ul></ul></ul></div><p></p>
+<h1><a id="13MapReduce_2"></a>13.MapReduce框架原理</h1>
+<h2><a id="131InputFormat_3"></a>13.1InputFormat数据输入</h2>
+<h3><a id="1311MapTask_4"></a>13.1.1切片与MapTask并行度决定机制</h3>
+<h4><a id="13111_5"></a>13.1.1.1问题引出</h4>
+<p>MapTask的并行度决定Map阶段的任务处理并发度，进而影响到整个Job的处理速度  <br/>
+  思考：1G的数据，启动8个MapTask，可以提高集群的并发处理能力。那么1K的数据，也启动8个MapTask，会提高集群性能吗？MapTask并行任务是否越多越好呢？哪些因素影响了MapTask并行度？</p>
+<h4><a id="13112MapTask_8"></a>13.1.1.2MapTask并行度决定机制</h4>
+<p>  <strong>数据块</strong>：Block是HDFS物理上把数据分成一块一块。<code>数据块是HDFS存储数据单位。</code><br/>
+  <strong>数据切片</strong>：数据切片只是在逻辑上对输入进行分片，并不会在磁盘上将其切分成片进行存储。数据切片是MapReduce程序计算输入数据的单位，一个切片会对应启动一个MapTask。</p>
+<p><img alt="在这里插入图片描述" src="image\d6bd450db6f047348952203d40526ce8.png"/></p>
+<h3><a id="1312Job_14"></a>13.1.2Job提交流程源码</h3>
+<h4><a id="13121Job_15"></a>13.1.2.1Job提交流程源码详解</h4>
+<h5><a id="131211Job_16"></a>13.1.2.1.1Job提交流程源码断点在哪断并且介绍相关源码：</h5>
+<p><img alt="在这里插入图片描述" src="image\dccbc59761fc4257a3acaadebe1ba810.png"/><br/>
+在WordCountDriver中第七步提交job打上断点<br/>
+<img alt="在这里插入图片描述" src="image\4571fa2d9191424cb2162309ea7cb25e.png"/></p>
+<p>然后在第一个断点处进来后在job类中waitForCompletion中this.submit（）这里打上断点<br/>
+<img alt="在这里插入图片描述" src="image\ab062e9d1fbf4d7fb961b8bcfcb33c83.png"/></p>
+<p>在this.submit()这里进入submit()方法打上这三处断点</p>
+<p><img alt="在这里插入图片描述" src="image\9389af54ba5e4db38c8adb7ee989be1f.png"/><img alt="在这里插入图片描述" src="image\72266443ad564c9790d65b3f977f3713.png"/><br/>
+这里是确保你的状态是正确的，如果状态不对，或者状态是RUNNING，会抛异常</p>
+<p><img alt="在这里插入图片描述" src="image\6dcd3dee747c49f3a44466f2a7520ae0.png"/></p>
+<p><img alt="在这里插入图片描述" src="image\d790b4dcbd3d438cadc9d2f5bd692491.png"/><br/>
+在这个setUseNewAPI()方法里进行兼容性处理，因为新老API是不一样的，所以让hadoop1.x和2.x，3.x兼容</p>
+<p><img alt="在这里插入图片描述" src="image\aa12db76cb0f4d5d93683d826100adc3.png"/></p>
+<p>this.connect()有两个客户端，一个yarn客户端，一个本地客户端，可以连接yarn客户端或者本地客户端，由于我运行的这个代码是本地模式，所以这里连接的是本地的客户端</p>
+<p><img alt="在这里插入图片描述" src="image\8e103ad1a1874242bc8442ea40e29b09.png"/></p>
+<p>从this.connect()这里进来后红色框柱的打上断点</p>
+<p><img alt="在这里插入图片描述" src="image\97c9c2c86f6a4a1a861d3358819f8c6e.png"/></p>
+<p>然后提前进入Cluster在初始化这里this.initialize(jobTrackAddr, conf);打上断点</p>
+<p><img alt="在这里插入图片描述" src="image\f1478e571dd748d1b58cad875526d26e.png"/></p>
+<p>然后到这里进入initialize方法里<br/>
+<img alt="在这里插入图片描述" src="image\15bacc09de9c46698b5a59e94134528f.png"/><br/>
+<img alt="在这里插入图片描述" src="image\79da47e5e3df4a5b96fcaa89e43f6f75.png"/><br/>
+这里出现了有yarn客户端<br/>
+<img alt="在这里插入图片描述" src="image\70c25c8886b04b248e5643fc109ec302.png"/></p>
+<p>在继续下一步这里变成了本地客户端</p>
+<p><img alt="在这里插入图片描述" src="image\7e03ffdb3fbb44c6b32d4f36452d1bac.png"/><img alt="在这里插入图片描述" src="image\da8b7a1db02d460e898c04263edc650b.png"/></p>
+<p>这里有两个，一个是yarn，一个是本地客户端，因为代码是本地运行，所以用到的就是LocalClientProtocolProvider</p>
+<p><code>这个方法知道有这两个客户端就够了</code></p>
+<p><img alt="在这里插入图片描述" src="image\d5a1341fd47647fcb76f848d09e0ae08.png"/><br/>
+这里需要点两下强制进入，因为第一次是进入的job.this，然后退出来在强制进入就进入submitJobInternal方法了</p>
+<p><img alt="在这里插入图片描述" src="image\9f120ea64fe848159673e8c792c29409.png"/></p>
+<p>进来之后在这两个地方打上断点</p>
+<p>老师的checkSpecs<br/>
+<img alt="在这里插入图片描述" src="image\d5631a9086ae48e7b71cd31521fc9e82.png"/><br/>
+我的checkSpecs<br/>
+<img alt="在这里插入图片描述" src="image\58816e1627504815bfa9ee5ae4bfbf24.png"/>然后强行进入this.checkSpecs(job);方法里面，在里面打上断点</p>
+<p><img alt="在这里插入图片描述" src="image\a0e0778ff1724e8f866d3c54a3f29bd8.png"/><br/>
+然后强行进入output.checkOutputSpecs(job);方法，这个是检查路径是否正确，如果输出路径为空，或者输出路径已存在则会抛出异常</p>
+<p><img alt="在这里插入图片描述" src="image\067cb30d2b87477b9db06021a317b6f1.png"/><br/>
+<img alt="在这里插入图片描述" src="image\acbdf829f1324113b842a822819ebad5.png"/>在电脑上确实有这个文件</p>
+<p><img alt="在这里插入图片描述" src="image\2994f7ba8a7b475bb3e0b5fe92b031aa.png"/><br/>
+<img alt="在这里插入图片描述" src="image\c165bad0a3a54cc99e6bf753674bbc90.png"/></p>
+<p>在提交每一个任务的时候都有一个独一无二的jobId</p>
+<pre><code class="prism language-java"> <span class="token class-name">Path</span> submitJobDir <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Path</span><span class="token punctuation">(</span>jobStagingArea<span class="token punctuation">,</span> jobId<span class="token punctuation">.</span><span class="token function">toString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="image\bdf89a5702854eaf967a8483a21088d9.png"/></p>
+<p><img alt="在这里插入图片描述" src="image\738ae7e225cc446dbbbd1684d9c81381.png"/><br/>
+这行代码只是把路径写好了，但是没有去创建带有jobId的路径</p>
+<p><img alt="在这里插入图片描述" src="image\7ce20cb22fe2463d952e526ce434b52b.png"/></p>
+<p>在这里打上断点</p>
+<p><img alt="在这里插入图片描述" src="image\0c92f6e7b6e44ee89fdec0815679759e.png"/>这块代码快速过掉，这部分是关于缓存相关的处理</p>
+<p><img alt="在这里插入图片描述" src="image\e59fd3b27a3b4193b582bd75244eaade.png"/><br/>
+这个方法拷贝或者配置一些相关信息，强行进入这个方法</p>
+<p><img alt="在这里插入图片描述" src="image\8dbbce456ed04488acd9610bd81f753a.png"/><br/>
+在这里打上断点</p>
+<p>看它提交哪些信息，强行进入这个方法</p>
+<p><img alt="在这里插入图片描述" src="image\099d467f55e24bb0935f589f58d49408.png"/><br/>
+然后再强行进入这个方法</p>
+<p><img alt="在这里插入图片描述" src="image\fd4817eafcc14519b04cad52fa5c5e91.png"/>一直下一步，直到过了这个代码，就会把之前加上jobId的路径创建出来，</p>
+<p><img alt="在这里插入图片描述" src="image\00c39707559b4108ab16b6ab59869c3d.png"/><br/>
+<img alt="在这里插入图片描述" src="image\57b6d58338e24a47aa8148d98ef08e2c.png"/>然后再一直下一步到这里，他要提交一些内容</p>
+<p><img alt="在这里插入图片描述" src="image\fbb8d9e208f042bc8aac531c861fb261.png"/></p>
+<p>这里有个jobJar，如果是集群模式的话，当前代码的jar包是一定要上传到集群的，通过客户端方式提交到集群，如果是本地，因为本地就是Local模式，这个jar包就在本地，则不用提交jar包。</p>
+<p><img alt="在这里插入图片描述" src="image\8faf50d467d84db9aab6e471be8f8bab.png"/><br/>
+<code>所以这块如果是本地模式则不会提交jar包，如果是集群模式，则会提交jar包</code></p>
+<p><img alt="在这里插入图片描述" src="image\c1e337d3db9443cfb596cc5a5f61c019.png"/>这里一定要打断点，writeSplits是切片<br/>
+<img alt="在这里插入图片描述" src="image\b29cb23f44824e60adda3baaed5b68ea.png"/><br/>
+<img alt="在这里插入图片描述" src="image\6ade2fe3b55d459b8d967ce4e58a4880.png"/></p>
+<p>运行到这里后，立即会多4个文件</p>
+<p><img alt="在这里插入图片描述" src="image\cc63e84f709a4533ae3ce96a911a0022.png"/><br/>
+这行代码是设置mapTask的个数，这里就可以看出来切片个数决定mapTask的个数，有几个切片，就开几个mapTask</p>
+<p><img alt="在这里插入图片描述" src="image\74229ad0726d4c8f9ca0f9ad46755e4c.png"/><br/>
+到这行的时候就会在控制台打印有几个切片</p>
+<p><img alt="在这里插入图片描述" src="image\81baf2c9c9ed4f3b8f7386f0fa14e373.png"/><img alt="在这里插入图片描述" src="image\66f9a657121e452687c1352c471b3964.png"/><br/>
+运行完这个会多出两个文件，<br/>
+<img alt="在这里插入图片描述" src="image\0906efa23c0a421488038581a7b6ab77.png"/>job.xml的内容是job运行所需要的参数设置默认值</p>
+<p><img alt="在这里插入图片描述" src="image\cffae565e3114892b81708194fa1023f.png"/></p>
+<p>如果是集群模式，还有jar包，面试官问这类问题是时候问你看过源码吗，回答是：提交三样东西，一个是xml，一个jar包，一个切片信息</p>
+<p><img alt="在这里插入图片描述" src="image\adc512e5a99b42c1aa95b03f20929a7e.png"/>没有运行这行代码时，state的值为DEFINE<br/>
+<img alt="在这里插入图片描述" src="image\6906ddc8707749e1a3ca685451539b79.png"/></p>
+<p>运行后state的值为RUNNING,说明job开始运行了</p>
+<p><img alt="在这里插入图片描述" src="image\7e70bef27d2841899524e5b0cf92f2b8.png"/><br/>
+这块是监控程序的代码</p>
+<p><img alt="在这里插入图片描述" src="image\8c15731a4d7e4fd8ac36383425b131e1.png"/>这行代码是监视并打印job信息</p>
+<p><img alt="在这里插入图片描述" src="image\5e326ef45d31439a8507d317d893f880.png"/><br/>
+运行完这行代码，之前的文件就都删除了</p>
+<p><img alt="在这里插入图片描述" src="image\40b8675343384f22bc58680307f500e5.png"/></p>
+<h5><a id="131212Job_170"></a>13.1.2.1.2Job提交流程源码详解</h5>
+<pre><code class="prism language-java"><span class="token function">waitForCompletion</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token function">submit</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">// 1建立连接</span>
+	<span class="token function">connect</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>	
+		<span class="token comment">// 1）创建提交Job的代理</span>
+		<span class="token keyword">new</span> <span class="token class-name">Cluster</span><span class="token punctuation">(</span><span class="token function">getConfiguration</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+			<span class="token comment">// （1）判断是本地运行环境还是yarn集群运行环境</span>
+			<span class="token function">initialize</span><span class="token punctuation">(</span>jobTrackAddr<span class="token punctuation">,</span> conf<span class="token punctuation">)</span><span class="token punctuation">;</span> 
+
+<span class="token comment">// 2 提交job</span>
+submitter<span class="token punctuation">.</span><span class="token function">submitJobInternal</span><span class="token punctuation">(</span><span class="token class-name">Job</span><span class="token punctuation">.</span><span class="token keyword">this</span><span class="token punctuation">,</span> cluster<span class="token punctuation">)</span>
+
+	<span class="token comment">// 1）创建给集群提交数据的Stag路径</span>
+	<span class="token class-name">Path</span> jobStagingArea <span class="token operator">=</span> <span class="token class-name">JobSubmissionFiles</span><span class="token punctuation">.</span><span class="token function">getStagingDir</span><span class="token punctuation">(</span>cluster<span class="token punctuation">,</span> conf<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">// 2）获取jobid ，并创建Job路径</span>
+	<span class="token class-name">JobID</span> jobId <span class="token operator">=</span> submitClient<span class="token punctuation">.</span><span class="token function">getNewJobID</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">// 3）拷贝jar包到集群</span>
+<span class="token function">copyAndConfigureFiles</span><span class="token punctuation">(</span>job<span class="token punctuation">,</span> submitJobDir<span class="token punctuation">)</span><span class="token punctuation">;</span>	
+	rUploader<span class="token punctuation">.</span><span class="token function">uploadFiles</span><span class="token punctuation">(</span>job<span class="token punctuation">,</span> jobSubmitDir<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">// 4）计算切片，生成切片规划文件</span>
+<span class="token function">writeSplits</span><span class="token punctuation">(</span>job<span class="token punctuation">,</span> submitJobDir<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		maps <span class="token operator">=</span> <span class="token function">writeNewSplits</span><span class="token punctuation">(</span>job<span class="token punctuation">,</span> jobSubmitDir<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		input<span class="token punctuation">.</span><span class="token function">getSplits</span><span class="token punctuation">(</span>job<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">// 5）向Stag路径写XML配置文件</span>
+	<span class="token function">writeConf</span><span class="token punctuation">(</span>conf<span class="token punctuation">,</span> submitJobFile<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	conf<span class="token punctuation">.</span><span class="token function">writeXml</span><span class="token punctuation">(</span>out<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">// 6）提交Job,返回提交状态</span>
+status <span class="token operator">=</span> submitClient<span class="token punctuation">.</span><span class="token function">submitJob</span><span class="token punctuation">(</span>jobId<span class="token punctuation">,</span> submitJobDir<span class="token punctuation">.</span><span class="token function">toString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> job<span class="token punctuation">.</span><span class="token function">getCredentials</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

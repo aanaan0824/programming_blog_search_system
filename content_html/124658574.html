@@ -1,0 +1,372 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="0__0"></a>0. 引言</h1>
+<p>Python中对象方法的定义很怪异，第一个参数一般都命名为<code>self</code>（相当于其它语言的<code>this</code>），用于传递对象本身，而在调用的时候则不必显式传递，系统会自动传递。</p>
+<p>今天我们介绍的主角是<code>super()</code>, 在类的继承里面<code>super()</code>非常常用， 它解决了子类调用父类方法的一些问题， 父类多次被调用时只执行一次， 优化了执行逻辑，下面我们就来详细看一下。</p>
+<h2><a id="01__6"></a>0.1 定义一个类</h2>
+<p>首先先定义一个类：</p>
+<pre><code class="prism language-python"><span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">method_1</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> msg<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>msg<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> msg
+
+
+a <span class="token operator">=</span> A<span class="token punctuation">(</span><span class="token punctuation">)</span>
+a<span class="token punctuation">.</span>method_1<span class="token punctuation">(</span>msg<span class="token operator">=</span><span class="token string">"Hello, class!"</span><span class="token punctuation">)</span>
+
+
+<span class="token triple-quoted-string string">"""
+    Hello, class!
+"""</span>
+</code></pre>
+<h2><a id="02__25"></a>0.2 在子类中调用父类的方法</h2>
+<p>当存在继承关系的时候，有时候需要<strong>在子类中调用父类的方法</strong>，此时最简单的方法是把对象调用转换成类调用，需要注意的是<mark>这时self参数需要显式传递</mark>。</p>
+<p><strong>语法</strong>：</p>
+<pre><code class="prism language-python"><span class="token keyword">class</span> 子类<span class="token punctuation">(</span>父类<span class="token punctuation">)</span><span class="token punctuation">:</span>
+	<span class="token keyword">def</span> 子类的方法<span class="token punctuation">(</span>self<span class="token punctuation">,</span> 参数<span class="token punctuation">)</span><span class="token punctuation">:</span>
+		父类<span class="token punctuation">.</span>父类的方法<span class="token punctuation">(</span>self<span class="token punctuation">,</span> 参数<span class="token punctuation">)</span>
+</code></pre>
+<p><strong>例子</strong>：</p>
+<pre><code class="prism language-python"><span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">method_parent</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> msg<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>msg<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> msg
+    
+<span class="token keyword">class</span> <span class="token class-name">B</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">method_child</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> msg<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token comment"># 父类.父类的方法(self, 参数)</span>
+        A<span class="token punctuation">.</span>method_parent<span class="token punctuation">(</span>self<span class="token punctuation">,</span> msg<span class="token operator">=</span>msg<span class="token punctuation">)</span>  <span class="token comment"># self必须写</span>
+
+
+b <span class="token operator">=</span> B<span class="token punctuation">(</span><span class="token punctuation">)</span>
+b<span class="token punctuation">.</span>method_child<span class="token punctuation">(</span>msg<span class="token operator">=</span><span class="token string">"Hello, class!"</span><span class="token punctuation">)</span>
+
+
+<span class="token triple-quoted-string string">"""
+    Hello, class!
+"""</span>
+</code></pre>
+<p>这样做有一些缺点，比如说<strong>如果修改了父类名称，那么在子类中会涉及多处修改</strong>，另外，Python是允许多继承的语言，如上所示的方法在多继承时就需要重复写多次，显得累赘。</p>
+<h1><a id="1_super_60"></a>1. super</h1>
+<p>为了解决这些问题，Python引入了<code>super()</code>机制。</p>
+<p><strong>语法</strong>：</p>
+<pre><code class="prism language-python"><span class="token keyword">class</span> 子类<span class="token punctuation">(</span>父类<span class="token punctuation">)</span><span class="token punctuation">:</span>
+	<span class="token keyword">def</span> 子类的方法<span class="token punctuation">(</span>self<span class="token punctuation">,</span> 参数<span class="token punctuation">)</span><span class="token punctuation">:</span>
+		<span class="token builtin">super</span><span class="token punctuation">(</span>子类，self<span class="token punctuation">)</span><span class="token punctuation">.</span>父类的方法<span class="token punctuation">(</span>self<span class="token punctuation">,</span> 参数<span class="token punctuation">)</span>  <span class="token comment"># super中的self也必须写，但父类方法中不能写self</span>
+</code></pre>
+<p><strong>例子</strong>：</p>
+<pre><code class="prism language-python"><span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">method_parent</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> msg<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span>msg<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> msg
+    
+<span class="token keyword">class</span> <span class="token class-name">B</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">method_child</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> msg<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token comment"># super(自己这个类（子类）, self).父类的方法(参数)</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>B<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>method_parent<span class="token punctuation">(</span>msg<span class="token operator">=</span>msg<span class="token punctuation">)</span>  <span class="token comment"># super中的self也必须写，但父类方法中不能写self</span>
+
+
+b <span class="token operator">=</span> B<span class="token punctuation">(</span><span class="token punctuation">)</span>
+b<span class="token punctuation">.</span>method_child<span class="token punctuation">(</span>msg<span class="token operator">=</span><span class="token string">"Hello, class!"</span><span class="token punctuation">)</span>
+
+
+<span class="token triple-quoted-string string">"""
+    Hello, class!
+"""</span>
+</code></pre>
+<h1><a id="2__92"></a>2. 两种方法的区别</h1>
+<p>表面上看 <code>super(子类, self).父类方法(参数)</code>和<code>父类.父类方法(self, 参数)</code>的结果是一致的，实际上这两种方法的内部处理机制大大不同，当涉及多继承情况时，就会表现出明显的差异来，直接给例子：</p>
+<h2><a id="21_self__96"></a>2.1 <code>父类.父类方法(self, 参数)</code></h2>
+<pre><code class="prism language-python"><span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[开始] 访问A"</span><span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[结束] 访问A"</span><span class="token punctuation">)</span>
+        
+<span class="token keyword">class</span> <span class="token class-name">B</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[开始] 访问B"</span><span class="token punctuation">)</span>
+        A<span class="token punctuation">.</span>__init__<span class="token punctuation">(</span>self<span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[结束] 访问B"</span><span class="token punctuation">)</span>
+        
+<span class="token keyword">class</span> <span class="token class-name">C</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[开始] 访问C"</span><span class="token punctuation">)</span>
+        A<span class="token punctuation">.</span>__init__<span class="token punctuation">(</span>self<span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[结束] 访问C"</span><span class="token punctuation">)</span>
+
+<span class="token keyword">class</span> <span class="token class-name">D</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[开始] 访问D"</span><span class="token punctuation">)</span>
+        A<span class="token punctuation">.</span>__init__<span class="token punctuation">(</span>self<span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[结束] 访问D"</span><span class="token punctuation">)</span>
+
+<span class="token keyword">class</span> <span class="token class-name">E</span><span class="token punctuation">(</span>B<span class="token punctuation">,</span> C<span class="token punctuation">,</span> D<span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 多继承</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[开始] 访问E"</span><span class="token punctuation">)</span>
+        B<span class="token punctuation">.</span>__init__<span class="token punctuation">(</span>self<span class="token punctuation">)</span>
+        C<span class="token punctuation">.</span>__init__<span class="token punctuation">(</span>self<span class="token punctuation">)</span>
+        D<span class="token punctuation">.</span>__init__<span class="token punctuation">(</span>self<span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[结束] 访问E"</span><span class="token punctuation">)</span>
+        
+        
+<span class="token comment"># 实例化类E</span>
+e <span class="token operator">=</span> E<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+
+<span class="token triple-quoted-string string">"""
+    [开始] 访问E
+    [开始] 访问B
+    [开始] 访问A
+    [结束] 访问A
+    [结束] 访问B
+    [开始] 访问C
+    [开始] 访问A
+    [结束] 访问A
+    [结束] 访问C
+    [开始] 访问D
+    [开始] 访问A
+    [结束] 访问A
+    [结束] 访问D
+    [结束] 访问E
+"""</span>
+</code></pre>
+<p>执行顺序很好理解，唯一需要注意的是公共父类A被执行了多次（6次）。</p>
+<h2><a id="22_super_self_153"></a>2.2 <code>super(子类, self).父类方法(参数)</code></h2>
+<pre><code class="prism language-python"><span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[开始] 访问A"</span><span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[结束] 访问A"</span><span class="token punctuation">)</span>
+        
+<span class="token keyword">class</span> <span class="token class-name">B</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[开始] 访问B"</span><span class="token punctuation">)</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>B<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>__init__<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[结束] 访问B"</span><span class="token punctuation">)</span>
+        
+<span class="token keyword">class</span> <span class="token class-name">C</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[开始] 访问C"</span><span class="token punctuation">)</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>C<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>__init__<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[结束] 访问C"</span><span class="token punctuation">)</span>
+
+<span class="token keyword">class</span> <span class="token class-name">D</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[开始] 访问D"</span><span class="token punctuation">)</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>D<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>__init__<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[结束] 访问D"</span><span class="token punctuation">)</span>
+
+<span class="token keyword">class</span> <span class="token class-name">E</span><span class="token punctuation">(</span>B<span class="token punctuation">,</span> C<span class="token punctuation">,</span> D<span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 多继承</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[开始] 访问E"</span><span class="token punctuation">)</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>E<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>__init__<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[结束] 访问E"</span><span class="token punctuation">)</span>
+        
+        
+<span class="token comment"># 实例化类E</span>
+e <span class="token operator">=</span> E<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+
+<span class="token triple-quoted-string string">"""
+    [开始] 访问E
+    [开始] 访问B
+    [开始] 访问C
+    [开始] 访问D
+    [开始] 访问A
+    [结束] 访问A
+    [结束] 访问D
+    [结束] 访问C
+    [结束] 访问B
+    [结束] 访问E
+"""</span>
+</code></pre>
+<p>在<code>super机制</code>里可以<strong>保证公共父类仅被执行一次</strong>，至于执行的顺序，是按照MRO（Method Resolution Order）：方法解析顺序进行的。</p>
+<h2><a id="23__205"></a>2.3 图解两种方法</h2>
+<h3><a id="231_self__206"></a>2.3.1 <code>父类.父类方法(self, 参数)</code></h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/19fb76108c53408f8c5630a9f2b560fb.png"/></p>
+<h3><a id="232_super_self_209"></a>2.3.2 <code>super(子类, self).父类方法(参数)</code></h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/03dc5b79feaf4d43b1a75a9dedc48a68.png"/></p>
+<h1><a id="3_super_self__init___212"></a>3. 例子讲解<code>super(子类, self).__init__()</code></h1>
+<h2><a id="31__213"></a>3.1 作用</h2>
+<p><code>super().__init__()</code>，就是继承父类的<code>__init__()</code>方法，同样可以使用<code>super()</code>去继承其他方法。</p>
+<h2><a id="32____super_self__init___216"></a>3.2 三种继承的对比 —— 彻底搞懂 <code>super(子类, self).__init__()</code>方法</h2>
+<p>我们需要明白一件事情，<code>super(子类, self).__init__()</code>并不是什么特殊的语法，它就是调用父类的方法而已。</p>
+<pre><code class="prism language-python"><span class="token comment"># 定义父类</span>
+<span class="token comment"># 定义父类</span>
+<span class="token keyword">class</span> <span class="token class-name">Parent</span><span class="token punctuation">:</span>
+    <span class="token comment"># 定义父类的初始化方法</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> param_parent<span class="token operator">=</span><span class="token string">"父类的参数"</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        self<span class="token punctuation">.</span>param_parent <span class="token operator">=</span> param_parent  <span class="token comment"># 将初始化需传入的参数定义为类的attr</span>
+    
+    <span class="token comment"># 定义父类的方法</span>
+    <span class="token keyword">def</span> <span class="token function">function_parent</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"这是一个父类方法！"</span><span class="token punctuation">)</span>
+
+<span class="token keyword">class</span> <span class="token class-name">Child</span><span class="token punctuation">(</span>Parent<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token comment"># 这里重新定义了__init__()方法就说明该方法将覆盖从父类继承的__init__方法</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> param_parent<span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 即便你不使用父类的参数，但在初始化的时候也要写上！</span>
+        <span class="token comment"># 调用父类的__init__()方法而已</span>
+        <span class="token comment"># super(Child, self).__init__()  # 这里__init__()函数里面的值要写，不然就被父类的默认值覆盖了！</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>Child<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>__init__<span class="token punctuation">(</span>param_parent<span class="token operator">=</span>param_parent<span class="token punctuation">)</span>  <span class="token comment"># 这里__init__()函数里面的值要写，不然就被父类的默认值覆盖了！</span>
+        <span class="token triple-quoted-string string">"""
+            1. super(Child, self).__init__() -&gt; 结果：父类的参数
+            2. super(Child, self).__init__(param_parent=param_paren) -&gt; 结果：因为又继承了父类的__init__方法，所以需传入该参数（如果父类有默认值，也可以不传）
+        """</span>
+    <span class="token keyword">def</span> <span class="token function">function_child</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>Child<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>function_parent<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 这句话的意思就是，在调用子类function_child时，该方法会继承父类的funtion_parent，也就是调用子类 -&gt; 去父类找方法 -&gt; 父类的方法执行 -&gt; 回到子类看看还没有别的代码要执行</span>
+
+        
+<span class="token comment"># 实例化子类</span>
+aaa <span class="token operator">=</span> Child<span class="token punctuation">(</span>param_parent<span class="token operator">=</span><span class="token string">"因为又继承了父类的__init__方法，所以需传入该参数（如果父类有默认值，也可以不传）"</span><span class="token punctuation">)</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span>aaa<span class="token punctuation">.</span>param_parent<span class="token punctuation">)</span>
+aaa<span class="token punctuation">.</span>function_child<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># Child -&gt; Parent -&gt; Parent -&gt; Child</span>
+
+
+<span class="token triple-quoted-string string">"""
+    因为又继承了父类的__init__方法，所以需传入该参数（如果父类有默认值，也可以不传）
+    这是一个父类方法！
+"""</span>
+</code></pre>
+<p>明白了吗，其实<code>super(子类, self).__init__(参数)的方法</code>就是遵循着<code>super(子类, self).父类的方法()</code>！目的是<strong>引入父类的初始化方法给子类进行初始化</strong>！</p>
+<hr/>
+<p>看下面的例子就彻底明白了：</p>
+<pre><code class="prism language-python"><span class="token comment"># 定义父类</span>
+<span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">:</span>
+    <span class="token comment"># 定义父类的初始化方法</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> param_parent<span class="token operator">=</span><span class="token string">"父类默认的参数"</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        self<span class="token punctuation">.</span>param_parent <span class="token operator">=</span> param_parent
+    
+    <span class="token comment"># 定义父类的方法</span>
+    <span class="token keyword">def</span> <span class="token function">function_parent</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> msg_parent<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"[父类A的方法] message: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>msg_parent<span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span>
+
+<span class="token comment"># 1. [完全继承] 定义子类（继承父类A）</span>
+<span class="token keyword">class</span> <span class="token class-name">B</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">pass</span>  <span class="token comment"># 完全继承（包括属性和方法）</span>
+
+<span class="token comment"># 2. [重写__init__方法，剩下的都继承] 定义子类（继承A）</span>
+<span class="token keyword">class</span> <span class="token class-name">C</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> param_child<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        self<span class="token punctuation">.</span>param_child <span class="token operator">=</span> param_child  <span class="token comment"># 重新了__init__方法</span>
+
+<span class="token comment"># 3. [在__init__方法中添加了子类独有的参数，且仍然继承父类的属性和方法]</span>
+<span class="token keyword">class</span> <span class="token class-name">D</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> param_parent<span class="token punctuation">,</span> param_child<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        self<span class="token punctuation">.</span>param_child <span class="token operator">=</span> param_child
+        <span class="token comment"># 重新继承父类的__init__方法</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>D<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>__init__<span class="token punctuation">(</span>param_parent<span class="token operator">=</span>param_parent<span class="token punctuation">)</span>
+        
+        
+<span class="token comment"># 实例化子类B, C, D</span>
+b <span class="token operator">=</span> B<span class="token punctuation">(</span><span class="token punctuation">)</span>  <span class="token comment"># 没有传入值，所以使用父类A中的默认值</span>
+c <span class="token operator">=</span> C<span class="token punctuation">(</span>param_child<span class="token operator">=</span><span class="token string">"C的参数"</span><span class="token punctuation">)</span>
+d <span class="token operator">=</span> D<span class="token punctuation">(</span>param_parent<span class="token operator">=</span><span class="token string">"父类A的参数（是需要自己定义的,也可以使用默认参数（如果有缺省的话））"</span><span class="token punctuation">,</span> param_child<span class="token operator">=</span><span class="token string">"子类D特有的参数"</span><span class="token punctuation">)</span>
+
+
+<span class="token triple-quoted-string string">"""
+    调用子类的attr和方法
+"""</span>
+<span class="token comment"># 1. [完全继承] 定义子类（继承父类A）</span>
+<span class="token comment"># attr</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"[父类A的属性] B.param_parent: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>b<span class="token punctuation">.</span>param_parent<span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span>
+<span class="token comment"># function</span>
+b<span class="token punctuation">.</span>function_parent<span class="token punctuation">(</span>msg_parent<span class="token operator">=</span><span class="token string">"子类B直接使用父类A的方法"</span><span class="token punctuation">)</span>  <span class="token comment"># B -&gt; A -&gt; A -&gt; B</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\n"</span><span class="token punctuation">)</span>
+
+
+<span class="token comment"># 2. [重写__init__方法，剩下的都继承] 定义子类（继承A）</span>
+<span class="token comment"># attr</span>
+<span class="token keyword">try</span><span class="token punctuation">:</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"[父类A的属性] C.param_parent: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>c<span class="token punctuation">.</span>param_parent<span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span>  <span class="token comment"># 因为C重写了__init__方法，因此父类的attr被覆盖了，所以不能调用！</span>
+<span class="token keyword">except</span><span class="token punctuation">:</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"[报错！] 因为C重写了__init__方法，因此父类的attr被覆盖了，所以不能调用！"</span><span class="token punctuation">)</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"[子类C特有的属性] C.param_child: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>c<span class="token punctuation">.</span>param_child<span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span>  <span class="token comment"># 重写后的attr，当然可以调用</span>
+<span class="token comment"># function</span>
+c<span class="token punctuation">.</span>function_parent<span class="token punctuation">(</span>msg_parent<span class="token operator">=</span><span class="token string">"子类C直接使用父类A的方法"</span><span class="token punctuation">)</span>  <span class="token comment"># C -&gt; A -&gt; A -&gt; C</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"\n"</span><span class="token punctuation">)</span>
+
+
+<span class="token comment"># 3. [在__init__方法中添加了子类独有的参数，且仍然继承父类的属性和方法]</span>
+<span class="token comment"># attr</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"[父类A的属性] D.param_parent: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>d<span class="token punctuation">.</span>param_parent<span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span>  <span class="token comment"># 虽然D重写了__init__方法，但最该方法末尾又继承了父类的attr，所以可以直接调用</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"[子类D特有的属性] D.param_child: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>d<span class="token punctuation">.</span>param_child<span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span>  <span class="token comment"># 重写后的attr，当然可以调用</span>
+<span class="token comment"># function</span>
+d<span class="token punctuation">.</span>function_parent<span class="token punctuation">(</span>msg_parent<span class="token operator">=</span><span class="token string">"子类D直接使用父类A的方法"</span><span class="token punctuation">)</span>  <span class="token comment"># D -&gt; A -&gt; A -&gt; D</span>
+
+
+<span class="token triple-quoted-string string">"""
+    [父类A的属性] B.param_parent: 父类默认的参数
+    [父类A的方法] message: 子类B直接使用父类A的方法
+
+
+    [报错！] 因为C重写了__init__方法，因此父类的attr被覆盖了，所以不能调用！
+    [子类C特有的属性] C.param_child: C的参数
+    [父类A的方法] message: 子类C直接使用父类A的方法
+
+
+    [父类A的属性] D.param_parent: 父类A的参数（是需要自己定义的,也可以使用默认参数（如果有缺省的话））
+    [子类D特有的属性] D.param_child: 子类D特有的参数
+    [父类A的方法] message: 子类D直接使用父类A的方法
+"""</span>
+</code></pre>
+<h2><a id="33__343"></a>3.3 小例子</h2>
+<pre><code class="prism language-python"><span class="token keyword">class</span> <span class="token class-name">A</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> param_parent<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token comment"># 将传入的参数param_parent存储到实例中</span>
+        self<span class="token punctuation">.</span>param_parent <span class="token operator">=</span> param_parent
+    
+    <span class="token keyword">def</span> <span class="token function">function_parent</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> msg_parent<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token comment"># 直接使用传进的参数而不存到实例中</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"[父类]message: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>msg_parent<span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span>
+        <span class="token keyword">return</span> msg_parent
+    
+<span class="token keyword">class</span> <span class="token class-name">B</span><span class="token punctuation">(</span>A<span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># B继承自A</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> param_parent<span class="token punctuation">,</span> param_child<span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 不管用没用到父类__init__方法中的参数，都得写上</span>
+        <span class="token comment"># 调用父类的初始化方法</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>B<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>__init__<span class="token punctuation">(</span>param_parent<span class="token operator">=</span>param_parent<span class="token punctuation">)</span>
+        <span class="token comment"># 将传入的参数param_child存储到实例中</span>
+        self<span class="token punctuation">.</span>param_child <span class="token operator">=</span> param_child
+        
+    <span class="token comment"># 定义类方法</span>
+    <span class="token keyword">def</span> <span class="token function">function_child</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> msg_child<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"[子类]message: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>msg_child<span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span>
+        <span class="token comment"># 再调用父类的方法</span>
+        <span class="token builtin">super</span><span class="token punctuation">(</span>B<span class="token punctuation">,</span> self<span class="token punctuation">)</span><span class="token punctuation">.</span>function_parent<span class="token punctuation">(</span>msg_parent<span class="token operator">=</span>msg_child<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> msg_child
+        
+
+<span class="token comment"># 实例化子类B并传入__init__所需参数</span>
+b <span class="token operator">=</span> B<span class="token punctuation">(</span>param_child<span class="token operator">=</span><span class="token string">"子类的参数"</span><span class="token punctuation">,</span> param_parent<span class="token operator">=</span><span class="token string">"父类的参数"</span><span class="token punctuation">)</span>
+
+<span class="token comment"># 调用这个类的attr</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"self.param_child: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>b<span class="token punctuation">.</span>param_child<span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span>
+
+<span class="token comment"># 因为继承了父类的__init__()方法，所以子类也有父类的实例变量(但参数是我们自己传入的)</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"self.param_parent: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span>b<span class="token punctuation">.</span>param_parent<span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span>
+
+<span class="token comment"># 调用这个类的方法</span>
+b<span class="token punctuation">.</span>function_child<span class="token punctuation">(</span>msg_child<span class="token operator">=</span><span class="token string">"[子类的方法] 传入的信息"</span><span class="token punctuation">)</span>
+
+<span class="token comment"># 调用父类的方法</span>
+b<span class="token punctuation">.</span>function_parent<span class="token punctuation">(</span>msg_parent<span class="token operator">=</span><span class="token string">"[父类的方法] 传入的信息"</span><span class="token punctuation">)</span>
+
+
+<span class="token triple-quoted-string string">"""
+    self.param_child: 子类的参数
+    self.param_parent: 父类的参数
+    [子类]message: [子类的方法] 传入的信息
+    [父类]message: [子类的方法] 传入的信息
+    [父类]message: [父类的方法] 传入的信息
+"""</span>
+</code></pre>
+<h1><a id="4__395"></a>4. 定义类时的建议</h1>
+<ol><li>子类在重写<code>__init__</code>方法时，要把父类<code>__init__</code>方法中的参数都写上（有默认值的可以不写），不然会报错</li><li>因为可能涉及到继承，建议在写<code>__init__()</code>方法时，将里面的参数都写上默认值，这样继承的时候就不用那么麻烦了</li><li><mark>类的继承只是继承了类的模板（attr和方法），但一般不继承它里面的值（默认值除外）</mark></li></ol>
+<h1><a id="_401"></a>参考</h1>
+<ol><li>https://www.jb51.net/article/198478.htm</li><li>https://blog.csdn.net/a__int__/article/details/104600972</li></ol>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,193 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>今天再来个花式玩法。</p>
+<p>TCP 连接的报文，结果却送到了 UDP socket，有趣…</p>
+<p>既然以太帧既可以在铜线上传输，也可以在光纤上，甚至空气里传输，那么 SOCK_STREAM socket 也就可以在 UDP 上传输，反之，TCP 报文也可以被 SOCK_DGRAM 接收。</p>
+<p>上周实现了 TCP 的不可靠传输：不可靠不重传的假 TCP。但还可以更花式，将 TCP 数据送到 SOCK_DGRAM socket 如何？很简单，协议转换一下而已。</p>
+<p>先展示实验。</p>
+<p>服务端不启动 iperf -s，反而启动 nc -u -l -p 12345.</p>
+<p>客户端发起 iperf -c 192.168.1.248 -i 1 -p 12345 -t 5.</p>
+<p>下面是服务端 nc -u -l -p 12345 的输出一角：<br/> <img alt="在这里插入图片描述" src="image\de17ad5f79424e2ca096c19839f5b542.png"/><br/> iperf -c 端的输出：<br/> ​<img alt="在这里插入图片描述" src="image\cb9508d4adfd4291a0af99be38bd2582.png"/><br/> 是不是很神奇？TCP 竟然可将报文送到 UDP。</p>
+<p>实现并不难，关键是想到这种玩法。如此一来，socket 和传输协议真解耦：</p>
+<ul><li>用 TCP 传输 socket(AF_INET, SOCK_DGRAM, 0)。</li><li>用 UDP 传输 socket(AF_INET, SOCK_STREAM, 0)。</li><li>一端为 socket(AF_INET, SOCK_STREAM, 0)，另一端为 socket(AF_INET, SOCK_DGRAM, 0)。</li><li>…</li></ul>
+<p>由此引申出一种和传统封装型隧道不同的新隧道，协议转换型隧道。这类隧道解决了封装型隧道载荷率变低问题：vxlan 封装 TCP，wg 封装 vxlan，又是个 IPv6 环境，还能留给 payload 多少空间？</p>
+<p>为保持原始 payload 的连接性(即五元组)，协议转换型隧道需在隧道两端维护识别原始五元组的虚电路，比如当 tupleX 1.1.1.1:123 tcp 2.2.2.2:321 第一次通过隧道，隧道要建立一个虚电路，tupleX 便可脱去整个 inner TCP/IP 头，用 UDP 携带一个超精简仅携带 seq，ack，rwnd 等字段的小头重新封装通过隧道，在隧道对端由虚电路重组成 tupleX。</p>
+<p>借 NAT64 的可行性，IPv4 也可用来做传输 IPv6 的隧道，IPv6 报文转成 IPv4 报文通过网络，从而提高载荷率。</p>
+<p>MPLS 大致也是类似，但还是不同，没这么狠。</p>
+<p>总之就是用一个相对短的协议封装 payload 通过可控的网络，这也是 overlay 的思路，只是着眼点不同：</p>
+<ul><li>封装型 overlay 无状态，每包仅封装。</li><li>转换型 overlay 有状态，事先建立虚电路，保存不变元数据。</li></ul>
+<p>为了不让协议头越封装越长，就要消耗点时间建立虚电路，这也是时间换空间。</p>
+<p>回到最初，TCP 换 UDP 怎么做到的？代码如下：</p>
+<pre><code class="prism language-c"><span class="token comment">// 又一个不可靠，不重传的实现，POC 只能单流玩，不能重入！</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;linux/module.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;linux/netfilter_ipv4.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;net/tcp.h&gt;</span></span>
+
+<span class="token keyword">static</span> <span class="token keyword">int</span> max_seq <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token keyword">static</span> bool <span class="token function">tcp_reply</span><span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">tcphdr</span> <span class="token operator">*</span>tcph<span class="token punctuation">,</span> <span class="token keyword">const</span> <span class="token keyword">struct</span> <span class="token class-name">tcphdr</span> <span class="token operator">*</span>oth<span class="token punctuation">,</span> <span class="token class-name">uint16_t</span> payload<span class="token punctuation">,</span> bool <span class="token operator">*</span>retrans<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+
+	<span class="token comment">/* SYN &gt; SYN-ACK */</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>oth<span class="token operator">-&gt;</span>syn <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span>oth<span class="token operator">-&gt;</span>ack<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		tcph<span class="token operator">-&gt;</span>syn <span class="token operator">=</span> true<span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>ack <span class="token operator">=</span> true<span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>window <span class="token operator">=</span> <span class="token number">65000</span><span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>seq <span class="token operator">=</span> <span class="token function">htonl</span><span class="token punctuation">(</span><span class="token function">prandom_u32</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&amp;</span> <span class="token operator">~</span>oth<span class="token operator">-&gt;</span>seq<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>ack_seq <span class="token operator">=</span> <span class="token function">htonl</span><span class="token punctuation">(</span><span class="token function">ntohl</span><span class="token punctuation">(</span>oth<span class="token operator">-&gt;</span>seq<span class="token punctuation">)</span> <span class="token operator">+</span> oth<span class="token operator">-&gt;</span>syn<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		max_seq <span class="token operator">=</span> <span class="token function">ntohl</span><span class="token punctuation">(</span>oth<span class="token operator">-&gt;</span>seq<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+        <span class="token comment">// 忽略重传数据</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">ntohl</span><span class="token punctuation">(</span>oth<span class="token operator">-&gt;</span>seq<span class="token punctuation">)</span> <span class="token operator">&lt;</span> max_seq<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		<span class="token operator">*</span>retrans <span class="token operator">=</span> true<span class="token punctuation">;</span>
+		<span class="token keyword">return</span> false<span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token comment">/* ACK &gt; ACK */</span>
+        <span class="token comment">// 来了就 ACK，不重传</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>oth<span class="token operator">-&gt;</span>ack <span class="token operator">&amp;&amp;</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token punctuation">(</span>oth<span class="token operator">-&gt;</span>fin <span class="token operator">||</span> oth<span class="token operator">-&gt;</span>syn<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		tcph<span class="token operator">-&gt;</span>syn <span class="token operator">=</span> false<span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>ack <span class="token operator">=</span> true<span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>window <span class="token operator">=</span> <span class="token number">65000</span><span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>ack_seq <span class="token operator">=</span> <span class="token function">htonl</span><span class="token punctuation">(</span><span class="token function">ntohl</span><span class="token punctuation">(</span>oth<span class="token operator">-&gt;</span>seq<span class="token punctuation">)</span> <span class="token operator">+</span> payload<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>seq <span class="token operator">=</span> oth<span class="token operator">-&gt;</span>ack_seq<span class="token punctuation">;</span>
+		max_seq <span class="token operator">=</span> <span class="token function">ntohl</span><span class="token punctuation">(</span>oth<span class="token operator">-&gt;</span>seq<span class="token punctuation">)</span> <span class="token operator">+</span> payload<span class="token punctuation">;</span>
+		<span class="token keyword">return</span> false<span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+	<span class="token comment">/* FIN &gt; RST */</span>
+	<span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>oth<span class="token operator">-&gt;</span>fin<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		tcph<span class="token operator">-&gt;</span>window  <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>seq <span class="token operator">=</span> oth<span class="token operator">-&gt;</span>ack_seq<span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>ack_seq <span class="token operator">=</span> oth<span class="token operator">-&gt;</span>ack_seq<span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>fin <span class="token operator">=</span> false<span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>ack <span class="token operator">=</span> false<span class="token punctuation">;</span>
+		tcph<span class="token operator">-&gt;</span>rst <span class="token operator">=</span> true<span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token keyword">return</span> true<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">static</span> <span class="token keyword">unsigned</span> <span class="token keyword">int</span> <span class="token function">ipv4_pseudotcp_hook</span><span class="token punctuation">(</span><span class="token keyword">void</span> <span class="token operator">*</span>priv<span class="token punctuation">,</span> <span class="token keyword">struct</span> <span class="token class-name">sk_buff</span> <span class="token operator">*</span>skb<span class="token punctuation">,</span> <span class="token keyword">const</span> <span class="token keyword">struct</span> <span class="token class-name">nf_hook_state</span> <span class="token operator">*</span>state<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">struct</span> <span class="token class-name">iphdr</span> <span class="token operator">*</span>niph<span class="token punctuation">,</span> ihdr<span class="token punctuation">,</span> <span class="token operator">*</span>iphu<span class="token punctuation">,</span> <span class="token operator">*</span>iph <span class="token operator">=</span> <span class="token function">ip_hdr</span><span class="token punctuation">(</span>skb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">struct</span> <span class="token class-name">tcphdr</span> _otcph<span class="token punctuation">,</span> <span class="token operator">*</span>oth<span class="token punctuation">,</span> thdr<span class="token punctuation">,</span> <span class="token operator">*</span>tcph<span class="token punctuation">;</span>
+	<span class="token keyword">struct</span> <span class="token class-name">udphdr</span> <span class="token operator">*</span>udph<span class="token punctuation">;</span>
+	<span class="token keyword">struct</span> <span class="token class-name">sk_buff</span> <span class="token operator">*</span>nskb<span class="token punctuation">;</span>
+	<span class="token keyword">unsigned</span> <span class="token keyword">int</span> delta <span class="token operator">=</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">tcphdr</span><span class="token punctuation">)</span> <span class="token operator">-</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">udphdr</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token class-name">uint16_t</span> tmp<span class="token punctuation">,</span> payload<span class="token punctuation">;</span>
+	bool reply <span class="token operator">=</span> false<span class="token punctuation">,</span> retrans <span class="token operator">=</span> false<span class="token punctuation">;</span>
+
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>iph<span class="token operator">-&gt;</span>protocol <span class="token operator">!=</span> IPPROTO_TCP<span class="token punctuation">)</span>
+		<span class="token keyword">goto</span> out<span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>skb<span class="token operator">-&gt;</span>len <span class="token operator">&lt;</span> <span class="token function">ip_hdrlen</span><span class="token punctuation">(</span>skb<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">tcphdr</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+		<span class="token keyword">goto</span> out<span class="token punctuation">;</span>
+	oth <span class="token operator">=</span> <span class="token function">skb_header_pointer</span><span class="token punctuation">(</span>skb<span class="token punctuation">,</span> <span class="token function">ip_hdrlen</span><span class="token punctuation">(</span>skb<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span>_otcph<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>_otcph<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>oth <span class="token operator">==</span> <span class="token constant">NULL</span><span class="token punctuation">)</span>
+		<span class="token keyword">goto</span> out<span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">nf_ip_checksum</span><span class="token punctuation">(</span>skb<span class="token punctuation">,</span> NF_INET_LOCAL_IN<span class="token punctuation">,</span> <span class="token function">ip_hdrlen</span><span class="token punctuation">(</span>skb<span class="token punctuation">)</span><span class="token punctuation">,</span> IPPROTO_TCP<span class="token punctuation">)</span><span class="token punctuation">)</span>
+		<span class="token keyword">goto</span> out<span class="token punctuation">;</span>
+	nskb <span class="token operator">=</span> <span class="token function">skb_copy_expand</span><span class="token punctuation">(</span>skb<span class="token punctuation">,</span> LL_MAX_HEADER<span class="token punctuation">,</span> <span class="token function">skb_tailroom</span><span class="token punctuation">(</span>skb<span class="token punctuation">)</span><span class="token punctuation">,</span> GFP_ATOMIC<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>nskb <span class="token operator">==</span> <span class="token constant">NULL</span><span class="token punctuation">)</span>
+		<span class="token keyword">goto</span> out<span class="token punctuation">;</span>
+
+	<span class="token function">nf_reset_ct</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">skb_init_secmark</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">skb_shinfo</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token operator">-&gt;</span>gso_size <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token function">skb_shinfo</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token operator">-&gt;</span>gso_segs <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token function">skb_shinfo</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token operator">-&gt;</span>gso_type <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	ihdr <span class="token operator">=</span> <span class="token operator">*</span>iph<span class="token punctuation">;</span>
+	tcph <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">tcphdr</span> <span class="token operator">*</span><span class="token punctuation">)</span><span class="token punctuation">(</span><span class="token function">skb_network_header</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token function">ip_hdrlen</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	thdr <span class="token operator">=</span> <span class="token operator">*</span>tcph<span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">htons</span><span class="token punctuation">(</span>tcph<span class="token operator">-&gt;</span>dest<span class="token punctuation">)</span> <span class="token operator">!=</span> <span class="token number">12345</span><span class="token punctuation">)</span>
+		<span class="token keyword">goto</span> out<span class="token punctuation">;</span>
+
+	niph <span class="token operator">=</span> <span class="token function">ip_hdr</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	niph<span class="token operator">-&gt;</span>daddr <span class="token operator">=</span> <span class="token function">xchg</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>niph<span class="token operator">-&gt;</span>saddr<span class="token punctuation">,</span> niph<span class="token operator">-&gt;</span>daddr<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	tmp <span class="token operator">=</span> tcph<span class="token operator">-&gt;</span>source<span class="token punctuation">;</span>
+	tcph<span class="token operator">-&gt;</span>source <span class="token operator">=</span> tcph<span class="token operator">-&gt;</span>dest<span class="token punctuation">;</span>
+	tcph<span class="token operator">-&gt;</span>dest <span class="token operator">=</span> tmp<span class="token punctuation">;</span>
+	payload <span class="token operator">=</span> nskb<span class="token operator">-&gt;</span>len <span class="token operator">-</span> <span class="token function">ip_hdrlen</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span> <span class="token operator">-</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">tcphdr</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	tcph<span class="token operator">-&gt;</span>doff <span class="token operator">=</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">tcphdr</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">4</span><span class="token punctuation">;</span>
+	<span class="token function">skb_trim</span><span class="token punctuation">(</span>nskb<span class="token punctuation">,</span> <span class="token function">ip_hdrlen</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">tcphdr</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	niph<span class="token operator">-&gt;</span>tot_len <span class="token operator">=</span> <span class="token function">htons</span><span class="token punctuation">(</span>nskb<span class="token operator">-&gt;</span>len<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	tcph<span class="token operator">-&gt;</span>urg_ptr <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token class-name">u_int8_t</span> <span class="token operator">*</span><span class="token punctuation">)</span>tcph<span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">13</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+
+	reply <span class="token operator">=</span> <span class="token function">tcp_reply</span><span class="token punctuation">(</span>tcph<span class="token punctuation">,</span> oth<span class="token punctuation">,</span> payload<span class="token punctuation">,</span> <span class="token operator">&amp;</span>retrans<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>reply <span class="token operator">==</span> false <span class="token operator">&amp;&amp;</span> payload <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token operator">||</span> retrans<span class="token punctuation">)</span>
+		<span class="token keyword">goto</span> free_nskb<span class="token punctuation">;</span>
+
+	tcph<span class="token operator">-&gt;</span>check <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	tcph<span class="token operator">-&gt;</span>check <span class="token operator">=</span> <span class="token function">tcp_v4_check</span><span class="token punctuation">(</span><span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">tcphdr</span><span class="token punctuation">)</span><span class="token punctuation">,</span> niph<span class="token operator">-&gt;</span>saddr<span class="token punctuation">,</span> niph<span class="token operator">-&gt;</span>daddr<span class="token punctuation">,</span> <span class="token function">csum_partial</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword">char</span> <span class="token operator">*</span><span class="token punctuation">)</span>tcph<span class="token punctuation">,</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">tcphdr</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	niph<span class="token operator">-&gt;</span>frag_off <span class="token operator">=</span> <span class="token function">htons</span><span class="token punctuation">(</span>IP_DF<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	niph<span class="token operator">-&gt;</span>id <span class="token operator">=</span> <span class="token operator">~</span>ihdr<span class="token punctuation">.</span>id <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">;</span>
+
+	<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">ip_route_me_harder</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>init_net<span class="token punctuation">,</span> nskb<span class="token operator">-&gt;</span>sk<span class="token punctuation">,</span> nskb<span class="token punctuation">,</span> RTN_LOCAL<span class="token punctuation">)</span><span class="token punctuation">)</span>
+		<span class="token keyword">goto</span> free_nskb<span class="token punctuation">;</span>
+	<span class="token keyword">else</span>
+		niph <span class="token operator">=</span> <span class="token function">ip_hdr</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	nskb<span class="token operator">-&gt;</span>ip_summed <span class="token operator">=</span> CHECKSUM_NONE<span class="token punctuation">;</span>
+	niph<span class="token operator">-&gt;</span>ttl <span class="token operator">=</span> <span class="token number">64</span><span class="token punctuation">;</span>
+	niph<span class="token operator">-&gt;</span>check <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	niph<span class="token operator">-&gt;</span>check <span class="token operator">=</span> <span class="token function">ip_fast_csum</span><span class="token punctuation">(</span><span class="token function">skb_network_header</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token punctuation">,</span> niph<span class="token operator">-&gt;</span>ihl<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">nf_ct_attach</span><span class="token punctuation">(</span>nskb<span class="token punctuation">,</span> skb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token function">NF_HOOK</span><span class="token punctuation">(</span>NFPROTO_IPV4<span class="token punctuation">,</span> NF_INET_LOCAL_OUT<span class="token punctuation">,</span> <span class="token operator">&amp;</span>init_net<span class="token punctuation">,</span> nskb<span class="token operator">-&gt;</span>sk<span class="token punctuation">,</span> nskb<span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">,</span> <span class="token function">skb_dst</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token operator">-&gt;</span>dev<span class="token punctuation">,</span> dst_output<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>reply <span class="token operator">==</span> true <span class="token operator">||</span> payload <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+		<span class="token keyword">goto</span> drop<span class="token punctuation">;</span>
+
+	ihdr<span class="token punctuation">.</span>protocol <span class="token operator">=</span> IPPROTO_UDP<span class="token punctuation">;</span>
+	ihdr<span class="token punctuation">.</span>tot_len <span class="token operator">=</span> <span class="token function">htons</span><span class="token punctuation">(</span><span class="token function">ntohs</span><span class="token punctuation">(</span>ihdr<span class="token punctuation">.</span>tot_len<span class="token punctuation">)</span> <span class="token operator">-</span> delta<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	iphu <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">iphdr</span> <span class="token operator">*</span><span class="token punctuation">)</span><span class="token function">skb_pull</span><span class="token punctuation">(</span>skb<span class="token punctuation">,</span> delta<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token operator">*</span>iphu <span class="token operator">=</span> ihdr<span class="token punctuation">;</span>
+	<span class="token function">skb_reset_network_header</span><span class="token punctuation">(</span>skb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">skb_set_transport_header</span><span class="token punctuation">(</span>skb<span class="token punctuation">,</span>  iphu<span class="token operator">-&gt;</span>ihl<span class="token operator">*</span><span class="token number">4</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">ip_send_check</span><span class="token punctuation">(</span>iphu<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	udph <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">udphdr</span> <span class="token operator">*</span><span class="token punctuation">)</span><span class="token function">skb_transport_header</span><span class="token punctuation">(</span>skb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	udph<span class="token operator">-&gt;</span>source <span class="token operator">=</span> thdr<span class="token punctuation">.</span>source<span class="token punctuation">;</span>
+	udph<span class="token operator">-&gt;</span>dest <span class="token operator">=</span> thdr<span class="token punctuation">.</span>dest<span class="token punctuation">;</span>
+	udph<span class="token operator">-&gt;</span>len <span class="token operator">=</span> <span class="token function">htons</span><span class="token punctuation">(</span><span class="token function">ntohs</span><span class="token punctuation">(</span>iphu<span class="token operator">-&gt;</span>tot_len<span class="token punctuation">)</span> <span class="token operator">-</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">struct</span> <span class="token class-name">iphdr</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	udph<span class="token operator">-&gt;</span>check <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+out<span class="token operator">:</span>
+	<span class="token keyword">return</span> NF_ACCEPT<span class="token punctuation">;</span>
+free_nskb<span class="token operator">:</span>
+	<span class="token function">kfree_skb</span><span class="token punctuation">(</span>nskb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+drop<span class="token operator">:</span>
+	<span class="token keyword">return</span> NF_DROP<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">static</span> <span class="token keyword">const</span> <span class="token keyword">struct</span> <span class="token class-name">nf_hook_ops</span> ipv4_pseudotcp_ops<span class="token punctuation">[</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token punctuation">.</span>hook <span class="token operator">=</span> ipv4_pseudotcp_hook<span class="token punctuation">,</span>
+		<span class="token punctuation">.</span>pf <span class="token operator">=</span> NFPROTO_IPV4<span class="token punctuation">,</span>
+		<span class="token punctuation">.</span>hooknum <span class="token operator">=</span> NF_INET_LOCAL_IN<span class="token punctuation">,</span>
+		<span class="token punctuation">.</span>priority <span class="token operator">=</span> NF_IP_PRI_LAST<span class="token punctuation">,</span>
+	<span class="token punctuation">}</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword">static</span> <span class="token keyword">int</span> __init <span class="token function">pseudotcp_init</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">return</span> <span class="token function">nf_register_net_hooks</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>init_net<span class="token punctuation">,</span> ipv4_pseudotcp_ops<span class="token punctuation">,</span> <span class="token function">ARRAY_SIZE</span><span class="token punctuation">(</span>ipv4_pseudotcp_ops<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">static</span> <span class="token keyword">void</span> __exit <span class="token function">pseudotcp_exit</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token function">nf_unregister_net_hooks</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>init_net<span class="token punctuation">,</span> ipv4_pseudotcp_ops<span class="token punctuation">,</span> <span class="token function">ARRAY_SIZE</span><span class="token punctuation">(</span>ipv4_pseudotcp_ops<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token function">module_init</span><span class="token punctuation">(</span>pseudotcp_init<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token function">module_exit</span><span class="token punctuation">(</span>pseudotcp_exit<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token function">MODULE_LICENSE</span><span class="token punctuation">(</span><span class="token string">"GPL"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>这个算法依然不重传，完全是 UDP 的语义。既然接收端是 UDP，为什么大费周章用假 TCP 传输呢？<br/> 为了欺骗运营商呗。</p>
+<p>还有一个意思，从此以后，TCP 发送端可以和 UDP 接收端对接，这对应用程序而言，意味着可分别改造即可完成适配，甚至故意这么玩，都可。</p>
+<blockquote>
+<p>NAT64 可以将 IPv6 报文转换为 IPv4 报文，同样，TCP 报文也能转换成 UDP 报文。简单试试，有点意思。</p>
+</blockquote>
+<p>浙江温州皮鞋湿，下雨进水不会胖。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

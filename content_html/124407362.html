@@ -1,0 +1,331 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="UnityWindowsuser32dll_0"></a>Unity使用Windows原生user32.dll接口调整窗口分辨率</h1>
+<p><strong>使用user32.dll的API</strong></p>
+<pre><code class="prism language-c#">    //窗口样式
+    [DllImport("user32.dll")]
+    static extern IntPtr SetWindowLong(IntPtr hwnd, int _nIndex, int dwNewLong);
+    //窗口分辨率和位置
+    [DllImport("user32.dll")]
+    static extern bool SetWindowPos(IntPtr hWnd, int hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    //获取当前激活窗口
+    [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")]
+    static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    static extern IntPtr FindWindow(string strClassName, int nptWindowName);
+    //窗口拖动
+    [DllImport("user32.dll")]
+    public static extern bool ReleaseCapture();
+    [DllImport("user32.dll")]
+    public static extern bool SendMessage(IntPtr hwnd, int wMsg, int wParam, int lParam);
+    [DllImport("user32.dll", SetLastError = true)]
+    //得到窗口的样式
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(System.IntPtr hwnd, int nCmdShow);
+    //获取窗口位置以及大小
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetWindowRect(IntPtr hWnd, ref RECT lpRect);
+    [StructLayout(LayoutKind.Sequential)]
+</code></pre>
+<p>使用的参数</p>
+<pre><code class="prism language-c#">    private const int SWP_SHOWWINDOW = 0x0040;
+    //边框样式
+    private const int GWL_STYLE = -16;
+    private const int GWL_EXSTYLE = -20;
+    //窗口有细线边框
+    private const int WS_BORDER = 1;
+    //窗口有一个最大化按钮
+    private const int WS_MAXIMIZEBOX = 0x00010000;
+    //窗口有一个最小化按钮
+    private const int WS_MINIMIZEBOX = 0x00020000;
+    //窗口是一个重叠窗口。重叠窗口有标题栏和边框。
+    private const int WS_OVERLAPPED = 0x00000000;
+    //有标题栏
+    private const int WS_TILEDWINDOW = (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+    //隐藏标题栏图标
+    private const int WS_POPUP = 0x800000;
+    //窗口的标题栏上有一个窗口菜单。也必须指定ws_CAPTION样式。
+    private const int WS_SYSMENU = 0x80000;
+    //最大最小化
+    private const int SW_SHOWMINIMIZED = 2;//(最小化窗口)
+    private const int SW_SHOWMAXIMIZED = 3;//最大化窗口
+    //去除标题栏保留边框
+    private const int WS_CAPTION = 0x00C00000;
+    private const int WS_THICKFRAME = 0x00040000;
+</code></pre>
+<p>无标题栏窗口分辨率修改</p>
+<pre><code class="prism language-c#">    /// &lt;summary&gt;
+    /// 隐藏标题栏修改分辨率
+    /// &lt;/summary&gt;
+    /// &lt;param name="winWidth"&gt;&lt;/param&gt;
+    /// &lt;param name="winHeight"&gt;&lt;/param&gt;
+    /// &lt;param name="winPosX"&gt;&lt;/param&gt;
+    /// &lt;param name="winPosY"&gt;&lt;/param&gt;
+    void ChangeScreenSizeHide(int winWidth, int winHeight, int winPosX, int winPosY)
+    {
+        if (titleBarStyles== TitleBarStyles.Show)
+        {
+            //去除标题栏（不可拖拽缩放）；一定要加SetWindowPos（）设置才会立即生效
+            SetWindowLong(GetForegroundWindow(), GWL_STYLE, WS_POPUP);
+            //去除标题栏（可拖拽缩放）
+            //SetWindowLong(GetForegroundWindow(), GWL_STYLE, GetWindowLong(GetForegroundWindow(), GWL_STYLE) &amp; ~WS_CAPTION | WS_THICKFRAME);
+        }
+        ChangeScreenSize(winWidth, winHeight, winPosX, winPosY);
+        titleBarStyles = TitleBarStyles.Hide;
+    }
+</code></pre>
+<p>有标题栏窗口分辨率修改</p>
+<pre><code class="prism language-c#">    //不隐藏标题栏修改分辨率
+    void ChangeScreenSizeShow(int winWidth, int winHeight, int winPosX, int winPosY)
+    {
+        if (titleBarStyles == TitleBarStyles.Hide)
+        {
+            SetWindowLong(GetForegroundWindow(), GWL_STYLE, GetWindowLong(GetForegroundWindow(), GWL_STYLE) | WS_TILEDWINDOW);
+        }
+        ChangeScreenSize(winWidth, winHeight, winPosX, winPosY);
+        titleBarStyles = TitleBarStyles.Show;
+    }
+</code></pre>
+<p>窗口最大化</p>
+<pre><code class="prism language-c#">    /// &lt;summary&gt;
+    /// 窗口最大化
+    /// &lt;/summary&gt;
+    public void SetMaxWindows()
+    {
+        int currMaxScreenHeight = Screen.currentResolution.height - GetTaskBarHeight();
+        SetWindowPos(GetForegroundWindow(), 0, 0, 0, Screen.currentResolution.width, currMaxScreenHeight, SWP_SHOWWINDOW);
+    }
+    /// &lt;summary&gt;
+    /// 获取任务栏高度
+    /// &lt;/summary&gt;
+    /// &lt;returns&gt;任务栏高度&lt;/returns&gt;
+    private int GetTaskBarHeight()
+    {
+        int taskbarHeight = 0;
+        IntPtr hWnd = FindWindow("Shell_TrayWnd", 0);
+        RECT rect = new RECT();
+        GetWindowRect(hWnd, ref rect);
+        taskbarHeight = (int)rect.Bottom - (int)rect.Top;
+        Debug.Log(taskbarHeight);
+        return taskbarHeight;
+    }
+</code></pre>
+<p>窗口最小化</p>
+<pre><code class="prism language-c#">    /// &lt;summary&gt;
+    /// 最小化窗口
+    /// &lt;/summary&gt;
+    public void SetMinWindows()
+    {
+        ShowWindow(GetForegroundWindow(), SW_SHOWMINIMIZED);
+    }
+</code></pre>
+<p>窗口拖动</p>
+<pre><code class="prism language-c#">    /// &lt;summary&gt;
+    /// 拖动窗口
+    /// &lt;/summary&gt;
+    /// &lt;param name="window"&gt;当前句柄&lt;/param&gt;
+    public void DragWindow()
+    {
+        ReleaseCapture();
+        SendMessage(GetForegroundWindow(), 0xA1, 0x02, 0);
+        SendMessage(GetForegroundWindow(), 0x0202, 0, 0);
+    }
+</code></pre>
+<p>全屏</p>
+<pre><code class="prism language-c#">    /// &lt;summary&gt;
+    /// 全屏
+    /// &lt;/summary&gt;
+    public void SetFullScreen()
+    {
+        ShowWindow(GetForegroundWindow(), SW_SHOWMAXIMIZED);
+    }
+</code></pre>
+<p>完整代码</p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Collections<span class="token punctuation">.</span>Generic</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Runtime<span class="token punctuation">.</span>InteropServices</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">UnityEngine<span class="token punctuation">.</span>UI</span><span class="token punctuation">;</span>
+
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">ScreenResolution</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">MonoBehaviour</span></span>
+<span class="token punctuation">{<!-- --></span>
+
+    <span class="token comment">//窗口样式</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">DllImport</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">static</span> <span class="token keyword">extern</span> <span class="token return-type class-name">IntPtr</span> <span class="token function">SetWindowLong</span><span class="token punctuation">(</span><span class="token class-name">IntPtr</span> hwnd<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> _nIndex<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> dwNewLong<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//窗口分辨率和位置</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">DllImport</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">static</span> <span class="token keyword">extern</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">SetWindowPos</span><span class="token punctuation">(</span><span class="token class-name">IntPtr</span> hWnd<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> hWndInsertAfter<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> X<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> Y<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> cx<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> cy<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">uint</span></span> uFlags<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//获取当前激活窗口</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">DllImport</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">,</span> EntryPoint <span class="token operator">=</span> <span class="token string">"GetForegroundWindow"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">static</span> <span class="token keyword">extern</span> <span class="token return-type class-name">IntPtr</span> <span class="token function">GetForegroundWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">DllImport</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">static</span> <span class="token keyword">extern</span> <span class="token return-type class-name">IntPtr</span> <span class="token function">FindWindow</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> strClassName<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> nptWindowName<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//窗口拖动</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">DllImport</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">extern</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">ReleaseCapture</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">DllImport</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">extern</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">SendMessage</span><span class="token punctuation">(</span><span class="token class-name">IntPtr</span> hwnd<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> wMsg<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> wParam<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> lParam<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">DllImport</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">,</span> SetLastError <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token comment">//得到窗口的样式</span>
+    <span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token keyword">extern</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> <span class="token function">GetWindowLong</span><span class="token punctuation">(</span><span class="token class-name">IntPtr</span> hWnd<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> nIndex<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">DllImport</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">extern</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">ShowWindow</span><span class="token punctuation">(</span><span class="token class-name">System<span class="token punctuation">.</span>IntPtr</span> hwnd<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> nCmdShow<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//获取窗口位置以及大小</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">DllImport</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"user32.dll"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token target keyword">return</span><span class="token punctuation">:</span> <span class="token class-name">MarshalAs</span><span class="token attribute-arguments"><span class="token punctuation">(</span>UnmanagedType<span class="token punctuation">.</span>Bool<span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">extern</span> <span class="token return-type class-name"><span class="token keyword">bool</span></span> <span class="token function">GetWindowRect</span><span class="token punctuation">(</span><span class="token class-name">IntPtr</span> hWnd<span class="token punctuation">,</span> <span class="token keyword">ref</span> <span class="token class-name">RECT</span> lpRect<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">StructLayout</span><span class="token attribute-arguments"><span class="token punctuation">(</span>LayoutKind<span class="token punctuation">.</span>Sequential<span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token keyword">struct</span> <span class="token class-name">RECT</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">public</span> <span class="token class-name"><span class="token keyword">int</span></span> Left<span class="token punctuation">;</span> <span class="token comment">//最左坐标</span>
+        <span class="token keyword">public</span> <span class="token class-name"><span class="token keyword">int</span></span> Top<span class="token punctuation">;</span> <span class="token comment">//最上坐标</span>
+        <span class="token keyword">public</span> <span class="token class-name"><span class="token keyword">int</span></span> Right<span class="token punctuation">;</span> <span class="token comment">//最右坐标</span>
+        <span class="token keyword">public</span> <span class="token class-name"><span class="token keyword">int</span></span> Bottom<span class="token punctuation">;</span> <span class="token comment">//最下坐标</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">enum</span> <span class="token class-name">TitleBarStyles</span>
+    <span class="token punctuation">{<!-- --></span>
+        Hide<span class="token punctuation">,</span> Show
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> SWP_SHOWWINDOW <span class="token operator">=</span> <span class="token number">0x0040</span><span class="token punctuation">;</span>
+    <span class="token comment">//边框样式</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> GWL_STYLE <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">16</span><span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> GWL_EXSTYLE <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">20</span><span class="token punctuation">;</span>
+    <span class="token comment">//窗口有细线边框</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> WS_BORDER <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+    <span class="token comment">//窗口有一个最大化按钮</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> WS_MAXIMIZEBOX <span class="token operator">=</span> <span class="token number">0x00010000</span><span class="token punctuation">;</span>
+    <span class="token comment">//窗口有一个最小化按钮</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> WS_MINIMIZEBOX <span class="token operator">=</span> <span class="token number">0x00020000</span><span class="token punctuation">;</span>
+    <span class="token comment">//窗口是一个重叠窗口。重叠窗口有标题栏和边框。</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> WS_OVERLAPPED <span class="token operator">=</span> <span class="token number">0x00000000</span><span class="token punctuation">;</span>
+    <span class="token comment">//有标题栏</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> WS_TILEDWINDOW <span class="token operator">=</span> <span class="token punctuation">(</span>WS_OVERLAPPED <span class="token operator">|</span> WS_CAPTION <span class="token operator">|</span> WS_SYSMENU <span class="token operator">|</span> WS_THICKFRAME <span class="token operator">|</span> WS_MINIMIZEBOX <span class="token operator">|</span> WS_MAXIMIZEBOX<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//隐藏标题栏图标</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> WS_POPUP <span class="token operator">=</span> <span class="token number">0x800000</span><span class="token punctuation">;</span>
+    <span class="token comment">//窗口的标题栏上有一个窗口菜单。也必须指定ws_CAPTION样式。</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> WS_SYSMENU <span class="token operator">=</span> <span class="token number">0x80000</span><span class="token punctuation">;</span>
+    <span class="token comment">//最大最小化</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> SW_SHOWMINIMIZED <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span><span class="token comment">//(最小化窗口)</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> SW_SHOWMAXIMIZED <span class="token operator">=</span> <span class="token number">3</span><span class="token punctuation">;</span><span class="token comment">//最大化窗口</span>
+    <span class="token comment">//去除标题栏保留边框</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> WS_CAPTION <span class="token operator">=</span> <span class="token number">0x00C00000</span><span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> WS_THICKFRAME <span class="token operator">=</span> <span class="token number">0x00040000</span><span class="token punctuation">;</span>
+
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 隐藏标题栏修改分辨率</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token comment">/// &lt;param name="winWidth"&gt;&lt;/param&gt;</span>
+    <span class="token comment">/// &lt;param name="winHeight"&gt;&lt;/param&gt;</span>
+    <span class="token comment">/// &lt;param name="winPosX"&gt;&lt;/param&gt;</span>
+    <span class="token comment">/// &lt;param name="winPosY"&gt;&lt;/param&gt;</span>
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ChangeScreenSizeHide</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> winWidth<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> winHeight<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> winPosX<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> winPosY<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>titleBarStyles<span class="token operator">==</span> TitleBarStyles<span class="token punctuation">.</span>Show<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">//去除标题栏（不可拖拽缩放）；一定要加SetWindowPos（）设置才会立即生效</span>
+            <span class="token function">SetWindowLong</span><span class="token punctuation">(</span><span class="token function">GetForegroundWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> GWL_STYLE<span class="token punctuation">,</span> WS_POPUP<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token comment">//去除标题栏（可拖拽缩放）</span>
+            <span class="token comment">//SetWindowLong(GetForegroundWindow(), GWL_STYLE, GetWindowLong(GetForegroundWindow(), GWL_STYLE) &amp; ~WS_CAPTION | WS_THICKFRAME);</span>
+        <span class="token punctuation">}</span>
+        <span class="token function">ChangeScreenSize</span><span class="token punctuation">(</span>winWidth<span class="token punctuation">,</span> winHeight<span class="token punctuation">,</span> winPosX<span class="token punctuation">,</span> winPosY<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        titleBarStyles <span class="token operator">=</span> TitleBarStyles<span class="token punctuation">.</span>Hide<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//不隐藏标题栏修改分辨率</span>
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ChangeScreenSizeShow</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> winWidth<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> winHeight<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> winPosX<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> winPosY<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>titleBarStyles <span class="token operator">==</span> TitleBarStyles<span class="token punctuation">.</span>Hide<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token function">SetWindowLong</span><span class="token punctuation">(</span><span class="token function">GetForegroundWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> GWL_STYLE<span class="token punctuation">,</span> <span class="token function">GetWindowLong</span><span class="token punctuation">(</span><span class="token function">GetForegroundWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> GWL_STYLE<span class="token punctuation">)</span> <span class="token operator">|</span> WS_TILEDWINDOW<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token function">ChangeScreenSize</span><span class="token punctuation">(</span>winWidth<span class="token punctuation">,</span> winHeight<span class="token punctuation">,</span> winPosX<span class="token punctuation">,</span> winPosY<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        titleBarStyles <span class="token operator">=</span> TitleBarStyles<span class="token punctuation">.</span>Show<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 修改分辨率</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token comment">/// &lt;param name="winWidth"&gt;&lt;/param&gt;</span>
+    <span class="token comment">/// &lt;param name="winHeight"&gt;&lt;/param&gt;</span>
+    <span class="token comment">/// &lt;param name="winPosX"&gt;&lt;/param&gt;</span>
+    <span class="token comment">/// &lt;param name="winPosY"&gt;&lt;/param&gt;</span>
+    <span class="token comment">/// &lt;param name="winPoscy"&gt;&lt;/param&gt;</span>
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ChangeScreenSize</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">int</span></span> winWidth<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> winHeight<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> winPosX<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> winPosY<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">SetWindowPos</span><span class="token punctuation">(</span><span class="token function">GetForegroundWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> winPosX <span class="token operator">-</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span><span class="token punctuation">(</span>winWidth <span class="token operator">*</span> <span class="token number">0.5f</span><span class="token punctuation">)</span><span class="token punctuation">,</span> winPosY <span class="token operator">-</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span><span class="token punctuation">(</span>winHeight <span class="token operator">*</span> <span class="token number">0.5f</span><span class="token punctuation">)</span><span class="token punctuation">,</span> winWidth<span class="token punctuation">,</span> winHeight<span class="token punctuation">,</span> SWP_SHOWWINDOW<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token punctuation">}</span>
+
+    <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Delay</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">float</span></span> seconds<span class="token punctuation">,</span> <span class="token class-name">Action</span> onFinished<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">StartCoroutine</span><span class="token punctuation">(</span><span class="token function">DelayCoroutione</span><span class="token punctuation">(</span>seconds<span class="token punctuation">,</span> onFinished<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name">IEnumerator</span> <span class="token function">DelayCoroutione</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">float</span></span> seconds<span class="token punctuation">,</span> <span class="token class-name">Action</span> onFinished<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">yield</span> <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">WaitForSeconds</span><span class="token punctuation">(</span>seconds<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">onFinished</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 窗口最大化</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">SetMaxWindows</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name"><span class="token keyword">int</span></span> currMaxScreenHeight <span class="token operator">=</span> Screen<span class="token punctuation">.</span>currentResolution<span class="token punctuation">.</span>height <span class="token operator">-</span> <span class="token function">GetTaskBarHeight</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">ChangeScreenSizeHide</span><span class="token punctuation">(</span>Screen<span class="token punctuation">.</span>currentResolution<span class="token punctuation">.</span>width<span class="token punctuation">,</span> currMaxScreenHeight<span class="token punctuation">,</span>  <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span><span class="token punctuation">(</span>Screen<span class="token punctuation">.</span>currentResolution<span class="token punctuation">.</span>width <span class="token operator">*</span> <span class="token number">0.5f</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span><span class="token punctuation">(</span>currMaxScreenHeight <span class="token operator">*</span> <span class="token number">0.5f</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+       <span class="token comment">// SetWindowPos(GetForegroundWindow(), 0, 0, 0, Screen.currentResolution.width, currMaxScreenHeight, SWP_SHOWWINDOW);</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 获取任务栏高度</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token comment">/// &lt;returns&gt;任务栏高度&lt;/returns&gt;</span>
+    <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> <span class="token function">GetTaskBarHeight</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name"><span class="token keyword">int</span></span> taskbarHeight <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token class-name">IntPtr</span> hWnd <span class="token operator">=</span> <span class="token function">FindWindow</span><span class="token punctuation">(</span><span class="token string">"Shell_TrayWnd"</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">RECT</span> rect <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">RECT</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">GetWindowRect</span><span class="token punctuation">(</span>hWnd<span class="token punctuation">,</span> <span class="token keyword">ref</span> rect<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        taskbarHeight <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>rect<span class="token punctuation">.</span>Bottom <span class="token operator">-</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>rect<span class="token punctuation">.</span>Top<span class="token punctuation">;</span>
+        Debug<span class="token punctuation">.</span><span class="token function">Log</span><span class="token punctuation">(</span>taskbarHeight<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">return</span> taskbarHeight<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 拖动窗口</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token comment">/// &lt;param name="window"&gt;当前句柄&lt;/param&gt;</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">DragWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">ReleaseCapture</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">SendMessage</span><span class="token punctuation">(</span><span class="token function">GetForegroundWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">0xA1</span><span class="token punctuation">,</span> <span class="token number">0x02</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">SendMessage</span><span class="token punctuation">(</span><span class="token function">GetForegroundWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">0x0202</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 最小化窗口</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">SetMinWindows</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">ShowWindow</span><span class="token punctuation">(</span><span class="token function">GetForegroundWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> SW_SHOWMINIMIZED<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/// &lt;summary&gt;</span>
+    <span class="token comment">/// 全屏</span>
+    <span class="token comment">/// &lt;/summary&gt;</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">SetFullScreen</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token function">ShowWindow</span><span class="token punctuation">(</span><span class="token function">GetForegroundWindow</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> SW_SHOWMAXIMIZED<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p><a href="https://download.csdn.net/download/dxs1990/85219659">工程文件下载</a></p>
+<p><a href="https://download.csdn.net/download/dxs1990/85219683">演示demo下载</a></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,1089 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p id="main-toc"><strong>目录</strong></p>
+<p id="Linux-i2c%E9%A9%B1%E5%8A%A8%E6%9E%B6%E6%9E%84-toc" style="margin-left:0px;"><a href="#Linux-i2c%E9%A9%B1%E5%8A%A8%E6%9E%B6%E6%9E%84">Linux-i2c驱动架构</a></p>
+<p id="%E6%80%BB%E7%BA%BF%E9%A9%B1%E5%8A%A8-toc" style="margin-left:40px;"><a href="#%E6%80%BB%E7%BA%BF%E9%A9%B1%E5%8A%A8">总线驱动</a></p>
+<p id="i2c%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E5%92%8C%E8%AE%BE%E5%A4%87-toc" style="margin-left:40px;"><a href="#i2c%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E5%92%8C%E8%AE%BE%E5%A4%87">i2c设备驱动和设备</a></p>
+<hr id="hr-toc"/>
+<p></p>
+<p> </p>
+<h1 id="Linux-i2c%E9%A9%B1%E5%8A%A8%E6%9E%B6%E6%9E%84">Linux-i2c驱动架构</h1>
+<p>       i2c驱动在Linux通过一个周的学习后发现i2c总线的驱动框架还是和Linux整体的驱动框架是相同的，思想并不特殊比较复杂的内容如i2c核心的内容都是内核驱动框架实现完成的，今天我们暂时只分析驱动开发需要完成的部分。iic驱动驱动开发主要是完成四个部分的内容，struct i2c_adapter（适配器），struct i2c_algorithm （通讯接口），i2c_driver（设备驱动），struct i2c_client（iic设备），其中适配器和通讯接口的实现一般SOC厂商都会针对自家的i2c控制器IP实现在Linux 内核驱动中，也就是可以参考。即使没有驱动开发人员也可以自己实现主要就是按照框架需求实现主要的接口函数就可以了。所以这里需要先明确一点的就是I2C驱动是分为总线驱动和设备驱动的，设备在I2C架构中由i2c_client描述，用户空间也可以直接使用总线驱动完成和总线上的设备的数据交换只是有些设备的i2c操作时序很复杂，如果在用户空间来操作i2c设备效率和软件分层上也是不符合常用习惯的。所以I2C的拓扑图大就是总线驱动，设备驱动和设备，设备和设备驱动都是挂接在具体的总线上的这是由硬件决定的，有了设备驱动对i2c设备的操作就编程读写普通文件一样容易从而降低了用户控件的程序开发的复杂程度并提高了执行效率。</p>
+<h2 id="%E6%80%BB%E7%BA%BF%E9%A9%B1%E5%8A%A8">总线驱动</h2>
+<pre><strong>i2c_adapter </strong>主要是用来抽像的描述i2c控制器的，结合其中<strong>algo</strong>通讯接口部分一起组成i2c总线驱动，其中适配器具体结构体如下：</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/b71bcd49ed03df14fedf94c47641e94c.gif"/></p>
+<pre>struct i2c_adapter {
+    struct module *owner;
+    unsigned int class;          /* classes to allow probing for */
+    const struct i2c_algorithm *algo; /* the algorithm to access the bus */
+    void *algo_data;
+
+    /* data fields that are valid for all devices    */
+    struct rt_mutex bus_lock;
+
+    int timeout;            /* in jiffies */
+    int retries;
+    struct device dev;        /* the adapter device */
+
+    int nr;
+    char name[48];
+    struct completion dev_released;
+
+    struct mutex userspace_clients_lock;
+    struct list_head userspace_clients;
+
+    struct i2c_bus_recovery_info *bus_recovery_info;
+};</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/5c77a1172295a3a10845e34137965bd0.gif"/></p>
+<p>其中的algo 指向适配对应到的具体的硬件的操作接口封装。除此之外其中还有一些属性如retries重试次数，class 保存i2c的一些特有的属性标志。总线驱动的适配器的部分内容比较简单基本就是一些软件部分内容的实现设置；要完成i2c总线驱动部分最主要的还是硬件通讯接口的实现，这一部分是和具体的硬件相关的所以也是驱动开发的重点。i2c总线驱动将硬件操作接口抽象封装如下：</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/c8c3e56989e5ca364efe7d28e2c1954f.gif"/></p>
+<pre>struct i2c_algorithm {
+    /* If an adapter algorithm can't do I2C-level access, set master_xfer
+       to NULL. If an adapter algorithm can do SMBus access, set
+       smbus_xfer. If set to NULL, the SMBus protocol is simulated
+       using common I2C messages */
+    /* master_xfer should return the number of messages successfully
+       processed, or a negative value on error */
+    int (*master_xfer)(struct i2c_adapter *adap, struct i2c_msg *msgs,
+               int num);
+    int (*smbus_xfer) (struct i2c_adapter *adap, u16 addr,
+               unsigned short flags, char read_write,
+               u8 command, int size, union i2c_smbus_data *data);
+
+    /* To determine what the adapter supports */
+    u32 (*functionality) (struct i2c_adapter *);
+};</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/23ecec550b5729dba9b5e5646ad72c52.gif"/></p>
+<p>其中master_xfer接口就是i2c主机驱动传输数据的接口，包括收和发。其中smbus_xfer 用于smbus时序发送数据。因为i2c接口和smbus是相同的有些SOC的i2c外设控制器同时支持这两种时序发送数据。最后就是functionality 接口他会返回当前总线支持的通讯协议和特性。三星的实现如下，其中具体的标志的含义可以参考具体说明文档。I2C_FUNC_I2C  指示支持I2C时序，I2C_FUNC_SMBUS_EMUL  应该是支持smbus时序。</p>
+<pre>/* declare our i2c functionality */
+static u32 s3c24xx_i2c_func(struct i2c_adapter *adap)
+{
+    return I2C_FUNC_I2C | I2C_FUNC_SMBUS_EMUL | I2C_FUNC_NOSTART |
+        I2C_FUNC_PROTOCOL_MANGLING;
+}</pre>
+<p>i2c总线驱动的的定义一步骤如下（前提是已经实现了接口封装中的各个通讯函数）</p>
+<ol><li>分配内存。</li><li>然后开始配置具体的成员变量。</li><li>在绑定具体的接口函数即algo。</li></ol>
+<p>最后就是总线驱动的注册接口了由i2c内核实现，完成向内核注册增加一个I2C总线适配器。</p>
+<p><strong>增加适配器</strong></p>
+<p>int i2c_add_adapter(struct i2c_adapter * adap);</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/69e03cfe785f6fdb909c3d7ae48345df.gif"/></p>
+<pre>int i2c_add_adapter(struct i2c_adapter *adapter)
+{
+    struct device *dev = &amp;adapter-&gt;dev;
+    int id;
+　  //设备树的方式添加设备　　
+    if (dev-&gt;of_node) {
+        id = of_alias_get_id(dev-&gt;of_node, "i2c");
+        if (id &gt;= 0) {
+            adapter-&gt;nr = id;
+            return __i2c_add_numbered_adapter(adapter);
+        }
+    }
+    //普通将设备写在板级文件中的方式
+    mutex_lock(&amp;core_lock);
+    //分配一个总线ID 这个ID有总线驱动子系统维护
+    id = idr_alloc(&amp;i2c_adapter_idr, adapter,
+               __i2c_first_dynamic_bus_num, 0, GFP_KERNEL);
+    mutex_unlock(&amp;core_lock);
+    if (id &lt; 0)
+        return id;
+
+    adapter-&gt;nr = id;
+    //适配器的注册，前提适配器有id
+    return i2c_register_adapter(adapter);
+}</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/c8c3e56989e5ca364efe7d28e2c1954f.gif"/></p>
+<p>整个执行流程基本分为如下的过程，如果未指定适配器id则先申请ID然后就是调用i2c_register_adapter</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/dc9663d7cadd175292cd9d9cfab10c57.gif"/></p>
+<pre>static int i2c_register_adapter(struct i2c_adapter *adap)
+{
+    int res = 0;
+
+    /* Can't register until after driver model init */
+    if (unlikely(WARN_ON(!i2c_bus_type.p))) {
+        res = -EAGAIN;
+        goto out_list;
+    }
+
+    /* Sanity checks */
+    if (unlikely(adap-&gt;name[0] == '\0')) {
+        pr_err("i2c-core: Attempt to register an adapter with "
+               "no name!\n");
+        return -EINVAL;
+    }
+    if (unlikely(!adap-&gt;algo)) {
+        pr_err("i2c-core: Attempt to register adapter '%s' with "
+               "no algo!\n", adap-&gt;name);
+        return -EINVAL;
+    }
+
+    rt_mutex_init(&amp;adap-&gt;bus_lock);
+    //这里说明用户空间是可以直接使用总线设备 来操作总线上的设备的
+    mutex_init(&amp;adap-&gt;userspace_clients_lock);
+    INIT_LIST_HEAD(&amp;adap-&gt;userspace_clients);
+    //默认超时时间为一个系统心跳时间
+    /* Set default timeout to 1 second if not already set */
+    if (adap-&gt;timeout == 0)
+        adap-&gt;timeout = HZ;
+    //前面申请的Id，所以说ID是必须的
+    dev_set_name(&amp;adap-&gt;dev, "i2c-%d", adap-&gt;nr);
+    //i2c_bus_type  i2c_adapter_type 都是内核实现的一些操作的封装
+    adap-&gt;dev.bus = &amp;i2c_bus_type;
+    adap-&gt;dev.type = &amp;i2c_adapter_type;
+    //和普通的设备注册相同，有个疑问就是驱动何时注册的？
+    res = device_register(&amp;adap-&gt;dev);
+    if (res)
+        goto out_list;
+
+    dev_dbg(&amp;adap-&gt;dev, "adapter [%s] registered\n", adap-&gt;name);
+    //兼容性相关
+#ifdef CONFIG_I2C_COMPAT
+    res = class_compat_create_link(i2c_adapter_compat_class, &amp;adap-&gt;dev,
+                       adap-&gt;dev.parent);
+    if (res)
+        dev_warn(&amp;adap-&gt;dev,
+             "Failed to create compatibility class link\n");
+#endif
+    //总线恢复相关
+    /* bus recovery specific initialization */
+    if (adap-&gt;bus_recovery_info) {
+        struct i2c_bus_recovery_info *bri = adap-&gt;bus_recovery_info;
+
+        if (!bri-&gt;recover_bus) {
+            dev_err(&amp;adap-&gt;dev, "No recover_bus() found, not using recovery\n");
+            adap-&gt;bus_recovery_info = NULL;
+            goto exit_recovery;
+        }
+
+        /* Generic GPIO recovery */
+        if (bri-&gt;recover_bus == i2c_generic_gpio_recovery) {
+            if (!gpio_is_valid(bri-&gt;scl_gpio)) {
+                dev_err(&amp;adap-&gt;dev, "Invalid SCL gpio, not using recovery\n");
+                adap-&gt;bus_recovery_info = NULL;
+                goto exit_recovery;
+            }
+
+            if (gpio_is_valid(bri-&gt;sda_gpio))
+                bri-&gt;get_sda = get_sda_gpio_value;
+            else
+                bri-&gt;get_sda = NULL;
+
+            bri-&gt;get_scl = get_scl_gpio_value;
+            bri-&gt;set_scl = set_scl_gpio_value;
+        } else if (!bri-&gt;set_scl || !bri-&gt;get_scl) {
+            /* Generic SCL recovery */
+            dev_err(&amp;adap-&gt;dev, "No {get|set}_gpio() found, not using recovery\n");
+            adap-&gt;bus_recovery_info = NULL;
+        }
+    }</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/4d573af6861fe506289ae17d858d1661.gif"/></p>
+<p>添加的过程删除了异常处理的部分，执行过程大致就是先初始化适配器中的核心成员包括超时，设备链表，指定总线和设备类型后注册适配器设备。剩下的就是总线恢复的一些内容可以暂时不看。除此之外上面还发现一个问题就是添加总线适配器的过程发现不知道在何时添加的总线适配器驱动。根据前面对Linux设备注册过程的了解这里先看一下设备注册过程的绑定的总线type中的match接口：</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/f55770c9fbee06681acf0ca774f58197.gif"/></p>
+<pre>static int i2c_device_match(struct device *dev, struct device_driver *drv)
+{
+    struct i2c_client    *client = i2c_verify_client(dev);
+    struct i2c_driver    *driver;
+
+    if (!client)
+        return 0;
+
+    /* Attempt an OF style match */
+    if (of_driver_match_device(dev, drv))
+        return 1;
+
+    /* Then ACPI style match */
+    if (acpi_driver_match_device(dev, drv))
+        return 1;
+
+    driver = to_i2c_driver(drv);
+    /* match on an id table if there is one */
+    if (driver-&gt;id_table)
+        return i2c_match_id(driver-&gt;id_table, client) != NULL;
+
+    return 0;
+}</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/da16af4cd46b4254200ca9a3c857c03f.gif"/></p>
+<p>发现他在不使用设备树的情况下是通过驱动的id_table来完成设备和驱动的匹配的。继续找最后找到如下的代码在drivers\i2c\i2c-core.c 中：</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/74ea0c903952f8804a8919fba6cf1209.gif"/></p>
+<pre>static int __init i2c_init(void)
+{
+    int retval;
+
+    retval = bus_register(&amp;i2c_bus_type);
+    if (retval)
+        return retval;
+#ifdef CONFIG_I2C_COMPAT
+    i2c_adapter_compat_class = class_compat_register("i2c-adapter");
+    if (!i2c_adapter_compat_class) {
+        retval = -ENOMEM;
+        goto bus_err;
+    }
+#endif
+    retval = i2c_add_driver(&amp;dummy_driver);
+    if (retval)
+        goto class_err;
+    return 0;
+
+class_err:
+#ifdef CONFIG_I2C_COMPAT
+    class_compat_unregister(i2c_adapter_compat_class);
+bus_err:
+#endif
+    bus_unregister(&amp;i2c_bus_type);
+    return retval;
+}
+
+
+/* We must initialize early, because some subsystems register i2c drivers
+ * in subsys_initcall() code, but are linked (and initialized) before i2c.
+ */
+postcore_initcall(i2c_init);
+
+#define i2c_add_driver(driver) \
+    i2c_register_driver(THIS_MODULE, driver)
+    
+    
+
+int i2c_register_driver(struct module *owner, struct i2c_driver *driver)
+{
+    int res;
+
+    /* Can't register until after driver model init */
+    if (unlikely(WARN_ON(!i2c_bus_type.p)))
+        return -EAGAIN;
+
+    /* add the driver to the list of i2c drivers in the driver core */
+    driver-&gt;driver.owner = owner;
+    //这个很关键
+    driver-&gt;driver.bus = &amp;i2c_bus_type;
+    INIT_LIST_HEAD(&amp;driver-&gt;clients);
+
+    /* When registration returns, the driver core
+     * will have called probe() for all matching-but-unbound devices.
+     */
+    //这里就是和普通的驱动注册过程相同了
+    res = driver_register(&amp;driver-&gt;driver);
+    if (res)
+        return res;
+
+    /* Drivers should switch to dev_pm_ops instead. */
+    if (driver-&gt;suspend)
+        pr_warn("i2c-core: driver [%s] using legacy suspend method\n",
+            driver-&gt;driver.name);
+    if (driver-&gt;resume)
+        pr_warn("i2c-core: driver [%s] using legacy resume method\n",
+            driver-&gt;driver.name);
+
+    pr_debug("i2c-core: driver [%s] registered\n", driver-&gt;driver.name);
+    //如果设备先注册，则这里负责匹配
+    /* Walk the adapters that are already present */
+    i2c_for_each_dev(driver, __process_new_driver);
+
+    return 0;
+}
+//设备注册过程的一个关键代码</pre>
+<pre>static int __device_attach(struct device_driver *drv, void *data)
+{
+    struct device *dev = data;
+    /* 如果总线有定义mach函数则 调用总线的mach函数 这个接口由总线提供  */
+    if (!driver_match_device(drv, dev))
+        return 0;
+    /* 前面的匹配未成功 进一步探测*/
+    return driver_probe_device(drv, dev);
+}</pre>
+<pre>
+</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/b71bcd49ed03df14fedf94c47641e94c.gif"/></p>
+<p>上面的代码注册了一个虚拟的I2C设备，他的作用就是产生对应的总线设备如i2c-0，i2c-1等，也就完善了Linux的驱动框架的内容有了设备（I2C适配器）和驱动(dummy_driver)。适配器设备注册时会先执行总线的match接口（红色部分代码）也就是上面的i2c_device_match</p>
+<p>接口，再看底下虚拟驱动的定义可以知道总线的匹配会失败最终执行的就是驱动自己的probe接口这里就是driver_probe_device dummy_probe接口。</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/465bbd71868221931c00f53b0ab7d712.gif"/></p>
+<pre>static const struct i2c_device_id dummy_id[] = {
+    { "dummy", 0 },
+    { },
+};
+
+static int dummy_probe(struct i2c_client *client,
+               const struct i2c_device_id *id)
+{
+    return 0;
+}
+
+static int dummy_remove(struct i2c_client *client)
+{
+    return 0;
+}
+
+static struct i2c_driver dummy_driver = {
+    .driver.name    = "dummy",
+    .probe        = dummy_probe,
+    .remove        = dummy_remove,
+    .id_table    = dummy_id,
+};</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/7870d37e730721bcdabbb9fcb4cc5013.gif"/></p>
+<p></p>
+<p></p>
+<p><strong>删除适配器</strong></p>
+<p>void i2c_del_adapter(struct i2c_adapter * adap)</p>
+<p></p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/20463bd7b0fda0ce2946ae031b740b3d.gif"/></p>
+<pre>void i2c_del_adapter(struct i2c_adapter *adap)
+{
+    struct i2c_adapter *found;
+    struct i2c_client *client, *next;
+
+    /* First make sure that this adapter was ever added */
+    mutex_lock(&amp;core_lock);
+    found = idr_find(&amp;i2c_adapter_idr, adap-&gt;nr);
+    mutex_unlock(&amp;core_lock);
+    if (found != adap) {
+        pr_debug("i2c-core: attempting to delete unregistered "
+             "adapter [%s]\n", adap-&gt;name);
+        return;
+    }
+
+    acpi_i2c_remove_space_handler(adap);
+    /* Tell drivers about this removal */
+    mutex_lock(&amp;core_lock);
+    bus_for_each_drv(&amp;i2c_bus_type, NULL, adap,
+                   __process_removed_adapter);
+    mutex_unlock(&amp;core_lock);
+
+    /* Remove devices instantiated from sysfs */
+    mutex_lock_nested(&amp;adap-&gt;userspace_clients_lock,
+              i2c_adapter_depth(adap));
+    list_for_each_entry_safe(client, next, &amp;adap-&gt;userspace_clients,
+                 detected) {
+        dev_dbg(&amp;adap-&gt;dev, "Removing %s at 0x%x\n", client-&gt;name,
+            client-&gt;addr);
+        list_del(&amp;client-&gt;detected);
+        i2c_unregister_device(client);
+    }
+    mutex_unlock(&amp;adap-&gt;userspace_clients_lock);
+
+    /* Detach any active clients. This can't fail, thus we do not
+     * check the returned value. This is a two-pass process, because
+     * we can't remove the dummy devices during the first pass: they
+     * could have been instantiated by real devices wishing to clean
+     * them up properly, so we give them a chance to do that first. */
+    device_for_each_child(&amp;adap-&gt;dev, NULL, __unregister_client);
+    device_for_each_child(&amp;adap-&gt;dev, NULL, __unregister_dummy);
+
+#ifdef CONFIG_I2C_COMPAT
+    class_compat_remove_link(i2c_adapter_compat_class, &amp;adap-&gt;dev,
+                 adap-&gt;dev.parent);
+#endif
+
+    /* device name is gone after device_unregister */
+    dev_dbg(&amp;adap-&gt;dev, "adapter [%s] unregistered\n", adap-&gt;name);
+
+    /* wait until all references to the device are gone
+     *
+     * FIXME: This is old code and should ideally be replaced by an
+     * alternative which results in decoupling the lifetime of the struct
+     * device from the i2c_adapter, like spi or netdev do. Any solution
+     * should be throughly tested with DEBUG_KOBJECT_RELEASE enabled!
+     */
+    init_completion(&amp;adap-&gt;dev_released);
+    device_unregister(&amp;adap-&gt;dev);
+    wait_for_completion(&amp;adap-&gt;dev_released);
+
+    /* free bus id */
+    mutex_lock(&amp;core_lock);
+    idr_remove(&amp;i2c_adapter_idr, adap-&gt;nr);
+    mutex_unlock(&amp;core_lock);
+
+    /* Clear the device structure in case this adapter is ever going to be
+       added again */
+    memset(&amp;adap-&gt;dev, 0, sizeof(adap-&gt;dev));
+}</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/b08f99edaf1e60e464042c63fb82b766.gif"/></p>
+<p></p>
+<p>基本的执行过程和设备的删除类似，但是增加了驱动的卸载，因为有些驱动是绑定到到要删除的适配器上的，适配器已经删除了自然需要删除相关设备。剩下的两部分就是i2c具体的设备驱动和设备的相关内容了。</p>
+<h2 id="i2c%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E5%92%8C%E8%AE%BE%E5%A4%87">i2c设备驱动和设备</h2>
+<p>      不通过具体的设备驱动也是可以访问i2c设备，但是应用层就需要处理i2c设备驱动本应该处理的内容，但是此时用户空间的代码的读写写逻辑的比较复杂需要考虑设备的读写时序的问题了，这样就不符合驱动的分层考虑了。不通过具体设备直接当问i2c总线上的设备需要使用i2c核心定义一个结构体来完成对i2c具体操作的定义那就是struct i2c_msg，因为通过上面的i2c总线驱动的通讯接口部分的int(master_xfer)(struct i2c_adapter *adap, struct i2c_msg *msgs,int num)接口可以看出来i2c的数据传输过程就是以struct i2c_msg为单位的，这个结构在用户空间也是可以使用的，所以用户可以直接通过总线完成和总线上挂接的设备进行数据交互（有条件的）。这里先解释正常情况下的设备操作方式---通过对应的设备驱动来操作设备，而设备驱动实际上最后也是调用的适配器的algo 句柄指向的master_xfer接口来实现数据传输。i2c设备的注册在系统的板级文件中实现通过struct i2c_board_info 结构进行定义然后通过i2c_register_board_info 进行注册需要注意的是设备的添加要遭遇驱动的注册，因为阅读源码发现设备添加时未进行驱动匹配代码如下</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/20ba38503ee9dde61d446dcb12ea1ef0.gif"/></p>
+<pre>int __init
+i2c_register_board_info(int busnum,
+    struct i2c_board_info const *info, unsigned len)
+{
+    int status;
+
+    down_write(&amp;__i2c_board_lock);
+
+    /* dynamic bus numbers will be assigned after the last static one */
+    if (busnum &gt;= __i2c_first_dynamic_bus_num)
+        __i2c_first_dynamic_bus_num = busnum + 1;
+
+    for (status = 0; len; len--, info++) {
+        struct i2c_devinfo    *devinfo;
+
+        devinfo = kzalloc(sizeof(*devinfo), GFP_KERNEL);
+        if (!devinfo) {
+            pr_debug("i2c-core: can't register boardinfo!\n");
+            status = -ENOMEM;
+            break;
+        }
+
+        devinfo-&gt;busnum = busnum;
+        devinfo-&gt;board_info = *info;
+        list_add_tail(&amp;devinfo-&gt;list, &amp;__i2c_board_list);
+    }
+
+    up_write(&amp;__i2c_board_lock);
+
+    return status;
+}</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/3ad89a2f9efa8937580d38d21beaa0a8.gif"/></p>
+<p>然后就是struct i2c_board_info和struct i2c_msg的定义了如下：</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/d9370c2bd7ee2c329cf3c7a29099200d.gif"/></p>
+<pre>struct i2c_board_info {
+    char        type[I2C_NAME_SIZE];
+    unsigned short    flags;
+    unsigned short    addr;
+    void        *platform_data;
+    struct dev_archdata    *archdata;
+    struct device_node *of_node;
+    struct acpi_dev_node acpi_node;
+    int        irq;
+};</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/23ecec550b5729dba9b5e5646ad72c52.gif"/></p>
+<p>这里可以参考后面的struct i2c_client 的结构进行分析。</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/9359ba4ede87033fe265e7abb3f41ef9.gif"/></p>
+<pre>struct i2c_msg {
+    __u16 addr;    /* slave address            */
+    __u16 flags;
+#define I2C_M_TEN        0x0010    /* this is a ten bit chip address */
+#define I2C_M_RD        0x0001    /* read data, from slave to master */
+#define I2C_M_STOP        0x8000    /* if I2C_FUNC_PROTOCOL_MANGLING */
+#define I2C_M_NOSTART        0x4000    /* if I2C_FUNC_NOSTART */
+#define I2C_M_REV_DIR_ADDR    0x2000    /* if I2C_FUNC_PROTOCOL_MANGLING */
+#define I2C_M_IGNORE_NAK    0x1000    /* if I2C_FUNC_PROTOCOL_MANGLING */
+#define I2C_M_NO_RD_ACK        0x0800    /* if I2C_FUNC_PROTOCOL_MANGLING */
+#define I2C_M_RECV_LEN        0x0400    /* length will be first received byte */
+    __u16 len;        /* msg length                */
+    __u8 *buf;        /* pointer to msg data            */
+};</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/afa55970cc927df630e98277ad96e551.gif"/></p>
+<p>很简单就三个成员，然后再来看i2c设备驱动的部分。</p>
+<p>i2c设备驱动就是针对一个特定的设备定义一种操作接口由用户接口通过vfs接口调用从而完成对指定设备的读写操作，读写寄存器或存储空间的内容。他的定义如下</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/07e592b9304d42c36f4b2c612d4ff1ae.gif"/></p>
+<pre>struct i2c_driver {
+    unsigned int class;
+
+    /* Notifies the driver that a new bus has appeared. You should avoid
+     * using this, it will be removed in a near future.
+     */
+    int (*attach_adapter)(struct i2c_adapter *) __deprecated;
+
+    /* Standard driver model interfaces */
+    int (*probe)(struct i2c_client *, const struct i2c_device_id *);
+    int (*remove)(struct i2c_client *);
+
+    /* driver model interfaces that don't relate to enumeration  */
+    void (*shutdown)(struct i2c_client *);
+    int (*suspend)(struct i2c_client *, pm_message_t mesg);
+    int (*resume)(struct i2c_client *);
+
+    /* Alert callback, for example for the SMBus alert protocol.
+     * The format and meaning of the data value depends on the protocol.
+     * For the SMBus alert protocol, there is a single bit of data passed
+     * as the alert response's low bit ("event flag").
+     */
+    void (*alert)(struct i2c_client *, unsigned int data);
+
+    /* a ioctl like command that can be used to perform specific functions
+     * with the device.
+     */
+    int (*command)(struct i2c_client *client, unsigned int cmd, void *arg);
+
+    struct device_driver driver;
+    const struct i2c_device_id *id_table;
+
+    /* Device detection callback for automatic device creation */
+    int (*detect)(struct i2c_client *, struct i2c_board_info *);
+    const unsigned short *address_list;
+    struct list_head clients;
+};</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/ab501af054b13a5f6fdcf14ebf7525fb.gif"/></p>
+<p>看起来是不是和设备驱动很相似，确实这也是linux内核驱动框架的抽象意义。如果熟悉前面的platform_driver的初始化和添加流程这里也是类似的。基本上也是用户完成一些接口的实现然后绑定到指定的驱动成员上最后调用驱动注册接口。如下这是我自己实现的At24cxx系列eeprom的i2c设备驱动。</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/69e03cfe785f6fdb909c3d7ae48345df.gif"/></p>
+<pre>static struct i2c_driver eerom_driver = {
+    .driver = {
+        .name    = "at24xx",
+    },
+    .id_table    = at24c0xx_idtable,
+    .probe        = at24c0xx_probe,
+    .remove        = at24c0xx_remove,
+};
+
+int __init eeprom_i2c_driver_init(void)
+{
+    int retval;
+
+    retval=i2c_add_driver(&amp;eerom_driver);
+    if(retval)
+    {
+        printk(KERN_INFO "eeprom_i2c_driver_init fail\n");
+    }
+    return 0;
+}</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/6453ac843cd758700f28080febb1e716.gif"/></p>
+<p>重点是驱动和设备的匹配操作这里和platform驱动和设备的match还是有一定的的差别的，通过i2c_add_driver 添加设备驱动到i2c总线，所有的i2c适配器都在同一个总线，由设备信息确定设备在哪一个适配器上。当驱动注册后会执行总线的match函数具体如下</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/adbf52ccbadb6d780a311e527a875997.gif"/></p>
+<pre>static int i2c_device_match(struct device *dev, struct device_driver *drv)
+{
+    struct i2c_client    *client = i2c_verify_client(dev);
+    struct i2c_driver    *driver;
+
+    if (!client)
+        return 0;
+
+    /* Attempt an OF style match */
+    if (of_driver_match_device(dev, drv))
+        return 1;
+
+    /* Then ACPI style match */
+    if (acpi_driver_match_device(dev, drv))
+        return 1;
+
+    driver = to_i2c_driver(drv);
+    /* match on an id table if there is one */
+    if (driver-&gt;id_table)
+        return i2c_match_id(driver-&gt;id_table, client) != NULL;
+
+    return 0;
+}</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/6deeeef270a1a64a93d98f8f22318e69.gif"/></p>
+<p>通过代码可以发现匹配规则除了类似platform总线的设备树和acpi模式外只支持id_table的方式匹配设备。match完成匹配后就会执行i2c总线的探测函数探测驱动和设备。总线的probe函数最后还是会调用driver的probe接口完成设备的探测。</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/d9370c2bd7ee2c329cf3c7a29099200d.gif"/></p>
+<pre>static int i2c_device_probe(struct device *dev)
+{
+    struct i2c_client    *client = i2c_verify_client(dev);
+    struct i2c_driver    *driver;
+    int status;
+
+    if (!client)
+        return 0;
+
+    driver = to_i2c_driver(dev-&gt;driver);
+    if (!driver-&gt;probe || !driver-&gt;id_table)
+        return -ENODEV;
+
+    if (!device_can_wakeup(&amp;client-&gt;dev))
+        device_init_wakeup(&amp;client-&gt;dev,
+                    client-&gt;flags &amp; I2C_CLIENT_WAKE);
+    dev_dbg(dev, "probe\n");
+
+    acpi_dev_pm_attach(&amp;client-&gt;dev, true);
+    status = driver-&gt;probe(client, i2c_match_id(driver-&gt;id_table, client));
+    if (status)
+        acpi_dev_pm_detach(&amp;client-&gt;dev, true);
+
+    return status;
+}</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/9359ba4ede87033fe265e7abb3f41ef9.gif"/></p>
+<p> 具体的probe接口就可以定义软件接口进行一系列的接口配置将用户的vfs接口映射到i2c总线的读写。下面拿我自己实现的一个eeprom的读写驱动接口实例来分析。主要看probe接口</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/69e03cfe785f6fdb909c3d7ae48345df.gif"/></p>
+<pre>#define  BUFF_SIZE          64
+#define  EEPROM_PAGE_SIZE   8
+#define  LEN_GET(index,len)    \
+        (((index+EEPROM_PAGE_SIZE)&lt;(len))?(EEPROM_PAGE_SIZE):(len-index))
+
+enum type
+{ 
+    at24c01x,
+    at24c02x,
+    at24c04x,
+    at24c08x,
+    at24c16x,
+};
+
+enum mem_size
+{ 
+    AT24C01=(1&lt;&lt;10),
+    AT24C02=(2&lt;&lt;10),
+    AT24C04=(4&lt;&lt;10),
+    AT24C08=(8&lt;&lt;10),
+    AT24C16=(16&lt;&lt;10),
+};
+
+struct eeprom_chip {
+    struct miscdevice    devmisc;
+    struct i2c_client    *client;
+    struct iic_ops      *ops;
+    struct device       *dev;
+    struct mutex        eeprom_mutex;
+    char                buf[BUFF_SIZE];
+    enum mem_size       memsize;
+    uint8_t             is_open;
+    kernel_ulong_t      eeprom_type;
+
+};
+
+struct iic_ops{
+    int (*send)(struct eeprom_chip *, size_t,short);
+    int (*recv)(struct eeprom_chip *, size_t,short);
+};
+</pre>
+<p>static struct i2c_device_id at24c0xx_idtable[] = {<!-- --></p>
+<p>    { "24c04x", at24c04x},</p>
+<p>    { "24c08x",at24c08x},</p>
+<p>    { "24c16x",at24c16x},</p>
+<p>    { }</p>
+<p>};</p>
+<pre>
+</pre>
+<p>static struct i2c_driver eerom_driver = {<!-- --></p>
+<p>    .driver = {<!-- --></p>
+<p>        .name   = "at24xx",</p>
+<p>    },</p>
+<p>    .id_table   = at24c0xx_idtable,</p>
+<p>    .probe      = at24c0xx_probe,</p>
+<p>    .remove     = at24c0xx_remove,</p>
+<p>};</p>
+<pre>
+</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/f77d836d944cb76db41508c68fc83916.gif"/></p>
+<p>probe接口的实现主要是通过增加中间层使用了杂项设备驱动，将vfs的读写接口传递到i2c总线上的读写接口从而实现读写eeprom就如同读写一个普通文件一样简单，从而简化了用户空间的调用逻辑。</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/e1bdb1320dde371c6d1b07f7fcd8e3b4.gif"/></p>
+<pre>static int at24c0xx_probe(struct i2c_client *client,
+                  const struct i2c_device_id *id)
+{
+    int rc;
+    struct eeprom_chip *eeprom;
+    struct device *dev = &amp;client-&gt;dev;
+    /* check function*/
+    if (!i2c_check_functionality(client-&gt;adapter, I2C_FUNC_I2C))
+        return -ENODEV;
+    eeprom = devm_kzalloc(&amp;client-&gt;dev,sizeof(struct eeprom_chip), GFP_KERNEL);
+    if (eeprom == NULL) {
+        printk(KERN_INFO "failed to create our eeprom_data\n");
+        return -ENOMEM;
+    }
+    eeprom-&gt;eeprom_type = id-&gt;driver_data;
+    eeprom-&gt;dev=get_device(dev);
+    eeprom-&gt;client = client;
+    eeprom-&gt;ops = &amp;iic_ops;
+    eeprom-&gt;devmisc.fops = &amp;eeprom_ops;
+    eeprom-&gt;devmisc.minor = 223;
+    eeprom-&gt;devmisc.name=client-&gt;name;
+    eeprom-&gt;devmisc.parent = eeprom-&gt;dev;
+    eeprom-&gt;memsize = get_eeprom_memsize(eeprom-&gt;eeprom_type);
+    // printk(KERN_INFO "I2C:at24c0x:%d byte\n",eeprom-&gt;memsize);
+    mutex_init(&amp;eeprom-&gt;eeprom_mutex);
+    rc = misc_register(&amp;eeprom-&gt;devmisc);
+    if (rc) {
+        printk(KERN_INFO "%s client created misc_register Fail\n",client-&gt;name);
+    }
+    i2c_set_clientdata(client, eeprom);
+    /* rest of the initialisation goes here. */
+    // printk(KERN_INFO "%s client created\n",client-&gt;name);
+
+    return 0;
+}</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/ffcfe49d424776ca0ca94065039694dc.gif"/></p>
+<p>全部驱动代码，设备就是Linux3-16-57版本内核的三星的smdkv210的板级文件添加的修改了一下兼容属性，从而使当前驱动可以匹配上。</p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/e4c5dd44d63bf707b925aea945421ab9.gif"/></p>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/d7e871878cfeb712a594f7f5974673d2.gif"/></p>
+<pre>  1 #include &lt;linux/module.h&gt;
+  2 #include &lt;linux/kernel.h&gt;
+  3 #include &lt;linux/device.h&gt;
+  4 #include &lt;linux/miscdevice.h&gt;
+  5 #include &lt;linux/delay.h&gt;
+  6 #include &lt;linux/errno.h&gt;
+  7 #include &lt;linux/gpio.h&gt;
+  8 #include &lt;linux/slab.h&gt;
+  9 #include &lt;linux/i2c.h&gt;
+ 10 #include &lt;linux/init.h&gt;
+ 11 #include &lt;linux/fcntl.h&gt;
+ 12 #include &lt;linux/io.h&gt;
+ 13 #include &lt;linux/fs.h&gt;
+ 14 #include &lt;linux/types.h&gt;
+ 15 #include &lt;linux/mutex.h&gt;
+ 16 #include &lt;linux/completion.h&gt;
+ 17 #include &lt;linux/hardirq.h&gt;
+ 18 #include &lt;linux/irqflags.h&gt;
+ 19 #include &lt;linux/rwsem.h&gt;
+ 20 #include &lt;linux/pm_runtime.h&gt;
+ 21 #include &lt;asm/uaccess.h&gt;
+ 22 
+ 23 #define  BUFF_SIZE          64
+ 24 #define  EEPROM_PAGE_SIZE   8
+ 25 #define  LEN_GET(index,len)    \
+ 26         (((index+EEPROM_PAGE_SIZE)&lt;(len))?(EEPROM_PAGE_SIZE):(len-index))
+ 27 
+ 28 enum type
+ 29 { 
+ 30     at24c01x,
+ 31     at24c02x,
+ 32     at24c04x,
+ 33     at24c08x,
+ 34     at24c16x,
+ 35 };
+ 36 
+ 37 enum mem_size
+ 38 { 
+ 39     AT24C01=(1&lt;&lt;10),
+ 40     AT24C02=(2&lt;&lt;10),
+ 41     AT24C04=(4&lt;&lt;10),
+ 42     AT24C08=(8&lt;&lt;10),
+ 43     AT24C16=(16&lt;&lt;10),
+ 44 };
+ 45 
+ 46 struct eeprom_chip {
+ 47     struct miscdevice    devmisc;
+ 48     struct i2c_client    *client;
+ 49     struct iic_ops      *ops;
+ 50     struct device       *dev;
+ 51     struct mutex        eeprom_mutex;
+ 52     char                buf[BUFF_SIZE];
+ 53     enum mem_size       memsize;
+ 54     uint8_t             is_open;
+ 55     kernel_ulong_t      eeprom_type;
+ 56 
+ 57 };
+ 58 
+ 59 struct iic_ops{
+ 60     int (*send)(struct eeprom_chip *, size_t,short);
+ 61     int (*recv)(struct eeprom_chip *, size_t,short);
+ 62 };
+ 63 
+ 64 static enum mem_size get_eeprom_memsize(enum type type)
+ 65 {
+ 66     enum mem_size mem_size;
+ 67     switch(type)
+ 68     {
+ 69         case at24c01x:
+ 70             mem_size = AT24C01;
+ 71             break;
+ 72         case at24c02x:
+ 73             mem_size = AT24C02;
+ 74             break;
+ 75         case at24c04x:
+ 76             mem_size = AT24C04;
+ 77             break;
+ 78         case at24c08x:
+ 79             mem_size = AT24C08;
+ 80             break;
+ 81         case at24c16x:
+ 82             mem_size = AT24C16;
+ 83             break;
+ 84         default:
+ 85             mem_size = AT24C01;
+ 86             break;
+ 87     }
+ 88     return mem_size;
+ 89 }
+ 90 
+ 91 static short get_device_addr(struct eeprom_chip  *chip,short pos)
+ 92 {
+ 93     short  addr_dataaddr;
+ 94     struct i2c_client *client = chip-&gt;client;
+ 95     addr_dataaddr =client-&gt;addr;
+ 96 
+ 97     if(chip-&gt;eeprom_type &lt;= at24c04x)
+ 98     {
+ 99         addr_dataaddr =addr_dataaddr|(pos&amp;0x100);
+100     }else if (chip-&gt;eeprom_type == at24c08x){
+101         addr_dataaddr =addr_dataaddr|(pos&amp;0x300);
+102     }else if (chip-&gt;eeprom_type == at24c16x){
+103         addr_dataaddr =addr_dataaddr|(pos&amp;0x700);
+104     }
+105     return addr_dataaddr;
+106 }
+107 static int i2c_eeprom_write(struct eeprom_chip *chip, size_t len,short pos)
+108 {
+109     char   w_buf[10];
+110     int    status,i=0,ret=0;
+111     short  page_cnt,write_index=0;
+112     short  align_pos = ((pos+EEPROM_PAGE_SIZE-1)/8)*8;
+113     struct i2c_client *client = chip-&gt;client;
+114     struct  i2c_msg msg={
+115         .flags = I2C_M_NOSTART,
+116         .buf = w_buf,
+117     };
+118     if(align_pos == pos){
+119         page_cnt = ((len+EEPROM_PAGE_SIZE-1)/8);
+120     }else{
+121         page_cnt = 1+((len-(align_pos-pos)+EEPROM_PAGE_SIZE-1)/8);
+122     }
+123     for(i=0;i&lt;page_cnt;i++)
+124     {
+125         if((align_pos != pos)&amp;&amp;!i){
+126             msg.len = align_pos-pos+1;
+127         }else{
+128             msg.len = LEN_GET(write_index,len)+1;
+129         }
+130         msg.addr =get_device_addr(chip,pos+write_index);
+131         w_buf[0] = pos+write_index;
+132         memcpy(&amp;w_buf[1],&amp;chip-&gt;buf[write_index],msg.len);
+133         write_index += msg.len-1;
+134         // w_buf[msg.len] = '\0';
+135         // printk(KERN_INFO "%02x\n",w_buf[0]);
+136         // printk(KERN_INFO "%s\n",&amp;w_buf[1]);
+137         status = i2c_transfer(client-&gt;adapter,&amp;msg,1);
+138         if(status)
+139         {
+140             ret+=msg.len-1;
+141         }
+142         mdelay(1);
+143     }
+144     memset(chip-&gt;buf,0,BUFF_SIZE);
+145     return ret;
+146 }
+147 
+148 static int i2c_eeprom_read(struct eeprom_chip *chip, size_t count,short pos)
+149 {
+150     int rc;
+151     u8 data_addr = 0xFF&amp;pos;
+152     struct i2c_client *client = chip-&gt;client;
+153     
+154     struct i2c_msg  msg[]={
+155         [0]={
+156             .addr = get_device_addr(chip,pos),
+157             .flags = client-&gt;flags &amp; I2C_M_TEN,
+158             .len = 1,
+159             .buf = &amp;data_addr,
+160         },
+161         [1]={
+162             .addr = get_device_addr(chip,pos),
+163             .flags = I2C_M_RD,
+164             .len = count,
+165             .buf = chip-&gt;buf,
+166         },
+167     };
+168     rc= i2c_transfer(client-&gt;adapter,msg,2);
+169     if(rc==2)
+170         return count;
+171     return 0;
+172 }
+173 
+174 static int eeprom_open(struct inode *inode,struct file *filp)
+175 {
+176     struct miscdevice *misc = filp-&gt;private_data;
+177     struct eeprom_chip* chip = container_of(misc, struct eeprom_chip,
+178                          devmisc); 
+179     // printk(KERN_INFO "eeprom_open\n");                  
+180     if(chip-&gt;is_open){
+181         // printk(KERN_INFO "eeprom_open busy\n"); 
+182         return -EBUSY; 
+183     }
+184     filp-&gt;private_data =  chip;
+185     chip-&gt;is_open = 1;
+186     return 0;
+187 }
+188 
+189 static ssize_t eeprom_read(struct file* filp,char* __user buf,size_t cnt,loff_t *offt)
+190 {
+191     int ret,count;
+192     loff_t new_pos = *offt +cnt;
+193     struct eeprom_chip* chip = filp-&gt;private_data;
+194     // printk(KERN_INFO "eeprom_read\n");
+195     if(new_pos&gt;chip-&gt;memsize)
+196     {
+197         // printk(KERN_INFO "eeprom_open mem\n"); 
+198         return -ENOMEM; 
+199     }
+200     if(cnt &gt; BUFF_SIZE)
+201     {
+202         // printk(KERN_INFO "eeprom_open mem\n");
+203         return -ENOMEM; 
+204     }
+205     // printk(KERN_INFO "position is %ld\n",(size_t)*offt);
+206     mutex_lock(&amp;chip-&gt;eeprom_mutex);
+207     count=chip-&gt;ops-&gt;recv(chip,cnt, *offt);
+208     // printk(KERN_INFO "chip-&gt;ops-&gt;recv return %d\n",count);
+209     ret = copy_to_user((void*)buf,(void*)chip-&gt;buf,count);
+210     if(ret){
+211         return -EIO;
+212     }
+213     mutex_unlock(&amp;chip-&gt;eeprom_mutex);
+214     *offt += count;
+215     return count;
+216 }
+217 
+218 static ssize_t eeprom_write(struct file* filp,const char*__user  buf,size_t cnt ,loff_t *offt)
+219 {
+220     int ret;
+221     loff_t new_pos = *offt +cnt; 
+222     struct eeprom_chip* chip = filp-&gt;private_data;
+223     // printk(KERN_INFO "eeprom_write\n");
+224     if(new_pos&gt;chip-&gt;memsize)
+225     {
+226         // printk(KERN_INFO "eeprom_open mem\n");
+227         return -ENOMEM; 
+228     }
+229     if(cnt&gt;BUFF_SIZE)
+230     {
+231         // printk(KERN_INFO "eeprom_open mem\n");
+232         return -ENOMEM; 
+233     }
+234     // printk(KERN_INFO "position is %ld\n",(size_t)*offt);
+235     ret=copy_from_user((void*)chip-&gt;buf,(void*)buf,cnt);
+236     if(ret){
+237         return -EIO;
+238     }
+239     mutex_lock(&amp;chip-&gt;eeprom_mutex);
+240     ret=chip-&gt;ops-&gt;send(chip,cnt,*offt);
+241     // printk(KERN_INFO "chip-&gt;ops-&gt; send %d\n",ret);
+242     mutex_unlock(&amp;chip-&gt;eeprom_mutex);
+243     *offt += ret;
+244     return ret;
+245 }
+246 
+247 static loff_t eeprom_llseek(struct file *filp,loff_t vel,int orig )
+248 {
+249     
+250     struct eeprom_chip* chip = filp-&gt;private_data;
+251     mutex_lock(&amp;chip-&gt;eeprom_mutex);
+252     switch (orig)
+253     {
+254         //cur
+255         case 1:
+256             if( (filp-&gt;f_pos + vel) &lt; 0 || (filp-&gt;f_pos + vel)&gt;chip-&gt;memsize)
+257                 return -ESPIPE;
+258             filp-&gt;f_pos += vel;
+259             /* code */
+260             break;
+261         //end
+262         case 2:
+263             if(vel &gt; 0||(vel+filp-&gt;f_pos)&lt;0)
+264                 return -ESPIPE;
+265             filp-&gt;f_pos += vel;
+266             /* code */
+267             break;
+268         //set
+269         default:
+270             if(vel&gt;chip-&gt;memsize || vel&lt;0)
+271                 return -ESPIPE;
+272             filp-&gt;f_pos = vel;    
+273             break;
+274     }
+275     mutex_unlock(&amp;chip-&gt;eeprom_mutex);
+276     return 0;
+277 }
+278 
+279 static int eeprom_close(struct inode *inode,struct file *filp)
+280 {
+281     
+282     struct eeprom_chip* chip = filp-&gt;private_data;
+283     filp-&gt;private_data = NULL;
+284     // printk(KERN_INFO "eeprom_close\n");
+285     chip-&gt;is_open = 0;
+286     
+287     return 0;
+288 }
+289 
+290 struct file_operations eeprom_ops={
+291     .owner = THIS_MODULE,
+292     .open = eeprom_open,
+293     .write = eeprom_write,
+294     .read = eeprom_read,
+295     .llseek = eeprom_llseek,
+296     .release = eeprom_close ,
+297 };
+298 
+299 struct iic_ops  iic_ops={
+300     .recv = i2c_eeprom_read,
+301     .send = i2c_eeprom_write,
+302 };
+303 static struct i2c_device_id at24c0xx_idtable[] = {
+304     { "24c04x", at24c04x},
+305     { "24c08x",at24c08x},
+306     { "24c16x",at24c16x},
+307     { }
+308 };
+309 
+310 static int at24c0xx_probe(struct i2c_client *client,
+311                   const struct i2c_device_id *id)
+312 {
+313     int rc;
+314     struct eeprom_chip *eeprom;
+315     struct device *dev = &amp;client-&gt;dev;
+316     /* check function*/
+317     if (!i2c_check_functionality(client-&gt;adapter, I2C_FUNC_I2C))
+318         return -ENODEV;
+319     eeprom = devm_kzalloc(&amp;client-&gt;dev,sizeof(struct eeprom_chip), GFP_KERNEL);
+320     if (eeprom == NULL) {
+321         printk(KERN_INFO "failed to create our eeprom_data\n");
+322         return -ENOMEM;
+323     }
+324     eeprom-&gt;eeprom_type = id-&gt;driver_data;
+325     eeprom-&gt;dev=get_device(dev);
+326     eeprom-&gt;client = client;
+327     eeprom-&gt;ops = &amp;iic_ops;
+328     eeprom-&gt;devmisc.fops = &amp;eeprom_ops;
+329     eeprom-&gt;devmisc.minor = 223;
+330     eeprom-&gt;devmisc.name=client-&gt;name;
+331     eeprom-&gt;devmisc.parent = eeprom-&gt;dev;
+332     eeprom-&gt;memsize = get_eeprom_memsize(eeprom-&gt;eeprom_type);
+333     // printk(KERN_INFO "I2C:at24c0x:%d byte\n",eeprom-&gt;memsize);
+334     mutex_init(&amp;eeprom-&gt;eeprom_mutex);
+335     rc = misc_register(&amp;eeprom-&gt;devmisc);
+336     if (rc) {
+337         printk(KERN_INFO "%s client created misc_register Fail\n",client-&gt;name);
+338     }
+339     i2c_set_clientdata(client, eeprom);
+340     /* rest of the initialisation goes here. */
+341     // printk(KERN_INFO "%s client created\n",client-&gt;name);
+342 
+343     return 0;
+344 }
+345 
+346 static int at24c0xx_remove(struct i2c_client *client)
+347 {
+348     struct eeprom_chip *eeprom = i2c_get_clientdata(client);
+349     struct device *dev = &amp;client-&gt;dev;
+350     misc_deregister(&amp;eeprom-&gt;devmisc);
+351     put_device(dev);
+352     return 0;
+353 }
+354 
+355 static struct i2c_driver eerom_driver = {
+356     .driver = {
+357         .name    = "at24xx",
+358     },
+359     .id_table    = at24c0xx_idtable,
+360     .probe        = at24c0xx_probe,
+361     .remove        = at24c0xx_remove,
+362     /* if device autodetection is needed: */
+363     // .class        = I2C_CLASS_SOMETHING,
+364     // .detect        = at24_detect,
+365     // .address_list    = normal_i2c,
+366 };
+367 
+368 int __init eeprom_i2c_driver_init(void)
+369 {
+370     int retval;
+371 
+372     retval=i2c_add_driver(&amp;eerom_driver);
+373     if(retval)
+374     {
+375         printk(KERN_INFO "eeprom_i2c_driver_init fail\n");
+376     }
+377     // printk(KERN_INFO "i2c_add_driver eerom_driver\n");
+378     return 0;
+379 }
+380 
+381 void __exit eeprom_i2c_driver_exit(void)
+382 {
+383     i2c_del_driver(&amp;eerom_driver);
+384 }
+385 
+386 module_init(eeprom_i2c_driver_init);
+387 module_exit(eeprom_i2c_driver_exit);
+388 
+389 MODULE_LICENSE("GPL");
+390 MODULE_DESCRIPTION("This is an general driver of atmel eeprom 24xx");
+391 MODULE_VERSION("0.1");
+392 MODULE_AUTHOR("smile");</pre>
+<p class="img-center"><img alt="" src="https://img-blog.csdnimg.cn/img_convert/e9ffc2fffb17b9d01253f96df5966b54.gif"/></p>
+<p>设备添加部分</p>
+<pre>static struct i2c_board_info smdkv210_i2c_devs0[] __initdata = {
+    { I2C_BOARD_INFO("24c08x", 0x50), },     /* Samsung S524AD0XD1 */
+    { I2C_BOARD_INFO("wm8580", 0x1b), },
+};</pre>
+<p>通过这一段的学习发现Linux驱动基本都是多元部分的组合实现，学习过程是一个拼积木的过程各个部分的小知识点的不断累计最后才能看明白内核中别人实现好的一个驱动。可以看看基础的部分，如内核内部的并发控制，同步异步IO的实现，阻塞和非阻塞、中断等一些基本但是非常通用的知识点内容从而巩固整体驱动开发知识体系的完善，加深Linux驱动框架的理解，从而在驱动开发上更加自由灵活也对应用的开发提供内核实现机制的深入理解基础。</p>
+</div>
+</div>

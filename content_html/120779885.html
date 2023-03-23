@@ -1,0 +1,222 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>引言：Nginx作为前端反向代理的首选，在实际应用中还是会进行很多跳转，虽然Apache也可以做跳转，但是Nginx的跳转效率会更高。</p>
+<p>一、Nginx跳转实现的方式</p>
+<p>①使用rewrite进行匹配跳转</p>
+<p>主要是匹配的具体路径</p>
+<p>②使用if匹配全局变量后跳转</p>
+<p>使用if判断，判断成功跳转，失败不跳转</p>
+<p>③使用location匹配后在进行跳转</p>
+<p>location相当于调用一个函数来匹配路径，也可以匹配后执行proxy_pass将请求跳转到其他服务上</p>
+<p>二、常用的Nginx正则表达式</p>
+<p>^：匹配输入字符串的起始位置<br/> $：匹配输入字符串的结束位置<br/> *：匹配前面的字符零次或多次。如"ol*"能匹配"o"及、"ol"、"oll"<br/> +：匹配前间的字符一次或多次。如"ol+"能匹配"ol"及"oll"、"olll"，但不能匹配"o"<br/> ?：匹配前间的字符零次或一次，例如"do(es)?"能匹配、"do"或者、"does","?"等效于"{0,1}"<br/> .：匹配除"\n"之外的任何单个字符，若要匹配包括"\n"在内的任意字符，请使用诸如"[.\n]"之类的模式<br/> \：将后间接着的字符标记为一个特殊字符或一个原义字符或一个向后引用。如"\n"匹配一个换行符，而"\$"则匹配"$"<br/> \d：匹配纯数字<br/> \w：匹配字母或数字或下划线或汉字<br/> \s：匹配任意的空白符<br/> \b：匹配单词的开始或结束<br/> {n}：重复n次<br/> {n, }：重复n次或更多次<br/> {n,m}： 重复n到m次<br/> []:：定义匹配的字符范围<br/> [c]：匹配单个字符c<br/> [a-z]：匹配a-z小写字母上的任意一个<br/> [a-zA-Z0-9]：匹配所有大小写字母或数字<br/> ()：表达式的开始和结束位置 例如: (jpg|gif|swf|)<br/> |：或运算符</p>
+<p>三、Rewrite跳转场景</p>
+<p>1.调整用户浏览的URL，看起来更规范，合乎开发及产品人员的需求</p>
+<p>2.为了让搜索引擎搜寻网站内容及用户体验更好，会将动态URL地址伪装成静态地址提供服务。</p>
+<p>3.网址换新域名后，让旧的访问跳转到新的域名上，像访问京东的360buy.com会跳转到jd.com。</p>
+<p>4.服务端某些业务调整，根据特殊变量、目录、客户端的信息进行URL调整等。URL匹配和重新跳转新的URL</p>
+<p>四、Rewrite跳转实现</p>
+<p>Nginx：通过ngx_http_rewrite_module模块支持URL重写、支持if条件判断，但不支持else</p>
+<p>跳转：从一个location跳转到另一个location，循环最多可以执行10次，超过后nginx将返回500错误</p>
+<p>PCRE支持：perl兼容正则表达式的语法规则匹配 </p>
+<p>重写模块set指令：创建新的变量并设其值</p>
+<p>五、Rewrite功能</p>
+<p>Rewrite功能就是，使用nginx提供的全局变量或自己设置的变量，结合正则表达式和标记位实现URL重写以及重定向。 </p>
+<p>更换域名后需要保持旧的域名能跳转到新的域名上、某网页发生改变需要跳转到新的页面、网站防盗链等等需求。</p>
+<p>Rewrite只能放在server{ }，location{ }，if{ }中，并且默认只能对域名后边的除去传递的参数外的字符串起作用。</p>
+<p>http: //www.dabao.com/a/we/index.php?id=l&amp;u=str 只对/a/we/index.php重写。</p>
+<p>六、Rewrite执行顺序</p>
+<p>①执行server模块里面的rewrite指令。</p>
+<p>②执行选定的location中的rewrite指令。</p>
+<p>③执行选定的location中if中的rewrite指令 。</p>
+<pre><code>http {
+	server {
+		rewrite					                                    #优先级1
+	        location ^*\. (jpg|gif|swf)$ { 
+		        rewrite					                            #优先级2
+		            valid_referers none blocked *.dog.com dog.com; 
+		                if ( $invalid_referer ) { 
+		                rewrite ^/ http://www.dog.com/error.png; 	#优先级3
+		                } 
+	        }
+    }
+}</code></pre>
+<p>七、Rewrite语法</p>
+<p>rewrite &lt;regex&gt; &lt;replacement&gt; &lt;flag&gt;;                                                                                          rewrite [flag]；<br/> regex：表示正则匹配规则。<br/> replacement：表示跳转后的内容。<br/> flag：表示rewrite支持的flag标记。</p>
+<p>flag标记</p>
+<p>last：本条规则匹配完成后，继续向下匹配新的location URL规则，一般用在server和if中。<br/> break：本条规则匹配完成即终止，不再匹配后面的任何规则，一般使用在location中。<br/> redirect：返回302临时重定向，浏览器地址会显示跳转后的URL地址。<br/> permanent：返回301永久重定向，浏览器地址栏公显示跳转后的URL地址。</p>
+<p>last和break最大的不同在于</p>
+<p>-break是终止当前location的rewrite检测，而且不再进行location匹配<br/> -last   是终止当前location的rewrite检测，但会继续重试location匹配并处理区块中的rewrite规则<br/> c:/windows/system32/drivers/etc</p>
+<p>八、location种类</p>
+<p>大致可分为三类</p>
+<p>精准匹配：location = / {...} 示例:location = patt { } PS：精确匹配字符串<br/> 一般匹配：location / {...} 示例:location patt {} PS：只要包含patt的字符串即可<br/> 正则匹配：location〜/ {...} 示例:location〜patt {} PS：按照正则表达式的方式匹配</p>
+<p>九、location常用的匹配规则</p>
+<p>=：进行普通字符精确匹配，也就是完全匹配<br/> ^~：表示普通字符匹配。使用前缀匹配。如果匹配成功，则不再匹配其他location <br/> ~：区分人小写的匹配<br/> ~*：不区分大小写的匹配<br/> !〜：区分大小写的匹配取非<br/> !~*：不区分大小写的匹配取非<br/> @：定义一个location,使用在内部定向的时候</p>
+<p>十、location优先级</p>
+<p>相同类型的表达式，字符串长的优先匹配<br/> 首先精确匹配 =<br/> 其次前缀匹配 ^〜<br/> 其次是按文件中顺序的正则匹配〜或〜*<br/> 然后匹配不带任何修饰的前缀匹配，示例：/images/abc/1 .html<br/> 最后是交给  /  通用匹配 </p>
+<p>十一、location说明</p>
+<p>1.location = / {}<br/> = 为精确匹配 / ，主机名后面不能带任何字符串，比如访问 / 和 /data，则 / 匹配，/data 不匹配<br/> 再比如 location = /abc，则只匹配 /abc，/abc/或 /abed不匹配。若 location /abc，则即匹配/abc，/abed/同时也匹配/abc/。</p>
+<p>2.location / { } www.kgc.com/路径<br/> 因为所有的地址都以/开头，所以这条规则将匹配到所为请求比如访问/和/data，则/匹配，/data 也匹配，但若后面是正则表达式会和最长字符串优先匹配（最长匹配）</p>
+<p>3.location /documents/ {}<br/> 匹配任何以/documents/开头的地址，匹配符合以后，还要继续往下搜索其它location<br/> 只有其它location后面的正则表达式没有匹配到时，才会采用这一条<br/>  www.kgc.com/documents<br/>  www.kgc.com/documents/index</p>
+<p>4.location /documents/abc {}<br/> 匹配任何以/documents/abc开头的地址，匹配符合以后，还要继续往卜搜索其它location<br/> 只有其它location后面的正则表达式没有匹配到时，才公采用这一条</p>
+<p>5.location ^~ /images/ {}<br/> 匹配任何以/images/开头的地址，匹配符合以后，停止往下搜索正则，采用这一条</p>
+<p>6.location ~* \. (gif|jpg|jpeg)$ {}<br/> 匹配所右以gif、jpg或jpeg结尾的请求<br/> 然而，所有请求/images/下的图片会被location ^~/images/处理，因为八〜的优先级更高，所以到达不了这一条正则</p>
+<p>7.location /images/abc {}<br/> 最长字符匹配到/images/abc，优先级最低，继续往下搜索其它location，会发现^~和~存在</p>
+<p>8.location ~/images/abc {}<br/> 匹配以/images/abc开头的，优先级次之，只有去掉location ^~/images/才会采用这一条</p>
+<p>9.location /images/abc/1.html {}<br/> 匹配/images/abc/1. html文件，如果和正则location ~ /images/abc/1.html相比，正则优先级更高</p>
+<p>十二、规则匹配</p>
+<p>1. 必选规则一</p>
+<p>直接匹配网站根，通过域名访问网站首员比较频繁（www.baidu.com/）,使用这个会加速处理，比如说官网。</p>
+<p>可以是一个静态首页，也可以直接转发给后端应用服务器</p>
+<pre><code>location = / {
+	root html;
+	index index.html index. htm;
+}</code></pre>
+<p>2.必选规则二</p>
+<p>处理静态文件请求，这是nginx作为http服务器的强项                                                                     有两种配置模式，目录匹配或后缀匹配，任选其一或搭配使用</p>
+<pre><code>location ^~ /static/ {
+	root /webroot/static/ ;
+}
+location 〜* \. (html lgif 1jpg 1jpeglpnglcssljslico)$ { 
+	root /webroot/res/ ;
+}</code></pre>
+<p>3.必选规则三</p>
+<p>通用规则，用来转发带.php、.jsp后缀的动态请求到后端应用服务器非静态文件请求就默认是动态请求(跳转/反向代理)</p>
+<pre><code>upstream tomcat_server {
+	192.168.226.128:80
+	192.168.226.132:80
+}</code></pre>
+<p>十三、域名的跳转</p>
+<p>旧域名跳新域名，旧域名不废除</p>
+<pre><code>#添加映射
+vim /etc/hosts
+192.168.72.8 www.abc.com www.123.com
+#创建日志目录
+mkdir -p /var/log/nginx
+#修改配置文件
+vim /usr/local/nginx/conf/nginx.conf
+server{
+    listen 80;
+    server_name www.abc.com;                        #域名修改
+    access_log /var/log/nginx/www.abc.com-access;   #开启并对日志保存路径进行修改
+    location / {                                    #在原有location位置插入
+        if ($host = 'www.abc.com'){                 #$host为rewrite全局变量，代表请求主机头字段或主机名
+            rewrite ^/(.*)$ http://www.123.com/$1 permanent; #$1为匹配的位置变量，即域名后边得字符串，同时永久跳转
+        }
+    root html;
+	index index.html index.htm;
+    }
+}</code></pre>
+<p>重启Nginx，测试是否成功</p>
+<p><img alt="" height="81" src="image\cbee00e0ecce420289f2a44d6b4ebb1c.png" width="400"/></p>
+<p><img alt="" height="96" src="image\0f1e8a87b5564e9cbade4892e31d5c4b.png" width="442"/></p>
+<p>$1标志位，标志位的含义包含了① 标记的对象URL② 标记的具体部分，而标记的具体部分是用$0和$1来表示的</p>
+<p>十四、客户端IP访问跳转</p>
+<p>访问跳转到固定维护页面</p>
+<pre><code>vim /usr/local/nginx/conf/nginx.conf 
+server {
+        listen 80;
+	    server_name www.abc.com;
+        access_log /var/log/nginx/www.abc.com-access.log;
+        #设置是否是合法的IP标记
+        set $rewrite true;            #设置变量$rewrite,变量形式为布尔值为true
+        # 判断是否为合法IP
+        if ($remote_addr = "192.168.226.9") { #当客户端IP为192.168.72.9时，将变量值设为flase,不进行重写
+	    set $rewrite false;
+        }                             # 除了合法IP，其它都是非法IP，进行重写跳转到维护页面
+        if ($rewrite = true) {				#当变量值为true时，进行重写
+            rewrite (.+) /weihu.html; 			#重写在访问IP后边插入/weihu.html, 例如192.168.72.9/weihu.html
+        }
+        location = /weihu.html { 
+	        root /var/www/html; 				# 页面返回 /var/www/html/weihu. html 的内容
+	    } 
+        location / { 
+	        root html; 
+	        index index.html index.htm;
+	    }
+
+mkdir -p /var/www/html
+echo '&lt;h1&gt;this is weihu web!&lt;/h1&gt;' &gt; /var/www/html/weihu.html
+systemctl restart nginx.service</code></pre>
+<p>测试，使用192.168.72.8ip访问www.abc.com</p>
+<p><img alt="" height="60" src="image\7988a65c9c444e8094a29da13ce3f1d5.png" width="248"/></p>
+<p> <img alt="" height="149" src="image\7bde79defd1342c5abaa15ad1c8137e0.png" width="350"/></p>
+<p>使用192.168.72.9访问www.abc.com</p>
+<p><img alt="" height="294" src="image\03b6ac455fcb4288a88c67cbb11bbb4e.png" width="657"/> </p>
+<p>十五、旧域名跳转到新域名后面加目录</p>
+<p>访问http://www.abc.com/post/1.html自动跳转到www.123.com/bbs/post/1.html</p>
+<pre><code>mkdir -p /usr/local/nginx/html/bbs/post
+echo "&lt;h1&gt; this is 1.html &lt;/h1&gt;" &gt;&gt; /usr/local/nginx/html/bbs/post/1.html
+vim /usr/local/nginx/conf/nginx.conf
+server {
+        listen       80;
+        server_name  www.abc.com;                               #修改域名
+        access_log  /var/log/nginx/www.123.com-access.log;	#修改日志名
+
+        #添加 ,旧：www.abc.com/post/1.html
+        location /post {
+          rewrite (.+) http://www.123.com/bbs$1 permanent;    #这里$1为位置变量，代表/post
+        }
+        location / {
+            root   html;
+            index  index.html index.htm;
+        }</code></pre>
+<p>测试</p>
+<p><img alt="" height="202" src="image\143cfeb1d3c0433f8ce35d67a99a361e.png" width="519"/></p>
+<p> 十六、参数匹配（多余的）的跳转</p>
+<p>访问http://www.abc.com/100-(100|200) -100.html跳转到http://www.123.com</p>
+<pre><code>vim /usr/local/nginx/conf/nginx.conf
+ server {
+        listen       80;
+        server_name  www.abc.com;                            #修改域名
+        access_log  /var/log/nginx/www.abc.com-access.log;	 #日志
+        #$request_uri 内置变量，表示URI，\d 纯数字
+        if ($request_uri ~ ^/100-(100|200)-(\d+)\.html$){    
+        #设置正则匹配http://www.abc.com/100-100-1231.html
+        rewrite (.*) http://www.123.com permanent;       #设置重写
+        }
+        location / {
+            root   html;
+            index  index.html index.htm;
+        }
+</code></pre>
+<p>测试，访问www.abc.com/100-100-100.html或者www.abc.com/100-200-100.html跳转到www.123.com</p>
+<p><img alt="" height="42" src="image\2807170d5cbd42d9835e7effd4f77e48.png" width="319"/></p>
+<p> <img alt="" height="166" src="image\092c1725e5a644979587e11a56210dd6.png" width="595"/></p>
+<p> 十七、目录下所有php结尾的文件跳转</p>
+<p>访问www.abc.com/upload/123.php跳转到www.abc.com首页</p>
+<pre><code>vim /usr/local/nginx/conf/nginx.conf
+server {
+        listen       80;
+        server_name  www.abc.com;
+        access_log  /var/log/nginx/www.abc.com-access.log;
+        location ~* /upload/.*\.php$ {					
+           rewrite (.+) http://www.abc.com permanent;
+        }
+        location / {
+            root   html;
+            index  index.html index.htm;
+        }
+</code></pre>
+<p>测试访问http://www.abc.com/upload/index.php跳转到www.abc.com</p>
+<p><img alt="" height="83" src="image\1a3504cb3dbc432ba468655f8165613b.png" width="434"/></p>
+<p> <img alt="" height="89" src="image\4ac7f11669a0403e89992607eddf9768.png" width="510"/></p>
+<p>十八、 普通url请求跳转</p>
+<pre><code>vim /usr/local/nginx/conf/nginx.conf
+server {
+        listen       80;
+        server_name  www.abc.com;
+        access_log  /var/log/nginx/www.abc.com-access.log;
+        location ~* /abc/123.html {
+           rewrite (.+) http://www.abc.com permanent;
+        }
+        location / {
+            root   html;
+            index  index.html index.htm;
+        }</code></pre>
+<p> 测试访问www.abc.com/abc/123.html跳转到首页</p>
+<p><img alt="" height="116" src="image\c8e9ee649d224fdb97143732d33aad22.png" width="432"/></p>
+<p> <img alt="" height="104" src="image\19e53eabbefc4f32afa04cb200dffc43.png" width="492"/></p>
+</div>
+</div>

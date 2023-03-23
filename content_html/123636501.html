@@ -1,0 +1,154 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h3>一、什么是仓储(Respository)</h3>
+<p>仓储(Respository)是存在于工作单元和数据库之间单独分离出来的一层，是对数据访问的封装。其优点：</p>
+<p>　　　　1）业务层不需要知道它的具体实现，达到了分离关注点。</p>
+<p>　　　　2）提高了对数据库访问的维护，对于仓储的改变并不会改变业务的逻辑，数据库可以用Sql Server（该系列博客使用）、MySql等。</p>
+<h3>二、目录结构</h3>
+<p><img alt="" height="167" src="image\dc6a964d604d447a976d10f57c5cdd2b.png" width="312"/></p>
+<h3>三、目录解析</h3>
+<p>        1、<strong>Common:公共层</strong>：用于封装一些常用公用方法</p>
+<p>        2、<strong>Models数据层</strong>：用于存放数据库对应的实体类与一些自定义实体类。一般在前端接口中，都需要固定的数据返回格式，就定义了下面的ResultModel.cs</p>
+<pre><code class="language-cs">namespace Model
+{
+    /// &lt;summary&gt;
+    /// 通用返回信息类
+    /// &lt;/summary&gt;
+    public class ResultModel&lt;T&gt;
+    {
+        /// &lt;summary&gt;
+        /// 状态码
+        /// &lt;/summary&gt;
+        public int Code { get; set; } = 0;
+        /// &lt;summary&gt;
+        /// 返回信息
+        /// &lt;/summary&gt;
+        public string Msg { get; set; } = "";
+        /// &lt;summary&gt;
+        /// 数据行数
+        /// &lt;/summary&gt;
+        public int? Count { get; set; } = 0;
+        /// &lt;summary&gt;
+        /// 返回数据集合
+        /// &lt;/summary&gt;
+        public T? Data { get; set; } = default;
+
+        /// &lt;summary&gt;
+        /// 成功
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public ResultModel&lt;T&gt; Success(T? t = default, int? c = 0)
+        {
+            return new ResultModel&lt;T&gt;
+            {
+                Code = 200,
+                Msg = "Success",
+                Count = c,
+                Data = t
+            };
+        }
+
+        /// &lt;summary&gt;
+        /// 错误
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public ResultModel&lt;T&gt; Error(string m = "Error")
+        {
+            return new ResultModel&lt;T&gt;
+            {
+                Code = 400,
+                Msg = m,
+                Count = 0
+            };
+        }
+
+        /// &lt;summary&gt;
+        /// 找不到
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public ResultModel&lt;T&gt; NotFound()
+        {
+            return new ResultModel&lt;T&gt;
+            {
+                Code = 404,
+                Msg = "NotFound",
+            };
+        }
+
+        /// &lt;summary&gt;
+        /// 异常
+        /// &lt;/summary&gt;
+        /// &lt;param name="ex"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public ResultModel&lt;T&gt; Exception(Exception ex)
+        {
+            //可以写个异常日志（用于测试，就没写）
+            return new ResultModel&lt;T&gt;
+            {
+                Code = 500,
+                Msg = ex.Message,
+                Count = 0
+            };
+        }
+    }
+}</code></pre>
+<p></p>
+<p></p>
+<p>         3、<strong>IRepository和 Repository ：仓储层</strong>，负责数据的CRUD（增删改查）。Repository 是一个独立的层，介于领域层与数据映射层（数据访问层）之间。它的存在让领域层感觉不到数据访问层的存在，它提供一个类似集合的接口提供给领域层进行领域对象的访问。</p>
+<p>我们定义了IRepository层，提供了所有的操作接口,这里简单定义一个测试接口</p>
+<pre><code class="language-cs">    public interface ITestRepository
+    {
+        /// &lt;summary&gt;
+        /// 求和
+        /// &lt;/summary&gt;
+        /// &lt;param name="i"&gt;&lt;/param&gt;
+        /// &lt;param name="j"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        int Sum(int i, int j);
+    }</code></pre>
+<p>然后再在 TestRepository.cs 中去实现该接口，记得要添加引用。</p>
+<pre><code class="language-cs">    public class TestRepository : ITestRepository
+    {
+
+        public int Sum(int i, int j)
+        {
+            return i + j;
+        }
+    }</code></pre>
+<p>        4、<strong>IServices和 Service：</strong>业务逻辑层，和我们三层架构中的BLL很相似，只负责调用仓储层的数据操作和做一定的逻辑处理，至于是如何与数据库进行交互的就不用他去管，这样可以达到一定程度的解耦，例如公司需要更换数据库从SQLSERVER到MySQL，那Service层就不需要做任何变动了。</p>
+<pre><code class="language-cs">    public interface ITestService
+    {
+        /// &lt;summary&gt;
+        /// 求和
+        /// &lt;/summary&gt;
+        /// &lt;param name="i"&gt;&lt;/param&gt;
+        /// &lt;param name="j"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        int Sum(int i, int j);
+    }</code></pre>
+<p>然后再在 TestService 中去实现该接口</p>
+<pre><code class="language-cs">    public class TestServic : ITestService
+    {
+        ITestRepository test = new TestRepository();
+        public int Sum(int i, int j)
+        {
+            return test.Sum(i, j);
+        }
+    }</code></pre>
+<p>然后再到接口处调用即可</p>
+<pre><code class="language-cs">        /// &lt;summary&gt;
+        /// 求和
+        /// &lt;/summary&gt;
+        /// &lt;param name="i"&gt;&lt;/param&gt;
+        /// &lt;param name="j"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        [HttpGet]
+        public int Sum(int i, int j)
+        {
+            ITestService testService = new TestService();
+            return testService.Sum(i, j);
+        }</code></pre>
+<p></p>
+</div>
+</div>

@@ -1,0 +1,199 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>Qt 三种使用线程方式详解</h3>
+<ul><li><a href="#_1">线程生命周期</a></li><li><a href="#_11">创建与使用</a></li><li><ul><li><a href="#QThread_12">QThread</a></li><li><ul><li><a href="#_14">创建</a></li><li><a href="#_70">启动</a></li></ul>
+</li><li><a href="#QRunnable_81">QRunnable</a></li><li><ul><li><a href="#_83">创建</a></li><li><a href="#_136">启动</a></li></ul>
+</li><li><a href="#moveToThread_147">moveToThread</a></li><li><ul><li><a href="#_148">创建</a></li><li><a href="#_199">启动</a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<h1><a id="_1"></a>线程生命周期</h1>
+<p>在正常情况下线程的生命周期，首先是创建一个线程对象，设置一些线程参数，例如，名字和优先级之类的，这是第一步。然后调用start()方法，这时线程并不会真正开始运行了，此时，只是准备就绪阶段，表示线程可以运行了，但是还没有开始运行。没有开始是因为在等待抢占到CPU的执行权限，一旦获得了执行权限就会开始执行执行run()方法的内容，直到run()方法退出了或者调用了中断后线程才会停止，如下图所示：</p>
+<p><img alt="线程生命周期" src="https://img-blog.csdnimg.cn/343bff415849413fb246b3c8498c1aff.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA54y_5aSq5p6B,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>上图中描述的是单个线程，随着线程的增加线程的生命周期会有很多变化，如下图所示：<br/> <img alt="线程生命周期_2" src="https://img-blog.csdnimg.cn/c29ca6452bc24e1a926bfc8a51dcc043.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA54y_5aSq5p6B,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>运行状态中如果使用了sleep()或者wait()等让线程暂停的函数，就会进入阻塞状态，这个状态什么都不做，线程会停在这里。当sleep()的时间到了或者收到了相应的notify()通知时，线程会再次进入就绪状态，等待获取CPU的执行权限。正在执行的线程其执行权限被其他线程抢占了则再次返回就绪状态，多个线程正常运行情况下会一直在就绪和运行两个状态来回切换。</p>
+<h1><a id="_11"></a>创建与使用</h1>
+<h2><a id="QThread_12"></a>QThread</h2>
+<h3><a id="_14"></a>创建</h3>
+<p>在Qt中继承QThread是常规的实现线程的方式，只需要继承后重写其中的<code>run()函数</code>（大多数线程操作都是重写run()函数）并实现自己的线程工作即可。</p>
+<pre><code class="prism language-cpp"><span class="token comment">// ThreadObject.h</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">pragma</span> <span class="token expression">once</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QThread&gt;</span></span>
+
+<span class="token keyword">class</span> <span class="token class-name">ThreadObject</span>
+    <span class="token operator">:</span> <span class="token base-clause"><span class="token keyword">public</span> <span class="token class-name">QThread</span></span>
+<span class="token punctuation">{<!-- --></span>
+    Q_OBJECT
+<span class="token keyword">public</span><span class="token operator">:</span>
+    <span class="token function">ThreadObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token operator">~</span><span class="token function">ThreadObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">public</span> slots<span class="token operator">:</span>
+    <span class="token keyword">void</span> <span class="token function">StopThread</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">protected</span><span class="token operator">:</span>
+    <span class="token keyword">virtual</span> <span class="token keyword">void</span> <span class="token function">run</span><span class="token punctuation">(</span><span class="token punctuation">)</span> override<span class="token punctuation">;</span>
+<span class="token keyword">private</span><span class="token operator">:</span>
+    <span class="token keyword">bool</span>        is_stop_<span class="token punctuation">;</span>
+    <span class="token keyword">int</span>         count_<span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre>
+<pre><code class="prism language-cpp"><span class="token comment">// ThreadObject.cpp</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"ThreadObject.h"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QDebug&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;windows.h&gt;</span> </span>
+
+<span class="token class-name">ThreadObject</span><span class="token operator">::</span><span class="token function">ThreadObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token operator">:</span> <span class="token function">is_stop_</span><span class="token punctuation">(</span><span class="token boolean">false</span><span class="token punctuation">)</span>
+    <span class="token punctuation">,</span> <span class="token function">count_</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>  <span class="token punctuation">}</span>
+    
+<span class="token class-name">ThreadObject</span><span class="token operator">::</span><span class="token operator">~</span><span class="token function">ThreadObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=</span> defalut<span class="token punctuation">;</span>
+
+<span class="token keyword">void</span> <span class="token class-name">ThreadObject</span><span class="token operator">::</span><span class="token function">StopThread</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    is_stop_ <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> <span class="token class-name">ThreadObject</span><span class="token operator">::</span><span class="token function">run</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token operator">!</span>is_stop_<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">qInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Thread-ID: "</span> <span class="token operator">&lt;&lt;</span> <span class="token class-name">QThread</span><span class="token operator">::</span><span class="token function">currentThreadId</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">" Count: "</span> <span class="token operator">&lt;&lt;</span> <span class="token operator">++</span>count_<span class="token punctuation">;</span>
+        <span class="token function">sleep</span><span class="token punctuation">(</span><span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token function">qInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Thread-ID: "</span> <span class="token operator">&lt;&lt;</span> <span class="token class-name">QThread</span><span class="token operator">::</span><span class="token function">currentThreadId</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">" Exit"</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><strong>运行效果</strong><br/> <img alt="QThread线程启动" src="https://img-blog.csdnimg.cn/793b8098156a4093ab8399c44b40a2f5.gif#pic_center"/></p>
+<p>在上面的代码中<code>ThreadObject</code>继承了<code>QThread</code>并重写了<code>run()方法</code>，每次点击创建按钮都会创建一个新的线程并在<code>run()函数</code>中每隔3秒打印一次，而且在个线程中的计数变量互相之间并不影响，因此可以看出线程之间的内存是独立的。</p>
+<h3><a id="_70"></a>启动</h3>
+<p>线程的启动方法如下：</p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token class-name">Test</span><span class="token operator">::</span><span class="token function">StartThread</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	ThreadObject <span class="token operator">*</span> thread <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token function">ThreadObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	thread<span class="token operator">-&gt;</span><span class="token function">start</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="QRunnable_81"></a>QRunnable</h2>
+<h3><a id="_83"></a>创建</h3>
+<p>QRunnable是所有可执行对象的基类，继承QRunnable类后重写其中的<code>run()函数</code>，即可实现线程开发。虽然基本步骤和QThread的做法一致。但是，QRunnable不能自己运行，而是必须借助于<code>QThreadPool</code>类运行。</p>
+<pre><code class="prism language-cpp"><span class="token comment">// RunnableObject.h</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">pragma</span> <span class="token expression">once</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QObject&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QThread&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QRunnable&gt;</span></span>
+
+<span class="token keyword">class</span> <span class="token class-name">RunnableObject</span>
+    <span class="token operator">:</span> <span class="token base-clause"><span class="token keyword">public</span> <span class="token class-name">QObject</span>
+    <span class="token punctuation">,</span> <span class="token keyword">public</span> <span class="token class-name">QRunnable</span></span>
+<span class="token punctuation">{<!-- --></span>
+    Q_OBJECT
+<span class="token keyword">public</span><span class="token operator">:</span>
+    <span class="token function">RunnableObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token operator">~</span><span class="token function">RunnableObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">virtual</span> <span class="token keyword">void</span> <span class="token function">run</span><span class="token punctuation">(</span><span class="token punctuation">)</span> override<span class="token punctuation">;</span>
+<span class="token keyword">public</span> slots<span class="token operator">:</span>
+    <span class="token keyword">void</span> <span class="token function">StopThread</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">private</span><span class="token operator">:</span>
+    <span class="token keyword">bool</span>            is_stop_<span class="token punctuation">;</span>
+    <span class="token keyword">int</span>             count_<span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre>
+<pre><code class="prism language-cpp"><span class="token comment">// RunnableObject.cpp</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"RunnableObject.h"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QDebug&gt;</span></span>
+
+<span class="token class-name">RunnableObject</span><span class="token operator">::</span><span class="token function">RunnableObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> <span class="token punctuation">}</span>
+
+<span class="token class-name">RunnableObject</span><span class="token operator">::</span><span class="token operator">~</span><span class="token function">RunnableObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token keyword">default</span><span class="token punctuation">;</span>
+
+<span class="token keyword">void</span> <span class="token class-name">RunnableObject</span><span class="token operator">::</span><span class="token function">run</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    is_stop_ <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    count_ <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token operator">!</span>is_stop_<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">qInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Thread-ID: "</span> <span class="token operator">&lt;&lt;</span> <span class="token class-name">QThread</span><span class="token operator">::</span><span class="token function">currentThreadId</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">" Count: "</span> <span class="token operator">&lt;&lt;</span> <span class="token operator">++</span>count_<span class="token punctuation">;</span>
+        <span class="token class-name">QThread</span><span class="token operator">::</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token function">qInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Thread-ID: "</span> <span class="token operator">&lt;&lt;</span> <span class="token class-name">QThread</span><span class="token operator">::</span><span class="token function">currentThreadId</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">" Exit"</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> <span class="token class-name">RunnableObject</span><span class="token operator">::</span><span class="token function">StopThread</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    is_stop_ <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="_136"></a>启动</h3>
+<p>线程的启动方法如下：</p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token class-name">Test</span><span class="token operator">::</span><span class="token function">StartThread</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	QThreadPool <span class="token operator">*</span> thread_pool <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token function">ThreadObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	thread<span class="token operator">-&gt;</span><span class="token function">start</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token function">RunnableObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="moveToThread_147"></a>moveToThread</h2>
+<h3><a id="_148"></a>创建</h3>
+<p>所有继承了QObject的类都可以使用<code>moveToThread()</code>函数将自己的功能放入到线程中运行。</p>
+<pre><code class="prism language-cpp"><span class="token comment">// MoveObject.h</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">pragma</span> <span class="token expression">once</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QObject&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QThread&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;QDebug&gt;</span></span>
+
+<span class="token keyword">class</span> <span class="token class-name">MoveObject</span>
+    <span class="token operator">:</span> <span class="token base-clause"><span class="token keyword">public</span> <span class="token class-name">QObject</span></span>
+<span class="token punctuation">{<!-- --></span>
+    Q_OBJECT
+<span class="token keyword">public</span><span class="token operator">:</span>
+    <span class="token function">MoveObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token operator">~</span><span class="token function">MoveObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">public</span> slots<span class="token operator">:</span>
+    <span class="token keyword">void</span> <span class="token function">StopThread</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">void</span> <span class="token function">DoWorks</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 
+<span class="token keyword">private</span><span class="token operator">:</span>
+    <span class="token keyword">bool</span>        is_stop_<span class="token punctuation">;</span>
+    <span class="token keyword">int</span>         count_<span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre>
+<pre><code class="prism language-cpp"><span class="token comment">// MoveObject.cpp</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"MoveObject.h"</span></span>
+
+<span class="token class-name">MoveObject</span><span class="token operator">::</span><span class="token function">MoveObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> <span class="token punctuation">}</span>
+
+<span class="token class-name">MoveObject</span><span class="token operator">::</span><span class="token operator">~</span><span class="token function">MoveObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=</span> <span class="token keyword">default</span><span class="token punctuation">;</span>
+
+<span class="token keyword">void</span> <span class="token class-name">MoveObject</span><span class="token operator">::</span><span class="token function">StopThread</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    is_stop_ <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> <span class="token class-name">MoveObject</span><span class="token operator">::</span><span class="token function">DoWorks</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    is_stop_ <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    count_ <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token operator">!</span>is_stop_<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token function">qInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Thread-ID: "</span> <span class="token operator">&lt;&lt;</span> <span class="token class-name">QThread</span><span class="token operator">::</span><span class="token function">currentThreadId</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">" Count: "</span> <span class="token operator">&lt;&lt;</span> <span class="token operator">++</span>count_<span class="token punctuation">;</span>
+        <span class="token class-name">QThread</span><span class="token operator">::</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token function">qInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">"Thread-ID: "</span> <span class="token operator">&lt;&lt;</span> <span class="token class-name">QThread</span><span class="token operator">::</span><span class="token function">currentThreadId</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> <span class="token string">" Exit"</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="_199"></a>启动</h3>
+<p>线程的运行代码：</p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token class-name">Test</span><span class="token operator">::</span><span class="token function">StartThread</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	MoveObject <span class="token operator">*</span> move <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token function">MoveObject</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	QThread <span class="token operator">*</span> move_thread <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token function">QThread</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	move<span class="token operator">-&gt;</span><span class="token function">moveToThread</span><span class="token punctuation">(</span>move_thread<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">connect</span><span class="token punctuation">(</span>move_thread<span class="token punctuation">,</span> <span class="token operator">&amp;</span>QThread<span class="token operator">::</span>started<span class="token punctuation">,</span> move<span class="token punctuation">,</span> <span class="token operator">&amp;</span>MoveObject<span class="token operator">::</span>DoWorks<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	move_thread<span class="token operator">-&gt;</span><span class="token function">start</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>在使用这种线程启动方式时需要注意一点，线程<code>QThread</code>类的生命周期一定要长于工作类。因此安全的方式就是全都使用<code>new</code>以确保生命周期是一致的。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

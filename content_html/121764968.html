@@ -1,0 +1,117 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>ROS中里程计的消息类型为<strong>nav_msgs/Odometry</strong>，该消息类型具有以下结构：</p>
+<p><img alt="" height="501" src="image\5559b07209c84b8eb1dc8f7248c06cfe.png" width="1065"/></p>
+<p> <img alt="" height="465" src="image\558a7f8a10494262996db15cf4d4fe06.png" width="330"/></p>
+<p>可以看到，里程计消息中的<strong>pose</strong>包含了位置<strong>pose.position</strong>和姿态<strong>pose.orientation</strong></p>
+<p>在ROS中，有一种常用消息类型为<strong>nav_msgs/Path</strong>，可视化的方法为：</p>
+<p>①在一个节点中订阅发布的里程计话题消息<strong>nav_msgs/Odometry</strong></p>
+<p>②创建<strong>geometry_msgs::PoseStamped</strong>对象接收里程计的位姿</p>
+<p>③<strong>创建nav_msgs/Path对象作为容器，将赋值后的对象push_back</strong>进<strong>nav_msgs/Path中</strong>并发布</p>
+<p>然后即可在rviz中订阅包含<strong>nav_msgs/Path</strong>的话题并可视化轨迹</p>
+<p><strong>1.新建ROS工作空间</strong></p>
+<pre><code>mkdir -p path_ws/src
+cd path_ws
+catkin_make
+cd src
+catkin_create_pkg path_3d roscpp rospy std_msgs nav_msgs geometry_msgs</code></pre>
+<p><strong>2.在path_3d/src中编写消息收发节点文件path_3d.cpp</strong></p>
+<pre><code class="language-cpp">#include &lt;ros/ros.h&gt;
+#include &lt;nav_msgs/Path.h&gt;
+#include &lt;std_msgs/String.h&gt;
+#include &lt;nav_msgs/Odometry.h&gt;
+#include &lt;geometry_msgs/PoseStamped.h&gt;
+#include &lt;tf/transform_broadcaster.h&gt;
+#include &lt;tf/tf.h&gt;
+
+nav_msgs::Path  path;
+ros::Publisher  path_pub;
+ 
+void pathCallback(const nav_msgs::Odometry::ConstPtr&amp; odom_3d)
+{
+    geometry_msgs::PoseStamped position_3d;
+    position_3d.pose.position.x = odom_3d-&gt;pose.pose.position.x; 
+    position_3d.pose.position.y = odom_3d-&gt;pose.pose.position.y; 
+    position_3d.pose.position.z = odom_3d-&gt;pose.pose.position.z;
+    position_3d.pose.orientation = odom_3d-&gt;pose.pose.orientation;
+ 
+
+    position_3d.header.stamp = odom_3d-&gt;header.stamp;
+    position_3d.header.frame_id = "map";
+ 
+    path.poses.push_back(position_3d);
+    path.header.stamp = position_3d.header.stamp;
+    path.header.frame_id = "map";
+    path_pub.publish(path);
+  
+    std::cout &lt;&lt; odom_3d -&gt; header.stamp &lt;&lt; ' ' &lt;&lt; odom_3d-&gt;pose.pose.position.x &lt;&lt; ' ' &lt;&lt; odom_3d-&gt;pose.pose.position.y &lt;&lt; ' ' &lt;&lt; odom_3d-&gt;pose.pose.position.z &lt;&lt; std::endl;
+}
+ 
+int main (int argc, char **argv)
+{
+    ros::init (argc, argv, "showpath");
+    ros::NodeHandle ph;
+ 
+    path_pub = ph.advertise&lt;nav_msgs::Path&gt;("odom3d_path", 10, true);
+    ros::Subscriber odomSub = ph.subscribe&lt;nav_msgs::Odometry&gt;("/odometry_3d", 10, pathCallback);  //订阅里程计话题信息,其中"/odometry_3d"是自己发布的里程计话题名，别忘了修改
+    
+    ros::Rate loop_rate(1000);
+    while(ros::ok())
+    {
+        ros::spinOnce();
+        loop_rate.sleep();
+    }
+    return 0;
+}
+</code></pre>
+<p><strong>3.path_3d文件夹目录中的CMakeLists.txt如下：</strong></p>
+<pre><code>cmake_minimum_required(VERSION 2.8.3)
+project(path_3d)
+
+## Compile as C++11, supported in ROS Kinetic and newer
+# add_compile_options(-std=c++11)
+
+find_package(catkin REQUIRED COMPONENTS
+  geometry_msgs
+  roscpp
+  rospy
+  std_msgs
+message_generation
+)
+
+## Generate added messages and services with any dependencies listed here
+ generate_messages(
+   DEPENDENCIES
+   geometry_msgs   std_msgs
+ )
+
+catkin_package(
+  INCLUDE_DIRS include
+  LIBRARIES path_3d
+  CATKIN_DEPENDS geometry_msgs roscpp rospy std_msgs
+  DEPENDS system_lib
+)
+
+include_directories(
+ include
+  ${catkin_INCLUDE_DIRS}
+)
+
+add_executable(path_3d src/path_3d.cpp) #${PROJECT_NAME}_node
+target_link_libraries(path_3d ${catkin_LIBRARIES}) # ${PROJECT_NAME}_node
+add_dependencies(path_3d beginner_tutorials_generate_messages_cpp) #path_3d_node
+
+
+
+</code></pre>
+<p><strong>4.启动节点、在rviz中订阅odom3d_path话题，即可查看可视化数据</strong></p>
+<pre><code>// 终端中启动roscore
+roscore
+// 另一个终端启动节点
+rosrun path_3d path_3d
+// 第三个终端，启动rviz，frame选择map，订阅发布的odom3d_path话题
+rviz</code></pre>
+<p></p>
+</div>
+</div>

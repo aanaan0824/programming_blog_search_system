@@ -1,0 +1,181 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>二叉树的顺序结构及实现</h3>
+<ul><li><a href="#1__1">1. 二叉树的顺序结构</a></li><li><a href="#2__7">2. 堆的概念及结构</a></li><li><a href="#3_30">3.线性堆的模拟实现</a></li><li><ul><li><a href="#31__31">3.1 堆的基本结构定义</a></li><li><a href="#32__43">3.2 堆的初始化</a></li><li><a href="#33__54">3.3 堆的销毁</a></li><li><a href="#34__65">3.4 堆数据的插入</a></li><li><a href="#35__120">3.5 堆的删除</a></li><li><a href="#36__178">3.6 线性堆判断是否为空</a></li><li><a href="#37__188">3.7 求线性堆元素的数目</a></li><li><a href="#38__198">3.8 返回线性堆头的元素</a></li><li><a href="#39__209">3.9 打印线性堆的元素</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<h1><a id="1__1"></a>1. 二叉树的顺序结构</h1>
+<p>普通的二叉树是不适合用数组来存储的，因为可能会存在大量的空间浪费。而完全二叉树更适合使用顺序结 构存储。<strong>现实中我们通常把堆(一种二叉树)使用顺序结构的数组来存储，需要注意的是这里的堆和操作系统 虚拟进程地址空间中的堆是两回事，一个是数据结构，一个是操作系统中管理内存的一块区域分段。</strong></p>
+<p><img alt="image-20220403105214178" src="https://img-blog.csdnimg.cn/img_convert/235ff939a773a300526e5522c7b75228.png"/></p>
+<h1><a id="2__7"></a>2. 堆的概念及结构</h1>
+<blockquote>
+<p>如果有一个关键码的集合K = { k<sub>0</sub>，k<sub>1</sub> ,k<sub>2</sub>…，k<sub>n-1</sub> }，把它的所有元素按完全二叉树的顺序存储方式存储<br/> 在一个一维数组中，并满足：K<sub>i</sub>&lt;= K<sub>2*i+1</sub>且 K<sub>i</sub>&lt;=K<sub>2*i+2</sub> ( K<sub>i</sub>&gt;=<br/> K<sub>2*i+1</sub>且K<sub>i</sub>&lt;=K<sub>2*i+2</sub>) i = 0，1，<br/> 2…，则称为小堆(或大堆)。将根节点最大的堆叫做最大堆或大根堆，根节点最小的堆叫做最小堆或小根堆。</p>
+</blockquote>
+<p>简单描述：</p>
+<p><strong>大堆(大根堆)：树中父亲都大于（等于）孩子。</strong></p>
+<p><strong>小堆（小根堆）：树中父亲都小于（等于）孩子。</strong></p>
+<p>堆的性质：</p>
+<ul><li> <p><strong>堆中某个节点的值总是不大于或不小于其父节点的值；</strong></p> </li><li> <p><strong>堆总是一棵完全二叉树。</strong></p> <p><img alt="image-20220403122953339" src="https://img-blog.csdnimg.cn/img_convert/5542ae8cec34e447ec0fb0922aa0c6c4.png"/></p> </li></ul>
+<p>应用场景：堆排序、topk。</p>
+<h1><a id="3_30"></a>3.线性堆的模拟实现</h1>
+<h2><a id="31__31"></a>3.1 堆的基本结构定义</h2>
+<pre><code class="prism language-C">typedef int HPDataType;//堆中存放的数据，假设是整型
+typedef struct Heap
+{
+	HPDataType* a;//指针指向堆中存储的数据
+	size_t size;//堆中当前元素的数目
+	size_t capacity;//堆中所能存储数据的容量
+}HP;
+</code></pre>
+<h2><a id="32__43"></a>3.2 堆的初始化</h2>
+<pre><code class="prism language-C">void HeapInit(HP* php)
+{
+	assert(php);
+	php-&gt;capacity = php-&gt;size = 0;
+	php-&gt;a = NULL;
+}
+</code></pre>
+<h2><a id="33__54"></a>3.3 堆的销毁</h2>
+<pre><code class="prism language-C">void HeapDestory(HP* php)
+{
+	assert(php);
+	free(php-&gt;a);
+	php-&gt;a = NULL;
+}
+</code></pre>
+<h2><a id="34__65"></a>3.4 堆数据的插入</h2>
+<p>思路：</p>
+<p><mark>时间复杂度：log(N)</mark></p>
+<p><img alt="image-20220403155004910" src="https://img-blog.csdnimg.cn/img_convert/5d56b36f656f5fc2717ec5b8754f68d7.png"/></p>
+<pre><code class="prism language-C">void Swap(HPDataType* pa, HPDataType* pb)//交换函数：交换数组中的两个元素
+{
+	HPDataType tmp = *pa;
+	*pa = *pb;
+	*pb = tmp;
+}
+void AdjustUp(HPDataType* a, size_t child )//堆的向上调整
+{
+	size_t parant = (child - 1) / 2;
+	while (child &gt; 0)
+	{
+		if (a[child] &lt; a[parant])//此处如果是&lt;就是小堆，如果是&gt;就是大堆
+		{
+			Swap(&amp;a[child], &amp;a[parant]);
+			child = parant;
+			parant = (child - 1) / 2;
+		}
+		else
+		{
+			break;
+		}
+	}
+}
+void HeapPush(HP* php, HPDataType x)
+{
+	assert(php);
+    //判断是否需要扩充并进行扩充
+	if (php-&gt;size == php-&gt;capacity)
+	{
+		size_t newCapacity = php-&gt;capacity == 0 ? 2 : 2 * php-&gt;capacity;
+		HPDataType*tmp = (HPDataType*)realloc(php-&gt;a, sizeof(HPDataType)*newCapacity);
+		if (tmp == NULL)
+		{
+			printf("realloc failed\n");
+			exit(-1);
+		}
+		php-&gt;a = tmp;
+		php-&gt;capacity = newCapacity;
+	}
+	php-&gt;a[php-&gt;size] = x;
+	php-&gt;size++;
+	//向上调整，控制保持是堆
+	AdjustUp(php-&gt;a, php-&gt;size - 1);
+}
+</code></pre>
+<h2><a id="35__120"></a>3.5 堆的删除</h2>
+<p>思路：</p>
+<ol><li> <p><strong>第一个数与最后一个位置的数进行交换</strong></p> </li><li> <p><strong>删除最后一个数据</strong></p> </li><li> <p><strong>向下调整</strong></p> <p>下面是向下调整的图示：</p> <p><mark>时间复杂度：O(log<sub>2</sub>N)</mark></p> <p><img alt="image-20220408163509379" src="https://img-blog.csdnimg.cn/img_convert/2ce298ff975de8e9a85a081ac0f5e4d0.png"/></p> </li></ol>
+<pre><code class="prism language-C">void Swap(HPDataType* pa, HPDataType* pb)//交换函数：交换数组中的两个元素
+{
+	HPDataType tmp = *pa;
+	*pa = *pb;
+	*pb = tmp;
+}
+
+void AdjustDown(HPDataType* a, size_t size,size_t root)
+{
+	size_t parant = root;
+	size_t child = 2*parant+1;
+	
+	while (child&lt;size)
+	{
+		if (child+1&lt;size &amp;&amp;a[child + 1] &lt; a[child])//此时后面的这个如果是&lt;就是小堆，如果是&gt;就是大堆
+			++child;
+		if (a[child] &lt; a[parant])//如果是&lt;就是小堆，如果是&gt;就是大堆
+		{
+			Swap(&amp;a[child], &amp;a[parant]);
+			parant = child;
+			child = 2 * parant + 1;
+		}
+		else
+		{
+			break;
+		}
+	}
+}
+void HeapPop(HP* php)
+{
+	assert(php);
+	Swap(&amp;php-&gt;a[0], &amp;php-&gt;a[php-&gt;size - 1]);
+	php-&gt;size--;
+	AdjustDown(php-&gt;a, php-&gt;size, 0);
+}
+</code></pre>
+<blockquote>
+<p><strong>问：堆的删除为什么不直接从后向前进行覆盖，把第一个元素覆盖掉？</strong></p>
+<p><strong>答：首先时间复杂度是O(N)，其次堆原来的结构可能会被打乱，同时也可能丧失堆原来的性质变得不再是堆，除非堆原来的数组元素是从小到大或者从大到小是有序的情况下才一定能够保持堆的性质，但即使这种情况下堆的结构仍然会被打乱，即它们的父子关系被破坏掉。</strong></p>
+</blockquote>
+<h2><a id="36__178"></a>3.6 线性堆判断是否为空</h2>
+<pre><code class="prism language-C">bool HeapEmpty(HP* php)
+{
+	assert(php);
+	return php-&gt;size == 0;
+}
+</code></pre>
+<h2><a id="37__188"></a>3.7 求线性堆元素的数目</h2>
+<pre><code class="prism language-C">size_t HeapSize(HP* php)
+{
+	assert(php);
+	return php-&gt;size;
+}
+</code></pre>
+<h2><a id="38__198"></a>3.8 返回线性堆头的元素</h2>
+<pre><code class="prism language-C">HPDataType HeapTop(HP* php)
+{
+	assert(php);
+	assert(php-&gt;size &gt; 0);
+	return php-&gt;a[0];
+}
+</code></pre>
+<h2><a id="39__209"></a>3.9 打印线性堆的元素</h2>
+<pre><code class="prism language-C">void HeapPrint(HP* php)
+{
+	assert(php);
+	for (size_t i = 0; i &lt; php-&gt;size; i++)
+	{
+		printf("%d ", php-&gt;a[i]);
+	}
+	printf("\n");
+}
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

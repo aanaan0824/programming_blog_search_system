@@ -1,0 +1,121 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<div class="blogpost-body cnblogs-markdown" id="cnblogs_post_body" style="font-size: 16px;">
+<blockquote>
+<p>更新记录<br/> 本文迁移自Panda666原博客，原发布时间：2021年6月29日。</p>
+</blockquote>
+<h3 id="一说明">一、说明</h3>
+<p>Task默认就依托于底层线程池中的线程，使用.NET为我们定义好的CancellationTokenSource类型就可以实现任务的取消。这是标准规范的任务取消操作。</p>
+<h3 id="二非标准不推荐任务取消操作">二、非标准不推荐任务取消操作</h3>
+<p>除了.NET标准的任务取消操作，我们也可以直接进行对任务底层的线程进行中断，但这是非常不推荐的方式。注意：野蛮的中止线程不是一个好选择！！！</p>
+<p>比如：</p>
+<pre class="has"><code class="language-c#">using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Panda666comTest
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            //新建线程引用
+            Thread thread = null;
+
+            //新建任务
+            Task t = Task.Run(() =&gt;
+            {
+                //获得当前任务底层的线程的引用
+                thread = Thread.CurrentThread;
+
+                //任务开始
+                Console.WriteLine("Task start!");
+
+                //模拟耗时的操作
+                Thread.Sleep(1000);
+
+                //任务结束
+                Console.WriteLine("Task finished!");
+            });
+
+            //让任务先运行起来
+            Thread.Sleep(10);
+
+            //强行终止任务
+            thread.Abort();
+
+            //wait
+            Console.WriteLine("Success");
+            Console.ReadKey();
+        }
+    }
+}</code></pre>
+<p>注意：线程对象Abort的方法已经在最新的.NET Core中不被支持！！！</p>
+<h3 id="三标准的任务取消操作">三、标准的任务取消操作</h3>
+<p>具体流程如下：<br/> 新建CancellationTokenSource对象用于辅助任务取消</p>
+<pre class="has"><code class="language-c#">CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();</code></pre>
+<p>CancellationTokenSource类型所在命名空间</p>
+<pre class="has"><code class="language-c#">using System.Treading;</code></pre>
+<p>在具体的任务执行中监视CancellationTokenSource对象的成员，Token的IsCancellationRequested属性来确定是否需要取消任务，通过任务定期轮询它，检查是否发出了取消请求</p>
+<pre class="has"><code class="language-c#">token.IsCancellationRequested</code></pre>
+<p>如果调用.Cancel()发出了取消任务请求，任务立即返回，停止继续任务</p>
+<pre class="has"><code class="language-c#">CancellationTokenSource cansrc = new CancellationTokenSource();
+cansrc.Cancel();</code></pre>
+<p>那我们来把上面那个野蛮终止Task的例子修改一下</p>
+<pre class="has"><code class="language-c#">using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Panda666comTest
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            CancellationTokenSource tokenSource = new CancellationTokenSource();
+            CancellationToken cancellationToken = tokenSource.Token;
+
+            //新建任务
+            Task t = Task.Run(() =&gt;
+            {
+                while(true)
+                {
+                    //检测任务是否已经被取消
+                    if(tokenSource.IsCancellationRequested)
+                    {
+                        Console.WriteLine("Task canceled");
+                        break;
+                    }
+
+                    //任务开始
+                    Console.WriteLine("Task start!");
+
+                    //模拟耗时的操作
+                    Thread.Sleep(1000);
+
+                    //任务结束
+                    Console.WriteLine("Task finished!");
+                }
+            }, cancellationToken);
+
+
+            Thread.Sleep(10);
+
+            //用户控制是否取消任务
+            while(true)
+            {
+                Console.Write("请切换到英文输入法");
+                Console.WriteLine("取消任务请按Y");
+                if((Console.ReadKey()).Key == ConsoleKey.Y)
+                {
+                    //任务取消
+                    tokenSource.Cancel();
+                }
+            }
+        }
+    }
+}</code></pre>
+</div>
+</div>
+</div>

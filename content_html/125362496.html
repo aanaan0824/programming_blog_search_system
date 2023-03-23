@@ -1,0 +1,427 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="_0"></a>前言</h1>
+<p><strong>单元测试（UT）</strong><br/>工作一段时间后，才真正意识到代码质量的重要性。虽然囫囵吞枣式地开发，表面上看来速度很快，但是给后续的维护与拓展制造了很多隐患。<br/>作为一个想专业但还不专业的程序员，通过构建覆盖率比较高的单元测试用例，可以比较显著地提高代码质量。如后续需求变更、版本迭代时，重新跑一次单元测试即可校验自己的改动是否正确。</p>
+<p><strong>Mockito和单元测试有什么关系？</strong><br/>与集成测试将系统作为一个整体测试不同，单元测试更应该专注于某个类。所以当被测试类与外部类有依赖的时候，尤其是与数据库相关的这种费时且有状态的类，很难做单元测试。但好在可以通过“Mockito”这种仿真框架来模拟这些比较费时的类，从而专注于测试某个类内部的逻辑。</p>
+<h1><a id="SpringBootMockito_6"></a>SpringBoot与Mockito</h1>
+<p>spring-boot-starter-test中已经加入了Mockito依赖，所以我们无需手动引入。<br/>另外要注意一点，在SpringBoot环境下，我们可能会用@SpringBootTest注解。</p>
+<pre><code class="prism language-json">@<span class="token function">Target</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>ElementType<span class="token punctuation">.</span><span class="token constant">TYPE</span><span class="token punctuation">}</span><span class="token punctuation">)</span>
+@<span class="token function">Retention</span><span class="token punctuation">(</span>RetentionPolicy<span class="token punctuation">.</span><span class="token constant">RUNTIME</span><span class="token punctuation">)</span>
+@Documented
+@Inherited
+@<span class="token function">BootstrapWith</span><span class="token punctuation">(</span>SpringBootTestContextBootstrapper<span class="token punctuation">.</span>class<span class="token punctuation">)</span>
+@<span class="token function">ExtendWith</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>SpringExtension<span class="token punctuation">.</span>class<span class="token punctuation">}</span><span class="token punctuation">)</span>
+<span class="token keyword">public</span> @<span class="token keyword">interface</span> <span class="token class-name">SpringBootTest</span> <span class="token punctuation">{<!-- --></span>
+</code></pre>
+<p>如果用这个注解，跑单元测试的时候会加载SpringBoot的上下文，初始化Spring容器一次，显得格外的慢，这可能也是很多人放弃在Spring环境下使用单元测试的原因之一。<br/>不过我们可以不用这个Spring环境，单元测试的目的应该是只测试这一个函数的逻辑正确性，某些容器中的相关依赖可以通过Mockito仿真。</p>
+<p>所以我们可以直接拓展自MockitoExtendsion，这样跑测试就很快了。</p>
+<pre><code class="prism language-json">@<span class="token function">ExtendWith</span><span class="token punctuation">(</span>MockitoExtension<span class="token punctuation">.</span>class<span class="token punctuation">)</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">ListMockTest</span> <span class="token punctuation">{<!-- --></span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h1><a id="_30"></a>基本使用</h1>
+<h2><a id="mockverify_32"></a>mock与verify</h2>
+<pre><code class="prism language-json"><span class="token keyword">import</span> org<span class="token punctuation">.</span>junit<span class="token punctuation">.</span>jupiter<span class="token punctuation">.</span>api<span class="token punctuation">.</span>Test<span class="token punctuation">;</span>
+<span class="token keyword">import</span> org<span class="token punctuation">.</span>junit<span class="token punctuation">.</span>jupiter<span class="token punctuation">.</span>api<span class="token punctuation">.</span>extension<span class="token punctuation">.</span>ExtendWith<span class="token punctuation">;</span>
+<span class="token keyword">import</span> org<span class="token punctuation">.</span>mockito<span class="token punctuation">.</span>junit<span class="token punctuation">.</span>jupiter<span class="token punctuation">.</span>MockitoExtension<span class="token punctuation">;</span>
+
+<span class="token keyword">import</span> java<span class="token punctuation">.</span>util<span class="token punctuation">.</span>List<span class="token punctuation">;</span>
+
+<span class="token keyword">import</span> <span class="token keyword">static</span> org<span class="token punctuation">.</span>mockito<span class="token punctuation">.</span>Mockito<span class="token punctuation">.</span><span class="token operator">*</span><span class="token punctuation">;</span>
+
+
+@<span class="token function">ExtendWith</span><span class="token punctuation">(</span>MockitoExtension<span class="token punctuation">.</span>class<span class="token punctuation">)</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">ListMockTest</span> <span class="token punctuation">{<!-- --></span>
+
+    @Test
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">mockList</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        List mockedList  <span class="token operator">=</span> <span class="token function">mock</span><span class="token punctuation">(</span>List<span class="token punctuation">.</span>class<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        mockedList<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"one"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        mockedList<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"one"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>mock(List.class)会返回一个List的仿真对象，可以理解为“假对象”，要与后面提到的spy 区分开。<br/>通过Mockito的verify来验证是否调用过List的add方法。</p>
+<h2><a id="stubbing_62"></a>stubbing(存根)</h2>
+<h3><a id="_64"></a>什么是存根</h3>
+<p><strong>注意：mocking和stubbing背后的理论很庞大。这里的解释只是针对于这个框架而言，比较粗浅。</strong><br/>上面通过mock函数得到了一个代理对象，调用这个对象的函数时，如果有返回值，默认情况下返回值都是null，如果基本类型，默认值是0或者false。</p>
+<pre><code class="prism language-json">  @Test
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">mockList</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        List mockedList  <span class="token operator">=</span> <span class="token function">mock</span><span class="token punctuation">(</span>List<span class="token punctuation">.</span>class<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        System<span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>控制台输出</p>
+<pre><code class="prism language-json"><span class="token keyword">null</span>
+</code></pre>
+<p>当测试的单元依赖这个mock对象的返回值时，我们可以通过提前申明这个函数的返回值来测试各种各样的场景。<br/>提前申明的这个过程被称为存根。</p>
+<pre><code class="prism language-json">@<span class="token function">ExtendWith</span><span class="token punctuation">(</span>MockitoExtension<span class="token punctuation">.</span>class<span class="token punctuation">)</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">ListMockTest</span> <span class="token punctuation">{<!-- --></span>
+
+    @Test
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">mockList</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        List mockedList  <span class="token operator">=</span> <span class="token function">mock</span><span class="token punctuation">(</span>List<span class="token punctuation">.</span>class<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//调用get(0)时，返回first</span>
+        <span class="token function">when</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenReturn</span><span class="token punctuation">(</span><span class="token string">"first"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//调用get(1)时，直接抛出异常</span>
+        <span class="token function">when</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenThrow</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">RuntimeException</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//返回first</span>
+        System<span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//抛出异常</span>
+        System<span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//没有存根，则会返回null</span>
+        System<span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">999</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="_109"></a>注意点</h3>
+<ul><li>存根时可以被覆盖的（即对一种情况多次存根的话，以最后一次为准），但是不鼓励这么做，可读性会变差。</li><li>一旦存根后，这个函数会一直返回这个值，不管你调用多少次。</li></ul>
+<h3><a id="void_114"></a>返回值为void</h3>
+<p>即使有些函数返回值为void，也可以使用存根。</p>
+<pre><code class="prism language-java"><span class="token comment">//调用clear方法时，抛出异常</span>
+<span class="token function">doThrow</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">RuntimeException</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">when</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+mockedList<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h3><a id="_124"></a>连续存根</h3>
+<p>多次调用，返回不同的值。</p>
+<pre><code class="prism language-java">    <span class="token annotation punctuation">@Test</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">mockList</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">List</span> mockedList  <span class="token operator">=</span> <span class="token function">mock</span><span class="token punctuation">(</span><span class="token class-name">List</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">when</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenReturn</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenReturn</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenReturn</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>返回值：</p>
+<pre><code class="prism language-java"><span class="token number">0</span>
+<span class="token number">1</span>
+<span class="token number">2</span>
+</code></pre>
+<p>也可以简化为下面的这种写法，效果一样。</p>
+<pre><code class="prism language-java">        <span class="token function">when</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenReturn</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h3><a id="_154"></a>设置回调函数</h3>
+<p>调用某个函数的时候，执行一个回调函数。</p>
+<pre><code class="prism language-java">    <span class="token annotation punctuation">@Test</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">mockList</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">List</span> mockedList <span class="token operator">=</span> <span class="token function">mock</span><span class="token punctuation">(</span><span class="token class-name">List</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">when</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token function">anyInt</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenAnswer</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">Answer</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">Object</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token annotation punctuation">@Override</span>
+            <span class="token keyword">public</span> <span class="token class-name">Object</span> <span class="token function">answer</span><span class="token punctuation">(</span><span class="token class-name">InvocationOnMock</span> invocationOnMock<span class="token punctuation">)</span> <span class="token keyword">throws</span> <span class="token class-name">Throwable</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"哈哈哈，被我逮到了吧"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name">Object</span><span class="token punctuation">[</span><span class="token punctuation">]</span> arguments <span class="token operator">=</span> invocationOnMock<span class="token punctuation">.</span><span class="token function">getArguments</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"参数为:"</span> <span class="token operator">+</span> <span class="token class-name">Arrays</span><span class="token punctuation">.</span><span class="token function">toString</span><span class="token punctuation">(</span>arguments<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name">Method</span> method <span class="token operator">=</span> invocationOnMock<span class="token punctuation">.</span><span class="token function">getMethod</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span><span class="token string">"方法名为:"</span> <span class="token operator">+</span> method<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                <span class="token keyword">return</span> <span class="token string">"结果由我决定"</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>控制台打印：</p>
+<pre><code class="prism language-java">哈哈哈，被我逮到了吧
+参数为<span class="token operator">:</span><span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+方法名为<span class="token operator">:</span>get
+结果由我决定
+</code></pre>
+<h3><a id="_188"></a>存根函数家族</h3>
+<p>除了上面出现的doReturn、doThrow、doAnswer外，还有：<br/>doNothing() 啥也不干<br/>doCallRealMethod() 调用真正的方法（不代理）</p>
+<h2><a id="_192"></a>参数匹配器</h2>
+<h3><a id="_194"></a>基本用法</h3>
+<p>看完上面的存根，可能会有一个疑问：如果我想监控这个对象有没有被调用get方法，具体参数是什么我并不关心，该咋办。<br/>这个时候就用到了参数匹配器。</p>
+<pre><code class="prism language-json">    @Test
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">mockList</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        List mockedList  <span class="token operator">=</span> <span class="token function">mock</span><span class="token punctuation">(</span>List<span class="token punctuation">.</span>class<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token function">when</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenReturn</span><span class="token punctuation">(</span><span class="token string">"first"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//返回first</span>
+        System<span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//验证是否调用过get函数。这里的anyInt()就是一个参数匹配器。</span>
+        <span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token function">anyInt</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>处理anyInt()，还有很多的参数匹配器，默认的放在ArgumentMatchers类中。当然，也可以根据需求自定义参数匹配器或者使用hamcrest匹配器。<br/>当一个函数接收多个参数时，如果其中有一个用了参数匹配器，那其他的参数也必须用。</p>
+<pre><code class="prism language-json">    <span class="token keyword">class</span> <span class="token class-name">Student</span><span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">sleep</span><span class="token punctuation">(</span><span class="token parameter">int id<span class="token punctuation">,</span> String studNo<span class="token punctuation">,</span> String name</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    @Test
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">mockStudent</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        Student student <span class="token operator">=</span> <span class="token function">mock</span><span class="token punctuation">(</span>Student<span class="token punctuation">.</span>class<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        student<span class="token punctuation">.</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token string">"1"</span><span class="token punctuation">,</span> <span class="token string">"admin"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token function">verify</span><span class="token punctuation">(</span>student<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token function">anyInt</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">anyString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">eq</span><span class="token punctuation">(</span><span class="token string">"admin"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">verify</span><span class="token punctuation">(</span>student<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token function">anyInt</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">anyString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">eq</span><span class="token punctuation">(</span><span class="token string">"admin"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>正确的用法是：</p>
+<pre><code class="prism language-json">    @Test
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">mockStudent</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        Student student <span class="token operator">=</span> <span class="token function">mock</span><span class="token punctuation">(</span>Student<span class="token punctuation">.</span>class<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        student<span class="token punctuation">.</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token string">"1"</span><span class="token punctuation">,</span> <span class="token string">"admin"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token function">verify</span><span class="token punctuation">(</span>student<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token function">anyInt</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">anyString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">eq</span><span class="token punctuation">(</span><span class="token string">"admin"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="ArgumentCaptor_246"></a>ArgumentCaptor</h3>
+<p>当我们需要去验证函数外部的一些参数时，就需要用到这个。<br/>以发送邮件为例<br/>定义一个邮件类：</p>
+<pre><code class="prism language-java"><span class="token annotation punctuation">@Data</span>
+<span class="token annotation punctuation">@NoArgsConstructor</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Email</span> <span class="token punctuation">{<!-- --></span>
+
+    <span class="token keyword">private</span> <span class="token class-name">String</span> <span class="token keyword">to</span><span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token class-name">String</span> subject<span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token class-name">String</span> body<span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token class-name">EmailStyle</span> emailStyle<span class="token punctuation">;</span>
+
+    <span class="token keyword">public</span> <span class="token class-name">Email</span><span class="token punctuation">(</span><span class="token class-name">String</span> <span class="token keyword">to</span><span class="token punctuation">,</span> <span class="token class-name">String</span> subject<span class="token punctuation">,</span> <span class="token class-name">String</span> body<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token keyword">to</span> <span class="token operator">=</span> <span class="token keyword">to</span><span class="token punctuation">;</span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>subject <span class="token operator">=</span> subject<span class="token punctuation">;</span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>body <span class="token operator">=</span> body<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>邮件有以下两种样式</p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">enum</span> <span class="token class-name">EmailStyle</span> <span class="token punctuation">{<!-- --></span>
+    HTML<span class="token punctuation">,</span>DOC<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>邮件服务会调用邮件平台发送邮件</p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">EmailService</span> <span class="token punctuation">{<!-- --></span>
+
+    <span class="token keyword">private</span> <span class="token class-name">DeliveryPlatform</span> deliveryPlatform<span class="token punctuation">;</span>
+
+    <span class="token keyword">public</span> <span class="token class-name">EmailService</span><span class="token punctuation">(</span><span class="token class-name">DeliveryPlatform</span> deliveryPlatform<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>deliveryPlatform <span class="token operator">=</span> deliveryPlatform<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">send</span><span class="token punctuation">(</span><span class="token class-name">String</span> <span class="token keyword">to</span><span class="token punctuation">,</span> <span class="token class-name">String</span> subject<span class="token punctuation">,</span> <span class="token class-name">String</span> body<span class="token punctuation">,</span> <span class="token keyword">boolean</span> html<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">EmailStyle</span> emailStyle <span class="token operator">=</span> <span class="token class-name">EmailStyle</span><span class="token punctuation">.</span>DOC<span class="token punctuation">;</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span>html<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            emailStyle <span class="token operator">=</span> <span class="token class-name">EmailStyle</span><span class="token punctuation">.</span>HTML<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token class-name">Email</span> email <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Email</span><span class="token punctuation">(</span><span class="token keyword">to</span><span class="token punctuation">,</span> subject<span class="token punctuation">,</span> body<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        email<span class="token punctuation">.</span><span class="token function">setEmailStyle</span><span class="token punctuation">(</span>emailStyle<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        deliveryPlatform<span class="token punctuation">.</span><span class="token function">deliver</span><span class="token punctuation">(</span>email<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>邮件平台代码如下：</p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">DeliveryPlatform</span> <span class="token punctuation">{<!-- --></span>
+
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">deliver</span><span class="token punctuation">(</span><span class="token class-name">Email</span> email<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//do something</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>现在我想验证一个问题，当我发送HTML邮件时，deliver这个函数收到的email到底是不是HTML类型的。<br/>这种情况下，就可以通过ArgumentCaptor的方式来解决了。</p>
+<pre><code class="prism language-java"><span class="token annotation punctuation">@ExtendWith</span><span class="token punctuation">(</span><span class="token class-name">MockitoExtension</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">)</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">EmailServiceTest</span> <span class="token punctuation">{<!-- --></span>
+
+    <span class="token annotation punctuation">@Mock</span>
+    <span class="token keyword">private</span> <span class="token class-name">DeliveryPlatform</span> deliveryPlatform<span class="token punctuation">;</span>
+
+    <span class="token annotation punctuation">@InjectMocks</span>
+    <span class="token keyword">private</span> <span class="token class-name">EmailService</span> emailService<span class="token punctuation">;</span>
+
+    <span class="token annotation punctuation">@Captor</span>
+    <span class="token keyword">private</span> <span class="token class-name">ArgumentCaptor</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">Email</span><span class="token punctuation">&gt;</span></span> emailArgumentCaptor<span class="token punctuation">;</span>
+
+
+    <span class="token annotation punctuation">@Test</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">testHtmlEmail</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        emailService<span class="token punctuation">.</span><span class="token function">send</span><span class="token punctuation">(</span><span class="token string">"某人"</span><span class="token punctuation">,</span> <span class="token string">"无题"</span><span class="token punctuation">,</span> <span class="token string">"无内容"</span><span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token function">verify</span><span class="token punctuation">(</span>deliveryPlatform<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">deliver</span><span class="token punctuation">(</span>emailArgumentCaptor<span class="token punctuation">.</span><span class="token function">capture</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token class-name">Email</span> email <span class="token operator">=</span> emailArgumentCaptor<span class="token punctuation">.</span><span class="token function">getValue</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">Assertions</span><span class="token punctuation">.</span><span class="token function">assertEquals</span><span class="token punctuation">(</span><span class="token class-name">EmailStyle</span><span class="token punctuation">.</span>HTML<span class="token punctuation">,</span> email<span class="token punctuation">.</span><span class="token function">getEmailStyle</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="_339"></a>验证函数被调用的次数</h2>
+<p>下面的这个测试将不会通过</p>
+<pre><code class="prism language-json">    @Test
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">mockList</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        List mockedList  <span class="token operator">=</span> <span class="token function">mock</span><span class="token punctuation">(</span>List<span class="token punctuation">.</span>class<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token function">when</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenReturn</span><span class="token punctuation">(</span><span class="token string">"first"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//返回first</span>
+        System<span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        System<span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//验证是否被用过get</span>
+        <span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token function">anyInt</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>报错如下：</p>
+<pre><code class="prism language-json">org<span class="token punctuation">.</span>mockito<span class="token punctuation">.</span>exceptions<span class="token punctuation">.</span>verification<span class="token punctuation">.</span>TooManyActualInvocations<span class="token operator">:</span> 
+list<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token operator">&lt;</span>any integer<span class="token operator">&gt;</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+Wanted <span class="token number">1</span> <span class="token literal-property property">time</span><span class="token operator">:</span>
+<span class="token operator">-</span><span class="token operator">&gt;</span> at com<span class="token punctuation">.</span>dayrain<span class="token punctuation">.</span>mockitodemo<span class="token punctuation">.</span>test<span class="token punctuation">.</span>ListMockTest<span class="token punctuation">.</span><span class="token function">mockList</span><span class="token punctuation">(</span>ListMockTest<span class="token punctuation">.</span>java<span class="token operator">:</span><span class="token number">43</span><span class="token punctuation">)</span>
+But was <span class="token number">2</span> <span class="token literal-property property">times</span><span class="token operator">:</span>
+<span class="token operator">-</span><span class="token operator">&gt;</span> at com<span class="token punctuation">.</span>dayrain<span class="token punctuation">.</span>mockitodemo<span class="token punctuation">.</span>test<span class="token punctuation">.</span>ListMockTest<span class="token punctuation">.</span><span class="token function">mockList</span><span class="token punctuation">(</span>ListMockTest<span class="token punctuation">.</span>java<span class="token operator">:</span><span class="token number">39</span><span class="token punctuation">)</span>
+<span class="token operator">-</span><span class="token operator">&gt;</span> at com<span class="token punctuation">.</span>dayrain<span class="token punctuation">.</span>mockitodemo<span class="token punctuation">.</span>test<span class="token punctuation">.</span>ListMockTest<span class="token punctuation">.</span><span class="token function">mockList</span><span class="token punctuation">(</span>ListMockTest<span class="token punctuation">.</span>java<span class="token operator">:</span><span class="token number">40</span><span class="token punctuation">)</span>
+</code></pre>
+<p>大概意思是，只希望这个函数被调用一次，但实际上被调用了两次。<br/>可能有点懵，不过点进verify方法后就明白了，默认情况下只调用一次；</p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">T</span><span class="token punctuation">&gt;</span></span> <span class="token class-name">T</span> <span class="token function">verify</span><span class="token punctuation">(</span><span class="token class-name">T</span> mock<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">return</span> MOCKITO_CORE<span class="token punctuation">.</span><span class="token function">verify</span><span class="token punctuation">(</span>mock<span class="token punctuation">,</span> <span class="token function">times</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>所以在调用的verify方法的时候，指定下调用次数即可。</p>
+<pre><code class="prism language-java"><span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">,</span> <span class="token function">times</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token function">anyInt</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>甚至支持不指定固定次数</p>
+<pre><code class="prism language-json"> <span class="token comment">//一次也不能调用，等于times(0)</span>
+ <span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">,</span> <span class="token function">never</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"never happened"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+ <span class="token comment">//至多、至少</span>
+ <span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">,</span> <span class="token function">atMostOnce</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"once"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">,</span> <span class="token function">atLeastOnce</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"three times"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">,</span> <span class="token function">atLeast</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"three times"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">,</span> <span class="token function">atMost</span><span class="token punctuation">(</span><span class="token number">5</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"three times"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="mockMock_398"></a>创建mock对象的另一种方式：@Mock</h2>
+<p>上述方法都是通过mock方法来构建仿真对象的，其实更简单的方法是通过注解。</p>
+<pre><code class="prism language-java">    <span class="token annotation punctuation">@Mock</span>
+    <span class="token keyword">private</span> <span class="token class-name">List</span> mockedList<span class="token punctuation">;</span>
+
+    <span class="token annotation punctuation">@Test</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">mockList</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        mockedList<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"one"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">verify</span><span class="token punctuation">(</span>mockedList<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"one"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="Spy_413"></a>Spy（间谍）</h2>
+<h3><a id="_415"></a>介绍</h3>
+<p>上面讲的一些操作都是和Mock出来的对象相关的。通过mock()或者@Mcok注解标注的对象，可以理解为“假对象”。<br/>Spy是针对于“真实存在”的对象。<br/>在重构已有的旧代码时，Spy会比较好用。</p>
+<pre><code class="prism language-java">    <span class="token annotation punctuation">@Test</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">spyList</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//申请了一个真实的对象</span>
+        <span class="token class-name">List</span> list <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">LinkedList</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">List</span> spy <span class="token operator">=</span> <span class="token function">spy</span><span class="token punctuation">(</span>list<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//可以选择存根某些函数</span>
+        <span class="token function">when</span><span class="token punctuation">(</span>spy<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenReturn</span><span class="token punctuation">(</span><span class="token number">100</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//调用真实的方法</span>
+        spy<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"one"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        spy<span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"two"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//打印第一个元素</span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>spy<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//获取list的大小</span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>spy<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//验证</span>
+        <span class="token function">verify</span><span class="token punctuation">(</span>spy<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"one"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">verify</span><span class="token punctuation">(</span>spy<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">add</span><span class="token punctuation">(</span><span class="token string">"two"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>当使用spy的时候，有一个很容易掉进去的陷进。即spy监听的是真实的对象，在操作真实对象的时候可能会出现越界之类的问题。</p>
+<pre><code class="prism language-java">    <span class="token annotation punctuation">@Test</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">spyList</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">List</span> list <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">LinkedList</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">List</span> spy <span class="token operator">=</span> <span class="token function">spy</span><span class="token punctuation">(</span>list<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//报错 IndexOutOfBoundsException， 因为这个List还是empty</span>
+        <span class="token function">when</span><span class="token punctuation">(</span>spy<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenReturn</span><span class="token punctuation">(</span><span class="token string">"foo"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//通过</span>
+        <span class="token function">doReturn</span><span class="token punctuation">(</span><span class="token string">"foo"</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">when</span><span class="token punctuation">(</span>spy<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="_460"></a>注解</h3>
+<p>和@Mock类似，还可以用@Spy注解。</p>
+<h2><a id="BDD_464"></a>BDD(行为驱动开发)</h2>
+<p>针对比较流行的行为驱动开发，Mockito也提供了对应的支持：<br/>如org.mockito.BDDMockito类中的given//when//then<br/>BDD本文就不做拓展了，后续有时间再做梳理。</p>
+<h2><a id="_468"></a>超时验证</h2>
+<p>如果要验证执行是否超时，可以这么做：</p>
+<pre><code class="prism language-java"><span class="token function">verify</span><span class="token punctuation">(</span>student<span class="token punctuation">,</span> <span class="token function">timeout</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">times</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">sleep</span><span class="token punctuation">(</span><span class="token function">anyInt</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">anyString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">eq</span><span class="token punctuation">(</span><span class="token string">"admin"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="_InjectMocks_476"></a>自动实例化 @InjectMocks</h2>
+<p>下面举一个比较常见的例子<br/>已有用户类</p>
+<pre><code class="prism language-java"><span class="token annotation punctuation">@Data</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">UserInfo</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">private</span> <span class="token class-name">String</span> name<span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token class-name">String</span> password<span class="token punctuation">;</span>
+
+    <span class="token keyword">public</span> <span class="token class-name">UserInfo</span><span class="token punctuation">(</span><span class="token class-name">String</span> name<span class="token punctuation">,</span> <span class="token class-name">String</span> password<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>name <span class="token operator">=</span> name<span class="token punctuation">;</span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>password <span class="token operator">=</span> password<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>有对应的服务以及数据存储接口</p>
+<pre><code class="prism language-java"><span class="token annotation punctuation">@Service</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">UserInfoService</span> <span class="token punctuation">{<!-- --></span>
+
+    <span class="token annotation punctuation">@Autowired</span>
+    <span class="token keyword">private</span> <span class="token class-name">UserInfoDao</span> userInfoDao<span class="token punctuation">;</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">printInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">UserInfo</span> userInfo <span class="token operator">=</span> userInfoDao<span class="token punctuation">.</span><span class="token function">select</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span>out<span class="token punctuation">.</span><span class="token function">println</span><span class="token punctuation">(</span>userInfo<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">public</span> <span class="token keyword">interface</span> <span class="token class-name">UserInfoDao</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token class-name">UserInfo</span> <span class="token function">select</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>如果我要测试这个service，并且不想和数据库有交互，那么可以创建一个UserInfoDao mock对象。<br/>被测试类标注为@InjectMocks时，会自动实例化，并且把@Mock或者@Spy标注过的依赖注入进去。</p>
+<pre><code class="prism language-java"><span class="token annotation punctuation">@ExtendWith</span><span class="token punctuation">(</span><span class="token class-name">MockitoExtension</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">)</span>
+<span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">UserInfoServiceTest</span> <span class="token punctuation">{<!-- --></span>
+
+    <span class="token annotation punctuation">@InjectMocks</span>
+    <span class="token keyword">private</span> <span class="token class-name">UserInfoService</span> userInfoService<span class="token punctuation">;</span>
+
+    <span class="token annotation punctuation">@Mock</span>
+    <span class="token keyword">private</span> <span class="token class-name">UserInfoDao</span> userInfoDao<span class="token punctuation">;</span>
+
+    <span class="token annotation punctuation">@Test</span>
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">testPrint</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">UserInfo</span> userInfo <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">UserInfo</span><span class="token punctuation">(</span><span class="token string">"admin"</span><span class="token punctuation">,</span> <span class="token string">"123"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token function">when</span><span class="token punctuation">(</span>userInfoDao<span class="token punctuation">.</span><span class="token function">select</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">thenReturn</span><span class="token punctuation">(</span>userInfo<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        userInfoService<span class="token punctuation">.</span><span class="token function">printInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>运行结果为：</p>
+<pre><code class="prism language-java"><span class="token class-name">UserInfo</span><span class="token punctuation">(</span>name<span class="token operator">=</span>admin<span class="token punctuation">,</span> password<span class="token operator">=</span><span class="token number">123</span><span class="token punctuation">)</span>
+</code></pre>
+<h1><a id="_542"></a>参考</h1>
+<p>本文大部分内容来自于官网，但不会完全照搬，只整理我认为可能用得到的地方。并且可能会用自己的语言重新组织一下，或者替换部分示例代码，望谅解。<br/>官网地址：<a href="https://javadoc.io/doc/org.mockito/mockito-core/latest/org/mockito/Mockito.html">https://javadoc.io/doc/org.mockito/mockito-core/latest/org/mockito/Mockito.html</a><br/>参考博客1：<a href="https://semaphoreci.com/community/tutorials/stubbing-and-mocking-with-mockito-2-and-junit">https://semaphoreci.com/community/tutorials/stubbing-and-mocking-with-mockito-2-and-junit</a><br/>参考博客2：<a href="https://www.baeldung.com/mockito-argumentcaptor">https://www.baeldung.com/mockito-argumentcaptor</a><br/>如果您对其他语言的模拟也比较感兴趣，例如python，可以学习下面的博客：<br/><a href="https://semaphoreci.com/community/tutorials/getting-started-with-mocking-in-python">https://semaphoreci.com/community/tutorials/getting-started-with-mocking-in-python</a></p>
+<p><strong>如有错误，欢迎指正！</strong></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,129 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p style="text-align:center;"><img alt="" src="image\3db64d7832a042d19b01c543244cff08.png"/></p>
+<h2>前提摘要：</h2>
+<p>所谓dll文件也叫库文件，可以简单的把库文件看成一种代码仓库，它提供给使用者一些可以直接拿来用的变量、函数或类。比如，再我们安装一些软件的时候，目录下面会有很多dll文件。当我们执行这个程序时，相应的DLL文件就会被调用。一个应用程序可有多个DLL文件，一个DLL文件也可能被几个应用程序所共用，这样的DLL文件被称为共享DLL文件。关于dll文件解释大家可自行百度。</p>
+<p>今天要做的主要是使用python如何调用C#写的dll文件，并使用文件中的方法。但是想要使用dll文件中的方法需要知道dll中有哪些方法可用，那么就得有源码，或者有接口文档也可以。</p>
+<p></p>
+<p></p>
+<h2>项目介绍：</h2>
+<p>首先，先看下我们dll文件的C#代码结构：</p>
+<pre><code class="language-cs">namespace HwTest
+{
+    public class HwTestClient
+    {
+        public int DownloadFile(string ipaddress, string urlhash, string filename, string directory)
+        {
+            ///下载函数的具体内容就省略了
+        }
+
+
+    }
+
+
+
+}</code></pre>
+<p>  </p>
+<p>然后，看看再python中是如何调用的， 大概流程如下：</p>
+<p></p>
+<p><em><strong>step 1：</strong></em> 先将dll文件放到你python文件的同目录下，或者就是引入dll文件的位置，比如：</p>
+<pre><code class="language-python">import os
+
+newpath = os.path.dirname(os.path.abspath(__file__)) + '\\lib\\win32\\x86'
+sys.path.append(newpath)</code></pre>
+<p></p>
+<p><em><strong>step 2：</strong></em> 依次导入clr 库，加载dll文件：</p>
+<pre><code class="language-python">    import clr
+
+	clr.FindAssembly('CfeIec2Mms.dll')
+	clr.FindAssembly('CfeIEC61850RepClient.dll')
+	clr.FindAssembly('CfeMms2Iec.dll')
+	clr.FindAssembly('CfeTraceDotNet.dll')
+
+	clr.FindAssembly('IEC61850Library.dll')
+	clr.AddReference('IEC61850Library')
+
+	clr.FindAssembly('Python_iec61850Adapter.dll')
+	clr.AddReference('Python_iec61850Adapter')</code></pre>
+<p></p>
+<p><em><strong>step 3：</strong></em>从 C# 的命名空间中导入所有的类和方法：</p>
+<pre><code class="language-python">from HwTest import *  # HwTest 就是之前源码中的namespace</code></pre>
+<p style="text-align:center;"></p>
+<p><strong>step 4:  </strong>正式开始使用dll 中的方法了，这里要重点说一下，在使用C# 中的方法之前呢也需要先实例化一下类，然后方可使用类中的所有方法：</p>
+<pre><code class="language-python">	def open_xxx_connection(self, ipAddress, username, password, defaultProtocol,     
+        deviceType, configChangePassword, forceValuePassword):
+		self._mori = HwTestClient() # 将C#中的类实例化, 实例化以后self._mori 就可调用类中的所有函数了
+		self._ipAddress = str(ipAddress)
+		self._username = str(username)
+		self._password = str(password)
+		self._defaultProtocol = str(defaultProtocol)
+		self._deviceType = str(deviceType)
+		self._configChangePassword = str(configChangePassword)
+		self._forceValuePassword = str(forceValuePassword)</code></pre>
+<p></p>
+<p><em><strong>step 5：</strong></em>如上在步骤4中已经将C# 中的HwTestClient类实例化，接下来就可随意使用类中的函数了，这里举一个调用类中DownloadFile的函数的例子，调用的话也很见到，C#中需要几个参数就传几个参数即可，调用其他函数也使用同样方法：</p>
+<pre><code class="language-python">	def _download_file_from_mori(self, filename, directory=""):
+		directory = str(directory)
+
+		status = self._mori.DownloadFile(self._ipAddress, "/", filename, directory)
+        # 这里 DownloadFile 函数就是调用类中的函数了
+
+		if status == 0:
+			logger.info('Download OK')
+		elif status == 1:
+			raise AssertionError('File not found')
+		elif status == 2:
+			raise AssertionError('Directory false')
+		elif status == 3:
+			raise AssertionError('Only for DEVINFO.TXT File cannot be generated')
+		elif status == 4:
+			raise AssertionError('Can not download web string')
+		elif status == 10:
+			raise AssertionError('Web logoff need logon first')
+
+		return status</code></pre>
+<p> <strong>step 6：</strong> 接下来就是按部就班了，想实现什么功能调用什么函数即可，最好能看懂一点C#代码则会提高效率，其他的就不赘述了。</p>
+<p></p>
+<p></p>
+<h2>遇到的坑：</h2>
+<p>有一个函数调用C# 函数的时候需要调用一个C#的枚举类，但是C#的枚举类和python枚举类有些不同，传入python枚举类的name是不行的，C#理解不了。如何解决的呢，可以根据C#的枚举类再重新定义一个python的枚举类，value用int形表示，传参的时直接传python枚举类的value即可。</p>
+<p>这是C#的枚举类：</p>
+<pre><code class="language-cs">        public enum EFirmwareDeviceType
+        {
+            FW_DEVICETYPE_NONE = 0,
+            FW_DEVICETYPE_Q100_V1X = 1,
+            FW_DEVICETYPE_Q100_V2X = 2,
+            FW_DEVICETYPE_Q200 = 3,
+            FW_DEVICETYPE_P850_V2_23 = 4,
+            FW_DEVICETYPE_SICAM_T_WITH_LOGON = 5,
+            FW_DEVICETYPE_MMU_WITH_LOGON = 6,
+            FW_DEVICETYPE_IO_WITH_LOGON = 7,
+            FW_DEVICETYPE_MAX = 7
+        }</code></pre>
+<p>这是python重写的枚举类：</p>
+<pre><code class="language-python">class EFirmwareDeviceType(enum.Enum):
+	FW_DEVICETYPE_NONE = 0,
+	FW_DEVICETYPE_Q100_V1X = 1,
+	FW_DEVICETYPE_Q100_V2X = 2,
+	FW_DEVICETYPE_Q200 = 3,
+	FW_DEVICETYPE_P850_V2_23 = 4,
+	FW_DEVICETYPE_SICAM_T_WITH_LOGON = 5,
+	FW_DEVICETYPE_MMU_WITH_LOGON = 6,
+	FW_DEVICETYPE_IO_WITH_LOGON = 7,
+	FW_DEVICETYPE_MAX = 7</code></pre>
+<p>比如，调用C#函数时入参需要传 FW_DEVICETYPE_Q200， 直接传 肯定报错，这里可以传 EFirmwareDeviceType.FW_DEVICETYPE_Q200.value 即可完美解决！</p>
+<p></p>
+<p></p>
+<h2>写在最后： </h2>
+<p> 总体来说，只要方法找对了，python 调用C# 的dll库不难；当然，其中也会遇到坑，换个思路问题就好解决了。最后，如果文章能帮助到你，麻烦点个赞哈！</p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

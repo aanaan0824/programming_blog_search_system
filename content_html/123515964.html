@@ -1,0 +1,153 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p style="text-align:justify;"><span style="color:#fe2c24;">一、并发的实现</span></p>
+<p style="text-align:justify;">        1.多进程并发主要解决进程间通信的问题</p>
+<p style="margin-left:.0001pt;text-align:justify;">                ①同一电脑上：管道、文件、消息队列、内存共享。</p>
+<p style="margin-left:.0001pt;text-align:justify;">                ②不同电脑上：socket网络通信。</p>
+<p style="margin-left:.0001pt;text-align:justify;">        2. 单进程中的多个线程并发（一个主线程+多个子线程实现并发）</p>
+<p style="margin-left:.0001pt;text-align:justify;">                ①一个进程中的所有线程共享内存空间 eg：全局变量，指针引用</p>
+<p style="margin-left:.0001pt;text-align:justify;"></p>
+<p style="text-align:justify;"><span style="color:#fe2c24;">二、线程的多种创建方式</span></p>
+<p style="text-align:justify;"><span style="color:#fe2c24;"> 1. 调用thread类去创建线程对象</span></p>
+<p style="text-align:justify;"><span style="color:#0d0016;">        头文件和子线程处理函数（以下所有代码段共用）：</span></p>
+<pre><code>#include&lt;iostream&gt;
+#include&lt;thread&gt;
+#include&lt;windows.h&gt;
+using namespace std;
+
+//线程处理函数
+void print() {
+	Sleep(3000);
+	cout &lt;&lt; "子线程运行喽........" &lt;&lt; endl;
+}</code></pre>
+<p style="text-align:justify;">               <span style="color:#fe2c24;"> 注：如果创建一个线程而不做处理，会调用abort函数中止程序</span></p>
+<p style="text-align:justify;"><span style="color:#fe2c24;">                        一个线程只能join一次，否则也会abort。</span></p>
+<p style="text-align:justify;"><span style="color:#fe2c24;">     </span><span style="color:#0d0016;">   1.1. 使用join()函数加入，汇合线程，阻塞主线程，等待子进程执行结束，才会回到主线程</span></p>
+<p style="text-align:justify;"></p>
+<pre><code>int main(){
+	//创建线程
+	thread test1(print);
+	test1.join();        //阻塞（若test1线程未执行完，则主线程不会打印）
+	cout &lt;&lt; "主线程运行喽........." &lt;&lt; endl;
+}</code></pre>
+<p style="text-align:justify;"><span style="color:#0d0016;">运行说明：三秒后依次打印出</span></p>
+<p style="text-align:justify;"><img alt="" height="69" src="image\e34a7f778e994261a6fe49a679890624.png" width="254"/></p>
+<p> </p>
+<p style="text-align:justify;"><span style="color:#0d0016;">1.2. 使用detach()函数，打破依赖关系，把子线程驻留后台</span></p>
+<p style="text-align:justify;"><span style="color:#0d0016;">        </span><span style="color:#fe2c24;">注：线程detach后，就不能在join了</span> </p>
+<pre><code>int main(){
+	//创建线程
+	thread test1(print);
+	test1.detach();
+	cout &lt;&lt; "主线程运行喽........." &lt;&lt; endl;
+}</code></pre>
+<p>运行说明：直接只打印出：</p>
+<p><img alt="" height="49" src="image\5540cf82ed40408fafec5c7706f29fb6.png" width="250"/></p>
+<p> </p>
+<p>1.3 使用joinable()函数判断当前线程是否可以做join或者detach操作，若可以，返回true。</p>
+<pre><code>int main(){
+	//创建线程
+	thread test1(print);
+	test1.detach();
+	cout &lt;&lt; "主线程运行喽........." &lt;&lt; endl;
+	if (test1.joinable())
+		test1.join();
+	else
+		cout &lt;&lt; "该子线程已经被处理啦....." &lt;&lt; endl;
+}</code></pre>
+<p>运行说明：</p>
+<p><img alt="" height="54" src="image\65bcdec56dc249a48ea8ea273405aa7c.png" width="289"/></p>
+<p> </p>
+<p><span style="color:#fe2c24;">2.  通过类和对象创建线程</span></p>
+<pre><code>class Li {
+public:
+
+	//STL仿函数
+	void operator()() {
+		cout &lt;&lt; "子线程启动喽....." &lt;&lt; endl;
+	}
+};
+int main(){
+	//正常写法:对象充当线程处理函数
+	Li li;
+	thread test1(li);
+	test1.join();
+
+	Li(); //无名对象
+	thread test2((Li()));   //这里如果不多写一个括号，编译器就会把test2解析成一个函数，Li()解析成一个参数，从而出错
+	test2.join();
+	
+}</code></pre>
+<p>运行：</p>
+<p><img alt="" height="54" src="image\adfdbfd818644ae980c22648a20df6b9.png" width="225"/></p>
+<p> </p>
+<p><span style="color:#fe2c24;">3. 带参的方式创建线程</span></p>
+<pre><code>//传引用可以改变num的实际值
+void printInfo(int&amp; num) {
+	cout &lt;&lt; "子线程运行喽...." &lt;&lt; endl;
+}
+int main(){
+	int num = 0;
+	//ref 用于包装 “引用传递值” 
+	thread test1(printInfo, ref(num));
+	test1.join();
+	cout &lt;&lt; "我是主线程...." &lt;&lt; endl;
+	
+}</code></pre>
+<p>运行：<br/><img alt="" height="55" src="image\bc7caca520b94c6da0b7e7f61b294dac.png" width="213"/></p>
+<p><span style="color:#fe2c24;">4. Lambda表达式创建线程</span></p>
+<pre><code>int Max(int a, int b) {
+	return a &gt; b ? a : b;
+}
+int main(){
+	int (*pMax)(int, int) = nullptr;
+	pMax = [](int a, int b)-&gt;int {return a &gt; b ? a : b; };
+	[] {cout &lt;&lt; "helloword" &lt;&lt; endl; }();
+	cout &lt;&lt; pMax(3, 5) &lt;&lt; endl;
+	thread test1([] {cout &lt;&lt; "我是子线程..." &lt;&lt; endl; });
+	test1.join();
+	cout &lt;&lt; "我是主线程..." &lt;&lt; endl;
+	return 0;
+}</code></pre>
+<p>运行：</p>
+<p><img alt="" height="99" src="image\00c8965f85994f1abc52c2c406357d43.png" width="215"/></p>
+<p> </p>
+<p><span style="color:#fe2c24;">5. 以智能指针为参数创建线程</span></p>
+<pre><code>void print(unique_ptr&lt;int&gt; ptr) {
+	cout &lt;&lt; "我是子线程：" &lt;&lt; ptr.get()&lt;&lt;endl;
+}
+int main(){
+	int* p = new int(100);
+	unique_ptr&lt;int&gt; ptr(p);
+	cout &lt;&lt; "我是主线程:" &lt;&lt; ptr.get() &lt;&lt; endl;
+	thread test1(print, move(ptr)); //move移动语义，通俗的说就是把ptr移动到子线程中了，这样的话，主线程中的ptr就没了    
+	test1.join();
+	cout &lt;&lt; "我是主线程:" &lt;&lt; ptr.get()&lt;&lt;endl;
+	
+}</code></pre>
+<p>运行：</p>
+<p><img alt="" height="74" src="image\bf59f95f9d3742b2a50baa474f900cd0.png" width="243"/></p>
+<p> </p>
+<p><span style="color:#fe2c24;">6. 以类的成员函数充当线程处理函数来创建线程</span></p>
+<pre><code>class Li {
+public:
+	void print(int&amp; num) {
+		num = 1001;
+		cout &lt;&lt; "我是子线程：" &lt;&lt; this_thread::get_id() &lt;&lt; endl;
+	}
+};
+int main(){
+	Li li;
+	int num = 1007;
+	//需要说明 是哪个对象
+	thread test1(&amp;Li::print,li,ref(num));
+	test1.join();
+	cout &lt;&lt; "我是主线程:" &lt;&lt; this_thread::get_id()&lt;&lt;endl;
+	
+}</code></pre>
+<p>运行：</p>
+<p><img alt="" height="63" src="image\0466e0fd4a024195abeac0b04da67495.png" width="216"/></p>
+<p> </p>
+</div>
+</div>

@@ -1,0 +1,286 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>      虽然是标题是《vue实现列表自动滚动的方式》，但其它前端框架应该也可以通过这种方式实现，本案例中没有使用任何第三方插件，全部使用vue中相关的js、css以及定时器方式实现。</p>
+<p>      解决问题的第一步不是找代码，而是分析问题。列表自动滚动常见方式有两种（上下左右的滚动不赘述，只是方向的问题，本案例以向上自动滚动为例）：（1）匀速滚动   （2）有间隔的平滑滚动。本案例先给出匀速滚动的方案。</p>
+<p>     这篇文章是原创，代码是项目中自己编写的，所以运行肯定没有问题。</p>
+<p>     要匀速向上滚动，以我的经验，最容易想到的是用定时器实现，每隔一个时间差，列表向上移动一个像素（大于一个像素，可能会在视觉上给人卡顿掉帧的感觉），在时间够短的前提下，就会给人一种匀速向上的感觉。然后需要考虑列表衔接的问题，列表再长也有尽头，需要考虑滚动到最后一条数据出现时的问题。</p>
+<p>     我给出的方案是，在列表的末尾拼接一个同样内容的列表，形成长度为原列表两倍的列表（如果考虑性能问题，在原列表后拼接上原列表的前几条数据就可以，具体几条根据滚动可视范围内的最大完整数据条数而定，具体往下看就明白了），然后当拼接列表滚动到可视范围内的内容和初始状态一致时（即拼接列表的上半段的最后一条记录向上滚动至完全消失时），将拼接列表向上滚动的距离归零，即可在视觉上给人一种匀速向上，且无限循环的感觉。</p>
+<p>     先上定时器这块方法的代码。</p>
+<pre><code class="language-javascript">//根据列表长度是否超过可视范围内能够显示的最大完整数据条数，来控制列表是否需要滚动
+tableActionFun() {
+      this.tableListSize = this.tableList.length;
+      //下面的visibleSize是可视范围内能够显示的最大完整数据条数
+      if (this.tableListSize &gt; this.visibleSize) {
+        this.tableList = this.tableList.concat(this.tableList);
+        this.tableTimerFun();  //列表滚动方法
+      } else {
+        this.fillTableList();  //无需滚动时的数据填充方法，如果没必要，可以删掉
+      }
+},
+
+//列表滚动方法
+tableTimerFun() {
+      var count = 0;
+      this.tableTimer = setInterval(() =&gt; {
+        if (count &lt; (this.tableList.length / 2) * this.lineHeight) {
+          this.tableTop -= 1;
+          count++;
+        } else {
+          count = 0;
+          this.tableTop = 0;
+        }
+      }, this.tableTimerInterval);
+},</code></pre>
+<p>      上面的代码段中提到了可视范围内能够显示的最大完整数据条数 visibleSize，直接上案例里的截图，一看就明白了。截图中可以看到第一条数据和最后一条数据并没有完全显示，因为他们超出父容器的部分被 overflow: hidden 了，所以案例中的 visibleSize = 6. </p>
+<p style="text-align:center;"><img alt="" height="431" src="image\3c0e7447f0a34b71b46f39c21168d688.png" width="639"/></p>
+<p>     所以本案例是通过列表不断上移，父容器隐藏超出部分来实现列表自动迅速滚动的。讲解的过程中可能有遗漏，直接上完整代码，重要部分都写了注释。下面的代码直接粘贴运行不会运行成功，因为下面的完整代码涉及接口调用，但所有功能已经一步到位，希望在看的你能通过注释更多地去理解，而不是简单地复制粘贴。希望能对你有所帮助。</p>
+<pre><code class="language-javascript">&lt;template&gt;
+  &lt;div class="productProcess"&gt;
+    
+    &lt;!-- 如果页面刷新数据比较频繁，可以将loading、showFlag的相关代码删除，防止过于频繁的出现加载动画 --&gt;
+    &lt;div class="loading_div" v-show="!showFlag"&gt;
+      &lt;div&gt;Loading...&lt;/div&gt;  &lt;!-- 这个loading自己写，代码没贴出来 --&gt;
+    &lt;/div&gt;
+
+    &lt;div class="success_info_body" v-show="showFlag"&gt;
+      
+      &lt;!-- 标准title可以调用组件 --&gt;
+      &lt;div class="title_div"&gt;
+        &lt;!--  &lt;titleComponent :title="title"&gt;&lt;/titleComponent&gt; --&gt;  &lt;!-- 标题组件自己写，代码没贴出来 --&gt;
+      &lt;/div&gt;
+
+      &lt;!-- 参数名称、列数根据实际情况调整 --&gt;
+      &lt;div class="table_body"&gt;
+        &lt;div class="table_th"&gt;
+          &lt;div class="tr1 th_style"&gt;排产编号&lt;/div&gt;
+          &lt;div class="tr2 th_style"&gt;类型&lt;/div&gt;
+          &lt;div class="tr3 th_style"&gt;日期&lt;/div&gt;
+          &lt;div class="tr4 th_style"&gt;进度&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class="table_main_body"&gt;
+          &lt;div class="table_inner_body" :style="{top: tableTop + 'px'}"&gt;
+            &lt;div class="table_tr" v-for="(item,index) in tableList" :key="index"&gt;
+              &lt;div class="tr1 tr"&gt;{<!-- -->{item.planNo}}&lt;/div&gt;
+              &lt;div class="tr2 tr"&gt;{<!-- -->{item.type}}&lt;/div&gt;
+              &lt;div class="tr3 tr" v-if="item.startDate!='-'"&gt;{<!-- -->{item.startDate}} ~ {<!-- -->{item.endDate}}&lt;/div&gt;
+              &lt;div class="tr3 tr" v-else&gt;-&lt;/div&gt;
+              &lt;div class="tr4 tr" v-if="item.process!='-'"&gt;{<!-- -->{Number(item.process).toFixed(2)}} %&lt;/div&gt;
+              &lt;div class="tr4 tr" v-else&gt;-&lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;script&gt;
+import titleComponent from "@/components/titleComponent";
+export default {
+  components: {
+    titleComponent
+  },
+  data() {
+    return {
+      showFlag: true,
+      tableTimer: null,
+      tableTop: 0,
+      tableList: [],
+      /* tableList 参考格式
+        [{
+          "process":0.0000,
+          "planNo":"BP2022060701",
+          "endDate":"2022-06-07",
+          "type":"砌块",
+          "startDate":"2022-06-07"
+        },
+        {
+          "process":0.0000,
+          "planNo":"WP2022061301",
+          "endDate":"2022-06-13",
+          "type":"墙板",
+          "startDate":"2022-06-13"
+        }]
+      */
+      tableListSize: 0,
+      componentTimer: null,
+
+      //需要根据情况设置的参数
+      title: "排产进度",
+      visibleSize: 6, //容器内可视最大完整行数
+      lineHeight: 49, //每行的实际高度（包含margin-top/bottom,border等）
+      componentTimerInterval: 3600000, //刷新数据的时间间隔
+      tableTimerInterval: 100 //向上滚动 1px 所需要的时间，越小越快，推荐值 100
+    };
+  },
+
+  //如果没有父元素传值，将watch内的内容搬至mounted中即可
+  props: ["activeFactoryId"],
+  watch: {
+    activeFactoryId(val, oldVal) {
+      clearInterval(this.componentTimer);
+      this.bsGetProductProcess();
+      this.componentTimerFun();
+    }
+  },
+  mounted() {
+
+  },
+  beforeDestroy() {
+    clearInterval(this.componentTimer);
+    clearInterval(this.tableTimer);
+  },
+  methods: {
+    //调用数据接口，获取列表数据，根据自己情况填接口url
+    bsGetProductProcess() {
+      clearInterval(this.tableTimer);
+      this.tableTop = 0;
+      if (this.activeFactoryId != "") {
+        this.showFlag = false;
+        this.$ajax({
+          method: "get",
+          url: `` //根据自己情况填接口url
+        })
+          .then(res =&gt; {
+            this.tableList = res.data.data;
+            this.showFlag = true;
+            this.tableActionFun();
+          })
+          .catch(function(err) {
+            console.log("bsGetProductProcess error!");
+          });
+      }
+    },
+    tableActionFun() {
+      this.tableListSize = this.tableList.length;
+      if (this.tableListSize &gt; this.visibleSize) {
+        this.tableList = this.tableList.concat(this.tableList);
+        this.tableTimerFun();
+      } else {
+        this.fillTableList();
+      }
+    },
+    //当数据过少时，不触发自动轮播事件，并填充没有数据的行，参数根据实际情况修改即可
+    fillTableList() {
+      var addLength = this.visibleSize - this.tableListSize;
+      for (var i = 0; i &lt; addLength; i++) {
+        this.tableList.push({
+          planNo: "-",
+          type: "-",
+          startDate: "-",
+          endDate: "-",
+          process: "-"
+        });
+      }
+    },
+    tableTimerFun() {
+      var count = 0;
+      this.tableTimer = setInterval(() =&gt; {
+        if (count &lt; (this.tableList.length / 2) * this.lineHeight) {
+          this.tableTop -= 1;
+          count++;
+        } else {
+          count = 0;
+          this.tableTop = 0;
+        }
+      }, this.tableTimerInterval);
+    },
+    componentTimerFun() {
+      this.componentTimer = setInterval(() =&gt; {
+        this.bsGetProductProcess();
+      }, this.componentTimerInterval);
+    }
+  }
+};
+&lt;/script&gt;
+
+&lt;style scoped&gt;
+.productProcess {
+  width: 550px;
+  height: 415px;
+}
+.loading_div {
+  color: #eee;
+  padding-top: 100px;
+}
+.title_div {
+  width: 100%;
+}
+.table_body {
+  width: 100%;
+  margin-top: 15px;
+}
+.table_th {
+  width: 100%;
+  display: flex;
+  height: 40px;
+  line-height: 40px;
+}
+.tr {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+  padding: 0 5px;
+  text-align: center;
+  font-size: 14px;
+}
+.tr1 {
+  width: 28%;
+}
+.tr2 {
+  width: 15%;
+}
+.tr3 {
+  width: 35%;
+  font-size: 13px;
+}
+
+.tr4 {
+  flex: 1;
+}
+
+.th_style {
+  color: rgb(0, 221, 253);
+  font-weight: bold;
+  font-size: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+  padding: 0 5px;
+  text-align: center;
+}
+.table_main_body {
+  width: 100%;
+  height: 294px;
+  overflow: hidden;
+  position: relative;
+}
+.table_inner_body {
+  width: 100%;
+  position: absolute;
+  left: 0;
+}
+.table_tr {
+  display: flex;
+  height: 40px;
+  line-height: 40px;
+  color: #eee;
+  font-size: 15px;
+  background: rgba(3, 145, 167, 0.1);
+  border: 1px solid rgb(4, 114, 131);
+  margin-top: 7px;
+}
+&lt;/style&gt;
+</code></pre>
+<p>      最后是效果视频。</p>
+<div class="csdn-video-box">
+<iframe allowfullscreen="true" data-mediaembed="csdn" id="kGvaeukR-1657000604541" src="https://live.csdn.net/v/embed/221997"></iframe>
+<p></p>
+</div>
+<p>     下一篇文章将讲解有间隔的平滑滚动如何实现，虽然同样会使用到定时器，但会更多的使用到css的一些功能。</p>
+<p>     大家若有什么疑问或者有其它想法可以在评论区留言，我会尽量解答和回复的。</p>
+</div>
+</div>

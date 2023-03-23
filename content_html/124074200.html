@@ -1,0 +1,246 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>今天开始打算写一个系列，帮助.NET小白一步步实现自己的微信公众号开发。在这里首先感谢一个至铁的朋友，这么多年来免费为我提供私人学习实验环境（单位虽然也有条件做这些事，但是公私要分明，个人爱好坚决不能使用任何一点公司资源，也坚决不占用任何一点上班时间），作为回报，本系列技术类文章也是通过介绍为他免费开发的一个微信公众号支撑服务而展开的，如果觉得本系列文章对您有所触动和帮助，烦请帮关注一下该公众号（本贴左侧或文章尾部位置），算是对我这个朋友的支持，也算是对我坚持写作的鼓励，当然公众号上面确实也有很多实实在在的生活优惠。</p>
+<p>正式讲解公众号开发之前先声明一点：为了更好的帮助初学者快速上手，本系列文章重在了解业务流程，没有采用复杂的框架来实现，不然光接口、继承就容易把人搞晕了，实现业务还是面向过程的思维更容易被理解，所以虽然写的过程中也用到了不少类，但基本都是单层的，没有多重继承，源代码都公开，拿去就可以用。</p>
+<p>今天讲第一篇：如何接入微信公众号。以前发过一篇帖子，不过只有代码，没有详细的关联步骤讲解，今天用图文并茂的方式来做全面细致的讲解。</p>
+<p><strong>一、准备服务器</strong><br/> 1.准备一台可以互联网接入的服务器，配置好IIS和.NET运行环境，我这里用的是win2008 server，IIS 7.0，.NET 4.5，记得要用80端口，微信公众号接口只认80端口。<br/> 2.准备一个已经备案过的域名，并指向上面的web服务器地址。</p>
+<p><strong>二、申请公众号</strong><br/> 1.申请<br/> 建议申请服务号，因为开放的接口多，侧重于线上服务，这里用的就是服务号。打开https://mp.weixin.qq.com/，点击“立即注册”进入注册页面，类型选择服务号，按提示完成公众号注册，如下图：</p>
+<p style="text-align:center;"><img alt="" src="image\f862d15a97a74da994f4afb6dfa557af.png"/></p>
+<p></p>
+<p>2.认证<br/> 注册后进行一下微信认证，可以获取更多的服务接口，也是后续的微信支付的基本条件，登录后在下面图示位置可以进行认证，每年300元认证费，需要一周左右时间能完成，如下图：</p>
+<p style="text-align:center;"><img alt="" src="image\2ac5f2bab81e4defa714c94d09758457.png"/></p>
+<p></p>
+<p>3.配置<br/> 准备好以上手续后，现在可以配置和获取公众号开发必须的参数了。首先是域名信息，在获取各类公众号信息时如果没有这个前提会提示没有权限。</p>
+<p style="text-align:center;"><img alt="" src="image\f21c8b449dde4eb4b146e3ca5c12ceaf.png"/></p>
+<p style="text-align:center;"><img alt="" src="image\db259e1a5b6f475ca981dab7d8f95aec.png"/></p>
+<p></p>
+<p>通过上图的配置和查询，我们可以获取到以下几个重要参数，在后面所有开发中都会用到：<br/><span style="color:#fe2c24;"><strong>Token <br/> AppId <br/> AppSecret <br/> EncodingAESKey </strong></span>，这个如果使用明文方式来开发则用不到。</p>
+<p>.查看接口权限</p>
+<p style="text-align:center;"><img alt="" src="image\fd0df4a9fe85481dac2e41896c0c9871.png"/></p>
+<p></p>
+<p><br/><strong>三、接入公众号后台</strong><br/> 1.架设web服务目录<br/> 上面有两个目录是固定名字不能改变的，一个是App_Code目录，用来存放你写的所有类的源码，一个是Bin目录，用来存放你写的类的编译后的.dll文件，同一个类要么用源码，要么用编译后的.dll文件，不能重复存放，为了便于查看和修改，我这里对自己写的类没有使用.dll，都是用源码方式放在App_Code目录中。<br/> wx目录主要用于微信接口开发的各类页面和源码。</p>
+<p style="text-align:center;"><img alt="" src="image\c0cb3d9c7d854cefbc4f5ded13f7a1ed.png"/></p>
+<p></p>
+<p>2.把必须用到的微信接口参数写入配置文件，我这里用的是一个类的静态成员变量来实现，如果将来编译了，这些关键信息就可以起到很好的保密效果。我用的数据库是sql server，因为在windows系统上，和操作系统、IIS搭配起来效率最好的就是它了，凡事都要评价效率。<br/> QinMingConfig.cs文件内容如下：</p>
+<pre><code class="language-cs">using System;
+
+namespace QinMing.Config
+{
+    /// &lt;summary&gt;
+    /// Config 的摘要说明
+    /// &lt;/summary&gt;
+    public class QinMingConfig
+    {
+        public QinMingConfig()
+        {
+            //
+            // TODO: 在此处添加构造函数逻辑
+            //
+        }
+
+        /// &lt;summary&gt;
+        /// Sql Server 数据库连接串
+        /// &lt;/summary&gt;
+        public const string DatabaseConnStr = "Data Source=sql server source;Initial Catalog=your database name;User ID=username;Password=password"; 
+
+        /// &lt;summary&gt;
+        /// 微信公众号接入参数
+        /// &lt;/summary&gt;
+        public const string Weixin_Token = "yourtoken";
+        public const string Weixin_AppId = "wx.........";
+        public const string Weixin_AppSecret = "e5xxxxxxxxxxxxxxxxxxx";
+        public const string EncodingAESKey = "J1vxxxxxxxxxxxxxxxxxxxxxxx";
+
+        /// &lt;summary&gt;
+        /// 请求超时设置（以毫秒为单位），默认为10秒。
+        /// 说明：此处常量专为提供给方法的参数的默认值，不是方法内所有请求的默认超时时间。
+        /// &lt;/summary&gt;
+        public const int TIME_OUT = 10000;
+
+        //以后用到的参数以后补上
+
+    }
+
+}
+</code></pre>
+<p><br/> 3.现在进入最重要的一个环节，与微信公众号对接，首先继续看之前的公众号开发基本设置页面，在你的接口代码没有写好并且能正常工作之前，这个网址是配置不成功的。</p>
+<p style="text-align:center;"><img alt="" src="image\85aae689331c416d97c5d0566b741998.png"/></p>
+<p>接口页面很简单，如下：</p>
+<p>AccessWx.aspx源码</p>
+<pre><code class="language-html">&lt;%@ Page Language="C#" AutoEventWireup="true"  CodeFile="AccessWx.aspx.cs" Inherits="Jjlm.AccessWx" %&gt;</code></pre>
+<p><br/> AccessWx.aspx.cs源码</p>
+<pre><code class="language-cs">using System;
+using System.Web;
+using System.Web.Security;
+using System.IO;
+using System.Xml;
+using System.Text;
+using QinMing.Config;
+//using QinMing.WeixinMessageHandler;
+//using QinMing.Tools;
+
+namespace Jjlm
+{
+	
+	public partial class AccessWx: System.Web.UI.Page
+	{
+		protected void Page_Load(object sender, EventArgs e)
+		{
+			Response.ContentEncoding = System.Text.Encoding.GetEncoding("utf-8");
+			string postStr = "";
+
+			if (Request.HttpMethod.ToLower() == "get")
+			{
+			    Valid();  //首次接入时会验证你的服务器是否能对接上
+			}
+			else
+			{
+				Stream s = System.Web.HttpContext.Current.Request.InputStream;
+				byte[] b = new byte[s.Length];
+				s.Read(b, 0, (int)s.Length);
+				postStr = Encoding.UTF8.GetString(b);
+				if (!string.IsNullOrEmpty(postStr))
+				{
+					ResponseMsg(postStr);
+				}
+			}
+		}
+		
+		/// &lt;summary&gt;
+		/// 返回信息结果(微信信息返回)
+		/// &lt;/summary&gt;
+		/// &lt;param name="weixinXML"&gt;&lt;/param&gt;
+		private void ResponseMsg(string weixinXML)
+		{
+		   //回复消息的部分:你的代码写在这里
+			XmlDocument doc = new XmlDocument();
+			doc.LoadXml(weixinXML);
+			XmlNodeList list = doc.GetElementsByTagName("xml");
+			XmlNode xn = list[0];
+			string FromUserName = xn.SelectSingleNode("//FromUserName").InnerText;   //关注用户的加密后openid
+			string ToUserName = xn.SelectSingleNode("//ToUserName").InnerText;       //公众微信号原始ID
+			string MsgType=xn.SelectSingleNode("//MsgType").InnerText;
+			
+			//将微信服务器推送的信息保存到log文件中，以便跟踪分析问题
+			//QinMingTools.WriteLog("公众号推送内容", ConvertXmlToString(doc));
+			
+			if(MsgType == "text")
+			{
+				//文本消息处理部分
+			}
+			else if(MsgType == "image")
+			{
+				//图片消息处理部分
+			}
+			else if(MsgType == "voice")
+			{
+				//语音消息处理部分
+			}
+			else if(MsgType == "video")
+			{
+				//视频消息处理部分
+			}
+			else if(MsgType == "shortvideo")
+			{
+				//小视频消息处理部分
+			}
+			else if(MsgType == "location")
+			{
+				//位置消息处理部分，与事件中的位置消息不同，是指用户主动向公众号发送位置，专门篇章讲解		
+			}
+			else if(MsgType == "link")
+			{
+				//链接消息处理部分
+			}
+			else if(MsgType == "event")  
+			{
+				//事件消息处理部分
+
+                string Event = xn.SelectSingleNode("//Event").InnerText;
+				if(Event == "LOCATION")
+				{
+					//位置消息处理
+				}
+				else if(Event == "CLICK")
+				{
+                    //点击菜单消息处理
+				}
+				else if(Event == "VIEW")
+				{
+                    //打开菜单链接时触发的动作处理
+				}
+				else
+				{
+                    //其他类型消息处理，如关注公众号、取消关注、扫描带参数的二维码
+				}
+			}
+		}
+		 
+		/// &lt;summary&gt;
+        /// 将XmlDocument转化为string
+        /// &lt;/summary&gt;
+        /// &lt;param name="xmlDoc"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public string ConvertXmlToString(XmlDocument xmlDoc)
+        {
+            MemoryStream stream = new MemoryStream();
+            XmlTextWriter writer = new XmlTextWriter(stream, null);
+            writer.Formatting = Formatting.Indented;
+            xmlDoc.Save(writer); 
+	        StreamReader sr = new StreamReader(stream, System.Text.Encoding.UTF8);
+            stream.Position = 0;
+            string xmlString = sr.ReadToEnd();
+            sr.Close();
+            stream.Close(); 
+	        return xmlString;
+		}
+ 
+		/// &lt;summary&gt;
+		/// 验证微信签名
+		/// &lt;/summary&gt;
+		/// * 将token、timestamp、nonce三个参数进行字典序排序
+		/// * 将三个参数字符串拼接成一个字符串进行sha1加密
+		/// * 开发者获得加密后的字符串可与signature对比，标识该请求来源于微信。
+		/// &lt;returns&gt;&lt;/returns&gt;
+		private bool CheckSignature()
+		{
+			string signature = Request.QueryString["signature"].ToString();
+			string timestamp = Request.QueryString["timestamp"].ToString();
+			string nonce = Request.QueryString["nonce"].ToString();
+			string[] ArrTmp = { QinMingConfig.Weixin_Token, timestamp, nonce };
+			Array.Sort(ArrTmp);     //字典排序
+			string tmpStr = string.Join("", ArrTmp);
+			tmpStr = FormsAuthentication.HashPasswordForStoringInConfigFile(tmpStr, "SHA1");
+			tmpStr = tmpStr.ToLower();
+			if (tmpStr.Equals(signature))
+			{
+				return true;
+			}
+			else
+			{
+				return false;
+			}
+		}
+
+		/// &lt;summary&gt;
+		/// 首次接入微信后台时验证
+		/// &lt;/summary&gt;
+		private void Valid()
+		{
+			string echoStr = Request.QueryString["echoStr"].ToString();
+			if (CheckSignature())
+			{
+				if (!string.IsNullOrEmpty(echoStr))
+				{
+					Response.Write(echoStr);
+					Response.End();
+				}
+			}
+		}
+	}
+
+}</code></pre>
+<p>至此，你的服务器与微信公众号的后台就完成了对接，可以使用很多的接口功能了，你GET到了么，如果感觉有收获，请来个赞。下篇介绍文本消息处理，敬请关注。</p>
+</div>
+</div>

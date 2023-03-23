@@ -1,0 +1,97 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>首先，Unity中的Sprite Editor 可以将一张大图切割成多个sprite。然而如果想要从这么多切割好的子sprite获取某一个sprite 要如何操作呢？本篇文章总结了两个方法以获取图集中的某个子图。</p>
+<p></p>
+<p><strong>一. 切割图集</strong></p>
+<ol><li>这一步，使用Unity的SpriteEditor切割你的图集，如果不会使用SpriteEditor请参考这篇文章：<a class="has-card" href="http://blog.csdn.net/hongyouwei/article/details/45011315" title="Unity的2D图集处理，并切割出一张张小图片_0完美对称0的博客-CSDN博客_unity裁剪图片"><span class="link-card-box"><span class="link-title">Unity的2D图集处理，并切割出一张张小图片_0完美对称0的博客-CSDN博客_unity裁剪图片</span><span class="link-desc">在我们找资源的时候，有时候会遇到那种把一堆图片放进一张png图片里面的情况，在做2D游戏的时候，我们往往需要将里面的一块块小图片切割出来使用，那么问题就来了，怎么切割呢，现在我们提供一张小图片，给大家演示一下：那么我们现在把图片导入到Unity中，选中图片你会看到左边的Inspector界面然后，选择Texture Type类型为Advanced，如下面左图：将Read/Wri</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>http://blog.csdn.net/hongyouwei/article/details/45011315</span></span></a></li></ol>
+<p><strong>二. 从切割好的图集中获取某一子图</strong></p>
+<p>1. 方法一：将切割好的sprite 转成 png 文件，并且存放在一个新建的文件夹中。然后使用一个List 记录这个文件夹中所有png文件的路径，需要返回哪一个图片，就通过AssetDatabase 来获取这一个图片。代码如下：</p>
+<pre><code class="language-cs"> //将分割好的sprite转换成Texture 并且返回一个texture文件 
+    public static Texture2D GetChildTexture(Texture2D image, int num)
+    {
+        List&lt;string&gt; paths = new List&lt;string&gt;();//存放所有转化的png文件路径
+
+        string rootPath = Path.GetDirectoryName(AssetDatabase.GetAssetPath(image));//获取路径名称  
+        string path = rootPath + "/" + image.name + ".PNG";//图片路径名称  
+        //Debug.Log(path);
+
+        TextureImporter texImp = AssetImporter.GetAtPath(path) as TextureImporter;//获取图片入口  
+
+
+        AssetDatabase.CreateFolder(rootPath, image.name);//创建文件夹
+
+        foreach (SpriteMetaData metaData in texImp.spritesheet)//遍历小图集  
+        {
+            Texture2D myimage = new Texture2D((int)metaData.rect.width, (int)metaData.rect.height);
+
+
+            //abc_0:(x:2.00, y:400.00, width:103.00, height:112.00)  
+            for (int y = (int)metaData.rect.y; y &lt; metaData.rect.y + metaData.rect.height; y++)//Y轴像素  
+            {
+                for (int x = (int)metaData.rect.x; x &lt; metaData.rect.x + metaData.rect.width; x++)
+                    myimage.SetPixel(x - (int)metaData.rect.x, y - (int)metaData.rect.y, image.GetPixel(x, y));
+            }
+
+
+            //转换纹理到EncodeToPNG兼容格式  
+            if (myimage.format != TextureFormat.ARGB32 &amp;&amp; myimage.format != TextureFormat.RGB24)
+            {
+                Texture2D newTexture = new Texture2D(myimage.width, myimage.height);
+                newTexture.SetPixels(myimage.GetPixels(0), 0);
+                myimage = newTexture;
+            }
+
+            var pngData = myimage.EncodeToPNG();
+            string output_path = rootPath + "/" + image.name + "/" + metaData.name + ".PNG";//子图片输出路径
+            File.WriteAllBytes(output_path, pngData); //输出子PNG图片
+
+            paths.Add(output_path);
+
+            // 刷新资源窗口界面  
+            AssetDatabase.Refresh();
+        }
+
+        Texture2D output_image = AssetDatabase.LoadAssetAtPath&lt;Texture2D&gt;(paths[num]);
+        Debug.Log(output_image.name);
+
+        return output_image;
+    }</code></pre>
+<p>2. 方法二： 直接获取切割好的sprite图集中的所有子sprite, 返回某一sprite。代码如下：</p>
+<p>AssetDatabase.LoadAllAssetsAtPath(): 在编辑器模式下load 资源</p>
+<p>Resources.LoadAll&lt;T&gt;() : 加载的资源必须放在Resources文件夹下</p>
+<p>AssetBundle 动态加载资源的话，需要先给资源create AssetBundle, 然后再使用相关方法批量Load 资源。</p>
+<pre><code class="language-cs">//返回一个子sprite
+    public static Sprite GetChildSprite(Texture2D image, int num)
+    {
+
+        string rootPath = Path.GetDirectoryName(AssetDatabase.GetAssetPath(image));//获取路径名称  
+        string path = rootPath + "/" + image.name + ".PNG";//图片路径名称
+
+        Object[] sprites = AssetDatabase.LoadAllAssetsAtPath(path);
+        //Object[] sprites = Resources.LoadAll&lt;Sprite&gt;(path);
+
+
+        Sprite output_sprite = (Sprite)sprites[num];
+
+        Debug.Log(output_sprite.name);
+
+        return output_sprite;
+    }</code></pre>
+<p><strong>三. 调用函数</strong></p>
+<p>可以扩展编辑器来调用GetChildTexture()的函数，因为这个方法涉及到在编辑器下转化sprite -&gt; Texture。GetChildSprite() 方法会返回一个Sprite，具体情况具体分析。</p>
+<pre><code class="language-cs">[MenuItem("Assets/SpriteSlicer/SpriteSlice")]
+    public static void SpliceSprite()
+    {
+        Texture2D input_image = Selection.activeObject as Texture2D;
+        Texture2D output_image = GetChildTexture(input_image, 10);
+
+        Sprite output_image2 = GetChildSprite(input_image,15);
+    
+    }</code></pre>
+<p><strong>总结</strong></p>
+<p>本文探究了在Unity编辑器模式下如何切割图集，并且获得图集中的某一sprite。动态加载sprite需要使用AssetBundle加载，本文暂时并未实现，持续更新中。</p>
+<p></p>
+<p>* 使用了 using UnityEditor 的脚本只能发在Editor文件夹下。不然会有报错。</p>
+</div>
+</div>

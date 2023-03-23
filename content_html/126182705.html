@@ -1,0 +1,403 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-github-gist" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="__0"></a>🚩 前言​</h1>
+<blockquote>
+<p>活动地址：<a href="https://marketing.csdn.net/p/bdabfb52c5d56532133df2adc1a728fd">CSDN21天学习挑战赛</a></p>
+</blockquote>
+<blockquote>
+<p>🚀 博主主页：<a href="https://blog.csdn.net/m0_63238256?spm">阿阿阿阿锋的主页_CSDN</a></p>
+</blockquote>
+<p><em>今天学到了多层感知机的softmax回归。</em></p>
+<p><em>在调整超参数观察它对于实验结果的影响时，突然发现我遇到了一个问题：在超参数不变的情况下，多次模型训练的结果也可能是不同的。</em></p>
+<p><em>这种不同并不是很小。其中有两次，在相同超参数下的训练，模型在测试集上的分类正确率分别为 <strong>86.5%</strong> 和 <strong>83.3%</strong>。</em></p>
+<hr/>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#__0">🚩 前言​</a></li><li><a href="#1__16">1. 🌱训练结果不稳定</a></li><li><a href="#2__38">2. 🌲全相同值初始化</a></li><li><a href="#3__79">3. 🌳为何丧失拟合能力</a></li><li><a href="#4__119">4. 🌴赋不同值初始化</a></li><li><a href="#5__135">5. 🌵附录：初完整代码</a></li><li><a href="#__177">🚩 总结</a></li></ul>
+</div>
+<p></p>
+<hr/>
+<h1><a id="1__16"></a>1. 🌱训练结果不稳定</h1>
+<blockquote>
+<p>虽然我大致知道模型中的每段代码大致在做什么，但现在我有些茫然了，感觉这些代码根本不在我的掌控之中。这种感觉有点糟糕，不过学习本来就是一个一边使用和一边了解的过程。<br/> 我后来猜测原因应该在权重参数那里。因为，权重参数是使用<strong>随机取样</strong>来初始化的。我这里使用的是正态分布(normal)中的随机取样。也就是说，<mark>每次开始训练时，初始模型参数都不一样</mark>。</p>
+</blockquote>
+<p><strong>参数初始化部分的代码：</strong></p>
+<pre><code class="prism language-py">num_inputs<span class="token punctuation">,</span> num_outputs <span class="token operator">=</span> <span class="token number">784</span><span class="token punctuation">,</span> <span class="token number">10</span>
+num_hiddens<span class="token punctuation">,</span> num_hiddens2 <span class="token operator">=</span> <span class="token number">256</span><span class="token punctuation">,</span> <span class="token number">30</span>
+
+W1 <span class="token operator">=</span> nd<span class="token punctuation">.</span>random<span class="token punctuation">.</span>normal<span class="token punctuation">(</span>scale<span class="token operator">=</span><span class="token number">0.01</span><span class="token punctuation">,</span> shape<span class="token operator">=</span><span class="token punctuation">(</span>num_inputs<span class="token punctuation">,</span> num_hiddens<span class="token punctuation">)</span><span class="token punctuation">)</span>
+b1 <span class="token operator">=</span> nd<span class="token punctuation">.</span>zeros<span class="token punctuation">(</span>num_hiddens<span class="token punctuation">)</span>
+W2 <span class="token operator">=</span> nd<span class="token punctuation">.</span>random<span class="token punctuation">.</span>normal<span class="token punctuation">(</span>scale<span class="token operator">=</span><span class="token number">0.01</span><span class="token punctuation">,</span> shape<span class="token operator">=</span><span class="token punctuation">(</span>num_hiddens<span class="token punctuation">,</span> num_hiddens2<span class="token punctuation">)</span><span class="token punctuation">)</span>
+b2 <span class="token operator">=</span> nd<span class="token punctuation">.</span>zeros<span class="token punctuation">(</span>num_hiddens2<span class="token punctuation">)</span>
+W3 <span class="token operator">=</span> nd<span class="token punctuation">.</span>random<span class="token punctuation">.</span>normal<span class="token punctuation">(</span>scale<span class="token operator">=</span><span class="token number">0.01</span><span class="token punctuation">,</span> shape<span class="token operator">=</span><span class="token punctuation">(</span>num_hiddens2<span class="token punctuation">,</span> num_outputs<span class="token punctuation">)</span><span class="token punctuation">)</span>
+b3 <span class="token operator">=</span> nd<span class="token punctuation">.</span>zeros<span class="token punctuation">(</span>num_outputs<span class="token punctuation">)</span>
+params <span class="token operator">=</span> <span class="token punctuation">[</span>W1<span class="token punctuation">,</span> b1<span class="token punctuation">,</span> W2<span class="token punctuation">,</span> b2<span class="token punctuation">,</span> W3<span class="token punctuation">,</span> b3<span class="token punctuation">]</span>
+
+<span class="token keyword">for</span> param <span class="token keyword">in</span> params<span class="token punctuation">:</span>
+    param<span class="token punctuation">.</span>attach_grad<span class="token punctuation">(</span><span class="token punctuation">)</span>
+</code></pre>
+<h1><a id="2__38"></a>2. 🌲全相同值初始化</h1>
+<blockquote>
+<p>考虑到很可能是权值参数导致的每次训练的结果有浮动，那不如就试试每次都从相同的权值参数开始训练，这样我后面调超参数的时候，应该就好观察一点。我一开始想的是简单起见，把所有的权值都设置为 1 试试。</p>
+</blockquote>
+<p><strong>改动后的参数初始化代码：</strong></p>
+<pre><code class="prism language-cpp">num_inputs<span class="token punctuation">,</span> num_outputs <span class="token operator">=</span> <span class="token number">784</span><span class="token punctuation">,</span> <span class="token number">10</span>
+num_hiddens<span class="token punctuation">,</span> num_hiddens2 <span class="token operator">=</span> <span class="token number">256</span><span class="token punctuation">,</span> <span class="token number">30</span>
+
+W1 <span class="token operator">=</span> nd<span class="token punctuation">.</span><span class="token function">ones</span><span class="token punctuation">(</span><span class="token punctuation">(</span>num_inputs<span class="token punctuation">,</span> num_hiddens<span class="token punctuation">)</span><span class="token punctuation">)</span>
+b1 <span class="token operator">=</span> nd<span class="token punctuation">.</span><span class="token function">zeros</span><span class="token punctuation">(</span>num_hiddens<span class="token punctuation">)</span>
+W2 <span class="token operator">=</span> nd<span class="token punctuation">.</span><span class="token function">ones</span><span class="token punctuation">(</span><span class="token punctuation">(</span>num_hiddens<span class="token punctuation">,</span> num_hiddens2<span class="token punctuation">)</span><span class="token punctuation">)</span>
+b2 <span class="token operator">=</span> nd<span class="token punctuation">.</span><span class="token function">zeros</span><span class="token punctuation">(</span>num_hiddens2<span class="token punctuation">)</span>
+W2 <span class="token operator">=</span> nd<span class="token punctuation">.</span><span class="token function">ones</span><span class="token punctuation">(</span><span class="token punctuation">(</span>num_hiddens2<span class="token punctuation">,</span> num_outputs<span class="token punctuation">)</span><span class="token punctuation">)</span>
+b3 <span class="token operator">=</span> nd<span class="token punctuation">.</span><span class="token function">zeros</span><span class="token punctuation">(</span>num_outputs<span class="token punctuation">)</span>
+params <span class="token operator">=</span> <span class="token punctuation">[</span>W1<span class="token punctuation">,</span> b1<span class="token punctuation">,</span> W2<span class="token punctuation">,</span> b2<span class="token punctuation">,</span> W3<span class="token punctuation">,</span> b3<span class="token punctuation">]</span>
+
+<span class="token keyword">for</span> param in params<span class="token operator">:</span>
+    param<span class="token punctuation">.</span><span class="token function">attach_grad</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+</code></pre>
+<p><strong>改动后的运行情况：</strong></p>
+<pre><code class="prism language-cpp">epoch <span class="token number">1</span><span class="token punctuation">,</span> loss <span class="token number">9765948.7299</span><span class="token punctuation">,</span> train acc <span class="token number">0.100</span><span class="token punctuation">,</span> test acc <span class="token number">0.100</span>
+epoch <span class="token number">2</span><span class="token punctuation">,</span> loss <span class="token number">2.3032</span><span class="token punctuation">,</span> train acc <span class="token number">0.099</span><span class="token punctuation">,</span> test acc <span class="token number">0.100</span>
+epoch <span class="token number">3</span><span class="token punctuation">,</span> loss <span class="token number">2.3031</span><span class="token punctuation">,</span> train acc <span class="token number">0.100</span><span class="token punctuation">,</span> test acc <span class="token number">0.100</span>
+epoch <span class="token number">4</span><span class="token punctuation">,</span> loss <span class="token number">2.3031</span><span class="token punctuation">,</span> train acc <span class="token number">0.098</span><span class="token punctuation">,</span> test acc <span class="token number">0.100</span>
+epoch <span class="token number">5</span><span class="token punctuation">,</span> loss <span class="token number">2.3031</span><span class="token punctuation">,</span> train acc <span class="token number">0.098</span><span class="token punctuation">,</span> test acc <span class="token number">0.100</span>
+</code></pre>
+<blockquote>
+<p>可以看到，在第一个训练周期中，损失值（loss）很大。后来损失值虽然变小了，但是在测试集上的准确率（test acc）却没有动静，始终为<strong>10%</strong>。而数据集中刚好一共就是10个类别。可以说，<mark>这分类，它完全就是蒙的</mark>。人工智障了属于是。</p>
+</blockquote>
+<p><strong>改动前正常的运行情况：</strong></p>
+<pre><code class="prism language-cpp">epoch <span class="token number">1</span><span class="token punctuation">,</span> loss <span class="token number">1.4737</span><span class="token punctuation">,</span> train acc <span class="token number">0.429</span><span class="token punctuation">,</span> test acc <span class="token number">0.725</span>
+epoch <span class="token number">2</span><span class="token punctuation">,</span> loss <span class="token number">0.6242</span><span class="token punctuation">,</span> train acc <span class="token number">0.764</span><span class="token punctuation">,</span> test acc <span class="token number">0.809</span>
+epoch <span class="token number">3</span><span class="token punctuation">,</span> loss <span class="token number">0.4948</span><span class="token punctuation">,</span> train acc <span class="token number">0.818</span><span class="token punctuation">,</span> test acc <span class="token number">0.836</span>
+epoch <span class="token number">4</span><span class="token punctuation">,</span> loss <span class="token number">0.4394</span><span class="token punctuation">,</span> train acc <span class="token number">0.836</span><span class="token punctuation">,</span> test acc <span class="token number">0.839</span>
+epoch <span class="token number">5</span><span class="token punctuation">,</span> loss <span class="token number">0.4031</span><span class="token punctuation">,</span> train acc <span class="token number">0.850</span><span class="token punctuation">,</span> test acc <span class="token number">0.862</span>
+</code></pre>
+<h1><a id="3__79"></a>3. 🌳为何丧失拟合能力</h1>
+<blockquote>
+<p>我刚刚是将初始权值参数全部设置为 1， 我也尝试了许多其它的数，无一例外，模型都无法成功训练。查了一些资料后，我发现了一个问题。<br/> 如果一层中，所有的参数都初始化为一样的，这一层就相当于只有一个神经元节点了。以一个简单的情况作为例子：</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2c605ce5faaf484fa79e66db19f4b974.png" width="250"/></p>
+<blockquote>
+<p>简单起见，这里我们也不考虑偏差参数（bias）。那么我们模型得到的函式就是：<br/> <span class="katex--display"><span class="katex-display"><span class="katex"><span class="katex-mathml">
+      
+       
+        
+         
+          f
+         
+         
+          (
+         
+         
+          x
+         
+         
+          1
+         
+         
+          ,
+         
+         
+          x
+         
+         
+          2
+         
+         
+          )
+         
+         
+          =
+         
+         
+          w
+         
+         
+          1
+         
+         
+          x
+         
+         
+          1
+         
+         
+          +
+         
+         
+          w
+         
+         
+          2
+         
+         
+          x
+         
+         
+          2
+         
+        
+        
+          f(x1, x2) = w1x1 + w2x2 
+        
+       
+      </span><span class="katex-html"><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord mathnormal" style="margin-right: 0.1076em;">f</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right: 0.1667em;"></span><span class="mord mathnormal">x</span><span class="mord">2</span><span class="mclose">)</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.7278em; vertical-align: -0.0833em;"></span><span class="mord mathnormal" style="margin-right: 0.0269em;">w</span><span class="mord">1</span><span class="mord mathnormal">x</span><span class="mord">1</span><span class="mspace" style="margin-right: 0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right: 0.2222em;"></span></span><span class="base"><span class="strut" style="height: 0.6444em;"></span><span class="mord mathnormal" style="margin-right: 0.0269em;">w</span><span class="mord">2</span><span class="mord mathnormal">x</span><span class="mord">2</span></span></span></span></span></span><br/> 当权值参数都相同，即 w1 = w2 时，函数就可以写成：<br/> <span class="katex--display"><span class="katex-display"><span class="katex"><span class="katex-mathml">
+      
+       
+        
+         
+          f
+         
+         
+          (
+         
+         
+          x
+         
+         
+          1
+         
+         
+          ,
+         
+         
+          x
+         
+         
+          2
+         
+         
+          )
+         
+         
+          =
+         
+         
+          w
+         
+         
+          (
+         
+         
+          x
+         
+         
+          1
+         
+         
+          +
+         
+         
+          x
+         
+         
+          2
+         
+         
+          )
+         
+        
+        
+          f(x1, x2) = w(x1+x2) 
+        
+       
+      </span><span class="katex-html"><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord mathnormal" style="margin-right: 0.1076em;">f</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right: 0.1667em;"></span><span class="mord mathnormal">x</span><span class="mord">2</span><span class="mclose">)</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord mathnormal" style="margin-right: 0.0269em;">w</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mord">1</span><span class="mspace" style="margin-right: 0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right: 0.2222em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord mathnormal">x</span><span class="mord">2</span><span class="mclose">)</span></span></span></span></span></span><br/> 再用 x 代替（x1 + x2)：<br/> <span class="katex--display"><span class="katex-display"><span class="katex"><span class="katex-mathml">
+      
+       
+        
+         
+          f
+         
+         
+          (
+         
+         
+          x
+         
+         
+          )
+         
+         
+          =
+         
+         
+          w
+         
+         
+          x
+         
+        
+        
+          f(x) = wx 
+        
+       
+      </span><span class="katex-html"><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord mathnormal" style="margin-right: 0.1076em;">f</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.4306em;"></span><span class="mord mathnormal" style="margin-right: 0.0269em;">w</span><span class="mord mathnormal">x</span></span></span></span></span></span><br/> 而无论我们设置了多少节点，有多少权重参数，如果这些参数是相同的，那我们的模型仍然只拥有<strong>一元线性函式</strong>的拟合能力。</p>
+</blockquote>
+<blockquote>
+<p>但是，我们只是初始权值参数是相同的，那么训练后的权值参数仍然一定是相同的吗？<br/> 在我的模型训练过程中，是使用通过梯度的反向传播，来更新模型参数的（<code>lr</code>为学习率）：<br/> <span class="katex--display"><span class="katex-display"><span class="katex"><span class="katex-mathml">
+      
+       
+        
+         
+          w
+         
+         
+          =
+         
+         
+          w
+         
+         
+          −
+         
+         
+          l
+         
+         
+          r
+         
+         
+          Δ
+         
+         
+          w
+         
+        
+        
+          w = w - lr \Delta w 
+        
+       
+      </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.4306em;"></span><span class="mord mathnormal" style="margin-right: 0.0269em;">w</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 0.6667em; vertical-align: -0.0833em;"></span><span class="mord mathnormal" style="margin-right: 0.0269em;">w</span><span class="mspace" style="margin-right: 0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right: 0.2222em;"></span></span><span class="base"><span class="strut" style="height: 0.6944em;"></span><span class="mord mathnormal" style="margin-right: 0.0197em;">l</span><span class="mord mathnormal" style="margin-right: 0.0278em;">r</span><span class="mord">Δ</span><span class="mord mathnormal" style="margin-right: 0.0269em;">w</span></span></span></span></span></span><br/> 如果<strong>不同节点得到的梯度反馈都是相同的</strong>，而初始值权值也相同，那么在训练过程中，<strong>权值自然会始终保持相同</strong>。而一维的线性模型，面对相对复杂的、非线性的分类任务，除了<strong>蒙</strong>，还能怎样呢？</p>
+</blockquote>
+<blockquote>
+<p>关于梯度下降导致模型失去足够的拟合能力，下面提供我个人的一种稍稍形象一些的理解方式，仍然以我们之前的简单模型作为例子：</p>
+</blockquote>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/970d9af3ab07485991c75e7fb66e3031.png" width="250"/></p>
+<blockquote>
+<p>因为两个权值参数的初始值相等会导致：这两个参数的<mark>更新方向和幅度</mark>也是相等的。那么整个模型的训练过程中，权值参数向量的<strong>更新方向<code>（Δw1, Δw2)</code>就是恒定的</strong>。这样会造成什么问题呢？</p>
+</blockquote>
+<p><span class="katex--display"><span class="katex-display"><span class="katex"><span class="katex-mathml">
+     
+      
+       
+        
+         l
+        
+        
+         o
+        
+        
+         s
+        
+        
+         s
+        
+        
+         =
+        
+        
+         f
+        
+        
+         (
+        
+        
+         w
+        
+        
+         1
+        
+        
+         ,
+        
+        
+         w
+        
+        
+         2
+        
+        
+         )
+        
+       
+       
+         loss = f(w1, w2) 
+       
+      
+     </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.6944em;"></span><span class="mord mathnormal" style="margin-right: 0.0197em;">l</span><span class="mord mathnormal">oss</span><span class="mspace" style="margin-right: 0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right: 0.2778em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord mathnormal" style="margin-right: 0.1076em;">f</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right: 0.0269em;">w</span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right: 0.1667em;"></span><span class="mord mathnormal" style="margin-right: 0.0269em;">w</span><span class="mord">2</span><span class="mclose">)</span></span></span></span></span></span><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/285b256260a547afb7d18c8457219532.png" width="500"/></p>
+<blockquote>
+<p>设图中的<strong>min</strong>就是我们要找的全局最优点（损失最小的点），而点<code>（w1, w2) </code>就只能在图中的虚线上移动。它可以移动到一个比较靠近<strong>min</strong>的位置，而使得损失值<strong>loss</strong>变得较小。但显然模型的整个拟合效果常常是很差的。这样的分析也比较符合我们之前的运行结果：<mark>损失值变小一次后就不再改变，而模型的预测准确率则完全像是蒙的</mark>。</p>
+</blockquote>
+<p><em>当然，这也只是我自己一个用来帮助理解的想法，供大家参考一下。</em></p>
+<h1><a id="4__119"></a>4. 🌴赋不同值初始化</h1>
+<blockquote>
+<p>不要忘了最初的目标，我只是想着用固定的初始权值参数，调超参数时，可能好观察和比较结果一点。那是不是只要我<strong>为这些参数都附上不同的值</strong>，模型就可以正常进行训练了呢？<br/> 理论上应该是可以的。我尝试用下面的代码来对一层权值参数的所有元素逐个来进行初始化：</p>
+</blockquote>
+<pre><code class="prism language-py">k <span class="token operator">=</span> <span class="token number">0.0000001</span>
+<span class="token builtin">sum</span> <span class="token operator">=</span> <span class="token number">0.01</span>
+flag <span class="token operator">=</span> <span class="token number">1</span>
+<span class="token keyword">for</span> i <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>num_inputs<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">for</span> j <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>num_hiddens<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        W1<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">[</span>j<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token builtin">sum</span> <span class="token operator">*</span> flag
+        flag <span class="token operator">=</span> <span class="token operator">-</span>flag
+        <span class="token builtin">sum</span> <span class="token operator">+=</span> k
+</code></pre>
+<blockquote>
+<p>但是，我发现这段代码运行起来实在是慢得可怜。python执行矩阵运算会比逐个元素的运算慢很多（是为什么我现在也还不知道）。希望到这里暂时就破灭了。哈哈。</p>
+</blockquote>
+<h1><a id="5__135"></a>5. 🌵附录：初完整代码</h1>
+<p><mark>注：代码来自《动手学深度学习》</mark></p>
+<pre><code class="prism language-cpp"><span class="token operator">%</span>matplotlib <span class="token keyword">inline</span>
+<span class="token keyword">import</span> <span class="token module">d2lzh</span> as d2l
+from mxnet <span class="token keyword">import</span> <span class="token module">nd</span>
+from mxnet<span class="token punctuation">.</span>gluon <span class="token keyword">import</span> <span class="token module">loss</span> as gloss
+
+batch_size <span class="token operator">=</span> <span class="token number">256</span>
+train_iter<span class="token punctuation">,</span> test_iter <span class="token operator">=</span> d2l<span class="token punctuation">.</span><span class="token function">load_data_fashion_mnist</span><span class="token punctuation">(</span>batch_size<span class="token punctuation">)</span>
+
+num_inputs<span class="token punctuation">,</span> num_outputs <span class="token operator">=</span> <span class="token number">784</span><span class="token punctuation">,</span> <span class="token number">10</span>
+num_hiddens<span class="token punctuation">,</span> num_hiddens2 <span class="token operator">=</span> <span class="token number">256</span><span class="token punctuation">,</span> <span class="token number">30</span>
+
+W1 <span class="token operator">=</span> nd<span class="token punctuation">.</span>random<span class="token punctuation">.</span><span class="token function">normal</span><span class="token punctuation">(</span>scale<span class="token operator">=</span><span class="token number">0.01</span><span class="token punctuation">,</span> shape<span class="token operator">=</span><span class="token punctuation">(</span>num_inputs<span class="token punctuation">,</span> num_hiddens<span class="token punctuation">)</span><span class="token punctuation">)</span>
+b1 <span class="token operator">=</span> nd<span class="token punctuation">.</span><span class="token function">zeros</span><span class="token punctuation">(</span>num_hiddens<span class="token punctuation">)</span>
+W2 <span class="token operator">=</span> nd<span class="token punctuation">.</span>random<span class="token punctuation">.</span><span class="token function">normal</span><span class="token punctuation">(</span>scale<span class="token operator">=</span><span class="token number">0.01</span><span class="token punctuation">,</span> shape<span class="token operator">=</span><span class="token punctuation">(</span>num_hiddens<span class="token punctuation">,</span> num_hiddens2<span class="token punctuation">)</span><span class="token punctuation">)</span>
+b2 <span class="token operator">=</span> nd<span class="token punctuation">.</span><span class="token function">zeros</span><span class="token punctuation">(</span>num_hiddens2<span class="token punctuation">)</span>
+W3 <span class="token operator">=</span> nd<span class="token punctuation">.</span>random<span class="token punctuation">.</span><span class="token function">normal</span><span class="token punctuation">(</span>scale<span class="token operator">=</span><span class="token number">0.01</span><span class="token punctuation">,</span> shape<span class="token operator">=</span><span class="token punctuation">(</span>num_hiddens2<span class="token punctuation">,</span> num_outputs<span class="token punctuation">)</span><span class="token punctuation">)</span>
+b3 <span class="token operator">=</span> nd<span class="token punctuation">.</span><span class="token function">zeros</span><span class="token punctuation">(</span>num_outputs<span class="token punctuation">)</span>
+params <span class="token operator">=</span> <span class="token punctuation">[</span>W1<span class="token punctuation">,</span> b1<span class="token punctuation">,</span> W2<span class="token punctuation">,</span> b2<span class="token punctuation">,</span> W3<span class="token punctuation">,</span> b3<span class="token punctuation">]</span>
+
+<span class="token keyword">for</span> param in params<span class="token operator">:</span>
+    param<span class="token punctuation">.</span><span class="token function">attach_grad</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+def <span class="token function">relu</span><span class="token punctuation">(</span>X<span class="token punctuation">)</span><span class="token operator">:</span>
+    <span class="token keyword">return</span> nd<span class="token punctuation">.</span><span class="token function">maximum</span><span class="token punctuation">(</span>X<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span>
+
+def <span class="token function">net</span><span class="token punctuation">(</span>X<span class="token punctuation">)</span><span class="token operator">:</span>
+    X <span class="token operator">=</span> X<span class="token punctuation">.</span><span class="token function">reshape</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">,</span> num_inputs<span class="token punctuation">)</span><span class="token punctuation">)</span>
+    H <span class="token operator">=</span> <span class="token function">relu</span><span class="token punctuation">(</span>nd<span class="token punctuation">.</span><span class="token function">dot</span><span class="token punctuation">(</span>X<span class="token punctuation">,</span> W1<span class="token punctuation">)</span> <span class="token operator">+</span> b1<span class="token punctuation">)</span>
+    H2 <span class="token operator">=</span> <span class="token function">relu</span><span class="token punctuation">(</span>nd<span class="token punctuation">.</span><span class="token function">dot</span><span class="token punctuation">(</span>H<span class="token punctuation">,</span> W2<span class="token punctuation">)</span> <span class="token operator">+</span> b2<span class="token punctuation">)</span>
+    <span class="token keyword">return</span> nd<span class="token punctuation">.</span><span class="token function">dot</span><span class="token punctuation">(</span>H2<span class="token punctuation">,</span> W3<span class="token punctuation">)</span> <span class="token operator">+</span> b3
+
+loss <span class="token operator">=</span> gloss<span class="token punctuation">.</span><span class="token function">SoftmaxCrossEntropyLoss</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+num_epochs<span class="token punctuation">,</span> lr <span class="token operator">=</span> <span class="token number">5</span><span class="token punctuation">,</span> <span class="token number">0.5</span>
+d2l<span class="token punctuation">.</span><span class="token function">train_ch3</span><span class="token punctuation">(</span>net<span class="token punctuation">,</span> train_iter<span class="token punctuation">,</span> test_iter<span class="token punctuation">,</span> loss<span class="token punctuation">,</span> num_epochs<span class="token punctuation">,</span> batch_size<span class="token punctuation">,</span> params<span class="token punctuation">,</span> lr<span class="token punctuation">)</span>
+</code></pre>
+<hr/>
+<h1><a id="__177"></a>🚩 总结</h1>
+<p><em>折腾了挺久，后面感觉我想使用固定的初始参数，来方便观察和比较实验结果的想法，本身可能也不是很好。每次都从相同的地方开始，即使通过调整超参数，取得了优秀的训练效果，取得这个效果可能是 <strong>依赖于初始参数的</strong>（当然，训练的结果本身仍然是优秀的）。</em><br/> <em>如果又换到随机的初始参数下训练，大概率会取得更差而不是更好的训练效果。</em></p>
+<p><em>继续加油！！！学习本身就是一个不断试错的过程。</em></p>
+<blockquote>
+<p>在学习的过程中，也参考了一些好文章。它们不是都与我本次的问题直接相关，但我觉得对我整体上的理解是有帮助的。</p>
+<ul><li><a href="http://t.csdn.cn/XmfrP">独家 | 初学者的问题：在神经网络中应使用多少隐藏层/神经元？（附实例）</a></li><li><a href="http://t.csdn.cn/rEPwu">深层神经网络的权值初始化问题</a></li><li><a href="http://t.csdn.cn/e9Krs">常用的激活函数汇总-Sigmoid, tanh, relu, elu</a></li></ul>
+</blockquote>
+<p>​</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

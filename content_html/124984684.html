@@ -1,0 +1,66 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="dockerphp_0"></a>docker搭建php环境</h2>
+<h4><a id="_2"></a>前言</h4>
+<p>本文主要参考：https://www.zhihao1.cn/91.html</p>
+<p>主要介绍docker搭建php，docker安装使用请自查</p>
+<h4><a id="dockernginxphp_8"></a>docker拉取nginx和php镜像</h4>
+<p><code>docker pull nginx:latest</code> 这里我直接拉最新版的niginx latest（最新版本）</p>
+<p><code>docker pull php:7.4-fpm</code> php我们就拉php7.4版本的fpm就好了</p>
+<p>使用docker images查看已安装的镜像</p>
+<p><img alt="" src="image\fd8d367e004d46d8a7e364d24c7c4067.png"/></p>
+<h4><a id="_19"></a>创建容器</h4>
+<ol><li> <p>先创建ngix文件夹存放等会php文件要挂载的目录，我创建在/docker/nginx/www/myphp目录的</p>
+<ol><li> <p>命令</p> <pre><code class="prism language-shell"><span class="token function">mkdir</span> -p /docker/nginx/www/myphp <span class="token punctuation">(</span>-p代表递归创建，按目录层级创建目录<span class="token punctuation">)</span>
+</code></pre> </li></ol> </li><li> <p>创建容器：<code>docker run --name myphp -v /docker/nginx/www/myphp:/www/myphp -d c5fdabeef32a</code>创建运行php的容器，名为myphp</p>
+<ol><li><code>-v</code>代表挂载目录，将服务器外面的目录与创建的容器里的目录进行挂载，以后修改代码直接在容器外的服务器目录就可以修改了</li><li><code>-d</code>代表后台运行</li><li><code>c5fdabeef32a</code>代表php-fpm的镜像id，可通过<code>docker images</code>进行查看安装的镜像</li></ol> </li><li> <p>查看刚才运行的容器，通过<code> docker ps</code>查看</p> <p><img alt="" src="image\86b943ddd6aa4f6b81e73acb5f99a155.png"/></p> </li><li> <p>创建conf、conf.d目录 <code>mkdir -p /docker/nginx/conf/conf.d</code>，一定要用<code>mkdir -p</code>递归创建目录，即使上级目录不存在，会按目录层级自动创建目录</p> </li><li> <p>创建自己的conf文件，可以自己命名</p> <p><code>vim myphp.conf</code></p> <pre><code class="prism language-nginx">erver {
+    listen       80;
+    server_name  localhost; #这里修改成自己的域名，我这里是本地运行所以填的localhost
+    location / {
+        root   /usr/share/nginx/html;
+        index  index.html index.htm index.php;
+    }
+
+    error_page   500 502 503 504  /50x.html;
+    location = /50x.html {
+        root   /usr/share/nginx/html;
+    }
+
+  #当请求网站下php文件的时候，反向代理到php-fpm
+    location ~ \.php$ {
+        fastcgi_pass   php:9000;
+        fastcgi_index  index.php;
+        fastcgi_param  SCRIPT_FILENAME  /www/myphp/$fastcgi_script_name;
+        include        fastcgi_params;
+    }
+}
+</code></pre> <p>关于配置文件，这篇文章说的很详细：https://www.cnblogs.com/donghui521/p/10334776.html</p> </li><li> <p>创建运行nginx的容器，打通nginx与php容器之间的关联</p> <pre><code class="prism language-shell"><span class="token function">docker</span> run --name nginx1 -p <span class="token number">8088</span>:80 -d <span class="token punctuation">\</span>
+-v /docker/nginx/www:/usr/share/nginx/html <span class="token punctuation">\</span>
+-v /docker/nginx/conf/conf.d:/etc/nginx/conf.d <span class="token punctuation">\</span>
+--link myphp:php nginx
+
+-p 主机和容器端口互联，主机8088：80
+-v 目录挂载
+-d 后台运行
+--link nginx和php容器互联
+</code></pre> </li><li> <p>如果我们想进一步的修改nginx配置。</p>
+<ol><li>通过<code>docker exec -it mynginx /bin/bash</code>进入容器</li><li><code>vim /etc/nginx/nginx.conf </code>编辑配置文件</li></ol> <pre><code class="prism language-shell"><span class="token comment"># 如果没有vim，通过下面的命令进行安装vim</span>
+<span class="token function">apt-get</span> update		<span class="token comment">#更新包管理</span>
+<span class="token function">apt-get</span> <span class="token function">install</span> <span class="token function">vim</span> -y   <span class="token comment">#安装vim</span>
+</code></pre> </li></ol>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/eb9a7bfe549449cc885499f32f80f85b.png"/></p>
+<h4><a id="_100"></a>测试</h4>
+<p>在我们之前创建的/docker/nginx/www/myphp文件夹中创建一个index.php</p>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">echo</span> <span class="token function">phpinfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token operator">?</span><span class="token operator">&gt;</span>
+</code></pre>
+<p>访问<br/> <img alt="访问" src="https://img-blog.csdnimg.cn/d74ee295a94c402ea917d78fa70386a4.png"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

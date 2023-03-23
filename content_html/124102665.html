@@ -1,0 +1,128 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p> 相信大家平时开发的时候没少碰见，在微服务架构中需要调用很多服务才能完成一项功能。这时候，如何互相调用就变成微服务架构中的一个关键问题。在这里我介绍三个常用的方法</p>
+<p></p>
+<h2><strong>一、RestTemplate方式</strong></h2>
+<pre><code class="language-java">@Bean
+    public RestTemplate getRestTemplate(){
+        return new RestTemplate();
+    }</code></pre>
+<p>服务的消费者（order）调用服务的提供者（Goods）</p>
+<pre><code class="language-java">@Autowired
+    private RestTemplate restTemplate;
+
+    @GetMapping("/createOrder/{gid}/{number}")
+    public Order order(@PathVariable("gid") Integer id,@PathVariable("number") Integer number){
+        log.info("用户开始下单,调用商品系统，查询{}号商品信息",id);
+        Goods goods = restTemplate.getForObject("http://localhost:9002/goods/getGoods/" + id, Goods.class);
+        log.info("商品信息查询完毕："+ JSON.toJSONString(goods));
+
+        log.info("开始下单：");
+        Order order = new Order();
+        order.setUid(1);
+        order.setUname("测试用户");
+        order.setGid(goods.getId());
+        order.setGname(goods.getGoodsName());
+        order.setNumber(number);
+
+        orderService.createOrder(order);
+        log.info("下单成功");
+        return order;
+    }</code></pre>
+<p>通过上面的方式我们解决了微服务之间的相互调用，但是存在硬编码的问题，如果服务提供者的地址发生变化，就需要手工修改代码；如果有多个服务提供者，无法实现服务的负载均衡；如果服务增多，人工调用会变得更加的复杂。</p>
+<p>这个时候就会需要服务治理，服务治理是微服务架构最核心的问题，用于实现各个微服务的自动化注册与发现。在这里选择Nacos。</p>
+<p></p>
+<h2><strong>二、引入Nacos注册中心</strong></h2>
+<p>1.在服务的提供者与消费者的pom文件中引入依赖</p>
+<pre><code class="language-java">&lt;!--nacos客户端--&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.alibaba.cloud&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-cloud-starter-alibaba-nacos-discovery&lt;/artifactId&gt;
+        &lt;/dependency&gt;</code></pre>
+<p>2.在application.yml中添加配置</p>
+<pre><code class="language-java">spring:
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.206.151:8848</code></pre>
+<p>3.在对应的微服务上添加</p>
+<pre><code class="language-java">@EnableDiscoveryClient</code></pre>
+<p>4.代码</p>
+<pre><code class="language-java">   @Autowired
+    private RestTemplate restTemplate;
+   @Autowired
+    private DiscoveryClient discoveryClient;
+
+    @GetMapping("/createOrder2/{gid}/{number}")
+    public Order order2(@PathVariable("gid") Integer id,@PathVariable("number") Integer number){
+        log.info("用户开始下单,调用商品系统，查询{}号商品信息",id);
+        //从nacos中获取服务地址
+        ServiceInstance service = discoveryClient.getInstances("goods-service").get(0);
+        String url = service.getHost() + ":" + service.getPort();
+        //通过restTemplate调用
+        Goods goods = restTemplate.getForObject("http://"+url+"/goods/getGoods/" + id, Goods.class);
+        log.info("商品信息查询完毕："+ JSON.toJSONString(goods));
+
+        log.info("开始下单：");
+        Order order = new Order();
+        order.setUid(1);
+        order.setUname("测试用户");
+        order.setGid(goods.getId());
+        order.setGname(goods.getGoodsName());
+        order.setNumber(number);
+
+        orderService.createOrder(order);
+        log.info("下单成功");
+        return order;
+    }</code></pre>
+<p>注：DiscoveryClient是专门负责服务注册和发现的，我们可以通过它获取到注册到注册中心的所有服务</p>
+<p></p>
+<h2><strong>三、Fegin实现服务调用</strong></h2>
+<p>Feign是Spring Cloud提供的一个声明式的伪Http客户端， 它使得调用远程服务就像调用本地服务一样简单， 只需要创建一个接口并添加一个注解即可。</p>
+<p>Nacos很好的兼容了Feign， Feign默认集成了 Ribbon， 所以在Nacos下使用Fegin默认就实现了负载均衡的效果。</p>
+<p>在服务消费者上进行以下操作：</p>
+<p>1.添加依赖</p>
+<pre><code class="language-java">&lt;!--fegin组件--&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.cloud&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-cloud-starter-openfeign&lt;/artifactId&gt;
+&lt;/dependency&gt;</code></pre>
+<p>2.在启动类上添加注解</p>
+<pre><code class="language-java">@EnableFeignClients</code></pre>
+<p>3.新建client包，并创建接口(把服务提供者controller对应的方法名复制过来，注意路径要完整。</p>
+<pre><code class="language-java">@FeignClient("goods-service")
+public interface GoodsService {
+
+    @RequestMapping("/goods/getGoods/{id}")
+    public Goods goods(@PathVariable("id") Integer id);
+}</code></pre>
+<p>4.代码</p>
+<pre><code class="language-java">@Autowired
+    private GoodsService goodsService;
+
+    @GetMapping("/createOrder3/{gid}/{number}")
+    public Order order3(@PathVariable("gid") Integer id,@PathVariable("number") Integer number){
+        log.info("用户开始下单,调用商品系统，查询{}号商品信息",id);
+
+        //通过feign调用商品微服务
+        Goods goods = goodsService.goods(id);
+        log.info("商品信息查询完毕："+ JSON.toJSONString(goods));
+
+        log.info("开始下单：");
+        Order order = new Order();
+        order.setUid(1);
+        order.setUname("测试用户");
+        order.setGid(goods.getId());
+        order.setGname(goods.getGoodsName());
+        order.setNumber(number);
+
+        orderService.createOrder(order);
+        log.info("下单成功");
+        return order;
+    }</code></pre>
+<p>好了，先介绍到这里，想要以上demo的可以加微信领取，另外还有一份《Java最新2022版面试题及解答-阿里内部资料(266页)》可以免费送给大家。</p>
+<p class="img-center"><img alt="" height="279" src="image\2f039679c9844ebaaa66628ba1f773fc.png" width="561"/></p>
+<p></p>
+</div>
+</div>

@@ -1,0 +1,365 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#0_onnx_1">0. onnx模型准备以及测试图</a></li><li><a href="#1_connxruntime_3">1. c++使用onnxruntime进行推理</a></li><li><a href="#2_copencv_197">2. c++使用opencv进行推理</a></li></ul>
+</div>
+<p></p>
+<h1><a id="0_onnx_1"></a>0. onnx模型准备以及测试图</h1>
+<p>参考：<a href="https://blog.csdn.net/qq_44747572/article/details/120820964?spm=1001.2014.3001.5501">https://blog.csdn.net/qq_44747572/article/details/120820964?spm=1001.2014.3001.5501</a></p>
+<h1><a id="1_connxruntime_3"></a>1. c++使用onnxruntime进行推理</h1>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;opencv2/core.hpp&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;opencv2/imgcodecs.hpp&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;opencv2/opencv.hpp&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;opencv2/highgui.hpp&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;opencv2/core/core.hpp&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;opencv2/imgproc/imgproc_c.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;opencv2/dnn.hpp&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iostream&gt;</span>  </span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;onnxruntime_cxx_api.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;assert.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;vector&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;fstream&gt;</span></span>
+
+
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> cv<span class="token punctuation">;</span>     <span class="token comment">//当定义这一行后，cv::imread可以直接写成imread</span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> Ort<span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> cv<span class="token operator">::</span>dnn<span class="token punctuation">;</span>
+
+String labels_txt_file <span class="token operator">=</span> <span class="token string">"F:\\Pycharm\\PyCharm_Study\\Others\\c++_learning\\C++_Master\\Onnx\\classification\\classification_classes_ILSVRC2012.txt"</span><span class="token punctuation">;</span>
+vector<span class="token operator">&lt;</span>String<span class="token operator">&gt;</span> <span class="token function">readClassNames</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>                  <span class="token comment">// string对象作为vector对象 </span>
+
+<span class="token comment">// 图像处理  标准化处理</span>
+<span class="token keyword">void</span> <span class="token function">PreProcess</span><span class="token punctuation">(</span><span class="token keyword">const</span> Mat<span class="token operator">&amp;</span> image<span class="token punctuation">,</span> Mat<span class="token operator">&amp;</span> image_blob<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	Mat input<span class="token punctuation">;</span>
+	image<span class="token punctuation">.</span><span class="token function">copyTo</span><span class="token punctuation">(</span>input<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+	<span class="token comment">//数据处理 标准化</span>
+	std<span class="token operator">::</span>vector<span class="token operator">&lt;</span>Mat<span class="token operator">&gt;</span> channels<span class="token punctuation">,</span> channel_p<span class="token punctuation">;</span>
+	<span class="token function">split</span><span class="token punctuation">(</span>input<span class="token punctuation">,</span> channels<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	Mat R<span class="token punctuation">,</span> G<span class="token punctuation">,</span> B<span class="token punctuation">;</span>
+	B <span class="token operator">=</span> channels<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	G <span class="token operator">=</span> channels<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	R <span class="token operator">=</span> channels<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	B <span class="token operator">=</span> <span class="token punctuation">(</span>B <span class="token operator">/</span> <span class="token number">255.</span> <span class="token operator">-</span> <span class="token number">0.406</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">0.225</span><span class="token punctuation">;</span>
+	G <span class="token operator">=</span> <span class="token punctuation">(</span>G <span class="token operator">/</span> <span class="token number">255.</span> <span class="token operator">-</span> <span class="token number">0.456</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">0.224</span><span class="token punctuation">;</span>
+	R <span class="token operator">=</span> <span class="token punctuation">(</span>R <span class="token operator">/</span> <span class="token number">255.</span> <span class="token operator">-</span> <span class="token number">0.485</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">0.229</span><span class="token punctuation">;</span>
+
+	channel_p<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>R<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	channel_p<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>G<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	channel_p<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>B<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	Mat outt<span class="token punctuation">;</span>
+	<span class="token function">merge</span><span class="token punctuation">(</span>channel_p<span class="token punctuation">,</span> outt<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	image_blob <span class="token operator">=</span> outt<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+
+<span class="token comment">// 读取txt文件</span>
+std<span class="token operator">::</span>vector<span class="token operator">&lt;</span>String<span class="token operator">&gt;</span> <span class="token function">readClassNames</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	std<span class="token operator">::</span>vector<span class="token operator">&lt;</span>String<span class="token operator">&gt;</span> classNames<span class="token punctuation">;</span>
+
+	std<span class="token operator">::</span>ifstream <span class="token function">fp</span><span class="token punctuation">(</span>labels_txt_file<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>fp<span class="token punctuation">.</span><span class="token function">is_open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"could not open file...\n"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token function">exit</span><span class="token punctuation">(</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	std<span class="token operator">::</span>string name<span class="token punctuation">;</span>
+	<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token operator">!</span>fp<span class="token punctuation">.</span><span class="token function">eof</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		std<span class="token operator">::</span><span class="token function">getline</span><span class="token punctuation">(</span>fp<span class="token punctuation">,</span> name<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>name<span class="token punctuation">.</span><span class="token function">length</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+			classNames<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>name<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	fp<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> classNames<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+
+
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span>         <span class="token comment">// 返回值为整型带参的main函数. 函数体内使用或不使用argc和argv都可</span>
+<span class="token punctuation">{<!-- --></span>
+
+	<span class="token comment">//environment （设置为VERBOSE（ORT_LOGGING_LEVEL_VERBOSE）时，方便控制台输出时看到是使用了cpu还是gpu执行）</span>
+	Ort<span class="token operator">::</span>Env <span class="token function">env</span><span class="token punctuation">(</span>ORT_LOGGING_LEVEL_WARNING<span class="token punctuation">,</span> <span class="token string">"OnnxModel"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	Ort<span class="token operator">::</span>SessionOptions session_options<span class="token punctuation">;</span>
+	<span class="token comment">// 使用1个线程执行op,若想提升速度，增加线程数</span>
+	session_options<span class="token punctuation">.</span><span class="token function">SetIntraOpNumThreads</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">CUDA加速开启(由于onnxruntime的版本太高，无cuda_provider_factory.h的头文件，加速可以使用onnxruntime V1.8的版本)</span>
+	<span class="token comment">//OrtSessionOptionsAppendExecutionProvider_CUDA(session_options, 0);</span>
+	<span class="token comment">// ORT_ENABLE_ALL: 启用所有可能的优化</span>
+	session_options<span class="token punctuation">.</span><span class="token function">SetGraphOptimizationLevel</span><span class="token punctuation">(</span>GraphOptimizationLevel<span class="token operator">::</span>ORT_ENABLE_ALL<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">//load  model and creat session</span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifdef</span> <span class="token expression">_WIN32</span></span>
+	<span class="token keyword">const</span> <span class="token keyword">wchar_t</span><span class="token operator">*</span> model_path <span class="token operator">=</span> L<span class="token string">"F:\\Pycharm\\PyCharm_Study\\Others\\c++_learning\\C++_Master\\Onnx\\classification\\vgg16.onnx"</span><span class="token punctuation">;</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">else</span></span>
+	<span class="token keyword">const</span> <span class="token keyword">char</span><span class="token operator">*</span> model_path <span class="token operator">=</span> <span class="token string">"F:\\Pycharm\\PyCharm_Study\\Others\\c++_learning\\C++_Master\\Onnx\\classification\\vgg16.onnx"</span><span class="token punctuation">;</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+
+	<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"Using Onnxruntime C++ API\n"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	Ort<span class="token operator">::</span>Session <span class="token function">session</span><span class="token punctuation">(</span>env<span class="token punctuation">,</span> model_path<span class="token punctuation">,</span> session_options<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">// print model input layer (node names, types, shape etc.)</span>
+	Ort<span class="token operator">::</span>AllocatorWithDefaultOptions allocator<span class="token punctuation">;</span>
+
+
+	<span class="token comment">//model info</span>
+	<span class="token comment">// 获得模型又多少个输入和输出，一般是指对应网络层的数目</span>
+	<span class="token comment">// 一般输入只有图像的话input_nodes为1</span>
+	size_t num_input_nodes <span class="token operator">=</span> session<span class="token punctuation">.</span><span class="token function">GetInputCount</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">// 如果是多输出网络，就会是对应输出的数目</span>
+	size_t num_output_nodes <span class="token operator">=</span> session<span class="token punctuation">.</span><span class="token function">GetOutputCount</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"Number of inputs = %zu\n"</span><span class="token punctuation">,</span> num_input_nodes<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"Number of output = %zu\n"</span><span class="token punctuation">,</span> num_output_nodes<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//获取输入name</span>
+	<span class="token keyword">const</span> <span class="token keyword">char</span><span class="token operator">*</span> input_name <span class="token operator">=</span> session<span class="token punctuation">.</span><span class="token function">GetInputName</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> allocator<span class="token punctuation">)</span><span class="token punctuation">;</span>               
+	std<span class="token operator">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"input_name:"</span> <span class="token operator">&lt;&lt;</span> input_name <span class="token operator">&lt;&lt;</span> std<span class="token operator">::</span>endl<span class="token punctuation">;</span>
+	<span class="token comment">//获取输出name</span>
+	<span class="token keyword">const</span> <span class="token keyword">char</span><span class="token operator">*</span> output_name <span class="token operator">=</span> session<span class="token punctuation">.</span><span class="token function">GetOutputName</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> allocator<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	std<span class="token operator">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"output_name: "</span> <span class="token operator">&lt;&lt;</span> output_name <span class="token operator">&lt;&lt;</span> std<span class="token operator">::</span>endl<span class="token punctuation">;</span>
+    <span class="token comment">// 自动获取维度数量</span>
+	<span class="token keyword">auto</span> input_dims <span class="token operator">=</span> session<span class="token punctuation">.</span><span class="token function">GetInputTypeInfo</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">GetTensorTypeAndShapeInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">GetShape</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">auto</span> output_dims <span class="token operator">=</span> session<span class="token punctuation">.</span><span class="token function">GetOutputTypeInfo</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">GetTensorTypeAndShapeInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">GetShape</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	std<span class="token operator">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"input_dims:"</span> <span class="token operator">&lt;&lt;</span> input_dims<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">&lt;&lt;</span> std<span class="token operator">::</span>endl<span class="token punctuation">;</span>
+	std<span class="token operator">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"output_dims:"</span> <span class="token operator">&lt;&lt;</span> output_dims<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">&lt;&lt;</span> std<span class="token operator">::</span>endl<span class="token punctuation">;</span>    
+	std<span class="token operator">::</span>vector<span class="token operator">&lt;</span><span class="token keyword">const</span> <span class="token keyword">char</span><span class="token operator">*</span><span class="token operator">&gt;</span> input_names<span class="token punctuation">{<!-- --></span> input_name <span class="token punctuation">}</span><span class="token punctuation">;</span>
+	std<span class="token operator">::</span>vector<span class="token operator">&lt;</span><span class="token keyword">const</span> <span class="token keyword">char</span><span class="token operator">*</span><span class="token operator">&gt;</span> output_names <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span> output_name <span class="token punctuation">}</span><span class="token punctuation">;</span>
+	std<span class="token operator">::</span>vector<span class="token operator">&lt;</span><span class="token keyword">const</span> <span class="token keyword">char</span><span class="token operator">*</span><span class="token operator">&gt;</span> input_node_names <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span> <span class="token string">"input.1"</span> <span class="token punctuation">}</span><span class="token punctuation">;</span>
+	std<span class="token operator">::</span>vector<span class="token operator">&lt;</span><span class="token keyword">const</span> <span class="token keyword">char</span><span class="token operator">*</span><span class="token operator">&gt;</span> output_node_names <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span> <span class="token string">"70"</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+	
+
+	<span class="token comment">//加载图片</span>
+	Mat img <span class="token operator">=</span> <span class="token function">imread</span><span class="token punctuation">(</span><span class="token string">"F:\\Pycharm\\PyCharm_Study\\Others\\c++_learning\\C++_Master\\Onnx\\classification\\dog.jpg"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	Mat det1<span class="token punctuation">,</span> det2<span class="token punctuation">;</span>
+	<span class="token function">resize</span><span class="token punctuation">(</span>img<span class="token punctuation">,</span> det1<span class="token punctuation">,</span> <span class="token function">Size</span><span class="token punctuation">(</span><span class="token number">256</span><span class="token punctuation">,</span> <span class="token number">256</span><span class="token punctuation">)</span><span class="token punctuation">,</span> INTER_AREA<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	det1<span class="token punctuation">.</span><span class="token function">convertTo</span><span class="token punctuation">(</span>det1<span class="token punctuation">,</span> CV_32FC3<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">PreProcess</span><span class="token punctuation">(</span>det1<span class="token punctuation">,</span> det2<span class="token punctuation">)</span><span class="token punctuation">;</span>         <span class="token comment">//标准化处理</span>
+	Mat blob <span class="token operator">=</span> dnn<span class="token operator">::</span><span class="token function">blobFromImage</span><span class="token punctuation">(</span>det2<span class="token punctuation">,</span> <span class="token number">1.</span><span class="token punctuation">,</span> <span class="token function">Size</span><span class="token punctuation">(</span><span class="token number">224</span><span class="token punctuation">,</span> <span class="token number">224</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">Scalar</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"Load success!\n"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	clock_t startTime<span class="token punctuation">,</span> endTime<span class="token punctuation">;</span>
+	<span class="token comment">//创建输入tensor</span>
+	<span class="token keyword">auto</span> memory_info <span class="token operator">=</span> Ort<span class="token operator">::</span><span class="token class-name">MemoryInfo</span><span class="token operator">::</span><span class="token function">CreateCpu</span><span class="token punctuation">(</span>OrtAllocatorType<span class="token operator">::</span>OrtArenaAllocator<span class="token punctuation">,</span> OrtMemType<span class="token operator">::</span>OrtMemTypeDefault<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	std<span class="token operator">::</span>vector<span class="token operator">&lt;</span>Ort<span class="token operator">::</span>Value<span class="token operator">&gt;</span> input_tensors<span class="token punctuation">;</span>
+	input_tensors<span class="token punctuation">.</span><span class="token function">emplace_back</span><span class="token punctuation">(</span>Ort<span class="token operator">::</span>Value<span class="token operator">::</span>CreateTensor<span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span><span class="token punctuation">(</span>memory_info<span class="token punctuation">,</span> blob<span class="token punctuation">.</span>ptr<span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> blob<span class="token punctuation">.</span><span class="token function">total</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> input_dims<span class="token punctuation">.</span><span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> input_dims<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">/*cout &lt;&lt; int(input_dims.size()) &lt;&lt; endl;*/</span>
+	startTime <span class="token operator">=</span> <span class="token function">clock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">推理(score model &amp; input tensor, get back output tensor)</span>
+	<span class="token keyword">auto</span> output_tensors <span class="token operator">=</span> session<span class="token punctuation">.</span><span class="token function">Run</span><span class="token punctuation">(</span>Ort<span class="token operator">::</span>RunOptions<span class="token punctuation">{<!-- --></span> <span class="token keyword">nullptr</span> <span class="token punctuation">}</span><span class="token punctuation">,</span> input_node_names<span class="token punctuation">.</span><span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> input_tensors<span class="token punctuation">.</span><span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> input_names<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> output_node_names<span class="token punctuation">.</span><span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> output_node_names<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	endTime <span class="token operator">=</span> <span class="token function">clock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">assert</span><span class="token punctuation">(</span>output_tensors<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">1</span> <span class="token operator">&amp;&amp;</span> output_tensors<span class="token punctuation">.</span><span class="token function">front</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">IsTensor</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//除了第一个节点外，其他参数与原网络对应不上程序就会无法执行</span>
+	<span class="token comment">//第二个参数代表输入节点的名称集合</span>
+    <span class="token comment">//第四个参数1代表输入层的数目</span>
+	<span class="token comment">//第五个参数代表输出节点的名称集合</span>
+	<span class="token comment">//最后一个参数代表输出节点的数目</span>
+	<span class="token comment">  获取输出(Get pointer to output tensor float values)</span>
+	<span class="token keyword">float</span><span class="token operator">*</span> floatarr <span class="token operator">=</span> output_tensors<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">.</span>GetTensorMutableData<span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>     <span class="token comment">// 也可以使用output_tensors.front(); 获取list中的第一个元素变量  list.pop_front(); 删除list中的第一个位置的元素</span>
+	<span class="token comment">// 得到最可能分类输出</span>
+	Mat newarr <span class="token operator">=</span> Mat_<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token operator">&gt;</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1000</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//定义一个1*1000的矩阵</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> newarr<span class="token punctuation">.</span>rows<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> j <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> j <span class="token operator">&lt;</span> newarr<span class="token punctuation">.</span>cols<span class="token punctuation">;</span> j<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token comment">//矩阵列数循环</span>
+		<span class="token punctuation">{<!-- --></span>
+			newarr<span class="token punctuation">.</span>at<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token operator">&gt;</span><span class="token punctuation">(</span>i<span class="token punctuation">,</span> j<span class="token punctuation">)</span> <span class="token operator">=</span> floatarr<span class="token punctuation">[</span>j<span class="token punctuation">]</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+	<span class="token comment">/*cout &lt;&lt; newarr.size() &lt;&lt; endl;*/</span>
+
+	vector<span class="token operator">&lt;</span>String<span class="token operator">&gt;</span> labels <span class="token operator">=</span> <span class="token function">readClassNames</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> n <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> n <span class="token operator">&lt;</span> newarr<span class="token punctuation">.</span>rows<span class="token punctuation">;</span> n<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		Point classNumber<span class="token punctuation">;</span>
+		<span class="token keyword">double</span> classProb<span class="token punctuation">;</span>
+		Mat probMat <span class="token operator">=</span> <span class="token function">newarr</span><span class="token punctuation">(</span><span class="token function">Rect</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> n<span class="token punctuation">,</span> <span class="token number">1000</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		Mat result <span class="token operator">=</span> probMat<span class="token punctuation">.</span><span class="token function">reshape</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token function">minMaxLoc</span><span class="token punctuation">(</span>result<span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>classProb<span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>classNumber<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">int</span> classidx <span class="token operator">=</span> classNumber<span class="token punctuation">.</span>x<span class="token punctuation">;</span>
+		<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"\n current image classification : %s, possible : %.2f\n"</span><span class="token punctuation">,</span> labels<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span>classidx<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">c_str</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> classProb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+		<span class="token comment">// 显示文本</span>
+		<span class="token function">putText</span><span class="token punctuation">(</span>img<span class="token punctuation">,</span> labels<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span>classidx<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">Point</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">)</span><span class="token punctuation">,</span> FONT_HERSHEY_SIMPLEX<span class="token punctuation">,</span> <span class="token number">0.6</span><span class="token punctuation">,</span> <span class="token function">Scalar</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">255</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token function">imshow</span><span class="token punctuation">(</span><span class="token string">"Image Classification"</span><span class="token punctuation">,</span> img<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token function">waitKey</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+	<span class="token comment"> 计算运行时间</span>
+	std<span class="token operator">::</span>cout <span class="token operator">&lt;&lt;</span> <span class="token string">"The run time is:"</span> <span class="token operator">&lt;&lt;</span> <span class="token punctuation">(</span><span class="token keyword">double</span><span class="token punctuation">)</span><span class="token punctuation">(</span>endTime <span class="token operator">-</span> startTime<span class="token punctuation">)</span> <span class="token operator">/</span> CLOCKS_PER_SEC <span class="token operator">&lt;&lt;</span> <span class="token string">"s"</span> <span class="token operator">&lt;&lt;</span> std<span class="token operator">::</span>endl<span class="token punctuation">;</span>
+	<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"Done!\n"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">system</span><span class="token punctuation">(</span><span class="token string">"pause"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><strong>结果:</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/decc034ec02f43d5bdffb39980d3dca6.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5Yqq5Yqb55qE6KKB,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <strong>current image classification : French bulldog, possible : 16.17</strong></p>
+<h1><a id="2_copencv_197"></a>2. c++使用opencv进行推理</h1>
+<p><strong>对两张图片同时进行推理</strong></p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;opencv2/opencv.hpp&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;opencv2/dnn.hpp&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;fstream&gt;</span></span>
+<span class="token comment">/******************************************************
+Mat cv::dnn::blobFromImage(
+	InputArray 	image,
+	double 	scalefactor = 1.0,
+	const Size &amp; 	size = Size(),
+	const Scalar &amp; 	mean = Scalar(),
+	bool 	swapRB = false,
+	bool 	crop = false,
+	int 	ddepth = CV_32F
+)
+
+Mat cv::dnn::blobFromImages(
+	InputArrayOfArrays 	images,
+	double 	scalefactor = 1.0,
+	Size 	size = Size(),
+	const Scalar &amp; 	mean = Scalar(),
+	bool 	swapRB = false,
+	bool 	crop = false,
+	int 	ddepth = CV_32F 
+)
+参数解释
+Images表示多张图像,image表示单张图像
+Scalefactor表示放缩
+Size表示图像大小
+Mean表示均值
+swapRB是否交换通道
+crop是否剪切
+ddepth 输出的类型，默认是浮点数格式
+********************************************************/</span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> cv<span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> cv<span class="token operator">::</span>dnn<span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span>
+
+
+<span class="token comment">// 图像处理  标准化处理</span>
+<span class="token keyword">void</span> <span class="token function">PreProcess</span><span class="token punctuation">(</span><span class="token keyword">const</span> Mat<span class="token operator">&amp;</span> image<span class="token punctuation">,</span> Mat<span class="token operator">&amp;</span> image_blob<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	Mat input<span class="token punctuation">;</span>
+	image<span class="token punctuation">.</span><span class="token function">copyTo</span><span class="token punctuation">(</span>input<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+	<span class="token comment">//数据处理 标准化</span>
+	std<span class="token operator">::</span>vector<span class="token operator">&lt;</span>Mat<span class="token operator">&gt;</span> channels<span class="token punctuation">,</span> channel_p<span class="token punctuation">;</span>
+	<span class="token function">split</span><span class="token punctuation">(</span>input<span class="token punctuation">,</span> channels<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	Mat R<span class="token punctuation">,</span> G<span class="token punctuation">,</span> B<span class="token punctuation">;</span>
+	B <span class="token operator">=</span> channels<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	G <span class="token operator">=</span> channels<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	R <span class="token operator">=</span> channels<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	B <span class="token operator">=</span> <span class="token punctuation">(</span>B <span class="token operator">/</span> <span class="token number">255.</span> <span class="token operator">-</span> <span class="token number">0.406</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">0.225</span><span class="token punctuation">;</span>
+	G <span class="token operator">=</span> <span class="token punctuation">(</span>G <span class="token operator">/</span> <span class="token number">255.</span> <span class="token operator">-</span> <span class="token number">0.456</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">0.224</span><span class="token punctuation">;</span>
+	R <span class="token operator">=</span> <span class="token punctuation">(</span>R <span class="token operator">/</span> <span class="token number">255.</span> <span class="token operator">-</span> <span class="token number">0.485</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token number">0.229</span><span class="token punctuation">;</span>
+
+	channel_p<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>R<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	channel_p<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>G<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	channel_p<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>B<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	Mat outt<span class="token punctuation">;</span>
+	<span class="token function">merge</span><span class="token punctuation">(</span>channel_p<span class="token punctuation">,</span> outt<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	image_blob <span class="token operator">=</span> outt<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+
+
+String bin_model <span class="token operator">=</span> <span class="token string">"F:\\Pycharm\\PyCharm_Study\\Others\\c++_learning\\C++_Master\\Onnx\\classification\\vgg16.onnx"</span><span class="token punctuation">;</span>
+String labels_txt_file <span class="token operator">=</span> <span class="token string">"F:\\Pycharm\\PyCharm_Study\\Others\\c++_learning\\C++_Master\\Onnx\\classification\\classification_classes_ILSVRC2012.txt"</span><span class="token punctuation">;</span>
+vector<span class="token operator">&lt;</span>String<span class="token operator">&gt;</span> <span class="token function">readClassNames</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>                  <span class="token comment">// string对象作为vector对象 </span>
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token keyword">int</span> argc<span class="token punctuation">,</span> <span class="token keyword">char</span><span class="token operator">*</span><span class="token operator">*</span> argv<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+	Mat image1 <span class="token operator">=</span> <span class="token function">imread</span><span class="token punctuation">(</span><span class="token string">"F:\\Pycharm\\PyCharm_Study\\Others\\c++_learning\\C++_Master\\Onnx\\classification\\dog.jpg"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	Mat image2 <span class="token operator">=</span> <span class="token function">imread</span><span class="token punctuation">(</span><span class="token string">"F:\\Pycharm\\PyCharm_Study\\Others\\c++_learning\\C++_Master\\Onnx\\classification\\rabbit.jpg"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//用于显示</span>
+	vector<span class="token operator">&lt;</span>Mat<span class="token operator">&gt;</span>Showimages<span class="token punctuation">;</span>
+	Showimages<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>image1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	Showimages<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>image2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">//处理image1</span>
+	<span class="token function">resize</span><span class="token punctuation">(</span>image1<span class="token punctuation">,</span> image1<span class="token punctuation">,</span> <span class="token function">Size</span><span class="token punctuation">(</span><span class="token number">256</span><span class="token punctuation">,</span> <span class="token number">256</span><span class="token punctuation">)</span><span class="token punctuation">,</span> INTER_AREA<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	image1<span class="token punctuation">.</span><span class="token function">convertTo</span><span class="token punctuation">(</span>image1<span class="token punctuation">,</span> CV_32FC3<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">PreProcess</span><span class="token punctuation">(</span>image1<span class="token punctuation">,</span> image1<span class="token punctuation">)</span><span class="token punctuation">;</span>         <span class="token comment">//标准化处理</span>
+	<span class="token comment">//处理image2</span>
+	<span class="token function">resize</span><span class="token punctuation">(</span>image2<span class="token punctuation">,</span> image2<span class="token punctuation">,</span> <span class="token function">Size</span><span class="token punctuation">(</span><span class="token number">256</span><span class="token punctuation">,</span> <span class="token number">256</span><span class="token punctuation">)</span><span class="token punctuation">,</span> INTER_AREA<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	image2<span class="token punctuation">.</span><span class="token function">convertTo</span><span class="token punctuation">(</span>image2<span class="token punctuation">,</span> CV_32FC3<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">PreProcess</span><span class="token punctuation">(</span>image2<span class="token punctuation">,</span> image2<span class="token punctuation">)</span><span class="token punctuation">;</span>         <span class="token comment">//标准化处理</span>
+	<span class="token comment">//将image1和image2合并到images</span>
+	vector<span class="token operator">&lt;</span>Mat<span class="token operator">&gt;</span> images<span class="token punctuation">;</span>
+	images<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>image1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	images<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>image2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	vector<span class="token operator">&lt;</span>String<span class="token operator">&gt;</span> labels <span class="token operator">=</span> <span class="token function">readClassNames</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token keyword">int</span> w <span class="token operator">=</span> <span class="token number">224</span><span class="token punctuation">;</span>
+	<span class="token keyword">int</span> h <span class="token operator">=</span> <span class="token number">224</span><span class="token punctuation">;</span>
+
+	<span class="token comment">// 加载网络</span>
+	cv<span class="token operator">::</span>dnn<span class="token operator">::</span>Net net <span class="token operator">=</span> cv<span class="token operator">::</span>dnn<span class="token operator">::</span><span class="token function">readNetFromONNX</span><span class="token punctuation">(</span>bin_model<span class="token punctuation">)</span><span class="token punctuation">;</span>  <span class="token comment">// 加载训练好的识别模型</span>
+
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>net<span class="token punctuation">.</span><span class="token function">empty</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"read onnx model data failure...\n"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">return</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	Mat inputBlob <span class="token operator">=</span> <span class="token function">blobFromImages</span><span class="token punctuation">(</span>images<span class="token punctuation">,</span> <span class="token number">1.0</span><span class="token punctuation">,</span> <span class="token function">Size</span><span class="token punctuation">(</span>w<span class="token punctuation">,</span> h<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">Scalar</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token comment">// 执行图像分类</span>
+	net<span class="token punctuation">.</span><span class="token function">setInput</span><span class="token punctuation">(</span>inputBlob<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	cv<span class="token operator">::</span>Mat prob <span class="token operator">=</span> net<span class="token punctuation">.</span><span class="token function">forward</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>     <span class="token comment">// 推理出结果</span>
+	cout <span class="token operator">&lt;&lt;</span> prob<span class="token punctuation">.</span>cols<span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+	vector<span class="token operator">&lt;</span><span class="token keyword">double</span><span class="token operator">&gt;</span> times<span class="token punctuation">;</span>
+	<span class="token keyword">double</span> time <span class="token operator">=</span> net<span class="token punctuation">.</span><span class="token function">getPerfProfile</span><span class="token punctuation">(</span>times<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">float</span> ms <span class="token operator">=</span> <span class="token punctuation">(</span>time <span class="token operator">*</span> <span class="token number">1000</span><span class="token punctuation">)</span> <span class="token operator">/</span> <span class="token function">getTickFrequency</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"current inference time : %.2f ms \n"</span><span class="token punctuation">,</span> ms<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token comment">// 得到最可能分类输出</span>
+	
+	<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> n <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> n <span class="token operator">&lt;</span> prob<span class="token punctuation">.</span>rows<span class="token punctuation">;</span> n<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+		Point classNumber<span class="token punctuation">;</span>
+		<span class="token keyword">double</span> classProb<span class="token punctuation">;</span>
+		Mat probMat <span class="token operator">=</span> <span class="token function">prob</span><span class="token punctuation">(</span><span class="token function">Rect</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> n<span class="token punctuation">,</span> <span class="token number">1000</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">clone</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		Mat result <span class="token operator">=</span> probMat<span class="token punctuation">.</span><span class="token function">reshape</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token function">minMaxLoc</span><span class="token punctuation">(</span>result<span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>classProb<span class="token punctuation">,</span> <span class="token constant">NULL</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>classNumber<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">int</span> classidx <span class="token operator">=</span> classNumber<span class="token punctuation">.</span>x<span class="token punctuation">;</span>
+		<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"\n current image classification : %s, possible : %.2f\n"</span><span class="token punctuation">,</span> labels<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span>classidx<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">c_str</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> classProb<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+		<span class="token comment">// 显示文本</span>
+		<span class="token function">putText</span><span class="token punctuation">(</span>Showimages<span class="token punctuation">[</span>n<span class="token punctuation">]</span><span class="token punctuation">,</span> labels<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span>classidx<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">Point</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">)</span><span class="token punctuation">,</span> FONT_HERSHEY_SIMPLEX<span class="token punctuation">,</span> <span class="token number">0.6</span><span class="token punctuation">,</span> <span class="token function">Scalar</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">255</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token function">imshow</span><span class="token punctuation">(</span><span class="token string">"Image Classification"</span><span class="token punctuation">,</span> Showimages<span class="token punctuation">[</span>n<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token function">waitKey</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token punctuation">}</span>
+	<span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+std<span class="token operator">::</span>vector<span class="token operator">&lt;</span>String<span class="token operator">&gt;</span> <span class="token function">readClassNames</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	std<span class="token operator">::</span>vector<span class="token operator">&lt;</span>String<span class="token operator">&gt;</span> classNames<span class="token punctuation">;</span>
+
+	std<span class="token operator">::</span>ifstream <span class="token function">fp</span><span class="token punctuation">(</span>labels_txt_file<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>fp<span class="token punctuation">.</span><span class="token function">is_open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"could not open file...\n"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token function">exit</span><span class="token punctuation">(</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	std<span class="token operator">::</span>string name<span class="token punctuation">;</span>
+	<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token operator">!</span>fp<span class="token punctuation">.</span><span class="token function">eof</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		std<span class="token operator">::</span><span class="token function">getline</span><span class="token punctuation">(</span>fp<span class="token punctuation">,</span> name<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>name<span class="token punctuation">.</span><span class="token function">length</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+			classNames<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>name<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	fp<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> classNames<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/91c4632409884cf681545928df99b005.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5Yqq5Yqb55qE6KKB,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <strong>current image classification : French bulldog, possible : 16.17</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/cba9fddc65814540805b43d73182778c.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA5Yqq5Yqb55qE6KKB,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <strong>current image classification : hare, possible : 8.47</strong></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

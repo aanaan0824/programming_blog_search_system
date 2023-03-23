@@ -1,0 +1,440 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>tips：</p>
+<p>文件地址（按需自己改造去）<a href="https://download.csdn.net/download/tdjqqq/85761940" title="https://download.csdn.net/download/tdjqqq/85761940">https://download.csdn.net/download/tdjqqq/85761940</a></p>
+<p>xlsx.js读取日期时，如果默认转成js日期的话，会比正常的时间少43秒，设置日期读取时，直接转成字符串即可，如下图所示，那么转换后的数据就是字符串型日期："2022-05-09"，如果需要到具体时分秒，请自行减43秒。</p>
+<p><img alt="" height="435" src="image\2e65086566ff407c96ecec80eb3d9793.png" width="822"/></p>
+<p></p>
+<pre><code class="language-javascript">//转换数据
+                    //let tempSheetData = _this.handleGetData(XLSX.utils.sheet_to_json(workSheet))
+                    let tempSheetData = XLSX.utils.sheet_to_json(workSheet, {
+                        defval: null            //单元格为空时的默认值
+                        , raw: false            //使用w的值而不是v
+                        , dateNF: 'yyyy-MM-dd'   //日期格式
+                    })</code></pre>
+<p>1 需要安装如下依赖内容，该依赖也可以导出excel</p>
+<pre><code>npm install -S file-saver
+npm install -S xlsx
+npm install -S xlsx-style
+npm install -D script-loader</code></pre>
+<p>2 读取excel内容</p>
+<p>说明：</p>
+<ol><li>excel表必须要有工作表（sheet）,且隐藏的工作表也会一起读取</li><li>结果会以对象形式导出</li><li>我用的组件是ant-vue</li><li>注意，你的上传组件方法，传参中一定要有file，el-element可用on-change，且注意ACTIONS要为空，否则只能读取一次</li></ol>
+<p> 组件如下：</p>
+<pre><code class="language-javascript">&lt;template&gt;
+    &lt;div class="excel-reader"&gt;
+        &lt;a-upload name="avatar" class="avatar-uploader" v-loading="loading" :show-upload-list="false"
+            :before-upload="handleBeforeUpload"&gt;
+            &lt;a-button title="读取Excel"&gt;
+                &lt;a-icon type="file-excel" /&gt; Excel Reader
+            &lt;/a-button&gt;
+        &lt;/a-upload&gt;
+    &lt;/div&gt;
+&lt;/template&gt;
+  
+&lt;script&gt;
+var XLSX = require('xlsx')
+import { readFile } from './excelRreadFile.js'; //读取excel文件方法
+
+export default {
+    name: 'ViExcelReader',
+    props: {
+        allowed: {
+            type: Array,
+            default () {
+                //类型列表
+                return [
+                    'xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'xls', "application/vnd.ms-excel",
+                    'csv', "text/csv"]
+            },
+        },
+    },
+    data () {
+        return {
+            loading: false
+        }
+    },
+    // 定义引入的组件
+    components: {},
+    //变量监听
+    watch: {},
+    // 页面初始化
+    created () { },
+    // 页面DOM加载完成
+    mounted () {
+
+    },
+    //离开页面时执行
+    destroyed () { },
+    // 页面方法
+    methods: {
+        async handleBeforeUpload (file) {
+            //选择文件后
+            let _this = this
+
+            _this.showLoading(true)
+
+            //检测文件类型
+            if (!_this.checkFileType(file)) {
+                _this.$common.showMsg({
+                    type: 'error',
+                    content: `抱歉，请选择excel文件`,
+                })
+
+                _this.showLoading(false)
+                return false
+            }
+
+            //选择excel文件后，并读取其内容（文件流）
+            let dataBinary = await readFile(file)
+            if (dataBinary != null) {
+                // 将整个文件以二进制形式读取
+                let workBook = XLSX.read(dataBinary, { type: 'binary', cellDates: true })
+
+                // 工作表数量
+                let workBookLen = workBook.SheetNames.length
+                
+                // excel工作簿内容
+                let excelBook = []
+
+                //读取每个sheets表
+                for (let i = 0; i &lt; workBookLen; i++) {
+                    let workSheet = workBook.Sheets[workBook.SheetNames[i]]
+                    excelBook.push({
+                        sheetName: workBook.SheetNames[i],
+                        data: XLSX.utils.sheet_to_json(workSheet, {
+                        defval: null            //单元格为空时的默认值
+                        , raw: false            //使用w的值而不是v
+                        , dateNF: 'yyyy-MM-dd'   //日期格式
+                        })
+                    })
+                }
+
+                _this.showLoading(false)
+                console.log({
+                    name: file.name,
+                    length: workBookLen,
+                    data: excelBook
+                })
+                //导出工作表内容
+                _this.$emit("onChange", {
+                    name: file.name,
+                    length: workBookLen,
+                    data: excelBook
+                })
+
+            }
+        },
+
+        showLoading (val) {
+            let _this = this
+            _this.loading = val
+        },
+        checkFileType (file) {
+            let _this = this
+
+            let flog = false
+
+            //得到上传文件的值
+            let fileName = file.name
+
+            //取其类型
+            let fileType = fileName.lastIndexOf('.')
+
+            //返回位于String对象中指定位置的子字符串并转换为小写.
+            let extension = fileName
+                .substring(fileType)
+                .toLowerCase()
+                .replace('.', '')
+            //判断允许上传的文件格式
+            if (_this.allowed.includes(extension)) {
+                flog = true
+            } else {
+                flog = false
+            }
+
+            return flog
+        }
+    },
+}
+&lt;/script&gt;
+ 
+&lt;style lang="less" scoped&gt;
+.excel-reader {
+    display: inline-block;
+    .ant-upload-text {
+    }
+}
+&lt;/style&gt;</code></pre>
+<p>excelRreadFile.js</p>
+<pre><code>export const readFile = (file) =&gt; {
+    return new Promise((resolve) =&gt; {
+        if (window.FileReader) {
+            let reader = new FileReader()
+            //将文件读取为二进制码
+            reader.readAsBinaryString(file)
+
+            //文件读取成功完成时，若失败，结果为null，否则为读取的结果
+            reader.onload = (ev) =&gt; {
+                resolve(ev.target.result)
+            }
+        } else {
+            //不支持，返回结果为null
+            alert('抱歉，您的浏览器，无法支持读取文件功能！')
+            resolve(null)
+        }
+    })
+}</code></pre>
+<p></p>
+<p>只有一张工作表的excel，及结果 </p>
+<p><img alt="" height="289" src="image\173e14428b1245fd9c6e848ca4a30ef4.png" width="739"/></p>
+<p> <img alt="" height="252" src="image\772dd9499b7b4e288813ce5854b60588.png" width="589"/></p>
+<p>有多张工作表的excel，及结果 </p>
+<p><img alt="" height="289" src="image\3654a348ac604860bcfb83719169b836.png" width="739"/></p>
+<p> <img alt="" height="268" src="image\660c682fcc464d058b55628624e3a4f5.png" width="641"/></p>
+<p></p>
+<p>自动转数据格式版本</p>
+<pre><code class="language-javascript">&lt;template&gt;
+    &lt;div class="excel-reader"&gt;
+        &lt;a-upload name="avatar" class="avatar-uploader" v-loading="loading" :show-upload-list="false"
+            :before-upload="handleBeforeUpload"&gt;
+            &lt;a-button title="读取Excel"&gt;
+                &lt;a-icon type="file-excel" /&gt; Excel Reader
+            &lt;/a-button&gt;
+        &lt;/a-upload&gt;
+    &lt;/div&gt;
+&lt;/template&gt;
+  
+&lt;script&gt;
+var XLSX = require('xlsx')
+import { readFile } from './excelRreadFile.js'; //读取excel文件方法
+
+export default {
+    name: 'ViExcelReader',
+    props: {
+        allowed: {
+            type: Array,
+            default () {
+                //类型列表
+                return [
+                    'xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'xls', "application/vnd.ms-excel",
+                    'csv', "text/csv"]
+            },
+        },
+        transFiled: {
+            type: Object,
+            default () {
+                return {
+                    origin: 'zh',
+                    target: 'field'
+                }
+            }
+        },
+        header: {
+            type: Array,
+            default () {
+                return [{
+                    field: 'no',//字段列
+                    zh: '序号',//excel的标题
+                    en: 'No',//转换的列名
+                },
+                {
+                    field: 'student_name',//字段列
+                    zh: '姓名',//excel的标题
+                    en: 'student name',//转换的列名
+                },
+                {
+                    field: 'chinese',//字段列
+                    zh: '语文',//excel的标题
+                    en: 'chinese',//转换的列名
+                },
+                {
+                    field: 'math',//字段列
+                    zh: '数学',//excel的标题
+                    en: 'math',//转换的列名
+                },
+                {
+                    field: 'english',//字段列
+                    zh: '英语',//excel的标题
+                    en: 'english',//转换的列名
+                },
+                {
+                    field: 'exam_date',//字段列
+                    zh: '考试日期',//excel的标题
+                    en: 'exam date',//转换的列名
+                },
+                ]
+            },
+        },
+        field: {
+            type: Array,
+            default () {
+                return []
+            },
+        },
+    },
+    data () {
+        return {
+            loading: false
+        }
+    },
+    // 定义引入的组件
+    components: {},
+    //变量监听
+    watch: {},
+    // 页面初始化
+    created () { },
+    // 页面DOM加载完成
+    mounted () {
+
+    },
+    //离开页面时执行
+    destroyed () { },
+    // 页面方法
+    methods: {
+        async handleBeforeUpload (file) {
+            //选择文件后
+            let _this = this
+
+            _this.showLoading(true)
+
+            //检测文件类型
+            if (!_this.checkFileType(file)) {
+                _this.$common.showMsg({
+                    type: 'error',
+                    content: `抱歉，请选择excel文件`,
+                })
+
+                _this.showLoading(false)
+                return false
+            }
+
+            //选择excel文件后，并读取其内容（文件流）
+            let dataBinary = await readFile(file)
+            if (dataBinary != null) {
+                // 将整个文件以二进制形式读取
+                let workBook = XLSX.read(dataBinary, { type: 'binary', cellDates: true, cellText: false })
+
+                // 工作表数量
+                let workBookLen = workBook.SheetNames.length
+
+                // excel工作簿内容
+                let excelBook = []
+
+                //读取每个sheets表
+                for (let i = 0; i &lt; workBookLen; i++) {
+                    let workSheet = workBook.Sheets[workBook.SheetNames[i]]
+
+                    //转换数据
+                    let tempSheetData = []
+                    if (Object.keys(_this.transFiled).length == 0 || _this.header.length == 0) {
+                        //默认导出，不转换
+                        tempSheetData = XLSX.utils.sheet_to_json(workSheet, {
+                            defval: null            //单元格为空时的默认值
+                            , raw: false            //使用w的值而不是v
+                            , dateNF: 'yyyy-MM-dd'   //日期格式
+                        })
+                    } else {
+                        //根据实际情况导出
+                        tempSheetData = _this.handleGetData(XLSX.utils.sheet_to_json(workSheet, {
+                            defval: null            //单元格为空时的默认值
+                            , raw: false            //使用w的值而不是v
+                            , dateNF: 'yyyy-MM-dd'   //日期格式
+                        }))
+                    }
+
+                    excelBook.push({
+                        sheetName: workBook.SheetNames[i],
+                        data: tempSheetData
+                    })
+                }
+
+                _this.showLoading(false)
+                console.log({
+                    name: file.name,
+                    length: workBookLen,
+                    data: excelBook
+                })
+                //导出工作表内容
+                _this.$emit("onChange", {
+                    name: file.name,
+                    length: workBookLen,
+                    data: excelBook
+                })
+
+            }
+        },
+        handleGetData (data) {
+            //转换数据
+            let _this = this
+            if (data.length == 0) {
+                return []
+            }
+
+            let resultArr = []
+            data.filter(item =&gt; {
+                let row = {}
+                for (let i in item) {
+                    for (let m = 0; m &lt; _this.header.length; m++) {
+                        let mItem = _this.header[m]
+                        if (mItem[_this.transFiled.origin] == i) {
+                            row[mItem[_this.transFiled.target]] = item[i]
+                            break
+                        }
+                    }
+                }
+                resultArr.push(row)
+            })
+
+            return resultArr
+        },
+        showLoading (val) {
+            let _this = this
+            _this.loading = val
+        },
+        checkFileType (file) {
+            let _this = this
+
+            let flog = false
+
+            //得到上传文件的值
+            let fileName = file.name
+
+            //取其类型
+            let fileType = fileName.lastIndexOf('.')
+
+            //返回位于String对象中指定位置的子字符串并转换为小写.
+            let extension = fileName
+                .substring(fileType)
+                .toLowerCase()
+                .replace('.', '')
+            //判断允许上传的文件格式
+            if (_this.allowed.includes(extension)) {
+                flog = true
+            } else {
+                flog = false
+            }
+
+            return flog
+        }
+    },
+}
+&lt;/script&gt;
+ 
+&lt;style lang="less" scoped&gt;
+.excel-reader {
+    display: inline-block;
+    .ant-upload-text {
+    }
+}
+&lt;/style&gt;</code></pre>
+<p></p>
+<p></p>
+<p>结论：</p>
+<p>千万要注意，隐藏的sheet表也会被读取出来的，且转换后的数据，会以中文为标题出现，有需要的朋友可以转换下对象，否则可能会有问题。 </p>
+<p></p>
+</div>
+</div>

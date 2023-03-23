@@ -1,0 +1,189 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>WebSocket(SuperSocket.WebSocket实现)服务端主动断开客户端的连接</p>
+<p>使用SuperSocket.WebSocket实现的WebSocket服务端，当有WebSocket客户端连接上以后，WebSocket客户端如果发消息太长或者过大时，就会出现WebSocket主动断开客户端的连接的问题，解决如下：</p>
+<pre>using SuperSocket.SocketBase.Config;
+using SuperWebSocket;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Web;
+
+namespace TESTeee
+{
+    internal class Program
+    {
+        public static WebSocketServer ws = null;
+        static void Main(string[] args)
+        {
+            Console.WriteLine("WebSocket服务");
+            ws = new WebSocketServer();
+            ws.NewSessionConnected += Ws_NewSessionConnected;
+            ws.NewMessageReceived += Ws_NewMessageReceived;
+            ws.SessionClosed += Ws_SessionClosed;
+            //SuperSocket可以通过对ServerConfig对象进行设置，可以设置最大接收缓存大小(ReceiveBufferSize),也可以设置请求信息的最大长度(MaxRequestLength)有所限制，默认请求最大长度为1024. 该配置可以通过一个ServerConfig的对象进行设置
+            var config = new ServerConfig()
+            {
+                #region MyRegion
+                //public const int DefaultReceiveBufferSize = 4096;
+                //public const int DefaultListenBacklog = 100;
+                //public const int DefaultKeepAliveTime = 600;
+                //public const int DefaultSessionSnapshotInterval = 5;
+                //public const int DefaultSendBufferSize = 2048;
+                //public const int DefaultIdleSessionTimeOut = 300;
+                //public const int DefaultKeepAliveInterval = 60;
+                //public const int DefaultSendTimeout = 5000;
+                //public const int DefaultMaxRequestLength = 1024;
+                //public const int DefaultSendingQueueSize = 5;
+                //public const int DefaultMaxConnectionNumber = 100;
+                //public const int DefaultClearIdleSessionInterval = 120;
+                #endregion
+                // 限制请求的数据长度最大为1M
+                MaxRequestLength = 1024 * 1024,
+                ReceiveBufferSize = 1024 * 1024,
+                Ip = "127.0.0.1",
+                Port = 1234
+            };
+            //ws.Setup(config);
+            //if (!ws.Setup("127.0.0.1", 1234))
+            //if (!ws.Setup(config))
+            //{
+            //    Console.WriteLine("ChatWebSocket 设置WebSocket服务侦听地址失败");
+            //    return;
+            //}
+            ws.Setup(config, logFactory: new SuperSocket.SocketBase.Logging.ConsoleLogFactory());
+            if (!ws.Start())
+            {
+                Console.WriteLine("ChatWebSocket 启动WebSocket服务侦听失败");
+                return;
+            }
+            Console.WriteLine("ChatWebSocket 启动服务成功");
+            Console.ReadKey();
+            ws.Stop();
+        }
+
+        public static void Ws_NewSessionConnected(WebSocketSession session)
+        {
+            Console.WriteLine("{0:HH:MM:ss}  与客户端:{1}创建新会话", DateTime.Now, GetSessionName(session));
+            var msg = string.Format("{0:HH:MM:ss} {1} 进入聊天室", DateTime.Now, GetSessionName(session));
+
+            SendToAll(session, msg);
+        }
+
+        private static void Ws_NewMessageReceived(WebSocketSession session, string value)
+        {
+            var msg = string.Format("{0:HH:MM:ss} {1} 说: {2}", DateTime.Now, GetSessionName(session), value);
+            Console.WriteLine($"{msg}");
+            SendToAll(session, value);
+        }
+
+        public static void Ws_SessionClosed(WebSocketSession session, SuperSocket.SocketBase.CloseReason value)
+        {
+            Console.WriteLine("{0:HH:MM:ss}  与客户端:{1}的会话被关闭 原因：{2}", DateTime.Now, GetSessionName(session), value);
+            var msg = string.Format("{0:HH:MM:ss} {1} 离开聊天室", DateTime.Now, GetSessionName(session));
+            SendToAll(session, msg);
+        }
+
+        /// &lt;summary&gt;
+        /// 启动服务
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public static void Start()
+        {
+            if (!ws.Setup("127.0.0.1", 1234))
+            {
+                Console.WriteLine("ChatWebSocket 设置WebSocket服务侦听地址失败");
+                return;
+            }
+
+            if (!ws.Start())
+            {
+                Console.WriteLine("ChatWebSocket 启动WebSocket服务侦听失败");
+                return;
+            }
+
+            Console.WriteLine("ChatWebSocket 启动服务成功");
+        }
+
+        /// &lt;summary&gt;
+        /// 停止侦听服务
+        /// &lt;/summary&gt;
+        public static void Stop()
+        {
+
+            if (ws != null)
+            {
+                ws.Stop();
+            }
+        }
+
+        public static string GetSessionName(WebSocketSession session)
+        {
+            return HttpUtility.UrlDecode(session.Path.TrimStart('/'));
+        }
+
+        public static void SendToAll(WebSocketSession session, string msg)
+        {
+            foreach (var sendSession in session.AppServer.GetAllSessions())
+            {
+                sendSession.Send(msg);
+            }
+        }
+    }
+}</pre>
+<p></p>
+<p>SuperSocket可以通过一个ServerConfig的对象进行配置设置，ServerConfig对象中默认配置如下：</p>
+<pre> //
+        // Summary:
+        //     Default ReceiveBufferSize
+        public const int DefaultReceiveBufferSize = 4096;
+        //
+        // Summary:
+        //     The default listen backlog
+        public const int DefaultListenBacklog = 100;
+        //
+        // Summary:
+        //     The default keep alive time
+        public const int DefaultKeepAliveTime = 600;
+        //
+        // Summary:
+        //     The default session snapshot interval
+        public const int DefaultSessionSnapshotInterval = 5;
+        //
+        // Summary:
+        //     The default send buffer size
+        public const int DefaultSendBufferSize = 2048;
+        //
+        // Summary:
+        //     Default idle session timeout
+        public const int DefaultIdleSessionTimeOut = 300;
+        //
+        // Summary:
+        //     The default keep alive interval
+        public const int DefaultKeepAliveInterval = 60;
+        //
+        // Summary:
+        //     Default send timeout value, in milliseconds
+        public const int DefaultSendTimeout = 5000;
+        //
+        // Summary:
+        //     Default MaxRequestLength
+        public const int DefaultMaxRequestLength = 1024;
+        //
+        // Summary:
+        //     Default sending queue size
+        public const int DefaultSendingQueueSize = 5;
+        //
+        // Summary:
+        //     Default MaxConnectionNumber
+        public const int DefaultMaxConnectionNumber = 100;
+        //
+        // Summary:
+        //     Default clear idle session interval
+        public const int DefaultClearIdleSessionInterval = 120;</pre>
+<p></p>
+</div>
+</div>

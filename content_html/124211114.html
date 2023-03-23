@@ -1,0 +1,368 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>项目中需要用到sm2加密，在网上搜索了一下相关的库，发现只有openssl和gmssl这两个库可以用，于是基于gmssl库做了封装，gmssl的版本是：GmSSL 2.5.4 - OpenSSL 1.1.0d  19 Jun 2019</p>
+<p>搞这个库的确要费不少功夫，现在分享出来给需要的人。目前我是用在linux环境中，因此编译成linux动态库，并且屏蔽相关库的头文件和符号，只暴露sm2加解密相关的接口符号，gmssl库通过静态库的方式引用。</p>
+<p>关于sm2加密有几个比较重要的参数，第一个是椭圆曲线参数，第二个是密文编码方式，第三个是哈希算法，目前我们用的都是固定的参数，所以封装的时候没有提供参数选择这些功能，需要的可以自行扩展。下面的sm2加密相关从参数为：使用默认的椭圆曲线参数(sm2p256v1)，ASN.1/DER编码方式(C1|C3|C2编码方式) ，哈希（杂凑）算法使用sm3</p>
+<p>gmutil.h头文件：</p>
+<pre><code class="language-cpp">#ifndef __GM_UTIL_H__
+#define __GM_UTIL_H__
+#include &lt;string&gt;
+using namespace std;
+
+#ifdef _WIN32
+#define UNIX_EXPORT
+#else
+#define UNIX_EXPORT __attribute__((visibility("default")))
+#endif
+// namespace GM
+//{
+
+// 错误码
+enum EGMErrorCode
+{
+    GM_UTIL_CODE_OK = 0,
+    GM_UTIL_CODE_CREATE_EV_KEY_FAILED, // 密钥解析失败
+    GM_UTIL_CODE_SM2_ENCRYPT_FAILED,   // SM2加密失败
+    GM_UTIL_CODE_SM2_DECRYPT_FAILED,   // SM2解密失败
+    GM_UTIL_CODE_NOT_SM2P256V1,        // 不是默认的sm2p256v1椭圆曲线参数
+    GM_UTIL_CODE_INIT_BIO_FAILED,      // 初始化BIO失败
+    GM_UTIL_CODE_CIPHER_TEXT_TO_BIO_FAILED,      // 加密数据存储到BIO失败
+    GM_UTIL_CODE_BIO_DATA_TO_MEM_FAILED,      // BIO数据转存到缓冲区失败
+    GM_UTIL_CODE_BIO_DATA_TO_CIPHER_TEXT_FAILED,      // BIO数据转成Ciphertext结构失败
+};
+extern "C"
+{
+    // 从文件中读入公钥/私钥数据到string中,失败返回空字符串
+    UNIX_EXPORT string GmReadKeyFromFile(string strFileName);
+
+    /**
+     * @brief sm2加密，使用默认的椭圆曲线参数(NID_sm2p256v1)，ASN.1/DER编码方式(C1|C3|C2编码方式) ，哈希（杂凑）算法使用sm3
+     * @param strPubKey 公钥数据
+     * @param strIn 需要加密的数据
+     * @param strCiphertext 密文,加密后的密文不是可见字符
+     * @return 返回GM_UTIL_ERR_OK表示加密成功，否则失败，具体见EGMErrorCode定义
+     */
+    UNIX_EXPORT int GmSm2Encrypt(string strPubKey, const string &amp;strIn, string &amp;strCiphertext);
+
+    /**
+     * @brief sm2解密，使用默认的椭圆曲线参数(NID_sm2p256v1)，ASN.1/DER编码方式(C1|C3|C2编码方式)，哈希（杂凑）算法使用sm3
+     * @param strPubKeyFile 私钥数据
+     * @param strCiphertext 需要解密的数据(不是可见字符)
+     * @param strOut 解密后的明文
+     * @return 返回GM_UTIL_ERR_OK表示解密成功，否则失败，具体见EGMErrorCode定义
+     */
+    UNIX_EXPORT int GmSm2Decrypt(string strPriKey, const string &amp;strCiphertext, string &amp;strOut);
+
+    // 将二进制数据转换成十六进制字符串
+    UNIX_EXPORT string GmByte2HexStr(const string &amp;data, bool bLowerCase = true);
+
+    // 将十六进制字符串转换成二进制
+    UNIX_EXPORT string GmHexStr2Byte(const string&amp; hex, bool bLowerCase = true);
+}
+
+// } // namespace GM
+#endif // end __GM_UTIL_H__</code></pre>
+<p>gmutil.cpp文件：</p>
+<pre><code class="language-cpp">#include "gmutil.h"
+#include &lt;iostream&gt;
+#include&lt;fstream&gt;
+#include&lt;sstream&gt;
+#include &lt;stdio.h&gt;
+#include &lt;openssl/evp.h&gt;
+#include &lt;openssl/pem.h&gt;
+#include &lt;openssl/sm2.h&gt;
+#include &lt;openssl/bio.h&gt;
+//using namespace GM;
+
+/**
+ * @brief 使用公钥/私钥数据获取EV_KEY对象
+ * @param key 公钥/私钥数据
+ * @param is_public 是否公钥
+ * @return 失败返回NULL
+ */
+static EC_KEY *CreateEC(unsigned char *key, int is_public)
+{
+    EC_KEY *ec_key = NULL;
+    BIO *keybio = NULL;
+    keybio = BIO_new_mem_buf(key, -1);
+ 
+    if (keybio == NULL) {
+        printf("%s", "[BIO_new_mem_buf]-&gt;key len=%d,Failed to Get Key", strlen((char *) key));
+        return NULL;
+    }
+ 
+    if (is_public) {
+        ec_key = PEM_read_bio_EC_PUBKEY(keybio, NULL, NULL, NULL);
+    } else {
+        ec_key = PEM_read_bio_ECPrivateKey(keybio, NULL, NULL, NULL);
+    }
+ 
+    if (ec_key == NULL) {
+        printf("Failed to Get Key");
+        BIO_free_all(keybio);
+        return NULL;
+    }
+
+    BIO_free_all(keybio); // 此处是不是要free?
+    return ec_key;
+}
+
+int GmSm2Encrypt(string strPubKey, const string &amp;strIn, string &amp;strCiphertext)
+{
+    EC_KEY *evKey = CreateEC((unsigned char *)strPubKey.c_str(), 1);
+    if (NULL == evKey)
+    {
+        return GM_UTIL_CODE_CREATE_EV_KEY_FAILED;
+    }
+    
+    // 目前只支持默认的sm2p256v1椭圆曲线参数
+    if (!EC_KEY_is_sm2p256v1(evKey))
+    {
+        EC_KEY_free(evKey);
+        return GM_UTIL_CODE_NOT_SM2P256V1;
+    }
+
+    // 加密后的密文会比明文长97字节
+    unsigned char *buff = NULL;
+    size_t outLen = 0;
+    SM2CiphertextValue *cval = NULL;
+    size_t mlen, clen;
+    unsigned char *p;
+
+    if (NULL == (cval = SM2_do_encrypt(EVP_sm3(), (const unsigned char *)strIn.c_str(), strIn.size(), evKey)))
+    {
+        EC_KEY_free(evKey);
+        return GM_UTIL_CODE_SM2_ENCRYPT_FAILED;
+    }
+    
+    BIO *bOut = BIO_new(BIO_s_mem());
+    if (NULL == bOut)
+    {
+        EC_KEY_free(evKey);
+        SM2CiphertextValue_free(cval);
+        return GM_UTIL_CODE_INIT_BIO_FAILED;
+    }
+
+    if (i2d_SM2CiphertextValue_bio(bOut, cval) &lt;= 0)
+    {
+        SM2CiphertextValue_free(cval);
+        BIO_free(bOut);
+        EC_KEY_free(evKey);
+        return GM_UTIL_CODE_CIPHER_TEXT_TO_BIO_FAILED;
+    }
+
+    if (0 == (outLen = BIO_get_mem_data(bOut, (char **)&amp;buff)))
+    {
+        SM2CiphertextValue_free(cval);
+        BIO_free(bOut);
+        EC_KEY_free(evKey);
+        return GM_UTIL_CODE_BIO_DATA_TO_MEM_FAILED;
+    }
+
+    strCiphertext.assign((char *)buff, outLen);
+    // 释放内存
+    SM2CiphertextValue_free(cval);
+    BIO_free(bOut);
+    EC_KEY_free(evKey);
+    // OPENSSL_free(buff); //此处释放会挂掉，不应该free，应该是在BIO_free的时候内存已经被释放掉
+    return GM_UTIL_CODE_OK;
+}
+
+
+int GmSm2Decrypt(string strPriKey, const string &amp;strCiphertext, string &amp;strOut)
+{
+    EC_KEY *evKey = CreateEC((unsigned char *)strPriKey.c_str(), 0);
+    if (NULL == evKey)
+    {
+        return GM_UTIL_CODE_CREATE_EV_KEY_FAILED;
+    }
+
+    if (!EC_KEY_is_sm2p256v1(evKey))
+    {
+        EC_KEY_free(evKey);
+        return GM_UTIL_CODE_NOT_SM2P256V1;
+    }
+    BIO *bIn = NULL;
+    bIn = BIO_new_mem_buf(strCiphertext.c_str(), strCiphertext.size());
+    if (bIn == NULL)
+    {
+        EC_KEY_free(evKey);
+        return GM_UTIL_CODE_INIT_BIO_FAILED;
+    }
+
+    int ret = 0;
+	SM2CiphertextValue *cval = NULL;
+	void *buf = NULL;
+	size_t siz;
+    const EVP_MD* md = EVP_sm3();
+
+    if (NULL == (cval = d2i_SM2CiphertextValue_bio(bIn, NULL)))
+    {
+        BIO_free(bIn);
+        EC_KEY_free(evKey);
+        return GM_UTIL_CODE_BIO_DATA_TO_CIPHER_TEXT_FAILED;
+    }
+
+	if (0 == SM2_do_decrypt(md, cval, NULL, &amp;siz, evKey) || !(buf = OPENSSL_malloc(siz)))
+    {
+        BIO_free(bIn);
+        SM2CiphertextValue_free(cval);
+        EC_KEY_free(evKey);
+		return GM_UTIL_CODE_SM2_DECRYPT_FAILED;
+	}
+
+    if (0 == SM2_do_decrypt(md, cval, (unsigned char*)buf, &amp;siz, evKey))
+    {
+        BIO_free(bIn);
+        SM2CiphertextValue_free(cval);
+        OPENSSL_free(buf);
+        EC_KEY_free(evKey);
+        return GM_UTIL_CODE_SM2_DECRYPT_FAILED;
+    }
+    
+    strOut.assign((char*)buf, siz);
+    // 释放内存
+    BIO_free(bIn);
+    SM2CiphertextValue_free(cval);
+	OPENSSL_free(buf);
+    EC_KEY_free(evKey);
+    return GM_UTIL_CODE_OK;
+}
+
+static streamsize Read(istream &amp;stream, char *buffer, streamsize count)
+{
+    streamsize reads = stream.rdbuf()-&gt;sgetn(buffer, count);
+    stream.rdstate();
+    stream.peek();
+    return reads;
+}
+
+string GmReadKeyFromFile(string strFileName)
+{
+    fstream myfile;
+	myfile.open(strFileName, ifstream::in | ifstream::binary);
+	if (!myfile.is_open())
+    {
+        return "";
+    }
+
+    char buff[1024];
+    std::ostringstream oss;
+    int len;
+    while (!myfile.eof())
+    {
+        size_t read = Read(myfile, buff, sizeof(buff));
+        oss &lt;&lt; string(buff, read);
+    }
+
+    myfile.close();
+    return oss.str();
+}
+
+static char sDigit1[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+static char sDigit2[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+string GmByte2HexStr(const string&amp; data, bool bLowerCase)
+{
+    char *sDigit = sDigit1;
+    if (!bLowerCase)
+    {
+        sDigit = sDigit2;
+    }
+    const char* pData = data.c_str();
+    char cTemp;
+    string strHex;
+    for (unsigned int i = 0; i &lt; data.size(); i++)
+    {
+        cTemp = *pData;
+        pData++;
+        strHex += sDigit[(cTemp &gt;&gt; 4) &amp; 0x0F];
+        strHex += sDigit[cTemp &amp; 0x0F];
+    }
+
+    return strHex;
+}
+
+string GmHexStr2Byte(const string&amp; hex, bool bLowerCase)
+{
+    if (hex.size() % 2 != 0)
+    {
+        // 十六进制字符串必须是偶数长度
+        return "";
+    }
+
+    char chA = 'a';
+    if (!bLowerCase)
+    {
+        chA = 'A';
+    }
+
+    std::ostringstream oss;
+    for (int i = 0; i &lt; hex.size(); i += 2)
+    {
+        unsigned int highBit;
+        if (hex[i] &gt;= '0' &amp;&amp; hex[i] &lt;= '9')
+        {
+            highBit = hex[i] - '0';
+        }
+        else
+        {
+            highBit = hex[i] - chA + 10;
+        }
+        unsigned int lowBit;
+        if (hex[i + 1] &gt;= '0' &amp;&amp; hex[i + 1] &lt;= '9')
+        {
+            lowBit = hex[i + 1] - '0';
+        }
+        else
+        {
+            lowBit = hex[i + 1] - chA + 10;
+        }
+        unsigned char ch = (highBit &lt;&lt; 4) + lowBit; 
+        oss &lt;&lt; ch;
+    }
+
+    return oss.str();
+}</code></pre>
+<p>下面是测试验证test.cpp:</p>
+<pre><code class="language-cpp">#include "gmutil.h"
+#include &lt;iostream&gt;
+#include &lt;sstream&gt;
+
+int main(int argc, char** argv)
+{
+    string strPriKey = GmReadKeyFromFile("sm2_server_private_key.key");
+    string strPubKey = GmReadKeyFromFile("sm2_server_public_key.key");
+    string strText = "hello world, this is a test";
+    string strCipher;
+    string strOut;
+    std::cout &lt;&lt; "plaintext:" &lt;&lt; strText &lt;&lt; std::endl;
+    int nRet = GmSm2Encrypt(strPubKey, strText, strCipher);
+    if (GM_UTIL_CODE_OK != nRet)
+    {
+        cout &lt;&lt; "GmSm2Encrypt fail" &lt;&lt; endl;
+    }
+    string strCipherTextHex = GmByte2HexStr(strCipher);
+    cout &lt;&lt; "hex ciper text:" &lt;&lt; strCipherTextHex &lt;&lt; endl;
+    string strCipher1 = GmHexStr2Byte(strCipherTextHex);
+    if (strCipher1 == strCipher)
+    {
+        cout &lt;&lt; "conver hex str to byte sucess" &lt;&lt; endl;
+    }
+    nRet = GmSm2Decrypt(strPriKey, strCipher1, strOut);
+    std::cout &lt;&lt; "after decrypt:" &lt;&lt; strOut &lt;&lt; std::endl;
+
+    return 0;
+}</code></pre>
+<p>编译的时候要加这几个关键的编译参数：-fvisibility=hidden -Wl,-Bsymbolic -Wl,--exclude-libs,ALL</p>
+<p>用来屏蔽动态库中的符号的。</p>
+<p>gmssl库相关函数的文档可以参考官网：<a href="http://gmssl.org/docs/sm2.html" title="国密SM2椭圆曲线密码标准 (gmssl.org)">国密SM2椭圆曲线密码标准 (gmssl.org)</a></p>
+<p>还有可以直接参考gmssl源码中的sm2test.c以及sm2utl.c，里面有相关的代码</p>
+<p>还有gmssl库用到openssl库的很多函数比如BIO等，可以参数openssl官网来使用</p>
+<p>参考文章：</p>
+<p><a href="https://blog.csdn.net/qq_39952971/article/details/115082906" title="(20条消息) 基于GMSSL的SM2加解密测试_viqjeee的博客-CSDN博客_gmssl sm2">(20条消息) 基于GMSSL的SM2加解密测试_viqjeee的博客-CSDN博客_gmssl sm2</a></p>
+<p><a href="https://blog.csdn.net/qq_19734597/article/details/104060859" title="(20条消息) C语言SM2算法实现（基于GMSSL）_张志翔 ̮的博客-CSDN博客_sm2实现">(20条消息) C语言SM2算法实现（基于GMSSL）_张志翔 ̮的博客-CSDN博客_sm2实现</a> --这个最详细，直接有完整代码</p>
+<p><a href="https://blog.csdn.net/qq_40123036/article/details/118297806" title="(25条消息) SM2算法全套（基于GMSSL）_wincent1的博客-CSDN博客_gmssl sm2算法">(25条消息) SM2算法全套（基于GMSSL）_wincent1的博客-CSDN博客_gmssl sm2算法</a></p>
+<p></p>
+</div>
+</div>

@@ -1,0 +1,196 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="CTCP_0"></a>“保姆级别”从零开始的C#TCP网络通信教程</h2>
+<p>经过几日的原理学习和扒码之后，终于七七八八搞明白tcp的通信是怎么进行的了。<br/> 注：源码为《C#开源虚拟仪器技术》实例<br/> </p>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><ul><li><a href="#CTCP_0">“保姆级别”从零开始的C#TCP网络通信教程</a></li></ul>
+</li><li><a href="#_13">前言</a></li><li><a href="#tcp_21">一、什么是tcp通信</a></li><li><a href="#tcp_29">二、如何实现tcp通信</a></li><li><ul><li><a href="#1_31">1.建立连接</a></li><li><a href="#2_49">2.传输数据</a></li><li><a href="#3_53">3.断开连接</a></li></ul>
+</li><li><a href="#_61">三、窗体设计</a></li><li><ul><li><a href="#client_63">服务端client</a></li><li><a href="#server_66">客户端server</a></li></ul>
+</li><li><a href="#tcpC_78">四、tcp代码实现（注：源码为《C#开源虚拟仪器技术》实例）</a></li><li><ul><li><a href="#client_81">客户端client代码</a></li><li><a href="#server_157">服务端server代码</a></li></ul>
+</li></ul>
+</div>
+<p></p>
+<hr color="#000000" size='1"'/>
+<h1><a id="_13"></a>前言</h1>
+<p><font color="#999AAA">本文主要给大家提供从零开始做一个包含客户端和服务端的tcp通信窗体应用的教程，并在此基础上理解TCP通信的原理，理解使用socket套接字进行通信的概念和实际运用，全文包含从原理到例程的详细操作，保证简单易上手</font></p>
+<hr color="#000000" size='1"'/>
+<h1><a id="tcp_21"></a>一、什么是tcp通信</h1>
+<font color="#999AAA"> 首先，TCP是计算机实现网络通信的一种方式，全称是传输控制协议,计算机通信需要知道计算机的地址，互联网使用IP地址来标识计算机的网络地址,IP协议层往上是传输层，它提供了TCP和UDP这两种可选的协议，之所以选择TCP协议进行计算机的网络通信，是因为它的好处是能够检测和恢复IP层提供的主机到主机的信道可能发生的报文丢失、重复及其他错误，而socket处于TCP这类具体协议层上，它是进行网络通信最基本的操作单元，可以看做是两台主机进行通讯的端点。TCP通信，依靠的就是IP地址到socket套接字这样的由宏观到微观的这样一个过程。（或者直接使用已经封装好的Tcplistener类和TcpClient类来实现） 通过TCP/IP可实现单个网络内部或互联网间的通信，同时可提供简单的用户界面，有较高的网络通信的可靠性。所以本文主要倾向于如何进行用户界面即客户端和服务端的设计以及相关代码的实现。 </font>
+<hr color="#000000" size='1"'/>
+<h1><a id="tcp_29"></a>二、如何实现tcp通信</h1>
+<p>TCP的工作过程可分为三个重要的阶段，一是建立连接，二是传输数据，二是断开连接</p>
+<h2><a id="1_31"></a>1.建立连接</h2>
+<p>建立连接最关键的一步就是进行3次握手，这一步主要关注三个“硬性指标”，分别是</p>
+<ol><li>ACK，tcp报头的控制位之一，用于表示确认号是否有效，若有效则置1（确认号：用于告诉数据发送端发送过来的序列号之前的数据都已经接收到了）</li><li>SYN，同步序列号，如果TCP建立连接成功则置1</li><li>FIN，发送端完成发送任务位，当TCP完成了数据传输的任务，想要断开连接之后，该位置1</li></ol>
+<p>详细过程：（同步通信方式）假定服务端向客户端发送信息</p>
+<ol><li>服务端向客户端发送一个含有SYN的数据段给客户端，并请求连接</li><li>客户端收到服务端收到请求后，用含有ACK和SYN的数据段响应服务端</li><li>服务端收到客户端发来的数据段后，再发送一个ACK，确认收到数据段，至此建立连接成功。</li></ol>
+<p>注：握手的步骤在协议内部协议实现的，不体现在具体的上位机代码中。理解握手过程即可</p>
+<h2><a id="2_49"></a>2.传输数据</h2>
+<p>建立连接之后，就可以通过通信信道进行传输数据的任务了，但是需要注意的是TCP协议中的数据是以字节流的形式存在的，发送端需要将的数据转换为字节流，然后才可以发送。通常是字符集转换为字节序列，这其中就涉及到编码和解码的问题了。</p>
+<h2><a id="3_53"></a>3.断开连接</h2>
+<p>断开连接主要是关闭读写流。至于是服务端先断开连接还是客户端先断开连接，有时需要进行异常处理。</p>
+<hr color="#000000" size='1"'/>
+<h1><a id="_61"></a>三、窗体设计</h1>
+<p>这一步主要使用工具箱中的按钮button和文本框text控件，点击相应控件即可查看代码。Label控件用于标识文本框。</p>
+<h2><a id="client_63"></a>服务端client</h2>
+<p><img alt="服务端窗体设计" src="https://img-blog.csdnimg.cn/7afc14546b47490ab074f80e932c54f7.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAZHJlYW1lcjY3,size_18,color_FFFFFF,t_70,g_se,x_16"/></p>
+<h2><a id="server_66"></a>客户端server</h2>
+<p><img alt="客户端窗体设计" src="https://img-blog.csdnimg.cn/dae6e2f45ba84a39a66439bec90188b1.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBAZHJlYW1lcjY3,size_18,color_FFFFFF,t_70,g_se,x_16"/><br/> 注意事项：<br/> 这里需要注意的是要确保按钮的命名，以及其事件的名称，如客户端的发送按钮，要确保正确。示例如下：</p>
+<p>客户端发送按钮<br/> <img alt="客户端发送按钮" src="https://img-blog.csdnimg.cn/ee52fec59e284cda80dd3a42170b39e5.png"/><br/> 按钮的命名<br/> <img alt="命名" src="https://img-blog.csdnimg.cn/425dff244b4643f0ab8f577646e576f8.png"/><br/> 按钮事件即操作的命名<br/> <img alt="操作Click的名称" src="https://img-blog.csdnimg.cn/19dde34996cd4f8b9d63b3bd15ccce93.png"/><br/> 这一步的命名操作十分关键，关系到实际代码中的运行。以此类推。</p>
+<h1><a id="tcpC_78"></a>四、tcp代码实现（注：源码为《C#开源虚拟仪器技术》实例）</h1>
+<p>为使编程变得简洁，这里使用类库Tcplistener类和TcpClient类实现Tcp通信（已经包含Socket套接字方法），并且服务端server只负责接收信息，客户端只负责发送信息。<br/> 如果要实现全双工通信，加入多线程thread，对每个tcp开两个线程，一个线程用来处理发送数据，一个线程用来处理接收数据即可。推荐使用异步通讯方式，无阻塞现象。</p>
+<h2><a id="client_81"></a>客户端client代码</h2>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>IO</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Net</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Net<span class="token punctuation">.</span>Sockets</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Text</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Threading</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Forms</span><span class="token punctuation">;</span>
+
+<span class="token keyword">namespace</span> <span class="token namespace">_13<span class="token punctuation">.</span>_2<span class="token punctuation">.</span>_3<span class="token punctuation">.</span>_1</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">TCPClient</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Form</span></span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token preprocessor property">#<span class="token directive keyword">region</span> 变量</span>
+        <span class="token keyword">private</span> <span class="token class-name">TcpClient</span> tcpClient <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token class-name">NetworkStream</span> networkStream <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token class-name">BinaryWriter</span> writer<span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> Port <span class="token operator">=</span> <span class="token number">51388</span><span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token class-name">IPAddress</span> ipAddress <span class="token operator">=</span> IPAddress<span class="token punctuation">.</span>Loopback<span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> buffer<span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">string</span></span> messageSend<span class="token punctuation">;</span>
+
+        <span class="token preprocessor property">#<span class="token directive keyword">endregion</span> </span>
+        <span class="token keyword">public</span> <span class="token function">TCPClient</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token function">InitializeComponent</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>     
+           
+            textBox_clientIP<span class="token punctuation">.</span>Text <span class="token operator">=</span> ipAddress<span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            textBox_port<span class="token punctuation">.</span>Text <span class="token operator">=</span> Port<span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">button_connect_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">try</span>
+            <span class="token punctuation">{<!-- --></span>
+                tcpClient <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">TcpClient</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                tcpClient<span class="token punctuation">.</span><span class="token function">Connect</span><span class="token punctuation">(</span>textBox_clientIP<span class="token punctuation">.</span>Text<span class="token punctuation">,</span> <span class="token keyword">int</span><span class="token punctuation">.</span><span class="token function">Parse</span><span class="token punctuation">(</span>textBox_port<span class="token punctuation">.</span>Text<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>tcpClient <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span><span class="token string">"连接成功"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    networkStream <span class="token operator">=</span> tcpClient<span class="token punctuation">.</span><span class="token function">GetStream</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    writer <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">BinaryWriter</span><span class="token punctuation">(</span>networkStream<span class="token punctuation">)</span><span class="token punctuation">;</span>                 
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">catch</span><span class="token punctuation">(</span><span class="token class-name">Exception</span> ex<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span><span class="token string">"连接失败，请重试"</span> <span class="token operator">+</span> ex<span class="token punctuation">.</span>Message<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">// 发送消息</span>
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">btnSend_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            messageSend <span class="token operator">=</span> textBox_messageSend<span class="token punctuation">.</span>Text<span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>messageSend <span class="token operator">!=</span> <span class="token keyword">string</span><span class="token punctuation">.</span>Empty<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                writer<span class="token punctuation">.</span><span class="token function">Write</span><span class="token punctuation">(</span>messageSend<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                Thread<span class="token punctuation">.</span><span class="token function">Sleep</span><span class="token punctuation">(</span><span class="token number">500</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                writer<span class="token punctuation">.</span><span class="token function">Flush</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            textBox_messageSend<span class="token punctuation">.</span><span class="token function">Clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">// 断开连接</span>
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">btnDisconnect_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            writer<span class="token punctuation">?.</span><span class="token function">Close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            tcpClient<span class="token punctuation">?.</span><span class="token function">Close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<h2><a id="server_157"></a>服务端server代码</h2>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">System</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>IO</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Net</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Net<span class="token punctuation">.</span>Sockets</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Text</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Threading</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Threading<span class="token punctuation">.</span>Tasks</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Windows<span class="token punctuation">.</span>Forms</span><span class="token punctuation">;</span>
+
+<span class="token keyword">namespace</span> <span class="token namespace">_13<span class="token punctuation">.</span>_2<span class="token punctuation">.</span>_3<span class="token punctuation">.</span>_2</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">partial</span> <span class="token keyword">class</span> <span class="token class-name">TCPServer</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">Form</span></span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">private</span> <span class="token keyword">const</span> <span class="token class-name"><span class="token keyword">int</span></span> Port <span class="token operator">=</span> <span class="token number">51388</span><span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token class-name">TcpListener</span> tcpLister <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span><span class="token comment">//创建对象，对象和类的属性以及行为完全相同</span>
+        <span class="token keyword">private</span> <span class="token class-name">TcpClient</span> tcpClient <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+        <span class="token class-name">IPAddress</span> ipAddress <span class="token operator">=</span> IPAddress<span class="token punctuation">.</span>Loopback<span class="token punctuation">;</span><span class="token comment">//将IPAddress类中的属性Loopback赋给对象ipAddress,即127.0.0.1</span>
+        <span class="token keyword">private</span> <span class="token class-name">NetworkStream</span> networkStream <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token class-name">BinaryReader</span> reader<span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> buffer <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name"><span class="token keyword">byte</span></span><span class="token punctuation">[</span><span class="token number">1024</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+        <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">string</span></span> messageReceived<span class="token punctuation">;</span>
+
+        <span class="token keyword">public</span> <span class="token function">TCPServer</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token function">InitializeComponent</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            textBox_serverIP<span class="token punctuation">.</span>Text <span class="token operator">=</span> ipAddress<span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//当前对象以字符串形式返回</span>
+            textBox_port<span class="token punctuation">.</span>Text <span class="token operator">=</span> Port<span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">// 开始监听</span>
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">btnStart_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">try</span>
+            <span class="token punctuation">{<!-- --></span>
+                tcpLister <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">TcpListener</span><span class="token punctuation">(</span>IPAddress<span class="token punctuation">.</span><span class="token function">Parse</span><span class="token punctuation">(</span>textBox_serverIP<span class="token punctuation">.</span>Text<span class="token punctuation">)</span><span class="token punctuation">,</span> 
+                    <span class="token keyword">int</span><span class="token punctuation">.</span><span class="token function">Parse</span><span class="token punctuation">(</span>textBox_port<span class="token punctuation">.</span>Text<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                tcpLister<span class="token punctuation">.</span><span class="token function">Start</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                tcpClient <span class="token operator">=</span> tcpLister<span class="token punctuation">.</span><span class="token function">AcceptTcpClient</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>tcpClient <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    networkStream <span class="token operator">=</span> tcpClient<span class="token punctuation">.</span><span class="token function">GetStream</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//获取网络流对象</span>
+                    reader <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">BinaryReader</span><span class="token punctuation">(</span>networkStream<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//从网络流中初始化读取对象</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> ex<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span>ex<span class="token punctuation">.</span>Message<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">button_receive_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            messageReceived <span class="token operator">=</span> reader<span class="token punctuation">.</span><span class="token function">ReadString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            listBox_messageReceived<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>messageReceived<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">btnStop_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            tcpLister<span class="token punctuation">?.</span><span class="token function">Stop</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">button_disconnect_Click</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">EventArgs</span> e<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            reader<span class="token punctuation">?.</span><span class="token function">Close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//断开连接，关闭读写流</span>
+            tcpClient<span class="token punctuation">?.</span><span class="token function">Close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p>注：源码为《C#开源虚拟仪器技术》实例<br/> 参考资料链接：<br/> 《C#开源虚拟仪器技术》<br/> https://blog.csdn.net/weixin_46594796/article/details/107881821<br/> https://javaedge.blog.csdn.net/article/details/113784188<br/> https://blog.csdn.net/qq_45060045/article/details/113360983<br/> https://blog.csdn.net/weixin_38247439/article/details/88529909<br/> https://blog.csdn.net/kevinfan2011/article/details/84660013</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

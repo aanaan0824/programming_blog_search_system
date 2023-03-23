@@ -1,0 +1,224 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>博主搭建成功链接：</p>
+<p><a href="http://pay.tongfawuye.com/demo/pay" title="充值中心">充值中心</a></p>
+<p>paypal用户账号密码（密码最后一位是个点）：</p>
+<p><span style="color:#fe2c24;">sb-koedx14427358@personal.example.com</span></p>
+<p><span style="color:#fe2c24;">yXm2upL.</span></p>
+<p>Paypal开发者模式注册地址：</p>
+<p><a href="https://developer.paypal.com/home/" title="PayPal Developer">PayPal Developer</a></p>
+<p>注册成功后会有黑箱测试程序的clientId和clientSecret：</p>
+<p><img alt="" height="909" src="image\e66d1bfe18624b4ab9b990ae0c9774cd.png" width="1200"/></p>
+<p><img alt="" height="909" src="image\370f4dabc73a495ca2847d4dba470319.png" width="1200"/></p>
+<p>获取paypal的黑箱用户支付账户和商家账号：</p>
+<p><img alt="" height="909" src="image\a40729f097844f349302d2df8fd80bb2.png" width="1200"/></p>
+<p>获取账号对应的登录密码：（用户支付时使用，商家查询明细时使用）</p>
+<p><img alt="" height="909" src="image\48f2d1949722415d8ac37ad416edf103.png" width="1200"/></p>
+<p><img alt="" height="909" src="image\c63b3f13a67949629e8cffabcb9b6e23.png" width="1200"/></p>
+<p>知道了这些信息后，接线来就是码农的ShowTime:</p>
+<p>百度出来的PHP都需要用到composer来加载依赖，博主这边使用了后已经将vendor的所有资源整合在一起了，通过文章的下载链接即可部署使用，无需安装composer.。如果你要使用composer来实现，只需要将composer.json文件改为以下内容即可：</p>
+<pre><code class="language-html">{
+    "require" : {
+        "paypal/rest-api-sdk-php" : "1.13.0"
+    }
+}</code></pre>
+<p> 然后运行：composer install 执行即可</p>
+<p><img alt="" height="477" src="image\100d71ca9a954e0a9162c3b0d39a462a.png" width="836"/></p>
+<p> 博主使用的PHP中的CI框架，文件夹格式如下：</p>
+<p><img alt="" height="882" src="image\8ef9246e701647709cea620b0d9af2ca.png" width="930"/></p>
+<p>Paypal.php代码:</p>
+<pre><code class="language-php">&lt;?php
+use PayPal\Api\Amount;
+use PayPal\Api\Details;
+use PayPal\Api\Item;
+use PayPal\Api\ItemList;
+use PayPal\Api\Payer;
+use PayPal\Api\Payment;
+use PayPal\Api\RedirectUrls;
+use PayPal\Api\Transaction;
+use Illuminate\Http\Request;
+use PayPal\Api\Refund;
+use PayPal\Api\ExecutePayment;
+use PayPal\Api\PaymentExecution;
+use PayPal\Exception\PayPalConnectionException;
+use PayPal\Api\Sale;
+use PayPal\Rest\ApiContext;
+use PayPal\Auth\OAuthTokenCredential;
+
+defined ( 'BASEPATH' ) or exit ( 'No direct script access allowed' );
+require "vendor/autoload.php"; //载入sdk的自动加载文件
+
+class Paypal extends CI_Controller {
+
+    const clientId     = 'AfP_eC9BY2YgnxxsimyfautHLoLL0g0nzB1nKv7PoenlbCIroaypXresiVIlZNe4pTAYD3DvIoU7UYid';
+    const clientSecret = 'EBKB53uJ0lrCgspuFOMbODcwso1PiKVFWDFrG7tmWluFyzBktmC-3I7YgXlSLAp0g_IDHjeVld9UwAcd';
+    const Currency     = 'USD';//币种
+    const accept_url   = 'http://pay.tongfawuye.com/paypal/paypal_recharge';//回调地址
+    const success_url   = 'http://pay.tongfawuye.com/demo/pay';//支付成功后返回地址
+
+    protected $PayPal;
+    function __construct()
+    {
+        parent::__construct(false);
+        $this-&gt;load-&gt;model('Pay_log_model');
+
+        $this-&gt;PayPal = new ApiContext(
+            new OAuthTokenCredential(
+                self::clientId,
+                self::clientSecret
+            )
+        );
+        //黑箱模式下请屏蔽此行代码，生产环境放开即可
+        //$this-&gt;PayPal-&gt;setConfig(['mode' =&gt; 'live']);
+    }
+
+    /**
+     * 手机端网页支付
+     */
+    public function paypal_detail(){
+        $amount = (float)$this-&gt;input-&gt;get('amount');
+        $phone = $this-&gt;input-&gt;get('phone');
+        $address = $this-&gt;input-&gt;get('address');
+        //插入支付日志
+        $pay_log = array();
+        $pay_log['pay_user'] = $phone;
+        $pay_log['name'] = $address;
+        $pay_log['amount'] = $amount;
+        $pay_log['pay_mode'] = 3;
+        $pay_log['add_time'] = time();
+        $pay_log['add_time_ymd'] = date("Y-m-d H:i:s");
+        $this-&gt;Pay_log_model-&gt;save($pay_log);
+        $log_id = $pay_log['log_id'];
+
+        $product     = $address;
+        $description = $address;
+        $paypal      = $this-&gt;PayPal;
+        $total       = $amount;//总价
+        $shipping = 0;
+        $order = '1001'.date("YmdHis").$log_id;
+
+        $payer = new Payer();
+        $payer-&gt;setPaymentMethod("paypal");
+
+        $item = new Item();
+        $item-&gt;setName($product)-&gt;setCurrency(self::Currency)-&gt;setQuantity(1)-&gt;setPrice($total);
+
+        $itemList = new ItemList();
+        $itemList-&gt;setItems([$item]);
+
+        $details = new Details();
+        $details-&gt;setShipping($shipping)-&gt;setSubtotal($total);
+
+        $amount = new Amount();
+        $amount-&gt;setCurrency(self::Currency)-&gt;setTotal($total)-&gt;setDetails($details);
+
+        $transaction = new Transaction();
+        $transaction-&gt;setAmount($amount)-&gt;setItemList($itemList)-&gt;setDescription($description)-&gt;setInvoiceNumber(uniqid());
+
+        $redirectUrls = new RedirectUrls();
+        $redirectUrls-&gt;setReturnUrl(self::accept_url."?success=true&amp;paymemtRecordID=$log_id&amp;orderId=$order&amp;amount=$total")-&gt;setCancelUrl(self::accept_url."?success=false&amp;paymemtRecordID=$log_id&amp;orderId=$order&amp;amount=$total");
+
+        //$redirectUrls-&gt;setReturnUrl(self::success_url)-&gt;setCancelUrl(self::cancel_url);
+
+        $payment = new Payment();
+        $payment-&gt;setIntent('sale')-&gt;setPayer($payer)-&gt;setRedirectUrls($redirectUrls)-&gt;setTransactions([$transaction]);
+
+        try {
+            $payment-&gt;create($paypal);
+        } catch (PayPalConnectionException $e) {
+            log_message('error', "POST:" . print_r($e, true));
+            echo $e-&gt;getData();
+            die();
+        }
+        $approvalUrl = $payment-&gt;getApprovalLink();
+        header ( 'Location: '.$approvalUrl );
+    }
+    /**
+     * 回调
+     * @param Request $request
+     * @return void
+     */
+    public function paypal_recharge() {
+        log_message('error', "GET:" . print_r($_GET, true));
+        $tPaymentRecordId = trim($_GET['paymemtRecordID']);
+        $appOrderNO       = trim($_GET['orderId']);
+
+        //业务逻辑，查询订单表
+        $success = trim($_GET['success']);
+        if ($success == 'false' &amp;&amp; !isset($_GET['paymentId']) &amp;&amp; !isset($_GET['PayerID'])) {
+            echo '取消付款';
+            log_message('error', "paypal 取消付款");
+            return;
+        }
+        $paymentId = trim($_GET['paymentId']);
+        $PayerID   = trim($_GET['PayerID']);
+        if (!isset($success, $paymentId, $PayerID)) {
+            log_message('error', "paypal 支付失败");
+            echo '支付失败';
+            return;
+        }
+        if ((bool)$_GET['success'] === 'false') {
+            $log = '支付失败，支付ID【' . $paymentId . '】,支付人ID【' . $PayerID . '】';
+            log_message('error', "paypal 支付失败 $log");
+            echo $log;
+            return;
+        }
+        $payment = Payment::get($paymentId, $this-&gt;PayPal);
+        $execute = new PaymentExecution();
+        $execute-&gt;setPayerId($PayerID);
+        try {
+            $payment-&gt;execute($execute, $this-&gt;PayPal);
+        } catch (\Exception $e) {
+            $log = '支付失败，支付ID【' . $paymentId . '】,支付人ID【' . $PayerID . '】';
+            log_message('error', "paypal 支付失败 $log");
+            return;
+        }
+        $log = '支付成功，支付ID【' . $paymentId . '】,支付人ID【' . $PayerID . '】';
+        log_message('error', "paypal 支付成功 $log");
+
+        //支付成功的后续操作
+        $pay_log = $this-&gt;Pay_log_model-&gt;get_info($tPaymentRecordId);
+        if(!empty($pay_log))
+        {
+            if($pay_log['pay_status'] == 0)
+            {
+                //修改支付状态
+                $log_data = array(
+                    'pay_status'=&gt;1,
+                    'trade_no'=&gt;$appOrderNO,
+                    'pay_trans_id'=&gt;$paymentId,
+                    'pay_code'=&gt;$success
+                );
+                $this-&gt;Pay_log_model-&gt;save($log_data, $tPaymentRecordId);
+            }
+        }
+        //跳转支付成功后的地址，看业务
+        header("Location: ".self::success_url);
+        exit;
+    }
+    /**
+     * 回调
+     * @param Request $request
+     * @return void
+     */
+    public function paypal_recharge_notify() {
+        log_message('error', "GET:" . print_r($_GET, true));
+        echo("success");
+        exit;
+    }
+}
+</code></pre>
+<p> 页面上去访问链接即可跳转到paypal支付页面:http://localhost/paypal/paypal_detail?amount=XX&amp;phone=XX&amp;address=XX</p>
+<p><img alt="" height="710" src="image\a1c820c8574b4fd29188bb12d57ab53b.png" width="541"/></p>
+<p>至于数据库和model等的实现可以看我之前的文章：</p>
+<p><a href="https://blog.csdn.net/chen_mumu119/article/details/119990679?spm=1001.2014.3001.5502" title="PHP支付宝手机网页和PC网页支付对接_我是小木木的博客-CSDN博客">PHP支付宝手机网页和PC网页支付对接_我是小木木的博客-CSDN博客</a></p>
+<p> <a href="https://blog.csdn.net/chen_mumu119/article/details/119937721" title="PHP微信支付JSAPI网页支付Native原生支付_我是小木木的博客-CSDN博客_php 微信native支付">PHP微信支付JSAPI网页支付Native原生支付_我是小木木的博客-CSDN博客_php 微信native支付</a></p>
+<p></p>
+<p>vendor文件资源下载链接：</p>
+<p><a href="https://download.csdn.net/download/chenxiaomumu/85000871" title="PHP对接PayPal支付composer生成的vendor所有文件夹-PHP文档类资源-CSDN下载">PHP对接PayPal支付composer生成的vendor所有文件夹-PHP文档类资源-CSDN下载</a></p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

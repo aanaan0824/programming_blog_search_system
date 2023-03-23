@@ -1,0 +1,297 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#CC_2">C/C++宏的基本使用方法</a></li><li><ul><li><ul><li><a href="#_10">宏的语法</a></li><li><ul><li><a href="#_12">定义</a></li><li><a href="#_67">参数</a></li><li><a href="#_122">符号`#`和`##`</a></li><li><a href="#_144">可变参数</a></li><li><a href="#_166">多行的宏</a></li><li><a href="#_183">取消宏定义</a></li><li><a href="#_193">编译器参数定义以及预定义宏</a></li><li><a href="#_205">宏的调试</a></li></ul>
+</li><li><a href="#_242">常见的使用场景</a></li><li><ul><li><a href="#ifdefif_244">和`#ifdef`和`#if`等预处理指令配合</a></li><li><a href="#_284">防止重复包含头文件</a></li><li><a href="#_302">打印错误信息</a></li><li><a href="#_324">减少重复代码</a></li></ul>
+</li><li><a href="#_397">易出问题的地方</a></li><li><ul><li><a href="#_399">优先级的改变</a></li><li><a href="#_426">宏名称的冲突</a></li><li><a href="#_430">宏参数中含有逗号</a></li><li><a href="#_do_while0_447">宏定义中常见的 do{ }while(0)</a></li></ul>
+</li><li><a href="#_506">总结</a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<h1><a id="CC_2"></a>C/C++宏的基本使用方法</h1>
+<p>宏是C/C++所支持的一种语言特性，我对它最初的印象就是它可以替换代码中的符号，最常见的例子便是定义一个圆周率<code>PI</code>，之后在代码中使用 <code>PI</code> 来代替具体圆周率的值。<br/> 确实如此，宏提供了一种机制，能够使你在编译期替换代码中的符号或者语句。当你的代码中存在大量相似的、重复的代码时，使用宏可以极大的减少代码量，便于书写。<br/> 在很多书上以及网文上，宏都是不被推荐使用的，因为它会带来一些隐晦的坑，让你不经意间便受其所困。但是，正如世间的万千事物，没有什么是完全有害的，也没有什么是完全有益的，只在于如何看待它和使用它。</p>
+<h3><a id="_10"></a>宏的语法</h3>
+<h4><a id="_12"></a>定义</h4>
+<p>宏使用<code>#define</code>定义，一种简单的定义如下</p>
+<pre><code class="prism language-c"><span class="token comment">// 定义圆周率</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">PI</span> <span class="token expression"><span class="token number">3.14159265</span></span></span>
+<span class="token comment">// 定义一个空指针</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">NULL</span> <span class="token expression"><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword">void</span><span class="token operator">*</span><span class="token punctuation">)</span><span class="token number">0</span><span class="token punctuation">)</span></span></span>
+<span class="token comment">// 定义一个宏的名字为 SYSTEM_API，但是没有值</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">SYSTEM_API</span></span>
+</code></pre>
+<p>上述例子中定义了一个圆周率<code>PI</code>，那么代码中需要用到圆周率的地方就可以使用<code>PI</code>来代替，比如语句</p>
+<pre><code class="prism language-c"><span class="token keyword">double</span> perimeter <span class="token operator">=</span> diameter <span class="token operator">*</span> <span class="token number">3.14159265</span><span class="token punctuation">;</span>
+</code></pre>
+<p>就可以写成</p>
+<pre><code class="prism language-c"><span class="token keyword">double</span> perimeter <span class="token operator">=</span> diameter <span class="token operator">*</span> PI<span class="token punctuation">;</span>
+</code></pre>
+<p>而该代码在编译时，编译器又会把<code>PI</code>替换为它所定义的值(3.14159265)进行编译，因此，这两条语句是等价的。</p>
+<p>C语言中的<code>NULL</code>就是一个语言已经预定义的宏。预定义指的是你不必亲自定义，编译器在编译时，已经提前定义好了。</p>
+<p><code>SYSTEM_API</code>这个宏没有定义任何值，替换后等价于什么都没写，比如像下面两条语句就是等价的。</p>
+<pre><code class="prism language-c">class SYSTEM_API CSystem<span class="token punctuation">;</span>
+</code></pre>
+<p>和</p>
+<pre><code class="prism language-c">class CSystem<span class="token punctuation">;</span>
+</code></pre>
+<p>是等价的。做过Windows模块开发的同学，可能已经意识到，上述的宏经常和预处理指令<code>#ifdef</code>配合来控制模块的导出导入符号。</p>
+<h4><a id="_67"></a>参数</h4>
+<p>宏还可以向函数一样携带参数，像下面这样</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">MUL</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span> x <span class="token operator">*</span> y</span></span>
+<span class="token keyword">int</span> ret <span class="token operator">=</span> <span class="token function">MUL</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">;</span>   <span class="token operator">==</span><span class="token operator">&gt;</span> <span class="token keyword">int</span> ret <span class="token operator">=</span> <span class="token number">2</span> <span class="token operator">*</span> <span class="token number">3</span><span class="token punctuation">;</span>
+</code></pre>
+<p>这使它看起来特别像函数，它跟函数的区别有以下几点</p>
+<ul><li>宏是简单的符号替换，不会检查参数类型，而函数会严格检查输入的参数类型</li><li>因为宏是在编译期进行的符号替换，所以在运行时，不会带来额外的时间和空间开销，而函数会在运行时执行压栈出栈的操作，存在函数调用的开销</li><li>宏是不可以调试的，而函数可以进行单步调试</li><li>宏不支持递归，函数支持递归</li></ul>
+<p>在上例中，<code>MUL</code>携带有两个参数<code>x</code>和<code>y</code>，当使用此宏时，只需将传入宏的两个参数直接的相乘即可。<br/> 那宏的参数是否支持表达式呢，答案是支持的，但由于宏只是简单的展开替换，因此我们就遇到了宏第一个容易出错的点</p>
+<pre><code class="prism language-c"><span class="token keyword">int</span> ret <span class="token operator">=</span> <span class="token function">MUL</span><span class="token punctuation">(</span><span class="token number">2</span> <span class="token operator">+</span> <span class="token number">3</span><span class="token punctuation">,</span> <span class="token number">4</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>我们的本意是先计算出2加3的和，然后与4相乘，结果为20。但实际上该宏展开后的代码为</p>
+<pre><code class="prism language-c"><span class="token keyword">int</span> ret <span class="token operator">=</span> <span class="token number">2</span> <span class="token operator">+</span> <span class="token number">3</span> <span class="token operator">*</span> <span class="token number">4</span><span class="token punctuation">;</span>
+</code></pre>
+<p>看到了吗，宏就是非常直接的把<code>x</code>换成<code>2 + 3</code>，把<code>y</code>换成<code>4</code>，由于运算符优先级的缘故，最终算的结果为14，一个非预期的结果。</p>
+<p>如何修正这个问题呢，就是在定义时把参数都加上括号</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">MUL</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span> <span class="token operator">*</span> <span class="token punctuation">(</span>y<span class="token punctuation">)</span><span class="token punctuation">)</span></span></span>
+</code></pre>
+<p>这样的话，上述例子就被展开成为</p>
+<pre><code class="prism language-c"><span class="token keyword">int</span> ret <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token number">2</span> <span class="token operator">+</span> <span class="token number">3</span><span class="token punctuation">)</span> <span class="token operator">*</span> <span class="token punctuation">(</span><span class="token number">4</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>从而保证了运算的顺序与期望的顺序一致。</p>
+<h4><a id="_122"></a>符号<code>#</code>和<code>##</code></h4>
+<p><code>#</code>符号把一个宏参数直接转换为字符串，例如</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">STRING</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">)</span> #x</span></span>
+<span class="token keyword">const</span> <span class="token keyword">char</span> <span class="token operator">*</span> str <span class="token operator">=</span> <span class="token function">STRING</span><span class="token punctuation">(</span>test<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">// str的内容就是"test"</span>
+</code></pre>
+<p><code>##</code>符号会连接两边的值，像一个粘合剂一样，将前后两部分粘合起来，从而产生一个新的值，例如</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">VAR</span><span class="token expression"><span class="token punctuation">(</span>index<span class="token punctuation">)</span> INT_</span><span class="token punctuation">##</span><span class="token expression">index</span></span>
+<span class="token keyword">int</span> <span class="token function">VAR</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">// 宏被展开后将成为 int INT_1;</span>
+</code></pre>
+<h4><a id="_144"></a>可变参数</h4>
+<p>宏也可以支持可变长参数，这个特性可以用来对类似<code>printf</code>这样的函数进行封装，使用时，使用<code>__VA_ARGS__</code>这个系统预定义宏来代替<code>printf</code>的参数，例如</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">trace</span><span class="token expression"><span class="token punctuation">(</span>fmt<span class="token punctuation">,</span> <span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">)</span> <span class="token function">printf</span><span class="token punctuation">(</span>fmt<span class="token punctuation">,</span> </span><span class="token punctuation">##</span><span class="token expression">__VA_ARGS__<span class="token punctuation">)</span></span></span>
+<span class="token comment">// 这样我们就可以使用我们自己定义的宏 trace 来打印日志了</span>
+<span class="token function">trace</span><span class="token punctuation">(</span><span class="token string">"got a number %d"</span><span class="token punctuation">,</span> <span class="token number">34</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>至于为什么要在<code>__VA_ARGS__</code>之前添加<code>##</code>符号，主要是因为，如果不添加的话，当只有fmt参数，<code>__VA_ARGS__</code>为空时，之前的逗号不会删除</p>
+<pre><code class="prism language-c"><span class="token function">trace</span><span class="token punctuation">(</span><span class="token string">"got a number"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>   <span class="token operator">==</span><span class="token operator">&gt;</span>  <span class="token function">trace</span><span class="token punctuation">(</span><span class="token string">"got a number"</span><span class="token punctuation">,</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>从而导致编译错误，而加上<code>##</code>符号的话，将使预处理器去除掉它前面的那个逗号。</p>
+<h4><a id="_166"></a>多行的宏</h4>
+<p>如果宏的内容很长，很多，那么可以写成多行，每行的末尾添加<code>\</code>，以表明后面的一行依然是宏的内容。比如</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">ADD</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span> <span class="token keyword">do</span> <span class="token punctuation">{<!-- --></span> <span class="token keyword">int</span> sum <span class="token operator">=</span> <span class="token punctuation">(</span>x<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token punctuation">(</span>y<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token keyword">return</span> sum<span class="token punctuation">;</span> <span class="token punctuation">}</span> <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span></span></span>
+<span class="token comment">// 宏的内容比较长，也没有缩进，易读性较差，因此转为多行</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">ADD</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span> </span><span class="token punctuation">\</span>
+<span class="token expression"><span class="token keyword">do</span> </span><span class="token punctuation">\</span>
+<span class="token expression"><span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">int</span> sum <span class="token operator">=</span> <span class="token punctuation">(</span>x<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token punctuation">(</span>y<span class="token punctuation">)</span><span class="token punctuation">;</span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">return</span> sum<span class="token punctuation">;</span></span><span class="token punctuation">\</span>
+<span class="token expression"><span class="token punctuation">}</span> <span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span></span></span>
+</code></pre>
+<h4><a id="_183"></a>取消宏定义</h4>
+<p>如果想要取消对一个宏的定义，可以使用<code>#undef</code>预处理指令，比如要取消之前定义的<code>ADD</code>宏，只要像下面即可</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">undef</span> <span class="token expression">ADD</span></span>
+</code></pre>
+<h4><a id="_193"></a>编译器参数定义以及预定义宏</h4>
+<p>除了使用<code>#define</code>预处理器来定义宏之外，也可以通过编译器参数来定义宏，具体可参考各平台的编译器参数。编译器也会在编译某文件时预定义一些宏供使用，常见的有以下几个：</p>
+<table><thead><tr><th>宏</th><th>类型</th><th>含义</th></tr></thead><tbody><tr><td><em><em>FILE</em></em></td><td>const char *</td><td>当前所编译的文件名称(绝对路径)</td></tr><tr><td><em><em>LINE</em></em></td><td>int</td><td>当前所在的行号</td></tr><tr><td><em><em>FUNCTION</em></em></td><td>const char *</td><td>当前所在的函数名称</td></tr><tr><td><em><em>DATE</em></em></td><td>const char *</td><td>当前的日期</td></tr><tr><td><em><em>TIME</em></em></td><td>const char *</td><td>当前的时间</td></tr></tbody></table>
+<h4><a id="_205"></a>宏的调试</h4>
+<p>宏不支持在运行时调试，但如果宏太过于复杂的话，出错也是难免的，因此，可以利用宏自身的特性把宏展开后的内容打印出来，来方便我们查错。</p>
+<p>这里有一个技术前提，如果想要在编译时打印一些信息，可以使用如下预处理指令：</p>
+<blockquote>
+<p>#pragma message (“will print this message”)</p>
+</blockquote>
+<p>但是，如果想要打印某个宏的内容，会发现编译器会报错。比如我们想要打印宏<code>SOMEMACRO</code>的内容。直接使用<code>#pragam message (SOMEMACRO)</code>是不行的，原因是该指令必须接收一个字符串，可使用如下代码协助输出<code>SOMEMACRO</code>的内容。</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">SOMEMACRO</span> <span class="token expression"><span class="token number">123456</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">MACROTOSTR2</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">)</span> #x</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">PRINTMACRO</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">)</span> #x </span><span class="token string">" = "</span> <span class="token expression"><span class="token function">MACROTOSTR2</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">pragma</span> <span class="token expression"><span class="token function">message</span><span class="token punctuation">(</span><span class="token function">PRINTMACRO</span><span class="token punctuation">(</span>SOMEMACRO<span class="token punctuation">)</span><span class="token punctuation">)</span></span></span>
+</code></pre>
+<p>编译上述代码便会在输出窗口打印<code>SOMEMACRO = 123456</code>的内容。</p>
+<p>对于带参数的宏也是适用的：</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">SOMEMACRO</span> <span class="token expression"><span class="token number">123456</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">MACROPARAM</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">)</span> new <span class="token keyword">int</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">MACROTOSTR2</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">)</span> #x</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">PRINTMACRO</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">)</span> #x </span><span class="token string">" = "</span> <span class="token expression"><span class="token function">MACROTOSTR2</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">pragma</span> <span class="token expression"><span class="token function">message</span><span class="token punctuation">(</span><span class="token function">PRINTMACRO</span><span class="token punctuation">(</span><span class="token function">MACROPARAM</span><span class="token punctuation">(</span>SOMEMACRO<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span></span></span>
+</code></pre>
+<p>上述代码块在编译时会打印出<code>MACROPARAM(SOMEMACRO) = new int(123456);</code>，也就是宏展开后的内容。</p>
+<p>因此，当宏出现问题时，可以使用该方法打印出宏展开后的内容，然后调试展开后的内容，找到错误原因，接着同步修正宏本身的错误。</p>
+<h3><a id="_242"></a>常见的使用场景</h3>
+<h4><a id="ifdefif_244"></a>和<code>#ifdef</code>和<code>#if</code>等预处理指令配合</h4>
+<p>通过和预处理指令配合，达到一定的代码开关控制，常见的比如在跨平台开发时，对不同的操作系统启用不同的代码。</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifdef</span> <span class="token expression">_WIN32 </span><span class="token comment">// 查看是否定义了该宏，Windows默认会定义该宏</span></span>
+    <span class="token comment">// 如果是Windows系统则会编译此段代码</span>
+    <span class="token function">OutputDebugString</span><span class="token punctuation">(</span><span class="token string">"this is a Windows log"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">else</span></span>
+    <span class="token comment">// 如果是mac，则会编译此段代码</span>
+    <span class="token function">NSLog</span><span class="token punctuation">(</span>@<span class="token string">"this is a mac log"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+</code></pre>
+<p>如果要查看多个宏是否定义过，可使用下面的预处理指令</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">if</span> <span class="token expression"><span class="token function">defined</span><span class="token punctuation">(</span>_WIN32<span class="token punctuation">)</span> <span class="token operator">||</span> <span class="token function">defined</span><span class="token punctuation">(</span>WIN32<span class="token punctuation">)</span></span></span>
+    <span class="token comment">// 如果是Windows系统则会编译此段代码</span>
+    <span class="token function">OutputDebugString</span><span class="token punctuation">(</span><span class="token string">"this is a Windows log"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+</code></pre>
+<p><code>#ifdef</code>之后的宏只要定义过就会满足条件，而<code>#if</code>则会看后面的宏的内容是否为真了。</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">ENABLE_LOG</span> <span class="token expression"><span class="token number">1</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">if</span> <span class="token expression">ENABLE_LOG</span></span>
+    <span class="token function">trace</span><span class="token punctuation">(</span><span class="token string">"when enabled then print this log"</span><span class="token punctuation">)</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+</code></pre>
+<p>如果把宏的定义改成<code>#define ENABLE_LOG 0</code>，那么就不会满足条件了，也就不会打印日志了。在使用<code>#if</code>时，后面的宏<code>ENABLE_LOG</code>必须定义为整数才行，定义为其他的会报编译错误。</p>
+<h4><a id="_284"></a>防止重复包含头文件</h4>
+<p>在C、C++中如果重复包含了同一个头文件，有可能会带来编译错误，所以我们应当避免这种事情发生，利用预处理指令和宏可以有效防止此类错误发生。具体措施为，在每一个头文件的开始和结束，加上如下的语句</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifndef</span> <span class="token expression">__SYSTEM_API_H__</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">__SYSTEM_API_H__</span></span>
+
+<span class="token comment">// 头文件的内容</span>
+<span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+</code></pre>
+<p>第一次包含此文件时，<code>__SYSTEM_API_H__</code>还没有被定义，因此，头文件的内容被顺利的包含进来，同时，定义了该宏，如果此头文件被重复包含了，那么文件第一行的预处理指令将不会满足，因此文件也就不会被重复包含了。</p>
+<h4><a id="_302"></a>打印错误信息</h4>
+<p>在输出日志时，除了输出错误信息外，如果能够把当前的文件名和行号一并打印出来，那就好了，这样的话就可以更快的定位问题了，之前说过，编译器已经为我们预定义了当前文件名和当前行号的宏，我们只要在输出日志时输出这些信息即可。比如</p>
+<pre><code class="prism language-c"><span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"%s %d printf message %s\n"</span><span class="token punctuation">,</span> <span class="token constant">__FILE__</span><span class="token punctuation">,</span> <span class="token constant">__LINE__</span><span class="token punctuation">,</span> <span class="token string">"some reason"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>这样有一个问题，如果每次输出信息都这么写，太繁琐了，而且，大部分都一样，因此，我们可以用宏来封装一下</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">trace</span><span class="token expression"><span class="token punctuation">(</span>fmt<span class="token punctuation">,</span> <span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">)</span> <span class="token function">printf</span><span class="token punctuation">(</span></span><span class="token string">"%s %d "</span><span class="token expression">fmt<span class="token punctuation">,</span> <span class="token constant">__FILE__</span><span class="token punctuation">,</span> <span class="token constant">__LINE__</span><span class="token punctuation">,</span> </span><span class="token punctuation">##</span><span class="token expression">__VA_ARGS__<span class="token punctuation">)</span></span></span>
+<span class="token comment">// 这样在使用时可以这么写,同样可以输出当前行号和文件名</span>
+<span class="token function">trace</span><span class="token punctuation">(</span><span class="token string">"printf message %s\n"</span><span class="token punctuation">,</span> <span class="token string">"some reason"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>如此，就可以把注意力集中在要输出的信息上，而不被<code>__FILE__,__LINE__</code>干扰了，同时也少写了一些繁琐的代码。</p>
+<h4><a id="_324"></a>减少重复代码</h4>
+<p>如果有一个类，它携带有很多的属性，而每一个属性都必须进行实现<code>set</code>和<code>get</code>函数，那么就可以使用宏来减少代码的输入。</p>
+<pre><code class="prism language-c"><span class="token comment">// 类Widget拥有非常多的属性，但每一个属性的相应函数实现是类似的</span>
+class Widget
+<span class="token punctuation">{<!-- --></span>
+public<span class="token operator">:</span>
+    <span class="token comment">// Width属性</span>
+    <span class="token keyword">int</span> <span class="token function">getWidth</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword">const</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> _Width<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">void</span> <span class="token function">setWidth</span><span class="token punctuation">(</span><span class="token keyword">int</span> Width<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 当设置新值时，打印一条日志，方便调试</span>
+        <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"setWidth %d\n"</span><span class="token punctuation">,</span> Width<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        _Width <span class="token operator">=</span> Width<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">// Height属性</span>
+    <span class="token keyword">int</span> <span class="token function">getHeight</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword">const</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> _Height<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">void</span> <span class="token function">setHeight</span><span class="token punctuation">(</span><span class="token keyword">int</span> Height<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 当设置新值时，打印一条日志，方便调试</span>
+        <span class="token function">printf</span><span class="token punctuation">(</span><span class="token string">"setHeight %d\n"</span><span class="token punctuation">,</span> Height<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        _Height <span class="token operator">=</span> Height<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">// 之后还有其他的属性定义......</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre>
+<p>可以发现，虽然属性很多，但是属性的处理基本是一致的，因此可以使用宏封装一下</p>
+<pre><code class="prism language-c"><span class="token comment">// 定义一个PROPERTY宏来生成相应的函数实现</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">PROPERTY</span><span class="token expression"><span class="token punctuation">(</span>Name<span class="token punctuation">)</span></span><span class="token punctuation">\</span>
+<span class="token expression"><span class="token keyword">int</span> get</span><span class="token punctuation">##</span><span class="token expression"><span class="token function">Name</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token keyword">const</span></span><span class="token punctuation">\</span>
+<span class="token expression"><span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">return</span> _</span><span class="token punctuation">##</span><span class="token expression">Name<span class="token punctuation">;</span></span><span class="token punctuation">\</span>
+<span class="token expression"><span class="token punctuation">}</span></span><span class="token punctuation">\</span>
+<span class="token expression"><span class="token keyword">void</span> set</span><span class="token punctuation">##</span><span class="token expression"><span class="token function">Name</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span><span class="token punctuation">\</span>
+<span class="token expression"><span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token function">printf</span><span class="token punctuation">(</span></span><span class="token string">"set"</span><span class="token directive-hash">#</span><span class="token expression">Name</span><span class="token string">" %d\n"</span><span class="token expression"><span class="token punctuation">,</span> Name<span class="token punctuation">)</span><span class="token punctuation">;</span></span><span class="token punctuation">\</span>
+    <span class="token expression">_</span><span class="token punctuation">##</span><span class="token expression">Name <span class="token operator">=</span> Name<span class="token punctuation">;</span></span><span class="token punctuation">\</span>
+<span class="token expression"><span class="token punctuation">}</span></span></span>
+
+<span class="token comment">// 接下来就可以重新定义Widget类了</span>
+class Widget
+<span class="token punctuation">{<!-- --></span>
+public<span class="token operator">:</span>
+    <span class="token comment">// Width属性</span>
+    <span class="token function">PROPERTY</span><span class="token punctuation">(</span>Width<span class="token punctuation">)</span>
+    <span class="token comment">// Height属性</span>
+    <span class="token function">PROPERTY</span><span class="token punctuation">(</span>Height<span class="token punctuation">)</span>
+    <span class="token comment">// 其他的属性</span>
+    <span class="token function">PROPERTY</span><span class="token punctuation">(</span>Color<span class="token punctuation">)</span>
+    <span class="token function">PROPERTY</span><span class="token punctuation">(</span>BackgroundColor<span class="token punctuation">)</span>
+    <span class="token comment">// ......</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre>
+<p>这样是不是简单多了，需要注意的是，上述例子的属性类型固定为了<code>int</code>，实际中可以扩展<code>PROPERTY</code>宏来支持不同的参数类型。而由于宏不支持调试，因此，使用宏生成的函数将不能在IDE中单步调试，因此，如果函数实现复杂的话，还是少用为妙。</p>
+<p>不能武断说用宏好还是用宏不好，应该依据实际情况而定。</p>
+<h3><a id="_397"></a>易出问题的地方</h3>
+<h4><a id="_399"></a>优先级的改变</h4>
+<p>由于宏只是简单的替换，所以在某些情况下会不知不觉的改变运算的优先级。比如，如果定义了下面这样的宏</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">ADD</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span> x <span class="token operator">+</span> y</span></span>
+<span class="token keyword">int</span> value <span class="token operator">=</span> <span class="token function">ADD</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">)</span> <span class="token operator">*</span> <span class="token function">ADD</span><span class="token punctuation">(</span><span class="token number">4</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>我们期望先分别计算2和3,4和5的和，然后相乘得出45。但实际宏展开后的代码为</p>
+<pre><code class="prism language-c"><span class="token keyword">int</span> value <span class="token operator">=</span> <span class="token number">2</span> <span class="token operator">+</span> <span class="token number">3</span> <span class="token operator">*</span> <span class="token number">4</span> <span class="token operator">+</span> <span class="token number">5</span><span class="token punctuation">;</span>
+</code></pre>
+<p>由于乘号的优先级大于加号，所以是先计算了3和4的积，然后再与2和5相加，得出了不期望的结果19。导致错误，这种问题的修改策略就是在宏定义时加上括号，包括参数都加上括号。即</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">ADD</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>x<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token punctuation">(</span>y<span class="token punctuation">)</span><span class="token punctuation">)</span></span></span>
+</code></pre>
+<h4><a id="_426"></a>宏名称的冲突</h4>
+<p>如果定义的宏名称不小心和其他源码中的名称冲突的话，也会造成编译错误，比如定义了一个宏<code>time</code>，那么就有可能会和标准库函数中的<code>time</code>函数冲突。</p>
+<h4><a id="_430"></a>宏参数中含有逗号</h4>
+<p>宏可以携带参数，而参数并没有什么要求，宏只是拿到参数的值去替换之后的内容，但如果宏参数中含有逗号，那么就会带来歧义了。比如</p>
+<pre><code class="prism language-c"><span class="token comment">// 该宏本身没什么实际使用意义，只是为了说明问题</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">segment</span><span class="token expression"><span class="token punctuation">(</span>seg<span class="token punctuation">)</span> seg</span></span>
+<span class="token comment">// 没有问题</span>
+<span class="token function">segment</span><span class="token punctuation">(</span><span class="token keyword">int</span> x <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span> <span class="token keyword">int</span> y <span class="token operator">=</span> <span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">// 编译错误，因为宏展开时把","视为参数间的分隔符</span>
+<span class="token function">segment</span><span class="token punctuation">(</span><span class="token keyword">int</span> x <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">,</span> y <span class="token operator">=</span> <span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">// 解决办法就是给宏参数加上括号，使其为一体</span>
+<span class="token function">segment</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword">int</span> x <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">,</span> y <span class="token operator">=</span> <span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h4><a id="_do_while0_447"></a>宏定义中常见的 do{ }while(0)</h4>
+<p>在阅读第三方源码时，经常见到宏定义中有一个<code>do{ }while(0)</code>语句，这是为什么呢？比如我们定义一个交换两个值的宏</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">swapint</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span> <span class="token keyword">int</span> tmp <span class="token operator">=</span> x<span class="token punctuation">;</span> x <span class="token operator">=</span> y<span class="token punctuation">;</span> y <span class="token operator">=</span> tmp<span class="token punctuation">;</span></span></span>
+</code></pre>
+<p>在大部分情况下可以工作，但是如果之前已经定义了<code>tmp</code>这个变量，则就会出错了，那我们可以把<code>tmp</code>换成平时不常用的名字，就大大降低了重名的概率了，这确实是一个办法，但不完美，因为即使这样，依然无法用在<code>switch</code>语句中</p>
+<pre><code class="prism language-c"><span class="token keyword">int</span> x <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">,</span> y <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+<span class="token keyword">switch</span> <span class="token punctuation">(</span>value<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">case</span> <span class="token number">1</span><span class="token operator">:</span>
+        <span class="token comment">// 编译出错，因为case语句中不允许声明变量</span>
+        <span class="token function">swapint</span><span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">break</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>那我们想，是否可以定义宏的时候，加上一层大括号，嗯，确实可以。</p>
+<pre><code class="prism language-c"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">swapint</span><span class="token expression"><span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span><span class="token keyword">int</span> tmp <span class="token operator">=</span> x<span class="token punctuation">;</span> x <span class="token operator">=</span> y<span class="token punctuation">;</span> y <span class="token operator">=</span> tmp<span class="token punctuation">;</span><span class="token punctuation">}</span></span></span>
+</code></pre>
+<p>这样便可以用在<code>switch</code>语句中了。是否就完美了呢，依然不行，因为还可能会影响<code>if</code>语句的执行，看下面的例子</p>
+<pre><code class="prism language-c"><span class="token keyword">int</span> x <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">,</span> y <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+<span class="token keyword">if</span> <span class="token punctuation">(</span>x <span class="token operator">&lt;</span> y<span class="token punctuation">)</span>
+    <span class="token function">swapint</span><span class="token punctuation">(</span>x<span class="token punctuation">,</span> y<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">else</span>
+    <span class="token function">someaction</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">// 上面的代码展开</span>
+<span class="token keyword">if</span> <span class="token punctuation">(</span>x <span class="token operator">&lt;</span> y<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span><span class="token keyword">int</span> tmp <span class="token operator">=</span> x<span class="token punctuation">;</span> x <span class="token operator">=</span> y<span class="token punctuation">;</span> y <span class="token operator">=</span> tmp<span class="token punctuation">;</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token keyword">else</span>
+    <span class="token function">someaction</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">// 编译出错，因为在else之前多了一个分号，导致语法错误，那么能不能不加分号</span>
+<span class="token comment">// 可以，但是C++程序员一般都习惯在末尾添加分号，而且不过不加分号，也会影响</span>
+<span class="token comment">// IDE的自动代码格式化</span>
+</code></pre>
+<p>这时，就要祭出<code>do{ }while(0)</code>大杀器了，</p>
+<p>使用do{….}while(0) 把它包裹起来，成为一个独立的语法单元，从而不会与上下文发生混淆。</p>
+<p>同时因为绝大多数的编译器都能够识别do{…}while(0)这种无用的循环并进行优化，所以使用这种方法也不会导致程序的性能降低。</p>
+<h3><a id="_506"></a>总结</h3>
+<p>宏有时能够方便我们编程，有时又能使我们陷入无底深渊。有时我们赞赏宏的优点从而责怪某些语言里为什么没有宏，有时又唾沫横飞大骂宏的缺点。真是又爱又恨。有句话叫做 <code>存在即合理</code>，我想宏也适用，宏是否有益，一是取决于本身，更多的是取决于使用它的人吧！</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

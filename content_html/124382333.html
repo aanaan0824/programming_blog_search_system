@@ -1,0 +1,259 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>.Net开发，在生产过程中还是有一定用户群的，最近研究了下使用VS2019环境，使用Core开发webApi并发布到Linux（CenOS 7）上，过程不算复杂，简单做个备忘！</p>
+<p><span style="background-color:#38d8f0;">一、创建Core WebApi 项目</span></p>
+<p><img alt="" height="718" src="image\5d738da5b63245eaa584cdfa450bf3cf.png" width="1110"/></p>
+<p> <img alt="" height="760" src="image\acb14c7fdef0427d87c2f6ca43d26bbb.png" width="1140"/></p>
+<p> <img alt="" height="760" src="image\4b53751dce12488bbb636131e7f3978c.png" width="981"/></p>
+<p> <img alt="" height="760" src="image\34e242d66e2b46b7bd45a6896064d2e0.png" width="981"/></p>
+<p> <img alt="" height="494" src="image\818449545ba749df9ae274054258b411.png" width="375"/></p>
+<p> Api项目默认文件如上图，</p>
+<p><strong><span style="color:#4da8ee;">Properties下的launchSettings.json文件</span></strong></p>
+<pre><code>{
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "iisSettings": {
+    "windowsAuthentication": false,
+    "anonymousAuthentication": true,
+    "iisExpress": {
+      "applicationUrl": "http://localhost:38382",
+      "sslPort": 0
+    }
+  },
+  "profiles": {
+    "IIS Express": {
+      "commandName": "IISExpress",
+      "launchBrowser": true,
+      "launchUrl": "weatherforecast",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "WebApiTest": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "weatherforecast",
+      "applicationUrl": "http://localhost:5000",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}</code></pre>
+<p>对于这个文件，<span style="color:#fe2c24;">需要清楚，他是调试环境的配置文件，并不是配置你的实际路由。</span><span style="color:#0d0016;">VS对CoreWebApi提供两种调试方式，一种是IIS Express，另一种是项目自带的Kestrel web应用调</span>式，当你用IIS Express方式调试的时候，会用到下面这个配置，launchUrl就是调试时浏览器使用的路由信息，</p>
+<p><img alt="" height="211" src="image\bcf02ecee02d40099856239fa52af611.png" width="417"/></p>
+<p> 当你用项目自带的Kestrel web应用调式，会使用下图的配置</p>
+<p><img alt="" height="184" src="image\15d939fe5e474400a9346255ad71007d.png" width="411"/></p>
+<p> 而这些配置，<span style="color:#fe2c24;">在你发布后，不会被编译，说这些是提前讲一下，如果发布后再部署，路由信息和网络端口都不是用这个配置文件中配置的！</span></p>
+<p><strong><span style="color:#4da8ee;">Program.cs文件</span></strong></p>
+<p><span style="color:#494949;">Api的入口方法</span></p>
+<pre><code class="language-cs">using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace WebApiTest
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            CreateHostBuilder(args).Build().Run();
+        }
+
+        public static IHostBuilder CreateHostBuilder(string[] args) =&gt;
+            Host.CreateDefaultBuilder(args)
+                .ConfigureWebHostDefaults(webBuilder =&gt;
+                {
+                    //默认没有下面这行代码，这行代码是为了指明http监听的端口！
+                    webBuilder.UseUrls("http://*:8085");
+                    webBuilder.UseStartup&lt;Startup&gt;();
+                });
+    }
+}</code></pre>
+<p>注意：理解下上面代码中的注释信息，未指明端口时，端口为调试配置文件里的配置，</p>
+<p><span style="color:#fe2c24;">当你的代码在这里指明这个网络监听端口的配置信息了，调试就用这个端口配置了</span></p>
+<p><strong><span style="color:#4da8ee;">Controllers/WeatherForecastController.cs文件</span></strong></p>
+<p><span style="color:#494949;">这个文件是项目框架的一个默认api例子，可以直接删除掉这个文件，自己添加一个控制器（后面介绍控制器的添加和配置）；</span></p>
+<p>默认项目中还有个WeatherForecast.cs文件，相当于一个实体类，也可以直接删除；</p>
+<p>配置文件中只保留WebApiTest一个配置，其他配置也删除如下</p>
+<pre><code>{
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "WebApiTest": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "api/helloworld",
+      "applicationUrl": "http://localhost:5000",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}</code></pre>
+<p>添加自己的控制器Helloworld.cs</p>
+<p><img alt="" height="676" src="image\f1ecf5ee288348f48a864da63ebcc32f.png" width="726"/></p>
+<p> <img alt="" height="653" src="image\08bc3ef47d86400aa707bc94b09aa13f.png" width="951"/></p>
+<p> <img alt="" height="660" src="image\af5d29e625f24011bdd1b57705a56c55.png" width="955"/></p>
+<p></p>
+<pre><code class="language-cs">using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace WebApiTest.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class HelloworldController : ControllerBase
+    {
+    }
+}
+</code></pre>
+<p>修改代码如下：</p>
+<pre><code class="language-cs">using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace WebApiTest.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class HelloworldController : ControllerBase
+    {
+        [Route("get")]
+        [HttpGet]
+        public ContentResult gt()
+        {
+            return Content("This is Get!");
+        }
+        [Route("post")]
+        [HttpPost]
+        public ContentResult pst()
+        {
+            return Content("This is Post!");
+        }
+    }
+}</code></pre>
+<p>上面代码解析：</p>
+<p><span style="color:#fe2c24;"><strong>[Route("api/[controller]")] 特性指明这个控制器HellowworldController的总路由为api/helloworld<br/> [Route("get")]特性指明gt()方法的路由是get<br/> [HttpGet]特性指明gt()方法只能get访问不能post等其他方式访问<br/> [Route("post")]特性指明pst()方法的路由是post<br/> [HttpPost]特性指明pst()方法只能post访问不能get等其他方式访问</strong></span></p>
+<p>修改调试配置文件如下：</p>
+<pre><code>{
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "WebApiTest": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "api/helloworld/get",
+      "applicationUrl": "http://localhost:8085",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}</code></pre>
+<p></p>
+<p> 现在可以进行调试了</p>
+<p><img alt="" height="116" src="image\31349fea94994207938cbefa655c2cac.png" width="943"/></p>
+<p> 运行效果如下两张图</p>
+<p><img alt="" height="442" src="image\626e7079ef14465f95569a08680b998a.png" width="677"/></p>
+<p></p>
+<p><img alt="" height="179" src="image\60ab8551914e4616a8b5e4b7ee8d42d0.png" width="652"/></p>
+<p></p>
+<p> 控制台程序窗口中显示了api服务的运行情况；如果这是在vs上停止服务，默认控制台窗口不会关闭，可以通过勾选   <span style="color:#fe2c24;">工具----选项----调试----调试停止时自动关闭控制台</span>  设置自动关闭；</p>
+<p><span style="background-color:#38d8f0;">二、跨平台发布</span></p>
+<p>鼠标右键点击项目----发布</p>
+<p><img alt="" height="564" src="image\fda0d5c184f64bb2a5c0489cbddab3f1.png" width="804"/></p>
+<p></p>
+<p><img alt="" height="564" src="image\e52d1e4cf5ce4e15afe14e3ec79b4a05.png" width="804"/></p>
+<p></p>
+<p><img alt="" height="679" src="image\b4307dbda78f4337995d3cbd080358fc.png" width="924"/></p>
+<p> <img alt="" height="565" src="image\e9f53a994c224f76a64bb90fd69819a0.png" width="720"/></p>
+<p>上图中选择Release会使编译后的文件比较小，因为Debug会将引用到的包整体编译，而Release只编译引用到的包中的具体方法；</p>
+<p>目标框架根据自己需要选，注意：选择什么版本，Linux上就要安装相应的DotNet版本环境；</p>
+<p>目标运行时选择可移植；</p>
+<p>勾选在发布前删除所有现有文件，指的是发布目录；</p>
+<p> <img alt="" height="417" src="image\d1097607f49d422481e1be6be32597be.png" width="950"/></p>
+<p></p>
+<p><img alt="" height="695" src="image\1c9f5bdba219447aa3fbb2313f513be7.png" width="1028"/></p>
+<p> <img alt="" height="534" src="image\b32a3827698945528551850100d9e56a.png" width="923"/></p>
+<p> 以上发布完成</p>
+<p><span style="background-color:#38d8f0;">三、部署到Linux（CentOS 7）</span></p>
+<p>1、XShell连接上目标服务器</p>
+<p>2、安装依赖包：</p>
+<p>执行命令：sudo rpm -Uvh https://packages.microsoft.com/config/centos/7/packages-microsoft-prod.rpm</p>
+<p>3、安装SDK：</p>
+<p>执行命令：sudo yum install dotnet-sdk-3.1</p>
+<p> 4、确认安装成功：</p>
+<p> <img alt="" height="52" src="image\7b020585efb44b0d810596be849c5d28.png" width="347"/></p>
+<p>5、创建程序目录</p>
+<p>mkdir /var/www<br/> mkdir /var/www/dotnet</p>
+<p>6、使用Xftp（其他工具也可以），将上一步的publish文件夹复制到服务器上，这里我是放在了<code>/var/www/dotnet</code>目录下；</p>
+<p>7、启动服务</p>
+<p><img alt="" height="177" src="image\887d6a24750d4c44b2318605a090972a.png" width="787"/></p>
+<p> 使用dotnet命令启动服务；</p>
+<p>8、制作服务启动文件</p>
+<p>如上图是启动成功后返回的信息，服务监听端口为8085；看到上图最后一行为空行，并没有退回到命令输入状态，是因为服务启动命令是窗口级的，当我们关闭当前命令窗口，或者使用Ctrl+C快捷键退回到命令输入状态时，服务又会停止；解决这个问题的办法有多种，最简单的是在程序目录publish文件夹中创建一个start.sh的文件，里面输入一行命令：</p>
+<pre><code>nohup dotnet WebApiTest.dll &gt;/dev/null 2&gt;c.log &amp;</code></pre>
+<p>然后执行这个命令就可以了</p>
+<p><img alt="" height="36" src="image\2a668bacf11c4d62943ae4d75df0f24c.png" width="360"/></p>
+<p> 上面第一行命令是给权限，第二行是执行命令；</p>
+<p></p>
+<p><img alt="" height="427" src="image\8f6c7a1540f746989e46560bfc6ac705.png" width="1200"/></p>
+<p>9、端口冲突</p>
+<p>我们上面的例子使用的是8085端口，如果这个端口没占用，使用dotnet ./publish/WebApiTest.dll命令启动的时候会报错：</p>
+<p><img alt="" height="478" src="image\30eb5e12c0344fa886559610c9875a40.png" width="1200"/></p>
+<p></p>
+<p>10、停止服务：</p>
+<p>执行命令</p>
+<pre><code>ps -ef | grep WebApiTest.dll | grep -v grep | awk '{print $2}' | xargs kill 9</code></pre>
+<p>这样写如果只有一个服务匹配上WebApiTest.dll，是可以的，但是实际情况，这么干风险太大，因为这可能匹配出多个进程的pid，试想我有一个服务NotNetWebApiTest.dll使用8080端口，这个命令会匹配出两个pid，所以要修改过滤条件匹配的正则表达式，因为dotnet文件命名规则决定只能是字母数字和‘_’，我们可能将命令修改为</p>
+<pre><code>ps -ef | grep [^a-zA-Z0-9_]WebApiTest.dll | grep -v grep | awk '{print $2}' | xargs kill 9</code></pre>
+<p>11、制作服务停止文件</p>
+<p>这样我们就可以按照创建start.sh的方法创建一个stop.sh文件，将上面的命令复制粘贴到这个文件中保存关闭文件,然后使用下面命令给文件权限</p>
+<pre><code>chmod +x stop.sh
+</code></pre>
+<p>使用</p>
+<pre><code>./stop.sh </code></pre>
+<p>停止服务</p>
+<p>12、服务开机自启动</p>
+<p>一切都运行正常了，我们就面对一种生产场景，当我们的api越来越多，每次重启服务器就需要手动启动各种服务，遗漏任何一个都带来一定的麻烦，我们就需要将我们的所有服务配置成开机自启动；</p>
+<p>方法有多种，如果是通过Nginx启动服务请参见Nginx启动配置，此处只介绍Linux配置开机自启动的一种方式，就是配置/etc/rc.d/rc.local文件的方式，</p>
+<p>1）、编辑这个文件，在最后添加一行命令</p>
+<pre><code>nohup dotnet /var/www/dotnet/publish/WebApiTest.dll &gt;/dev/null 2&gt;/var/www/dotnet/publish/c.log &amp;</code></pre>
+<p>2）、给这个文件可执行权限</p>
+<pre><code>chmod +x /etc/rc.d/rc.local</code></pre>
+<p>3）确保/etc/rc.d/rc.local在开机时候成功启动</p>
+<p>重启服务器，测试服务是否正常启动，如果可以中场启动就没有问题了，如果启动失败，可以通过</p>
+<p>查看 /var/log/messages文件，确认问题并解决，如果我们给这个文件可执行权限了，</p>
+<p>（可以通过ls -la命令确认是否有可执行权限，文件名为绿色为可执行）</p>
+<p><img alt="" height="232" src="image\fe65a6c1ef5f4f65bd23ad6d13a59407.png" width="427"/></p>
+<p></p>
+<p>剩下常见启动失败有3种原因：</p>
+<p>（一）是因为使用三方工具对文件进行编辑，导致文件的换行符不是CR+LF，而是LF，可以通过命令解决</p>
+<pre><code>sed -i "s/\r//" /etc/rc.d/rc.local</code></pre>
+<p>（二）是因为这个文件没有设置软连接，使用命令解决</p>
+<pre><code>ln -s /etc/rc.d/rc.local /etc/rc.local</code></pre>
+<p>也就类似在/etc/里面生成了一个“快捷方式”，如果已经存在这个“快捷方式”，这个命令会提示已经存在，可以删除后重新执行，</p>
+<p>（三）是因为命令中没有使用绝对路径</p>
+<p><img alt="" height="37" src="image\ac2ad716d9864393b727a5657e81241c.png" width="890"/></p>
+<p></p>
+<p>/etc/rc.d/rc.local文件最后一行的命令一定要使用绝对路径</p>
+<p>这时，我们想到之前做的start.sh文件，能不能直接使用，是可以的，我的做法是在rc.d目录先创建一个dotnet.autorun.scripts文件夹，把之前的start.sh文件复制过来，并修改里面的dll路径为绝对路径/var/www/dotnet/publish/WebApiTest.dll并保存，</p>
+<p><img alt="" height="258" src="image\37fac055003f4f1683b3cfb483574f7c.png" width="627"/></p>
+<p>助医日志文件c.log的路径可以在当前文件夹，方便查找，创建好这个start.sh文件别忘记之前说的需要给可执行的权限：</p>
+<pre><code>chmod +x /etc/rc.d/dotnet.autorun.script/start.sh</code></pre>
+<p> <img alt="" height="750" src="image\e1b9ed5bc15345209102954accbffb2a.png" width="993"/></p>
+<p>这样做的好处是可以把所有的服务在这一个位置配置，发布新服务可以在这个位置添加配置，并将多个服务的启动日志放在一个log文件中，方便排查启动故障 </p>
+<p>        以上是使用VS2019创建Dotnet Core WevAPI，并发布到Linux（CentOS 7）上的全过程，如有错漏欢迎指正！</p>
+</div>
+</div>

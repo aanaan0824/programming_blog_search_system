@@ -1,0 +1,501 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#_1">一、前言</a></li><li><a href="#Seata_Server_16">二、Seata Server启动</a></li><li><ul><li><a href="#1_19">1、找入口</a></li><li><a href="#2_38">2、整体执行流程</a></li><li><ul><li><a href="#1_122">1）对配置文件做参数解析</a></li><li><a href="#2_173">2）初始化监控</a></li><li><a href="#3TCRMTMRPC_177">3）创建TC与RM/TM通信的RPC服务器</a></li><li><a href="#4UUID_182">4）初始化UUID生成器</a></li><li><ul><li><a href="#IdWorker_191">IdWorker</a></li><li><a href="#1_initTimestampAndSequence_256">1&gt; initTimestampAndSequence()</a></li><li><a href="#2_initWorkerIdLong_276">2&gt; initWorkerId(Long)</a></li></ul>
+</li><li><a href="#5SessionHolderLockManager_304">5）设置事务会话（`SessionHolder`）、全局锁（`LockManager`）的持久化方式并初始化</a></li><li><ul><li><a href="#1_SessionHolder_307">1&gt; SessionHolder</a></li><li><a href="#2_LockerManager_383">2&gt; LockerManager</a></li></ul>
+</li><li><a href="#6DefaultCoordinator_391">6）创建并初始化事务协调器（`DefaultCoordinator`）</a></li><li><a href="#7ServerRunnerSpringDefaultCoordinator_483">7）注册ServerRunner销毁（Spring容器销毁）的回调钩子函数DefaultCoordinator</a></li><li><a href="#8NettyServerNettyRemotingServer_486">8）启动NettyServer（NettyRemotingServer）</a></li><li><ul><li><a href="#1__491">1&gt; 首先注册消息处理器</a></li><li><a href="#2_NettyRemotingServer_512">2&gt; 初始化`NettyRemotingServer`</a></li><li><ul><li><a href="#AbstractNettyRemotingServerServerHandler_539">AbstractNettyRemotingServer.ServerHandler类</a></li></ul>
+</li></ul>
+</li></ul>
+</li></ul>
+</li><li><a href="#_610">三、总结和后续</a></li></ul>
+</div>
+<p></p>
+<h1><a id="_1"></a>一、前言</h1>
+<p>至此，seata系列的内容包括：</p>
+<blockquote>
+<ol><li><a href="https://blog.csdn.net/Saintmm/article/details/121725763">can not get cluster name in registry config ‘service.vgroupMapping.xx‘, please make sure registry问题解决</a>；</li><li><a href="https://blog.csdn.net/Saintmm/article/details/126154377">Seata Failed to get available servers: endpoint format should like ip:port 报错原因/解决方案汇总版（看完本文必解决问题）</a></li><li><a href="https://blog.csdn.net/Saintmm/article/details/126182178">Seata json decode exception, Cannot construct instance of java.time.LocalDateTime报错原因/解决方案最全汇总版</a></li><li><a href="https://saint.blog.csdn.net/article/details/126189208">【微服务 31】超细的Spring Cloud 整合Seata实现分布式事务（排坑版）</a></li><li><a href="https://saint.blog.csdn.net/article/details/126218557">【微服务 32】Spring Cloud整合Seata、Nacos实现分布式事务案例（巨细排坑版）【云原生】</a></li><li><a href="https://saint.blog.csdn.net/article/details/126453122">【微服务33】分布式事务Seata源码解析一：在IDEA中启动Seata Server</a></li></ol>
+</blockquote>
+<p>本文着重聊一聊seata-server启动时都做了什么？</p>
+<p><strong>PS：前文中搭建的Seata案例，seata的版本为1.3.0，而本文开始的源码分析将基于当前（2022年8月）最新的版本1.5.2进行源码解析。</strong></p>
+<h1><a id="Seata_Server_16"></a>二、Seata Server启动</h1>
+<p>Seata Server包含几个主要模块：<strong>Config</strong>（配置TC）、<strong>Store</strong>（TC运行时全局事务以及分支事务的相关信息通过Store持久化）、<strong>Coordinator</strong>（TC实现事务协调的核心）、<strong>Netty-RPC</strong>（负责TC与TM/RM交互）、<strong>Lock</strong>（资源全局锁的实现）；</p>
+<h2><a id="1_19"></a>1、找入口</h2>
+<p>当要启动一个seata-server时，只需要执行压缩包中bin/目录下的<code>seata-server.sh</code>，在这个脚本中会运行<code>seata-server.jar</code>；</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2a48243009cb41e5be86dfa6842fbd79.png"/></p>
+<p>即对应于源码工程中的server目录 / seata-server 模块，由于seata-server是一个SpringBoot项目，找到其启动类<code>ServerApplication</code>，里面仅仅指定了一个包扫描路径为<code>io.seata</code>，并无其余特殊配置；<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f3c26fafed13489295b4b4496e9ea7ba.png"/></p>
+<p>在启动类的同级目录下，有一个<code>ServerRunner</code>类；<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c4677329db214b8eaaa5555f581e9e76.png"/></p>
+<p><code>ServerRunner</code>类实现了<code>CommandLineRunner</code>接口：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a2e171be50044d209ef3019c80a4b105.png"/></p>
+<p>而<code>CommandLineRunner</code>接口主要用于实现在Spring容器初始化后执行，并且在整个应用生命周期内只会执行一次；也就是说在Spring容器初始化后会执行<code>ServerRunner#run()</code>方法；<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5ff4f30f97294ca789a6018ea1a53a92.png"/></p>
+<p><code>ServerRunner#run()</code>方法中仅仅调用了<code>Server#start()</code>方法；因此可以确定入口为<code>io.seata.server.Server</code>类的start()方法；</p>
+<h2><a id="2_38"></a>2、整体执行流程</h2>
+<p><code>Server#start()</code>方法：</p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Server</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">/**
+     * The entry point of application.
+     *
+     * @param args the input arguments
+     */</span>
+    <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">start</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// create logger</span>
+        <span class="token keyword">final</span> <span class="token class-name">Logger</span> logger <span class="token operator">=</span> <span class="token class-name">LoggerFactory</span><span class="token punctuation">.</span><span class="token function">getLogger</span><span class="token punctuation">(</span><span class="token class-name">Server</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//initialize the parameter parser</span>
+        <span class="token comment">//Note that the parameter parser should always be the first line to execute.</span>
+        <span class="token comment">//Because, here we need to parse the parameters needed for startup.</span>
+        <span class="token comment">// 1. 对配置文件做参数解析：包括registry.conf、file.conf的解析</span>
+        <span class="token class-name">ParameterParser</span> parameterParser <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">ParameterParser</span><span class="token punctuation">(</span>args<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 2、初始化监控，做metric指标采集</span>
+        <span class="token class-name">MetricsManager</span><span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">init</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 将Store资源持久化方式放到系统的环境变量store.mode中</span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span><span class="token function">setProperty</span><span class="token punctuation">(</span><span class="token class-name">ConfigurationKeys</span><span class="token punctuation">.</span>STORE_MODE<span class="token punctuation">,</span> parameterParser<span class="token punctuation">.</span><span class="token function">getStoreMode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// seata server里netty server 的io线程池（核心线程数50，最大线程数100）</span>
+        <span class="token class-name">ThreadPoolExecutor</span> workingThreads <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">ThreadPoolExecutor</span><span class="token punctuation">(</span><span class="token class-name">NettyServerConfig</span><span class="token punctuation">.</span><span class="token function">getMinServerPoolSize</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                <span class="token class-name">NettyServerConfig</span><span class="token punctuation">.</span><span class="token function">getMaxServerPoolSize</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                <span class="token class-name">NettyServerConfig</span><span class="token punctuation">.</span><span class="token function">getKeepAliveTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                <span class="token class-name">TimeUnit</span><span class="token punctuation">.</span>SECONDS<span class="token punctuation">,</span>
+                <span class="token keyword">new</span> <span class="token class-name">LinkedBlockingQueue</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token class-name">NettyServerConfig</span><span class="token punctuation">.</span><span class="token function">getMaxTaskQueueSize</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                <span class="token keyword">new</span> <span class="token class-name">NamedThreadFactory</span><span class="token punctuation">(</span><span class="token string">"ServerHandlerThread"</span><span class="token punctuation">,</span> <span class="token class-name">NettyServerConfig</span><span class="token punctuation">.</span><span class="token function">getMaxServerPoolSize</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token class-name">ThreadPoolExecutor<span class="token punctuation">.</span>CallerRunsPolicy</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 3、创建TC与RM/TM通信的RPC服务器--netty</span>
+        <span class="token class-name">NettyRemotingServer</span> nettyRemotingServer <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">NettyRemotingServer</span><span class="token punctuation">(</span>workingThreads<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 4、初始化UUID生成器（雪花算法）</span>
+        <span class="token class-name">UUIDGenerator</span><span class="token punctuation">.</span><span class="token function">init</span><span class="token punctuation">(</span>parameterParser<span class="token punctuation">.</span><span class="token function">getServerNode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//log store mode : file, db, redis</span>
+        <span class="token comment">// 5、设置事务会话的持久化方式，有三种类型可选：file/db/redis</span>
+        <span class="token class-name">SessionHolder</span><span class="token punctuation">.</span><span class="token function">init</span><span class="token punctuation">(</span>parameterParser<span class="token punctuation">.</span><span class="token function">getSessionStoreMode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">LockerManagerFactory</span><span class="token punctuation">.</span><span class="token function">init</span><span class="token punctuation">(</span>parameterParser<span class="token punctuation">.</span><span class="token function">getLockStoreMode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 6、创建并初始化事务协调器，创建时后台会启动一堆线程</span>
+        <span class="token class-name">DefaultCoordinator</span> coordinator <span class="token operator">=</span> <span class="token class-name">DefaultCoordinator</span><span class="token punctuation">.</span><span class="token function">getInstance</span><span class="token punctuation">(</span>nettyRemotingServer<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        coordinator<span class="token punctuation">.</span><span class="token function">init</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// 将DefaultCoordinator作为Netty Server的transactionMessageHandler；</span>
+        <span class="token comment">// 用于做AT、TCC、SAGA等不同事务类型的逻辑处理</span>
+        nettyRemotingServer<span class="token punctuation">.</span><span class="token function">setHandler</span><span class="token punctuation">(</span>coordinator<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">// let ServerRunner do destroy instead ShutdownHook, see https://github.com/seata/seata/issues/4028</span>
+        <span class="token comment">// 7、注册ServerRunner销毁（Spring容器销毁）的回调钩子函数</span>
+        <span class="token class-name">ServerRunner</span><span class="token punctuation">.</span><span class="token function">addDisposable</span><span class="token punctuation">(</span>coordinator<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token comment">//127.0.0.1 and 0.0.0.0 are not valid here.</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">NetUtil</span><span class="token punctuation">.</span><span class="token function">isValidIp</span><span class="token punctuation">(</span>parameterParser<span class="token punctuation">.</span><span class="token function">getHost</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            XID<span class="token punctuation">.</span><span class="token function">setIpAddress</span><span class="token punctuation">(</span>parameterParser<span class="token punctuation">.</span><span class="token function">getHost</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">String</span> preferredNetworks <span class="token operator">=</span> <span class="token class-name">ConfigurationFactory</span><span class="token punctuation">.</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">getConfig</span><span class="token punctuation">(</span>REGISTRY_PREFERED_NETWORKS<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StringUtils</span><span class="token punctuation">.</span><span class="token function">isNotBlank</span><span class="token punctuation">(</span>preferredNetworks<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                XID<span class="token punctuation">.</span><span class="token function">setIpAddress</span><span class="token punctuation">(</span><span class="token class-name">NetUtil</span><span class="token punctuation">.</span><span class="token function">getLocalIp</span><span class="token punctuation">(</span>preferredNetworks<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span>REGEX_SPLIT_CHAR<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+                XID<span class="token punctuation">.</span><span class="token function">setIpAddress</span><span class="token punctuation">(</span><span class="token class-name">NetUtil</span><span class="token punctuation">.</span><span class="token function">getLocalIp</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+        <span class="token comment">// 8、启动netty Server，用于接收TM/RM的请求</span>
+        nettyRemotingServer<span class="token punctuation">.</span><span class="token function">init</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><strong>Server端的启动流程大致做了八件事：</strong></p>
+<blockquote>
+<ol><li>对配置文件（包括registry.conf、file.conf）做参数解析；</li><li>初始化监控，做metric指标采集；</li><li>创建TC与RM/TM通信的RPC服务器（<code>NettyRemotingServer</code>）–netty；</li><li>初始化UUID生成器（雪花算法），用于生成全局事务id和分支事务id；</li><li>设置事务会话（<code>SessionHolder</code>）、全局锁（<code>LockManager</code>）的持久化方式并初始化，有三种类型可选：file/db/redis；</li><li>创建并初始化事务协调器（<code>DefaultCoordinator</code>），后台启动一堆线程做定时任务，并将<code>DefaultCoordinator</code>绑定到RPC服务器上做为<code>transactionMessageHandler</code>；</li><li>注册ServerRunner销毁（Spring容器销毁）的回调钩子函数DefaultCoordinator；</li><li>启动netty Server，用于接收TM/RM的请求；</li></ol>
+</blockquote>
+<h3><a id="1_122"></a>1）对配置文件做参数解析</h3>
+<p>具体代码执行流程如下：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/f60a6a2bdc394542b9975eeaa0814ae6.png"/></p>
+<p><strong>ParameterParser的init()方法中：</strong></p>
+<blockquote>
+<ol><li>首先从启动命令（运行时参数）中解析；</li><li>接着判断server端是否在容器中启动，是则从容器环境中获取seata环境、host、port、serverNode、storeMode存储模式等信息；</li><li>如果storeMode不存在，则从配置中心/文件中获取配置。</li></ol>
+</blockquote>
+<pre><code class="prism language-java"><span class="token comment">// 解析运行期参数，默认什么里面什么都没有</span>
+<span class="token keyword">private</span> <span class="token keyword">void</span> <span class="token function">getCommandParameters</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">[</span><span class="token punctuation">]</span> args<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token class-name">JCommander</span> jCommander <span class="token operator">=</span> <span class="token class-name">JCommander</span><span class="token punctuation">.</span><span class="token function">newBuilder</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">addObject</span><span class="token punctuation">(</span><span class="token keyword">this</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">build</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    jCommander<span class="token punctuation">.</span><span class="token function">parse</span><span class="token punctuation">(</span>args<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>help<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        jCommander<span class="token punctuation">.</span><span class="token function">setProgramName</span><span class="token punctuation">(</span>PROGRAM_NAME<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        jCommander<span class="token punctuation">.</span><span class="token function">usage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">System</span><span class="token punctuation">.</span><span class="token function">exit</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">// server端在容器中启动，则从容器环境中读取环境、host、port、server节点以及StoreMode存储模式</span>
+<span class="token keyword">private</span> <span class="token keyword">void</span> <span class="token function">getEnvParameters</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// 设置seata的环境</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StringUtils</span><span class="token punctuation">.</span><span class="token function">isBlank</span><span class="token punctuation">(</span>seataEnv<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        seataEnv <span class="token operator">=</span> <span class="token class-name">ContainerHelper</span><span class="token punctuation">.</span><span class="token function">getEnv</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">// 设置Host</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StringUtils</span><span class="token punctuation">.</span><span class="token function">isBlank</span><span class="token punctuation">(</span>host<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        host <span class="token operator">=</span> <span class="token class-name">ContainerHelper</span><span class="token punctuation">.</span><span class="token function">getHost</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">// 设置端口号</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>port <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        port <span class="token operator">=</span> <span class="token class-name">ContainerHelper</span><span class="token punctuation">.</span><span class="token function">getPort</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>serverNode <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        serverNode <span class="token operator">=</span> <span class="token class-name">ContainerHelper</span><span class="token punctuation">.</span><span class="token function">getServerNode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StringUtils</span><span class="token punctuation">.</span><span class="token function">isBlank</span><span class="token punctuation">(</span>storeMode<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        storeMode <span class="token operator">=</span> <span class="token class-name">ContainerHelper</span><span class="token punctuation">.</span><span class="token function">getStoreMode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StringUtils</span><span class="token punctuation">.</span><span class="token function">isBlank</span><span class="token punctuation">(</span>sessionStoreMode<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        sessionStoreMode <span class="token operator">=</span> <span class="token class-name">ContainerHelper</span><span class="token punctuation">.</span><span class="token function">getSessionStoreMode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StringUtils</span><span class="token punctuation">.</span><span class="token function">isBlank</span><span class="token punctuation">(</span>lockStoreMode<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        lockStoreMode <span class="token operator">=</span> <span class="token class-name">ContainerHelper</span><span class="token punctuation">.</span><span class="token function">getLockStoreMode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="2_173"></a>2）初始化监控</h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/66d6c571c83946f49871b241b3679d8f.png"/></p>
+<p>默认不开启，此处不做过多介绍</p>
+<h3><a id="3TCRMTMRPC_177"></a>3）创建TC与RM/TM通信的RPC服务器</h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9be3bff833ef4b44a210ba0f8e48d4df.png"/></p>
+<p>单纯的new一个<code>NettyRemotingServer</code>，也没啥可说的；</p>
+<h3><a id="4UUID_182"></a>4）初始化UUID生成器</h3>
+<p>UUID底层采用雪花算法，其用于生成全局事务id和分支事务id；</p>
+<p><strong>代码执行流程如下：</strong></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/cdd1e99462eb4ae5a0d7f14b78e485e8.png"/></p>
+<p><code>UUIDGenerator</code>会委托IdWorker来生成雪花id，生成的雪花Id由0、10位的workerId、41位的时间戳、12位的sequence序列号组成。</p>
+<h4><a id="IdWorker_191"></a>IdWorker</h4>
+<p>IdWorker中有8个重要的成员变量/常量：</p>
+<pre><code class="prism language-java"><span class="token comment">/**
+ * Start time cut (2020-05-03)
+ */</span>
+<span class="token keyword">private</span> <span class="token keyword">final</span> <span class="token keyword">long</span> twepoch <span class="token operator">=</span> <span class="token number">1588435200000L</span><span class="token punctuation">;</span>
+
+<span class="token comment">/**
+ * The number of bits occupied by workerId
+ */</span>
+<span class="token keyword">private</span> <span class="token keyword">final</span> <span class="token keyword">int</span> workerIdBits <span class="token operator">=</span> <span class="token number">10</span><span class="token punctuation">;</span>
+
+<span class="token comment">/**
+ * The number of bits occupied by timestamp
+ */</span>
+<span class="token keyword">private</span> <span class="token keyword">final</span> <span class="token keyword">int</span> timestampBits <span class="token operator">=</span> <span class="token number">41</span><span class="token punctuation">;</span>
+
+<span class="token comment">/**
+ * The number of bits occupied by sequence
+ */</span>
+<span class="token keyword">private</span> <span class="token keyword">final</span> <span class="token keyword">int</span> sequenceBits <span class="token operator">=</span> <span class="token number">12</span><span class="token punctuation">;</span>
+
+<span class="token comment">/**
+ * Maximum supported machine id, the result is 1023
+ */</span>
+<span class="token keyword">private</span> <span class="token keyword">final</span> <span class="token keyword">int</span> maxWorkerId <span class="token operator">=</span> <span class="token operator">~</span><span class="token punctuation">(</span><span class="token operator">-</span><span class="token number">1</span> <span class="token operator">&lt;&lt;</span> workerIdBits<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">/**
+ * business meaning: machine ID (0 ~ 1023)
+ * actual layout in memory:
+ * highest 1 bit: 0
+ * middle 10 bit: workerId
+ * lowest 53 bit: all 0
+ */</span>
+<span class="token keyword">private</span> <span class="token keyword">long</span> workerId<span class="token punctuation">;</span>
+
+<span class="token comment">/**
+ * 又是一个雪花算法（64位，8字节）
+ * timestamp and sequence mix in one Long
+ * highest 11 bit: not used
+ * middle  41 bit: timestamp
+ * lowest  12 bit: sequence
+ */</span>
+<span class="token keyword">private</span> <span class="token class-name">AtomicLong</span> timestampAndSequence<span class="token punctuation">;</span>
+
+<span class="token comment">/**
+ * 从一个long数组类型中抽取出一个时间戳伴随序列号，偏向一个辅助性质
+ * mask that help to extract timestamp and sequence from a long
+ */</span>
+<span class="token keyword">private</span> <span class="token keyword">final</span> <span class="token keyword">long</span> timestampAndSequenceMask <span class="token operator">=</span> <span class="token operator">~</span><span class="token punctuation">(</span><span class="token operator">-</span><span class="token number">1L</span> <span class="token operator">&lt;&lt;</span> <span class="token punctuation">(</span>timestampBits <span class="token operator">+</span> sequenceBits<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><strong>变量/常量解释：</strong></p>
+<blockquote>
+<ol><li>常量<code>twepoch</code>表示我们的时间戳时间从<code>2020-05-03</code>开始计算，即当前时间的时间戳需要减去<code>twepoch</code>的值<code>1588435200000L</code>；</li><li>常量<code>workerIdBits</code>表示机器号workerId占10位；</li><li>常量<code>timestampBits</code>表示时间戳timestamp占41位；</li><li>常量<code>sequenceBits</code>表示序列化占12位；</li><li>常量<code>maxWorkerId</code>表示机器号的最大值为1023；</li><li>long类型的变量<code>workerId</code>本身也是一个雪花算法，只是从开头往后数，第2位开始，一共10位用来表示workerId，其余位全是0；</li><li>AtomicLong类型的变量<code>timestampAndSequence</code>，其本身也是一个雪花算法，头11位不使用，中间41位表示timestamp，最后12位表示sequence；</li><li>long类型的常量<code>timestampAndSequenceMask</code>，用于从一个完整的雪花ID（long类型）中摘出<code>timestamp 和 sequence</code></li></ol>
+</blockquote>
+<p>IdWorker构造器中会分别初始化TimestampAndSequence、WorkerId。</p>
+<h4><a id="1_initTimestampAndSequence_256"></a>1&gt; initTimestampAndSequence()</h4>
+<p>initTimestampAndSequence()方法负责初始化<code>timestamp</code>和<code>sequence</code>；</p>
+<pre><code class="prism language-java"><span class="token keyword">private</span> <span class="token keyword">void</span> <span class="token function">initTimestampAndSequence</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// 拿到当前时间戳 - （2020-05-03 时间戳）的数值，即当前时间相对2020-05-03的时间戳</span>
+    <span class="token keyword">long</span> timestamp <span class="token operator">=</span> <span class="token function">getNewestTimestamp</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 把时间戳左移12位，后12位流程sequence使用</span>
+    <span class="token keyword">long</span> timestampWithSequence <span class="token operator">=</span> timestamp <span class="token operator">&lt;&lt;</span> sequenceBits<span class="token punctuation">;</span>
+    <span class="token comment">// 把混合sequence（默认为0）的时间戳赋值给timestampAndSequence</span>
+    <span class="token keyword">this</span><span class="token punctuation">.</span>timestampAndSequence <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">AtomicLong</span><span class="token punctuation">(</span>timestampWithSequence<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">// 获取当前时间戳</span>
+<span class="token keyword">private</span> <span class="token keyword">long</span> <span class="token function">getNewestTimestamp</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//当前时间的时间戳减去2020-05-03的时间戳</span>
+    <span class="token keyword">return</span> <span class="token class-name">System</span><span class="token punctuation">.</span><span class="token function">currentTimeMillis</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-</span> twepoch<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h4><a id="2_initWorkerIdLong_276"></a>2&gt; initWorkerId(Long)</h4>
+<p>initWorkerId(Long workerId)方法负责初始化workId，默认不会传过来workerId，如果传过来则使用传过来的workerId，并校验其不能大于1023，然后将其左移53位；</p>
+<pre><code class="prism language-java"><span class="token keyword">private</span> <span class="token keyword">void</span> <span class="token function">initWorkerId</span><span class="token punctuation">(</span><span class="token class-name">Long</span> workerId<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+   <span class="token keyword">if</span> <span class="token punctuation">(</span>workerId <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+       <span class="token comment">// workid为null时，自动生成一个workerId</span>
+       workerId <span class="token operator">=</span> <span class="token function">generateWorkerId</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+   <span class="token punctuation">}</span>
+   <span class="token comment">// workerId最大只能是1023，因为其只占10bit</span>
+   <span class="token keyword">if</span> <span class="token punctuation">(</span>workerId <span class="token operator">&gt;</span> maxWorkerId <span class="token operator">||</span> workerId <span class="token operator">&lt;</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+       <span class="token class-name">String</span> message <span class="token operator">=</span> <span class="token class-name">String</span><span class="token punctuation">.</span><span class="token function">format</span><span class="token punctuation">(</span><span class="token string">"worker Id can't be greater than %d or less than 0"</span><span class="token punctuation">,</span> maxWorkerId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+       <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token class-name">IllegalArgumentException</span><span class="token punctuation">(</span>message<span class="token punctuation">)</span><span class="token punctuation">;</span>
+   <span class="token punctuation">}</span>
+   <span class="token keyword">this</span><span class="token punctuation">.</span>workerId <span class="token operator">=</span> workerId <span class="token operator">&lt;&lt;</span> <span class="token punctuation">(</span>timestampBits <span class="token operator">+</span> sequenceBits<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>如果没传则基于MAC地址生成；<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/d66a1c77f7fe4bd3951b499da6d7ca72.png"/></p>
+<p>如果基于MAC地址生成workerId出现异常，则也1023为基数生成一个随机的workerId；<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/78cd047de2414266b1688a4e21c0adbd.png"/></p>
+<p>最后同样，校验workerId不能大于1023，然后将其左移53位；</p>
+<h3><a id="5SessionHolderLockManager_304"></a>5）设置事务会话（<code>SessionHolder</code>）、全局锁（<code>LockManager</code>）的持久化方式并初始化</h3>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ab09e94c4b984bccbce698c78d7ea7c0.png"/></p>
+<h4><a id="1_SessionHolder_307"></a>1&gt; SessionHolder</h4>
+<p>SessionHolder负责事务会话Session的持久化，一个session对应一个事务，事务又分为全局事务和分支事务；</p>
+<p>SessionHolder支持db，file和redis的持久化方式，其中redis和db支持集群模式，项目上推荐使用redis或db模式；</p>
+<p><strong>SessionHolder有五个重要的属性，如下：</strong></p>
+<pre><code class="prism language-java"><span class="token comment">// 用于管理所有的Setssion，以及Session的创建、更新、删除等</span>
+<span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">SessionManager</span> ROOT_SESSION_MANAGER<span class="token punctuation">;</span>
+<span class="token comment">// 用于管理所有的异步commit的Session，包括创建、更新以及删除</span>
+<span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">SessionManager</span> ASYNC_COMMITTING_SESSION_MANAGER<span class="token punctuation">;</span>
+<span class="token comment">// 用于管理所有的重试commit的Session，包括创建、更新以及删除</span>
+<span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">SessionManager</span> RETRY_COMMITTING_SESSION_MANAGER<span class="token punctuation">;</span>
+<span class="token comment">// 用于管理所有的重试rollback的Session，包括创建、更新以及删除</span>
+<span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">SessionManager</span> RETRY_ROLLBACKING_SESSION_MANAGER<span class="token punctuation">;</span>
+<span class="token comment">// 用于管理分布式锁</span>
+<span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">DistributedLocker</span> DISTRIBUTED_LOCKER<span class="token punctuation">;</span>
+</code></pre>
+<p><strong>这五个属性在<code>SessionHolder#init()</code>方法中初始化，init()方法源码如下：</strong></p>
+<pre><code class="prism language-java"><span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">void</span> <span class="token function">init</span><span class="token punctuation">(</span><span class="token class-name">String</span> mode<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StringUtils</span><span class="token punctuation">.</span><span class="token function">isBlank</span><span class="token punctuation">(</span>mode<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        mode <span class="token operator">=</span> CONFIG<span class="token punctuation">.</span><span class="token function">getConfig</span><span class="token punctuation">(</span><span class="token class-name">ConfigurationKeys</span><span class="token punctuation">.</span>STORE_SESSION_MODE<span class="token punctuation">,</span>
+                CONFIG<span class="token punctuation">.</span><span class="token function">getConfig</span><span class="token punctuation">(</span><span class="token class-name">ConfigurationKeys</span><span class="token punctuation">.</span>STORE_MODE<span class="token punctuation">,</span> SERVER_DEFAULT_STORE_MODE<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token class-name">StoreMode</span> storeMode <span class="token operator">=</span> <span class="token class-name">StoreMode</span><span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span>mode<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 根据storeMode采用SPI机制初始化SessionManager</span>
+    <span class="token comment">// db模式</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StoreMode</span><span class="token punctuation">.</span>DB<span class="token punctuation">.</span><span class="token function">equals</span><span class="token punctuation">(</span>storeMode<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        ROOT_SESSION_MANAGER <span class="token operator">=</span> <span class="token class-name">EnhancedServiceLoader</span><span class="token punctuation">.</span><span class="token function">load</span><span class="token punctuation">(</span><span class="token class-name">SessionManager</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">,</span> <span class="token class-name">StoreMode</span><span class="token punctuation">.</span>DB<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        ASYNC_COMMITTING_SESSION_MANAGER <span class="token operator">=</span> <span class="token class-name">EnhancedServiceLoader</span><span class="token punctuation">.</span><span class="token function">load</span><span class="token punctuation">(</span><span class="token class-name">SessionManager</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">,</span> <span class="token class-name">StoreMode</span><span class="token punctuation">.</span>DB<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token keyword">new</span> <span class="token class-name">Object</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">{<!-- --></span>ASYNC_COMMITTING_SESSION_MANAGER_NAME<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        RETRY_COMMITTING_SESSION_MANAGER <span class="token operator">=</span> <span class="token class-name">EnhancedServiceLoader</span><span class="token punctuation">.</span><span class="token function">load</span><span class="token punctuation">(</span><span class="token class-name">SessionManager</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">,</span> <span class="token class-name">StoreMode</span><span class="token punctuation">.</span>DB<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token keyword">new</span> <span class="token class-name">Object</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">{<!-- --></span>RETRY_COMMITTING_SESSION_MANAGER_NAME<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        RETRY_ROLLBACKING_SESSION_MANAGER <span class="token operator">=</span> <span class="token class-name">EnhancedServiceLoader</span><span class="token punctuation">.</span><span class="token function">load</span><span class="token punctuation">(</span><span class="token class-name">SessionManager</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">,</span> <span class="token class-name">StoreMode</span><span class="token punctuation">.</span>DB<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token keyword">new</span> <span class="token class-name">Object</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">{<!-- --></span>RETRY_ROLLBACKING_SESSION_MANAGER_NAME<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        DISTRIBUTED_LOCKER <span class="token operator">=</span> <span class="token class-name">DistributedLockerFactory</span><span class="token punctuation">.</span><span class="token function">getDistributedLocker</span><span class="token punctuation">(</span><span class="token class-name">StoreMode</span><span class="token punctuation">.</span>DB<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StoreMode</span><span class="token punctuation">.</span>FILE<span class="token punctuation">.</span><span class="token function">equals</span><span class="token punctuation">(</span>storeMode<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// 文件模式</span>
+        <span class="token class-name">String</span> sessionStorePath <span class="token operator">=</span> CONFIG<span class="token punctuation">.</span><span class="token function">getConfig</span><span class="token punctuation">(</span><span class="token class-name">ConfigurationKeys</span><span class="token punctuation">.</span>STORE_FILE_DIR<span class="token punctuation">,</span>
+                DEFAULT_SESSION_STORE_FILE_DIR<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StringUtils</span><span class="token punctuation">.</span><span class="token function">isBlank</span><span class="token punctuation">(</span>sessionStorePath<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token class-name">StoreException</span><span class="token punctuation">(</span><span class="token string">"the {store.file.dir} is empty."</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        ROOT_SESSION_MANAGER <span class="token operator">=</span> <span class="token class-name">EnhancedServiceLoader</span><span class="token punctuation">.</span><span class="token function">load</span><span class="token punctuation">(</span><span class="token class-name">SessionManager</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">,</span> <span class="token class-name">StoreMode</span><span class="token punctuation">.</span>FILE<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token keyword">new</span> <span class="token class-name">Object</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">{<!-- --></span>ROOT_SESSION_MANAGER_NAME<span class="token punctuation">,</span> sessionStorePath<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        ASYNC_COMMITTING_SESSION_MANAGER <span class="token operator">=</span> ROOT_SESSION_MANAGER<span class="token punctuation">;</span>
+        RETRY_COMMITTING_SESSION_MANAGER <span class="token operator">=</span> ROOT_SESSION_MANAGER<span class="token punctuation">;</span>
+        RETRY_ROLLBACKING_SESSION_MANAGER <span class="token operator">=</span> ROOT_SESSION_MANAGER<span class="token punctuation">;</span>
+
+        DISTRIBUTED_LOCKER <span class="token operator">=</span> <span class="token class-name">DistributedLockerFactory</span><span class="token punctuation">.</span><span class="token function">getDistributedLocker</span><span class="token punctuation">(</span><span class="token class-name">StoreMode</span><span class="token punctuation">.</span>FILE<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">StoreMode</span><span class="token punctuation">.</span>REDIS<span class="token punctuation">.</span><span class="token function">equals</span><span class="token punctuation">(</span>storeMode<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// redis模式</span>
+        ROOT_SESSION_MANAGER <span class="token operator">=</span> <span class="token class-name">EnhancedServiceLoader</span><span class="token punctuation">.</span><span class="token function">load</span><span class="token punctuation">(</span><span class="token class-name">SessionManager</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">,</span> <span class="token class-name">StoreMode</span><span class="token punctuation">.</span>REDIS<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        ASYNC_COMMITTING_SESSION_MANAGER <span class="token operator">=</span> <span class="token class-name">EnhancedServiceLoader</span><span class="token punctuation">.</span><span class="token function">load</span><span class="token punctuation">(</span><span class="token class-name">SessionManager</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">,</span>
+            <span class="token class-name">StoreMode</span><span class="token punctuation">.</span>REDIS<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token class-name">Object</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">{<!-- --></span>ASYNC_COMMITTING_SESSION_MANAGER_NAME<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        RETRY_COMMITTING_SESSION_MANAGER <span class="token operator">=</span> <span class="token class-name">EnhancedServiceLoader</span><span class="token punctuation">.</span><span class="token function">load</span><span class="token punctuation">(</span><span class="token class-name">SessionManager</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">,</span>
+            <span class="token class-name">StoreMode</span><span class="token punctuation">.</span>REDIS<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token class-name">Object</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">{<!-- --></span>RETRY_COMMITTING_SESSION_MANAGER_NAME<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        RETRY_ROLLBACKING_SESSION_MANAGER <span class="token operator">=</span> <span class="token class-name">EnhancedServiceLoader</span><span class="token punctuation">.</span><span class="token function">load</span><span class="token punctuation">(</span><span class="token class-name">SessionManager</span><span class="token punctuation">.</span><span class="token keyword">class</span><span class="token punctuation">,</span>
+            <span class="token class-name">StoreMode</span><span class="token punctuation">.</span>REDIS<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token class-name">Object</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">{<!-- --></span>RETRY_ROLLBACKING_SESSION_MANAGER_NAME<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        DISTRIBUTED_LOCKER <span class="token operator">=</span> <span class="token class-name">DistributedLockerFactory</span><span class="token punctuation">.</span><span class="token function">getDistributedLocker</span><span class="token punctuation">(</span><span class="token class-name">StoreMode</span><span class="token punctuation">.</span>REDIS<span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">// unknown store</span>
+        <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token class-name">IllegalArgumentException</span><span class="token punctuation">(</span><span class="token string">"unknown store mode:"</span> <span class="token operator">+</span> mode<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">// 根据storeMode重新加载</span>
+    <span class="token function">reload</span><span class="token punctuation">(</span>storeMode<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>init()方法中根据storeMode采用SPI机制初始化SessionManager，<code>SessionManager</code>有三个实现类：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a3df578f8a164a03b3d7967081e0623f.png"/></p>
+<h4><a id="2_LockerManager_383"></a>2&gt; LockerManager</h4>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ce8c3b2611164b67b54887f7753afc0e.png"/></p>
+<p>和<code>SessionHolder</code>一样，<code>LockManagerFactory#init()</code>方法同样根据storeMode采用SPI机制初始化LockManager，<code>LockManager</code>有三个实现类：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/db7cee0a37ed42b685820044889a72fb.png"/></p>
+<h3><a id="6DefaultCoordinator_391"></a>6）创建并初始化事务协调器（<code>DefaultCoordinator</code>）</h3>
+<p><code>DefaultCoordinator</code>是事务协调的核心，比如：开启、提交、回滚全局事务，注册、提交、回滚分支事务都是通过DefaultCoordinator进行协调处理的。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/238dabcdd008434180d84736300285bb.png"/><br/> <strong>（1）先来看DefaultCoordinator的创建；</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4b377f2faacc40df99f8c2083fe440e6.png"/></p>
+<p>使用Double Check Lock（DCL-双重检查锁）机制获取到单例的<code>DefaultCoordinator</code>；如果<code>DefaultCoordinator</code>为实例化过，则new一个：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/2731e02558f84eb79d3224d5a95177ca.png"/></p>
+<p>在<code>DefaultCoordinator</code>的类构造器中，首先绑定远程通信的Server的具体实现到内部成员中，然后实例化一个<code>DefaultCore</code>，DefaultCore是AT、TCC、XA、Saga四种分布式事务模式的具体实现类；<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7a416a124f244cbd8430c9720bf827d2.png"/></p>
+<p><code>DefaultCore</code>的类构造器中首先通过SPI机制加载出所有的AbstractCore的子类，一共有四个：ATCore、TccCore、SagaCore、XACore；然后将<code>AbstractCore</code>子类可以处理的事务模式作为Key、<code>AbstractCore</code>子类作为Value存储到一个缓存Map（<code>Map&lt;BranchType, AbstractCore&gt; coreMap</code>）中；</p>
+<pre><code class="prism language-java"><span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token class-name">Map</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">BranchType</span><span class="token punctuation">,</span> <span class="token class-name">AbstractCore</span><span class="token punctuation">&gt;</span></span> coreMap <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">ConcurrentHashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>后续通过BranchType（分支类型）就可以从coreMap中获取到相应事务模式的具体AbstractCore实现类。</p>
+<p><strong>（2）初始化DefaultCoordinator；</strong></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/61df6ceee2254538b5c1c1756f18016f.png"/></p>
+<p>所谓的初始化，其实就是后台启动一堆线程做定时任务；去定时处理重试回滚、重试提交、异步提交、超时的检测，以及定时清理undo_log。</p>
+<p>除定时清理undo_log外，其余定时任务的处理逻辑基本都是：</p>
+<blockquote>
+<ol><li>首先获取所有可回滚的全局事务会话Session，如果可回滚的分支事务为空，则直接返回；</li><li>否者，遍历所有的可回滚Session；为了防止重复回滚，如果session的状态是正在回滚中并且session不是死亡的，则直接返回；</li><li>如果Session重试回滚超时，从缓存中删除已经超时的回滚Session；</li><li>发布session回滚完成事件给到Metric，对回滚中的Session添加Session生命周期的监听；</li><li>使用DefaultCoordinator组合的DefaultCore执行全局回滚。</li></ol>
+</blockquote>
+<p><strong>以处理重试回滚的方法<code>handleRetryRollbacking()</code>为例：</strong></p>
+<pre><code class="prism language-java"><span class="token keyword">protected</span> <span class="token keyword">void</span> <span class="token function">handleRetryRollbacking</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token class-name">SessionCondition</span> sessionCondition <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">SessionCondition</span><span class="token punctuation">(</span>rollbackingStatuses<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    sessionCondition<span class="token punctuation">.</span><span class="token function">setLazyLoadBranch</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 获取所有的可回滚的全局事务session</span>
+    <span class="token class-name">Collection</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">GlobalSession</span><span class="token punctuation">&gt;</span></span> rollbackingSessions <span class="token operator">=</span>
+        <span class="token class-name">SessionHolder</span><span class="token punctuation">.</span><span class="token function">getRetryRollbackingSessionManager</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">findGlobalSessions</span><span class="token punctuation">(</span>sessionCondition<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 如果可回滚的分支事务为空，则直接返回</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">CollectionUtils</span><span class="token punctuation">.</span><span class="token function">isEmpty</span><span class="token punctuation">(</span>rollbackingSessions<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">long</span> now <span class="token operator">=</span> <span class="token class-name">System</span><span class="token punctuation">.</span><span class="token function">currentTimeMillis</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 遍历所有的可回滚Session，</span>
+    <span class="token class-name">SessionHelper</span><span class="token punctuation">.</span><span class="token function">forEach</span><span class="token punctuation">(</span>rollbackingSessions<span class="token punctuation">,</span> rollbackingSession <span class="token operator">-&gt;</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// prevent repeated rollback</span>
+            <span class="token comment">// 防止重复回滚：如果session的状态是正在回滚中并且session不是死亡的，则直接返回。</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>rollbackingSession<span class="token punctuation">.</span><span class="token function">getStatus</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">equals</span><span class="token punctuation">(</span><span class="token class-name">GlobalStatus<span class="token punctuation">.</span>Rollbacking</span><span class="token punctuation">)</span>
+                <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span>rollbackingSession<span class="token punctuation">.</span><span class="token function">isDeadSession</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token comment">// The function of this 'return' is 'continue'.</span>
+                <span class="token keyword">return</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token comment">// 判断回滚是否重试超时</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">isRetryTimeout</span><span class="token punctuation">(</span>now<span class="token punctuation">,</span> MAX_ROLLBACK_RETRY_TIMEOUT<span class="token punctuation">.</span><span class="token function">toMillis</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> rollbackingSession<span class="token punctuation">.</span><span class="token function">getBeginTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>ROLLBACK_RETRY_TIMEOUT_UNLOCK_ENABLE<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    rollbackingSession<span class="token punctuation">.</span><span class="token function">clean</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token comment">// Prevent thread safety issues</span>
+                <span class="token comment">// 删除已经超时的回滚Session</span>
+                <span class="token class-name">SessionHolder</span><span class="token punctuation">.</span><span class="token function">getRetryRollbackingSessionManager</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">removeGlobalSession</span><span class="token punctuation">(</span>rollbackingSession<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                LOGGER<span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token string">"Global transaction rollback retry timeout and has removed [{}]"</span><span class="token punctuation">,</span> rollbackingSession<span class="token punctuation">.</span><span class="token function">getXid</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                <span class="token class-name">SessionHelper</span><span class="token punctuation">.</span><span class="token function">endRollbackFailed</span><span class="token punctuation">(</span>rollbackingSession<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                <span class="token comment">// rollback retry timeout event</span>
+                <span class="token comment">// 发布session回滚完成事件给到Metric</span>
+                <span class="token class-name">MetricsPublisher</span><span class="token punctuation">.</span><span class="token function">postSessionDoneEvent</span><span class="token punctuation">(</span>rollbackingSession<span class="token punctuation">,</span> <span class="token class-name">GlobalStatus<span class="token punctuation">.</span>RollbackRetryTimeout</span><span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                <span class="token comment">//The function of this 'return' is 'continue'.</span>
+                <span class="token keyword">return</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token comment">// 对回滚中的Session添加Session生命周期的监听</span>
+            rollbackingSession<span class="token punctuation">.</span><span class="token function">addSessionLifecycleListener</span><span class="token punctuation">(</span><span class="token class-name">SessionHolder</span><span class="token punctuation">.</span><span class="token function">getRootSessionManager</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token comment">// 使用DefaultCoordinator组合的DefaultCore执行全局回滚</span>
+            core<span class="token punctuation">.</span><span class="token function">doGlobalRollback</span><span class="token punctuation">(</span>rollbackingSession<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">TransactionException</span> ex<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            LOGGER<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span><span class="token string">"Failed to retry rollbacking [{}] {} {}"</span><span class="token punctuation">,</span> rollbackingSession<span class="token punctuation">.</span><span class="token function">getXid</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> ex<span class="token punctuation">.</span><span class="token function">getCode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> ex<span class="token punctuation">.</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="7ServerRunnerSpringDefaultCoordinator_483"></a>7）注册ServerRunner销毁（Spring容器销毁）的回调钩子函数DefaultCoordinator</h3>
+<h3><a id="8NettyServerNettyRemotingServer_486"></a>8）启动NettyServer（NettyRemotingServer）</h3>
+<p>启动NettyRemotingServer时会做两件事：注册消息处理器、初始化并启动<code>NettyServerBootstrap</code>；<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/02deccd686944a86b9113b0e95e71a50.png"/></p>
+<h4><a id="1__491"></a>1&gt; 首先注册消息处理器</h4>
+<p>消息处理器是用来处理消息的，其根据消息的不同类型选择不同的消息处理器来处理消息（<font color="blue">属于典型的策略模式</font>）；</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ee7c90a3e24c4be5aaca21a174aa5900.png"/></p>
+<p><strong>每个消息类型和对应的处理器关系如下：</strong></p>
+<p>所谓的注册消息处理器本质上就是将处理器<code>RemotingProcessor</code>和处理消息的线程池<code>ExecutorService</code>包装成一个<code>Pair</code>，然后将Pair作为Value，messageType作为key放入一个Map（<code>processorTable</code>）中；<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6007efe4edb54d61a9fe2b5d3d422188.png"/></p>
+<pre><code class="prism language-java"><span class="token comment">/**
+ * This container holds all processors.
+ * processor type {@link MessageType}
+ */</span>
+<span class="token keyword">protected</span> <span class="token keyword">final</span> <span class="token class-name">HashMap</span><span class="token operator">&lt;</span><span class="token class-name">Integer</span><span class="token comment">/*MessageType*/</span><span class="token punctuation">,</span> <span class="token class-name">Pair</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">RemotingProcessor</span><span class="token punctuation">,</span> <span class="token class-name">ExecutorService</span><span class="token punctuation">&gt;</span></span><span class="token operator">&gt;</span> processorTable <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">HashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token number">32</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h4><a id="2_NettyRemotingServer_512"></a>2&gt; 初始化<code>NettyRemotingServer</code></h4>
+<p>在初始化<code>NettyRemotingServer</code>之前会通过<code>AtomicBoolean</code>类型的原子变量<code>initialized</code> + CAS操作确保仅会有一个线程进行<code>NettyRemotingServer</code>的初始化；</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/b844071d3a8d42089f03e3e9e91992a7.png"/></p>
+<p>再看<code>NettyRemotingServer</code>的类继承图：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/3f2eecb2221a40f59155906380bdc86f.png"/></p>
+<p>CAS成功后进入到<code>NettyRemotingServer</code>的父类<code>AbstractNettyRemotingServer#init()</code>方法；</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e1c90dff51f94ce19ddc2ec9d219fd33.png"/></p>
+<p><strong>方法中：</strong></p>
+<p><strong>（1）首先调用父类<code>AbstractNettyRemoting</code>的init()方法：</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/759cdd9fed60466387d2d48678c65036.png"/><br/> 启动一个延时3s，每3s执行一次的定时任务，做请求超时检查；</p>
+<p><strong>（2）紧接着启动<code>ServerBootstrap</code>（就正常的nettyServer启动）：</strong></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/5cdcbbb080a44bd0a2fe5a03c2523cc8.png"/><br/> NettyRemotingServer在启动的过程中设置了4个ChannelHandler：</p>
+<ol><li>IdleStateHandler：处理心跳</li><li>ProtocolV1Decoder：消息解码器</li><li>ProtocolV1Encoder：消息编码器</li><li>AbstractNettyRemotingServer.ServerHandler：处理各种消息</li></ol>
+<h5><a id="AbstractNettyRemotingServerServerHandler_539"></a>AbstractNettyRemotingServer.ServerHandler类</h5>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/59a4d300796f4b1793b42055545e77c5.png"/><br/> <font color="blue">ServerHandler类上有个<code>@ChannelHandler.Sharable</code>注解，其表示所有的连接都会共用这一个ChannelHandler；所以当消息处理很慢时，会降低并发。</font></p>
+<p><code>processMessage(ctx, (RpcMessage) msg)</code>方法中会根据消息类型获取到 请求处理组件（<font color="red">消息的处理过程是典型的策略模式</font>），如果消息对应的处理器设置了线程池，则放到线程池中执行；如果对应的处理器没有设置线程池，则直接执行；如果某条消息处理特别慢，会严重影响并发；所以在seata-server中大部分处理器都有对应的线程池。</p>
+<pre><code class="prism language-java"><span class="token comment">/**
+ * Rpc message processing.
+ *
+ * @param ctx        Channel handler context.
+ * @param rpcMessage rpc message.
+ * @throws Exception throws exception process message error.
+ * @since 1.3.0
+ */</span>
+<span class="token keyword">protected</span> <span class="token keyword">void</span> <span class="token function">processMessage</span><span class="token punctuation">(</span><span class="token class-name">ChannelHandlerContext</span> ctx<span class="token punctuation">,</span> <span class="token class-name">RpcMessage</span> rpcMessage<span class="token punctuation">)</span> <span class="token keyword">throws</span> <span class="token class-name">Exception</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>LOGGER<span class="token punctuation">.</span><span class="token function">isDebugEnabled</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        LOGGER<span class="token punctuation">.</span><span class="token function">debug</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">.</span><span class="token function">format</span><span class="token punctuation">(</span><span class="token string">"%s msgId:%s, body:%s"</span><span class="token punctuation">,</span> <span class="token keyword">this</span><span class="token punctuation">,</span> rpcMessage<span class="token punctuation">.</span><span class="token function">getId</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> rpcMessage<span class="token punctuation">.</span><span class="token function">getBody</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token class-name">Object</span> body <span class="token operator">=</span> rpcMessage<span class="token punctuation">.</span><span class="token function">getBody</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>body <span class="token keyword">instanceof</span> <span class="token class-name">MessageTypeAware</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">MessageTypeAware</span> messageTypeAware <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token class-name">MessageTypeAware</span><span class="token punctuation">)</span> body<span class="token punctuation">;</span>
+        <span class="token comment">// 根据消息的类型获取到请求处理组件和请求处理线程池组成的Pair</span>
+        <span class="token keyword">final</span> <span class="token class-name">Pair</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">RemotingProcessor</span><span class="token punctuation">,</span> <span class="token class-name">ExecutorService</span><span class="token punctuation">&gt;</span></span> pair <span class="token operator">=</span> <span class="token keyword">this</span><span class="token punctuation">.</span>processorTable<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span> messageTypeAware<span class="token punctuation">.</span><span class="token function">getTypeCode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>pair <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// 如果消息对应的处理器设置了线程池，则放到线程池中执行</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>pair<span class="token punctuation">.</span><span class="token function">getSecond</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">!=</span> <span class="token keyword">null</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+                    pair<span class="token punctuation">.</span><span class="token function">getSecond</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">execute</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-&gt;</span> <span class="token punctuation">{<!-- --></span>
+                        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+                            pair<span class="token punctuation">.</span><span class="token function">getFirst</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">process</span><span class="token punctuation">(</span>ctx<span class="token punctuation">,</span> rpcMessage<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Throwable</span> th<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                            LOGGER<span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token class-name">FrameworkErrorCode<span class="token punctuation">.</span>NetDispatch</span><span class="token punctuation">.</span><span class="token function">getErrCode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> th<span class="token punctuation">.</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> th<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span> <span class="token keyword">finally</span> <span class="token punctuation">{<!-- --></span>
+                            MDC<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span>
+                    <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">RejectedExecutionException</span> e<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    <span class="token comment">// 线程池拒绝策略之一，抛出异常：RejectedExecutionException</span>
+                    LOGGER<span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token class-name">FrameworkErrorCode<span class="token punctuation">.</span>ThreadPoolFull</span><span class="token punctuation">.</span><span class="token function">getErrCode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                        <span class="token string">"thread pool is full, current max pool size is "</span> <span class="token operator">+</span> messageExecutor<span class="token punctuation">.</span><span class="token function">getActiveCount</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">if</span> <span class="token punctuation">(</span>allowDumpStack<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                        <span class="token class-name">String</span> name <span class="token operator">=</span> <span class="token class-name">ManagementFactory</span><span class="token punctuation">.</span><span class="token function">getRuntimeMXBean</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">getName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token class-name">String</span> pid <span class="token operator">=</span> name<span class="token punctuation">.</span><span class="token function">split</span><span class="token punctuation">(</span><span class="token string">"@"</span><span class="token punctuation">)</span><span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+                        <span class="token keyword">long</span> idx <span class="token operator">=</span> <span class="token class-name">System</span><span class="token punctuation">.</span><span class="token function">currentTimeMillis</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+                            <span class="token class-name">String</span> jstackFile <span class="token operator">=</span> idx <span class="token operator">+</span> <span class="token string">".log"</span><span class="token punctuation">;</span>
+                            LOGGER<span class="token punctuation">.</span><span class="token function">info</span><span class="token punctuation">(</span><span class="token string">"jstack command will dump to "</span> <span class="token operator">+</span> jstackFile<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                            <span class="token class-name">Runtime</span><span class="token punctuation">.</span><span class="token function">getRuntime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">exec</span><span class="token punctuation">(</span><span class="token class-name">String</span><span class="token punctuation">.</span><span class="token function">format</span><span class="token punctuation">(</span><span class="token string">"jstack %s &gt; %s"</span><span class="token punctuation">,</span> pid<span class="token punctuation">,</span> jstackFile<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">IOException</span> exx<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                            LOGGER<span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span>exx<span class="token punctuation">.</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                        <span class="token punctuation">}</span>
+                        allowDumpStack <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+                    <span class="token punctuation">}</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+                <span class="token comment">// 对应的处理器没有设置线程池，则直接执行；如果某条消息处理特别慢，会严重影响并发；</span>
+                <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+                    pair<span class="token punctuation">.</span><span class="token function">getFirst</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">process</span><span class="token punctuation">(</span>ctx<span class="token punctuation">,</span> rpcMessage<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Throwable</span> th<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+                    LOGGER<span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token class-name">FrameworkErrorCode<span class="token punctuation">.</span>NetDispatch</span><span class="token punctuation">.</span><span class="token function">getErrCode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> th<span class="token punctuation">.</span><span class="token function">getMessage</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> th<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            LOGGER<span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token string">"This message type [{}] has no processor."</span><span class="token punctuation">,</span> messageTypeAware<span class="token punctuation">.</span><span class="token function">getTypeCode</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+        LOGGER<span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token string">"This rpcMessage body[{}] is not MessageTypeAware type."</span><span class="token punctuation">,</span> body<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h1><a id="_610"></a>三、总结和后续</h1>
+<p>本文我们聊了Seata Server启动时都做了哪些事？博主总结一共八件事：</p>
+<blockquote>
+<ol><li>对配置文件（包括registry.conf、file.conf）做参数解析；</li><li>初始化监控，做metric指标采集；</li><li>创建TC与RM/TM通信的RPC服务器（<code>NettyRemotingServer</code>）–netty；</li><li>初始化UUID生成器（雪花算法），用于生成全局事务id和分支事务id；</li><li>设置事务会话（<code>SessionHolder</code>）、全局锁（<code>LockManager</code>）的持久化方式并初始化，有三种类型可选：file/db/redis；</li><li>创建并初始化事务协调器（<code>DefaultCoordinator</code>），后台启动一堆线程做定时任务，并将<code>DefaultCoordinator</code>绑定到RPC服务器上做为<code>transactionMessageHandler</code>；</li><li>注册ServerRunner销毁（Spring容器销毁）的回调钩子函数DefaultCoordinator；</li><li>启动netty Server，用于接收TM/RM的请求；</li></ol>
+</blockquote>
+<p>下一篇文章我们聊一下Seata Client（AT模式下仅作为RM时）启动时都做了什么？</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

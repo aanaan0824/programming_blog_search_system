@@ -1,0 +1,190 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="thinkphp6_jwt_2"></a>thinkphp6 使用jwt</h1>
+<ol><li>客户端使用用户名和密码请求登录</li><li>服务端收到请求，验证用户名和密码</li><li>验证成功后，服务端会签发一个token，再把这个token返回给客户端</li><li>客户端收到token后可以把它存储起来，比如放到cookie中</li><li>客户端每次向服务端请求资源时需要携带服务端签发的token，可以在cookie或者header中携带</li><li>服务端收到请求，然后去验证客户端请求里面带着的token，如果验证成功，就向客户端返回请求数据</li></ol>
+<h2><a id="_jwt__11"></a>安装 jwt 扩展</h2>
+<pre><code>composer require firebase/php-jwt
+</code></pre>
+<h2><a id="_vender__firebase__17"></a>安装之后在 vender 目录下的 firebase 文件夹下</h2>
+<p><img alt="image-20220324111602572" src="https://img-blog.csdnimg.cn/img_convert/0380d4f64d85ef1686e8114adaeb888a.png"/></p>
+<h2><a id="_JWT_encode__decodetokentoken_21"></a>调用 JWT里面的 encode 和 decode方法进行生成token和验证token</h2>
+<h3><a id="app__commonphp_apicommonphp_23"></a>项目app 目录下的 common.php全局文件使用的 ，做成了公共方法，由于我是多应用的，所以就写在了api下面的common.php，大家可以根据自己需求适当调整</h3>
+<p><img alt="image-20220324112351780" src="https://img-blog.csdnimg.cn/img_convert/bf4c0afe4254b22228e1aeda2668d470.png"/></p>
+<h3><a id="__JWT_token_27"></a>首先 引入 JWT ，然后写两个方法，生成验签和验证token。</h3>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">use</span> <span class="token package"><span class="token punctuation">\</span>Firebase<span class="token punctuation">\</span>JWT<span class="token punctuation">\</span>JWT</span><span class="token punctuation">;</span>
+<span class="token keyword">use</span> <span class="token package">Firebase<span class="token punctuation">\</span>JWT<span class="token punctuation">\</span>Key</span><span class="token punctuation">;</span>
+<span class="token comment">// 应用公共文件</span>
+
+<span class="token comment">/**
+ * 生成验签
+ * @param $uid 用户id
+ * @return mixed
+ */</span>
+<span class="token keyword">function</span> <span class="token function">signToken</span><span class="token punctuation">(</span><span class="token variable">$uid</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token variable">$key</span><span class="token operator">=</span><span class="token string single-quoted-string">'abcdefg'</span><span class="token punctuation">;</span>         <span class="token comment">//自定义的一个随机字串用户于加密中常用的 盐  salt</span>
+    <span class="token variable">$token</span><span class="token operator">=</span><span class="token keyword">array</span><span class="token punctuation">(</span>
+        <span class="token string double-quoted-string">"iss"</span><span class="token operator">=&gt;</span><span class="token variable">$key</span><span class="token punctuation">,</span>        <span class="token comment">//签发者 可以为空</span>
+        <span class="token string double-quoted-string">"aud"</span><span class="token operator">=&gt;</span><span class="token string single-quoted-string">''</span><span class="token punctuation">,</span>          <span class="token comment">//面象的用户，可以为空</span>
+        <span class="token string double-quoted-string">"iat"</span><span class="token operator">=&gt;</span><span class="token function">time</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>      <span class="token comment">//签发时间</span>
+        <span class="token string double-quoted-string">"nbf"</span><span class="token operator">=&gt;</span><span class="token function">time</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>      <span class="token comment">//在什么时候jwt开始生效</span>
+        <span class="token string double-quoted-string">"exp"</span><span class="token operator">=&gt;</span> <span class="token function">time</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">+</span><span class="token number">30</span><span class="token punctuation">,</span>  <span class="token comment">//token 过期时间</span>
+        <span class="token string double-quoted-string">"data"</span><span class="token operator">=&gt;</span><span class="token punctuation">[</span>           <span class="token comment">//记录的uid的信息</span>
+            <span class="token string single-quoted-string">'uid'</span><span class="token operator">=&gt;</span><span class="token variable">$uid</span><span class="token punctuation">,</span>
+        <span class="token punctuation">]</span>
+    <span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token variable">$jwt</span> <span class="token operator">=</span> <span class="token class-name static-context">JWT</span><span class="token operator">::</span><span class="token function">encode</span><span class="token punctuation">(</span><span class="token variable">$token</span><span class="token punctuation">,</span> <span class="token variable">$key</span><span class="token punctuation">,</span> <span class="token string double-quoted-string">"HS256"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>  <span class="token comment">//生成了 token</span>
+    <span class="token keyword">return</span> <span class="token variable">$jwt</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">/**
+ * 验证token
+ * @param $token
+ * @return array|int[]
+ */</span>
+<span class="token keyword">function</span> <span class="token function">checkToken</span><span class="token punctuation">(</span><span class="token variable">$token</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token variable">$key</span><span class="token operator">=</span><span class="token string single-quoted-string">'abcdefg'</span><span class="token punctuation">;</span>     <span class="token comment">//自定义的一个随机字串用户于加密中常用的 盐  salt</span>
+    <span class="token variable">$res</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'status'</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token constant boolean">false</span><span class="token punctuation">;</span>
+    <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name static-context">JWT</span><span class="token operator">::</span><span class="token variable">$leeway</span>    <span class="token operator">=</span> <span class="token number">60</span><span class="token punctuation">;</span><span class="token comment">//当前时间减去60，把时间留点余地</span>
+        <span class="token variable">$decoded</span>        <span class="token operator">=</span> <span class="token class-name static-context">JWT</span><span class="token operator">::</span><span class="token function">decode</span><span class="token punctuation">(</span><span class="token variable">$token</span><span class="token punctuation">,</span> <span class="token keyword">new</span> <span class="token class-name">Key</span><span class="token punctuation">(</span><span class="token variable">$key</span><span class="token punctuation">,</span> <span class="token string single-quoted-string">'HS256'</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//HS256方式，这里要和签发的时候对应</span>
+        <span class="token variable">$arr</span>            <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword type-casting">array</span><span class="token punctuation">)</span><span class="token variable">$decoded</span><span class="token punctuation">;</span>
+        <span class="token variable">$res</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'status'</span><span class="token punctuation">]</span>  <span class="token operator">=</span> <span class="token number">200</span><span class="token punctuation">;</span>
+        <span class="token variable">$res</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'data'</span><span class="token punctuation">]</span>    <span class="token operator">=</span><span class="token punctuation">(</span><span class="token keyword type-casting">array</span><span class="token punctuation">)</span><span class="token variable">$arr</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'data'</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token variable">$res</span><span class="token punctuation">;</span>
+
+    <span class="token punctuation">}</span> <span class="token keyword">catch</span><span class="token punctuation">(</span><span class="token class-name class-name-fully-qualified"><span class="token punctuation">\</span>Firebase<span class="token punctuation">\</span>JWT<span class="token punctuation">\</span>SignatureInvalidException</span> <span class="token variable">$e</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> <span class="token comment">//签名不正确</span>
+        <span class="token variable">$res</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'info'</span><span class="token punctuation">]</span>    <span class="token operator">=</span> <span class="token string double-quoted-string">"签名不正确"</span><span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token variable">$res</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span><span class="token keyword">catch</span><span class="token punctuation">(</span><span class="token class-name class-name-fully-qualified"><span class="token punctuation">\</span>Firebase<span class="token punctuation">\</span>JWT<span class="token punctuation">\</span>BeforeValidException</span> <span class="token variable">$e</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> <span class="token comment">// 签名在某个时间点之后才能用</span>
+        <span class="token variable">$res</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'info'</span><span class="token punctuation">]</span>    <span class="token operator">=</span> <span class="token string double-quoted-string">"token失效"</span><span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token variable">$res</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span><span class="token keyword">catch</span><span class="token punctuation">(</span><span class="token class-name class-name-fully-qualified"><span class="token punctuation">\</span>Firebase<span class="token punctuation">\</span>JWT<span class="token punctuation">\</span>ExpiredException</span> <span class="token variable">$e</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> <span class="token comment">// token过期</span>
+        <span class="token variable">$res</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'info'</span><span class="token punctuation">]</span>    <span class="token operator">=</span> <span class="token string double-quoted-string">"token过期"</span><span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token variable">$res</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span><span class="token keyword">catch</span><span class="token punctuation">(</span><span class="token class-name">Exception</span> <span class="token variable">$e</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> <span class="token comment">//其他错误</span>
+        <span class="token variable">$res</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'info'</span><span class="token punctuation">]</span>    <span class="token operator">=</span> <span class="token string double-quoted-string">"未知错误"</span><span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token variable">$res</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="jwttoken_88"></a>使用jwt生成token</h3>
+<pre><code class="prism language-php">    <span class="token comment">/**
+     * 使用jwt生成token字符串
+     */</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function">setJwtToken</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token variable">$uid</span> <span class="token operator">=</span> <span class="token function">input</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'uid'</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 接收生成token字符串 如：123</span>
+        <span class="token variable">$token</span> <span class="token operator">=</span> <span class="token function">signToken</span><span class="token punctuation">(</span><span class="token variable">$uid</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">// 生成字符串： eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJhYmNkZWZnIiwiYXVkIjoiIiwiaWF0IjoxNjQxNDUwMTU0LCJuYmYiOjE2NDE0NTAxNTcsImV4cCI6MTY0MTQ1NzM1NCwiZGF0YSI6eyJ1aWQiOiIxMjMifX0.I_GAkMsOhtEpIPkizCuQA-b9H6ovSovWx0AwAYI-b0s</span>
+        <span class="token keyword">echo</span> <span class="token variable">$token</span><span class="token punctuation">;</span><span class="token keyword">die</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">/**
+     * 使用jwt验证token字符串
+     */</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function">checkJwtToken</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token variable">$token</span>  <span class="token operator">=</span> <span class="token function">input</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'token'</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 接收生成token字符串</span>
+        <span class="token variable">$result</span> <span class="token operator">=</span> <span class="token function">checkToken</span><span class="token punctuation">(</span><span class="token variable">$token</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">// Array ( [status] =&gt; 200 [data] =&gt; Array ( [uid] =&gt; 123 ) )</span>
+        <span class="token function">print_r</span><span class="token punctuation">(</span><span class="token variable">$result</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token keyword">die</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="_user__114"></a>创建 user 控制器</h3>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">declare</span> <span class="token punctuation">(</span>strict_types <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">namespace</span> <span class="token package">app<span class="token punctuation">\</span>api<span class="token punctuation">\</span>controller</span><span class="token punctuation">;</span>
+
+<span class="token keyword">use</span> <span class="token package">think<span class="token punctuation">\</span>facade<span class="token punctuation">\</span>Db</span><span class="token punctuation">;</span>
+<span class="token keyword">use</span> <span class="token package">think<span class="token punctuation">\</span>Request</span><span class="token punctuation">;</span>
+
+<span class="token keyword">class</span> <span class="token class-name">User</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function">login</span><span class="token punctuation">(</span><span class="token class-name type-declaration">Request</span> <span class="token variable">$request</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token variable">$request</span><span class="token operator">-&gt;</span><span class="token function">isPost</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token variable">$username</span> <span class="token operator">=</span> <span class="token variable">$request</span><span class="token operator">-&gt;</span><span class="token function">param</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'username'</span><span class="token punctuation">,</span><span class="token string single-quoted-string">''</span><span class="token punctuation">,</span><span class="token string single-quoted-string">'trim'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token variable">$password</span> <span class="token operator">=</span> <span class="token variable">$request</span><span class="token operator">-&gt;</span><span class="token function">param</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'password'</span><span class="token punctuation">,</span><span class="token string single-quoted-string">''</span><span class="token punctuation">,</span><span class="token string single-quoted-string">'trim'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token comment">//查询数据库</span>
+            <span class="token variable">$user</span> <span class="token operator">=</span> <span class="token class-name static-context">Db</span><span class="token operator">::</span><span class="token function">name</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'user'</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">where</span><span class="token punctuation">(</span><span class="token string single-quoted-string">'username'</span><span class="token punctuation">,</span><span class="token variable">$username</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">find</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token variable">$user</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">return</span> <span class="token function">json</span><span class="token punctuation">(</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'status'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'fail'</span><span class="token punctuation">,</span><span class="token string single-quoted-string">'msg'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'用户名不存在'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token variable">$user</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'password'</span><span class="token punctuation">]</span><span class="token operator">!==</span><span class="token function">md5</span><span class="token punctuation">(</span><span class="token variable">$password</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">return</span> <span class="token function">json</span><span class="token punctuation">(</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'status'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'fail'</span><span class="token punctuation">,</span><span class="token string single-quoted-string">'msg'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'密码错误'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token variable">$getToken</span> <span class="token operator">=</span> <span class="token variable">$this</span><span class="token operator">-&gt;</span><span class="token function">token</span><span class="token punctuation">(</span><span class="token variable">$user</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token function">json</span><span class="token punctuation">(</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'status'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'success'</span><span class="token punctuation">,</span><span class="token string single-quoted-string">'msg'</span> <span class="token operator">=&gt;</span> <span class="token string single-quoted-string">'登陆成功'</span><span class="token punctuation">,</span><span class="token string single-quoted-string">'token'</span> <span class="token operator">=&gt;</span> <span class="token variable">$getToken</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function">token</span><span class="token punctuation">(</span><span class="token variable">$user</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token variable">$uid</span> <span class="token operator">=</span> <span class="token variable">$user</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'username'</span><span class="token punctuation">]</span><span class="token punctuation">;</span> <span class="token comment">// 接收生成token字符串 如：123</span>
+        <span class="token variable">$token</span> <span class="token operator">=</span> <span class="token function">signToken</span><span class="token punctuation">(</span><span class="token variable">$uid</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">dd</span><span class="token punctuation">(</span><span class="token variable">$token</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">/**
+     * 验证token
+     */</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function">chToken</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token variable">$token</span> <span class="token operator">=</span> <span class="token string single-quoted-string">'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJhYmNkZWZnIiwiYXVkIjoiIiwiaWF0IjoxNjQ4MDkwMDkyLCJuYmYiOjE2NDgwOTAwOTIsImV4cCI6MTY0ODA5MDEyMiwiZGF0YSI6eyJ1aWQiOiJcdTVmMjBcdTRlMDlcdTk4Y2UifX0.oJFpNcZ6stMymOCbD-meX0IPEIYLYNcwKxhMItF2cMw'</span><span class="token punctuation">;</span>
+        <span class="token variable">$result</span> <span class="token operator">=</span> <span class="token function">checkToken</span><span class="token punctuation">(</span><span class="token variable">$token</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">// Array ( [status] =&gt; 200 [data] =&gt; Array ( [uid] =&gt; 123 ) )</span>
+        <span class="token function">print_r</span><span class="token punctuation">(</span><span class="token variable">$result</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token keyword">die</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p>用户登录成功返回给前端token，前端将token存储起来，在下次请求的时候头部携带着这个token，后端接受token，在中间件中进行验证</p>
+<h3><a id="api_168"></a>创建api中间件</h3>
+<pre><code class="prism language-php"><span class="token delimiter important">&lt;?php</span>
+<span class="token keyword">declare</span> <span class="token punctuation">(</span>strict_types <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">namespace</span> <span class="token package">app<span class="token punctuation">\</span>middleware</span><span class="token punctuation">;</span>
+
+<span class="token keyword">class</span> <span class="token class-name">Api</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">/**
+     * 处理请求
+     *
+     * @param \think\Request $request
+     * @param \Closure       $next
+     * @return Response
+     */</span>
+    <span class="token keyword">public</span> <span class="token keyword">function</span> <span class="token function">handle</span><span class="token punctuation">(</span><span class="token variable">$request</span><span class="token punctuation">,</span> <span class="token class-name class-name-fully-qualified type-declaration"><span class="token punctuation">\</span>Closure</span> <span class="token variable">$next</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//toke 合法性验证</span>
+        <span class="token variable">$header</span> <span class="token operator">=</span> <span class="token variable">$request</span><span class="token operator">-&gt;</span><span class="token function">header</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//判读请求头里有没有token</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span><span class="token keyword">isset</span><span class="token punctuation">(</span><span class="token variable">$header</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'token'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> <span class="token function">json</span><span class="token punctuation">(</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'code'</span><span class="token operator">=&gt;</span><span class="token number">440</span><span class="token punctuation">,</span><span class="token string single-quoted-string">'msg'</span><span class="token operator">=&gt;</span><span class="token string single-quoted-string">'request must with token'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token variable">$token</span> <span class="token operator">=</span> <span class="token variable">$header</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'token'</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">// token 合法</span>
+            <span class="token variable">$token</span> <span class="token operator">=</span> <span class="token function">checkToken</span><span class="token punctuation">(</span><span class="token variable">$token</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span><span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name class-name-fully-qualified"><span class="token punctuation">\</span>Exception</span> <span class="token variable">$e</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> <span class="token function">json</span><span class="token punctuation">(</span><span class="token punctuation">[</span><span class="token string single-quoted-string">'code'</span><span class="token operator">=&gt;</span><span class="token number">440</span><span class="token punctuation">,</span><span class="token string single-quoted-string">'msg'</span><span class="token operator">=&gt;</span><span class="token string single-quoted-string">'invalid token'</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">return</span> <span class="token variable">$next</span><span class="token punctuation">(</span><span class="token variable">$request</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p>最后，关于如何处理token过期的问题，有两种解决办法，第一种就是，将token的时间设置长一些，这样token就不会过期，但是这样就有一个弊端，一旦客户端拿到了这个token就相当于有了密钥，主动权也就掌握在了用户的手上。所以不推荐这种方案。第二种就是，后端处理，当token过期的时候重新获取token，将新的token传给前端，前端在将新的token存储起来，替换掉原来的token，下一次请求的时候就携带着新的token请求。</p>
+<p>我是程序员峰峰，一名爱学习，爱折腾的程序员。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

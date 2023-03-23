@@ -1,0 +1,2295 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1></h1>
+<h1>主要技术架构：</h1>
+<p>SpringBoot Spring SpringMVC MyBatis Redis Kakfa Elasticsearch Spring Security Spring Actator</p>
+<h1>1.配置项目环境</h1>
+<p>        在<a class="link-info" href="https://start.spring.io/" title="Spring Boot Initializr">Spring Boot Initializr</a>中或者Idea中初始化一个SpringBoot项目并导出</p>
+<p><img alt="" height="1200" src="image\fff24b4ac29b4ba58c0253267888a2d1.png" width="1200"/></p>
+<p>        使用Idea打开导出的项目</p>
+<h1>2.MyBatis配置</h1>
+<p> 各个层之间的关系如下</p>
+<p><img alt="" height="568" src="image\fba9cd30a1d64d6db4e22a841ef6f5e2.png" width="959"/>       在<a class="link-info" href="https://mvnrepository.com/?__cf_chl_rt_tk=S6a5uVIFPsIePlnWmIGDLbRZ7HzzWfHp4Z8WlsQdi_g-1648901526-0-gaNycGzNCqU" title="Maven Repository">Maven Repository</a>搜索MySql Maven配置文件，在resources文件包内的pom.xml文件中导入相关的配置文件依赖，并在application.properties文件中配置相关的参数。</p>
+<pre><code># ServerProperties
+server.port=8080
+server.servlet.context-path=/community
+
+# ThymeleafProperties
+spring.thymeleaf.cache=false
+
+# DataSourceProperties
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.datasource.url=jdbc:mysql://localhost:3306/community?characterEncoding=utf-8&amp;useSSL=false&amp;serverTimezone=Hongkong
+#数据库的名称、密码等
+spring.datasource.username=root
+spring.datasource.password=123456
+spring.datasource.type=com.zaxxer.hikari.HikariDataSource
+#最大连接数、超时时间等
+spring.datasource.hikari.maximum-pool-size=15
+spring.datasource.hikari.minimum-idle=5
+spring.datasource.hikari.idle-timeout=30000
+
+# MybatisProperties
+#mapper扫描路径
+mybatis.mapper-locations=classpath:mapper/*.xml
+#在communtiy下创建实体类
+mybatis.type-aliases-package=com.nowcoder.community.entity
+mybatis.configuration.useGeneratedKeys=true
+mybatis.configuration.mapUnderscoreToCamelCase=true</code></pre>
+<p>        在community文件下创建config entity文件包，在resources文件下创建mapper文件包</p>
+<p>        在entity文件下创建User类</p>
+<pre><code class="language-java">public class User {
+
+    private int id;
+    private String username;
+    private String password;
+    private String salt;
+    private String email;
+    private int type;
+    private int status;
+    private String activationCode;
+    private String headerUrl;
+    private Date createTime;
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    public String getSalt() {
+        return salt;
+    }
+
+    public void setSalt(String salt) {
+        this.salt = salt;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public int getType() {
+        return type;
+    }
+
+    public void setType(int type) {
+        this.type = type;
+    }
+
+    public int getStatus() {
+        return status;
+    }
+
+    public void setStatus(int status) {
+        this.status = status;
+    }
+
+    public String getActivationCode() {
+        return activationCode;
+    }
+
+    public void setActivationCode(String activationCode) {
+        this.activationCode = activationCode;
+    }
+
+    public String getHeaderUrl() {
+        return headerUrl;
+    }
+
+    public void setHeaderUrl(String headerUrl) {
+        this.headerUrl = headerUrl;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    @Override
+    public String toString() {
+        return "User{" +
+                "id=" + id +
+                ", username='" + username + '\'' +
+                ", password='" + password + '\'' +
+                ", salt='" + salt + '\'' +
+                ", email='" + email + '\'' +
+                ", type=" + type +
+                ", status=" + status +
+                ", activationCode='" + activationCode + '\'' +
+                ", headerUrl='" + headerUrl + '\'' +
+                ", createTime=" + createTime +
+                '}';
+    }
+
+}</code></pre>
+<p>在dao文件下创建UserMapper接口访问数据库</p>
+<pre><code class="language-java">@Mapper
+public interface UserMapper {
+
+    User selectById(int id);
+
+    User selectByName(String username);
+
+    User selectByEmail(String email);
+
+    int insertUser(User user);
+
+    int updateStatus(int id, int status);
+
+    int updateHeader(int id, String headerUrl);
+
+    int updatePassword(int id, String password);
+
+}</code></pre>
+<p>        使用Mapper注解，并在mapper文件下创建user-mapp.xml，使得方法与Sql语句相关联，Mybatis 的xml配置可以在官网找到相关的配置。</p>
+<pre><code class="language-XML">&lt;?xml version="1.0" encoding="UTF-8" ?&gt;
+&lt;!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd"&gt;
+&lt;mapper namespace="com.nowcoder.community.dao.UserMapper"&gt;
+
+    &lt;sql id="insertFields"&gt;
+        username, password, salt, email, type, status, activation_code, header_url, create_time
+    &lt;/sql&gt;
+
+    &lt;sql id="selectFields"&gt;
+        id, username, password, salt, email, type, status, activation_code, header_url, create_time
+    &lt;/sql&gt;
+
+    &lt;select id="selectById" resultType="User"&gt;
+        select &lt;include refid="selectFields"&gt;&lt;/include&gt;
+        from user
+        where id = #{id}
+    &lt;/select&gt;
+
+    &lt;select id="selectByName" resultType="User"&gt;
+        select &lt;include refid="selectFields"&gt;&lt;/include&gt;
+        from user
+        where username = #{username}
+    &lt;/select&gt;
+
+    &lt;select id="selectByEmail" resultType="User"&gt;
+        select &lt;include refid="selectFields"&gt;&lt;/include&gt;
+        from user
+        where email = #{email}
+    &lt;/select&gt;
+
+    &lt;insert id="insertUser" parameterType="User" keyProperty="id"&gt;
+        insert into user (&lt;include refid="insertFields"&gt;&lt;/include&gt;)
+        values(#{username}, #{password}, #{salt}, #{email}, #{type}, #{status}, #{activationCode}, #{headerUrl}, #{createTime})
+    &lt;/insert&gt;
+
+    &lt;update id="updateStatus"&gt;
+        update user set status = #{status} where id = #{id}
+    &lt;/update&gt;
+
+    &lt;update id="updateHeader"&gt;
+        update user set header_url = #{headerUrl} where id = #{id}
+    &lt;/update&gt;
+
+    &lt;update id="updatePassword"&gt;
+        update user set password = #{password} where id = #{id}
+    &lt;/update&gt;
+
+&lt;/mapper&gt;</code></pre>
+<p>        可以使用@Test注解测试相关方法是否正常使用</p>
+<h1>3.开发社区首页功能：</h1>
+<h2>3.1 开发社区首页显示前10个帖子</h2>
+<p>        在Entity创建DiscussPost类，用于表示发送的相关数据，并在dao文件中创建DiscussPostMapper接口</p>
+<pre><code class="language-java">public class DiscussPost {
+
+    private int id;
+    private int userId;
+    private String title;
+    private String content;
+    private int type;
+    private int status;
+    private Date createTime;
+    private int commentCount;
+    private double score;
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
+
+    public int getUserId() {
+        return userId;
+    }
+
+    public void setUserId(int userId) {
+        this.userId = userId;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getContent() {
+        return content;
+    }
+
+    public void setContent(String content) {
+        this.content = content;
+    }
+
+    public int getType() {
+        return type;
+    }
+
+    public void setType(int type) {
+        this.type = type;
+    }
+
+    public int getStatus() {
+        return status;
+    }
+
+    public void setStatus(int status) {
+        this.status = status;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public int getCommentCount() {
+        return commentCount;
+    }
+
+    public void setCommentCount(int commentCount) {
+        this.commentCount = commentCount;
+    }
+
+    public double getScore() {
+        return score;
+    }
+
+    public void setScore(double score) {
+        this.score = score;
+    }
+
+    @Override
+    public String toString() {
+        return "DiscussPost{" +
+                "id=" + id +
+                ", userId=" + userId +
+                ", title='" + title + '\'' +
+                ", content='" + content + '\'' +
+                ", type=" + type +
+                ", status=" + status +
+                ", createTime=" + createTime +
+                ", commentCount=" + commentCount +
+                ", score=" + score +
+                '}';
+    }
+}</code></pre>
+<pre><code class="language-java">@Mapper
+public interface DiscussPostMapper {
+
+    
+    // 考虑到后期分页功能加入offset 和 limit变量
+    // @Param注解用于给参数取别名,
+    // 如果只有一个参数,并且在&lt;if&gt;里使用,则必须加别名.
+
+
+    List&lt;DiscussPost&gt; selectDiscussPosts(int userId, int offset, int limit);
+    int selectDiscussPostRows(@Param("userId") int userId);
+
+}
+</code></pre>
+<p>        在mapper文件下创建相关的xml文件用于数据库操作</p>
+<pre><code class="language-XML">&lt;?xml version="1.0" encoding="UTF-8" ?&gt;
+&lt;!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd"&gt;
+&lt;mapper namespace="com.nowcoder.community.dao.DiscussPostMapper"&gt;
+
+    &lt;sql id="selectFields"&gt;
+        id, user_id, title, content, type, status, create_time, comment_count, score
+    &lt;/sql&gt;
+
+    &lt;select id="selectDiscussPosts" resultType="DiscussPost"&gt;
+        select &lt;include refid="selectFields"&gt;&lt;/include&gt;
+        from discuss_post
+        where status != 2
+        &lt;if test="userId!=0"&gt;
+            and user_id = #{userId}
+        &lt;/if&gt;
+        order by type desc, create_time desc
+        limit #{offset}, #{limit}
+    &lt;/select&gt;
+
+    &lt;select id="selectDiscussPostRows" resultType="int"&gt;
+        select count(id)
+        from discuss_post
+        where status != 2
+        &lt;if test="userId!=0"&gt;
+            and user_id = #{userId}
+        &lt;/if&gt;
+    &lt;/select&gt;
+
+&lt;/mapper&gt;</code></pre>
+<p>        在service文件下创建DiscussPostService类，用于服务层使用（使用@Service注解）</p>
+<pre><code class="language-java">@Service
+public class DiscussPostService {
+
+    @Autowired
+    private DiscussPostMapper discussPostMapper;
+
+    public List&lt;DiscussPost&gt; findDiscussPosts(int userId, int offset, int limit) {
+        return discussPostMapper.selectDiscussPosts(userId, offset, limit);
+    }
+
+    public int findDiscussPostRows(int userId) {
+        return discussPostMapper.selectDiscussPostRows(userId);
+    }
+
+}
+</code></pre>
+<p>        将静态资源（css image js等文件）放到static文件下，将模板文件（site index.html）放到templates文件下。</p>
+<p>        接下来开发视图层，新建一个HomeController在controller文件下使用@Controller注解</p>
+<pre><code class="language-java">//Controller访问路径可以省略
+@Controller
+public class HomeController {
+
+    //注入对象
+    @Autowired
+    private DiscussPostService discussPostService;
+
+    @Autowired
+    private UserService userService;
+
+    //使用GET方法
+    @RequestMapping(path = "/index", method = RequestMethod.GET)
+
+
+        List&lt;DiscussPost&gt; list = discussPostService.findDiscussPosts(0, page.getOffset(), page.getLimit());
+        List&lt;Map&lt;String, Object&gt;&gt; discussPosts = new ArrayList&lt;&gt;();
+        if (list != null) {
+            for (DiscussPost post : list) {
+                Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+                map.put("post", post);
+                User user = userService.findUserById(post.getUserId());
+                map.put("user", user);
+                discussPosts.add(map);
+            }
+        }
+        model.addAttribute("discussPosts", discussPosts);
+        return "/index";
+    }
+
+}</code></pre>
+<p>        更改Index.html文件，使用Thymeleaf对其中相对路径进行更改，并显示相关的帖子。</p>
+<pre><code class="language-html">&lt;ul class="list-unstyled"&gt;
+					&lt;li class="media pb-3 pt-3 mb-3 border-bottom" th:each="map:${discussPosts}"&gt;
+						&lt;a href="site/profile.html"&gt;
+							&lt;img th:src="${map.user.headerUrl}" class="mr-4 rounded-circle" alt="用户头像" style="width:50px;height:50px;"&gt;
+						&lt;/a&gt;
+						&lt;div class="media-body"&gt;
+							&lt;h6 class="mt-0 mb-3"&gt;
+								&lt;a href="#" th:utext="${map.post.title}"&gt;备战春招，面试刷题跟他复习，一个月全搞定！&lt;/a&gt;
+								&lt;span class="badge badge-secondary bg-primary" th:if="${map.post.type==1}"&gt;置顶&lt;/span&gt;
+								&lt;span class="badge badge-secondary bg-danger" th:if="${map.post.status==1}"&gt;精华&lt;/span&gt;
+							&lt;/h6&gt;
+							&lt;div class="text-muted font-size-12"&gt;
+								&lt;u class="mr-3" th:utext="${map.user.username}"&gt;寒江雪&lt;/u&gt; 发布于 &lt;b th:text="${#dates.format(map.post.createTime,'yyyy-MM-dd HH:mm:ss')}"&gt;2019-04-15 15:32:18&lt;/b&gt;
+								&lt;ul class="d-inline float-right"&gt;
+									&lt;li class="d-inline ml-2"&gt;赞 11&lt;/li&gt;
+									&lt;li class="d-inline ml-2"&gt;|&lt;/li&gt;
+									&lt;li class="d-inline ml-2"&gt;回帖 7&lt;/li&gt;
+								&lt;/ul&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;						
+					&lt;/li&gt;
+				&lt;/ul&gt;</code></pre>
+<p>        完整的HTML文件如下：</p>
+<pre><code class="language-html">&lt;!doctype html&gt;
+&lt;html lang="en" xmlns:th="http://www.thymeleaf.org"&gt;
+&lt;head&gt;
+	&lt;meta charset="utf-8"&gt;
+	&lt;meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"&gt;
+	&lt;link rel="icon" href="https://static.nowcoder.com/images/logo_87_87.png"/&gt;
+	&lt;link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" crossorigin="anonymous"&gt;
+	&lt;link rel="stylesheet" th:href="@{/css/global.css}" /&gt;
+	&lt;title&gt;牛客网-首页&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;	
+	&lt;div class="nk-container"&gt;
+		&lt;!-- 头部 --&gt;
+		&lt;header class="bg-dark sticky-top"&gt;
+			&lt;div class="container"&gt;
+				&lt;!-- 导航 --&gt;
+				&lt;nav class="navbar navbar-expand-lg navbar-dark"&gt;
+					&lt;!-- logo --&gt;
+					&lt;a class="navbar-brand" href="#"&gt;&lt;/a&gt;
+					&lt;button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation"&gt;
+						&lt;span class="navbar-toggler-icon"&gt;&lt;/span&gt;
+					&lt;/button&gt;
+					&lt;!-- 功能 --&gt;
+					&lt;div class="collapse navbar-collapse" id="navbarSupportedContent"&gt;
+						&lt;ul class="navbar-nav mr-auto"&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="index.html"&gt;首页&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link position-relative" href="site/letter.html"&gt;消息&lt;span class="badge badge-danger"&gt;12&lt;/span&gt;&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="site/register.html"&gt;注册&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="site/login.html"&gt;登录&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical dropdown"&gt;
+								&lt;a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"&gt;
+									&lt;img src="http://images.nowcoder.com/head/1t.png" class="rounded-circle" style="width:30px;"/&gt;
+								&lt;/a&gt;
+								&lt;div class="dropdown-menu" aria-labelledby="navbarDropdown"&gt;
+									&lt;a class="dropdown-item text-center" href="site/profile.html"&gt;个人主页&lt;/a&gt;
+									&lt;a class="dropdown-item text-center" href="site/setting.html"&gt;账号设置&lt;/a&gt;
+									&lt;a class="dropdown-item text-center" href="site/login.html"&gt;退出登录&lt;/a&gt;
+									&lt;div class="dropdown-divider"&gt;&lt;/div&gt;
+									&lt;span class="dropdown-item text-center text-secondary"&gt;nowcoder&lt;/span&gt;
+								&lt;/div&gt;
+							&lt;/li&gt;
+						&lt;/ul&gt;
+						&lt;!-- 搜索 --&gt;
+						&lt;form class="form-inline my-2 my-lg-0" action="site/search.html"&gt;
+							&lt;input class="form-control mr-sm-2" type="search" aria-label="Search" /&gt;
+							&lt;button class="btn btn-outline-light my-2 my-sm-0" type="submit"&gt;搜索&lt;/button&gt;
+						&lt;/form&gt;
+					&lt;/div&gt;
+				&lt;/nav&gt;
+			&lt;/div&gt;
+		&lt;/header&gt;
+
+		&lt;!-- 内容 --&gt;
+		&lt;div class="main"&gt;
+			&lt;div class="container"&gt;
+				&lt;div class="position-relative"&gt;
+					&lt;!-- 筛选条件 --&gt;
+					&lt;ul class="nav nav-tabs mb-3"&gt;
+						&lt;li class="nav-item"&gt;
+							&lt;a class="nav-link active" href="#"&gt;最新&lt;/a&gt;
+						&lt;/li&gt;
+						&lt;li class="nav-item"&gt;
+							&lt;a class="nav-link" href="#"&gt;最热&lt;/a&gt;
+						&lt;/li&gt;
+					&lt;/ul&gt;
+					&lt;button type="button" class="btn btn-primary btn-sm position-absolute rt-0" data-toggle="modal" data-target="#publishModal"&gt;我要发布&lt;/button&gt;
+				&lt;/div&gt;
+				&lt;!-- 弹出框 --&gt;
+				&lt;div class="modal fade" id="publishModal" tabindex="-1" role="dialog" aria-labelledby="publishModalLabel" aria-hidden="true"&gt;
+					&lt;div class="modal-dialog modal-lg" role="document"&gt;
+						&lt;div class="modal-content"&gt;
+							&lt;div class="modal-header"&gt;
+								&lt;h5 class="modal-title" id="publishModalLabel"&gt;新帖发布&lt;/h5&gt;
+								&lt;button type="button" class="close" data-dismiss="modal" aria-label="Close"&gt;
+									&lt;span aria-hidden="true"&gt;&amp;times;&lt;/span&gt;
+								&lt;/button&gt;
+							&lt;/div&gt;
+							&lt;div class="modal-body"&gt;
+								&lt;form&gt;
+									&lt;div class="form-group"&gt;
+										&lt;label for="recipient-name" class="col-form-label"&gt;标题：&lt;/label&gt;
+										&lt;input type="text" class="form-control" id="recipient-name"&gt;
+									&lt;/div&gt;
+									&lt;div class="form-group"&gt;
+										&lt;label for="message-text" class="col-form-label"&gt;正文：&lt;/label&gt;
+										&lt;textarea class="form-control" id="message-text" rows="15"&gt;&lt;/textarea&gt;
+									&lt;/div&gt;
+								&lt;/form&gt;
+							&lt;/div&gt;
+							&lt;div class="modal-footer"&gt;
+								&lt;button type="button" class="btn btn-secondary" data-dismiss="modal"&gt;取消&lt;/button&gt;
+								&lt;button type="button" class="btn btn-primary" id="publishBtn"&gt;发布&lt;/button&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+				&lt;/div&gt;
+				&lt;!-- 提示框 --&gt;
+				&lt;div class="modal fade" id="hintModal" tabindex="-1" role="dialog" aria-labelledby="hintModalLabel" aria-hidden="true"&gt;
+					&lt;div class="modal-dialog modal-lg" role="document"&gt;
+						&lt;div class="modal-content"&gt;
+							&lt;div class="modal-header"&gt;
+								&lt;h5 class="modal-title" id="hintModalLabel"&gt;提示&lt;/h5&gt;
+							&lt;/div&gt;
+							&lt;div class="modal-body" id="hintBody"&gt;
+								发布完毕!
+							&lt;/div&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+				&lt;/div&gt;
+				
+				&lt;!-- 帖子列表 --&gt;
+				&lt;ul class="list-unstyled"&gt;
+					&lt;li class="media pb-3 pt-3 mb-3 border-bottom" th:each="map:${discussPosts}"&gt;
+						&lt;a href="site/profile.html"&gt;
+							&lt;img th:src="${map.user.headerUrl}" class="mr-4 rounded-circle" alt="用户头像" style="width:50px;height:50px;"&gt;
+						&lt;/a&gt;
+						&lt;div class="media-body"&gt;
+							&lt;h6 class="mt-0 mb-3"&gt;
+								&lt;a href="#" th:utext="${map.post.title}"&gt;备战春招，面试刷题跟他复习，一个月全搞定！&lt;/a&gt;
+								&lt;span class="badge badge-secondary bg-primary" th:if="${map.post.type==1}"&gt;置顶&lt;/span&gt;
+								&lt;span class="badge badge-secondary bg-danger" th:if="${map.post.status==1}"&gt;精华&lt;/span&gt;
+							&lt;/h6&gt;
+							&lt;div class="text-muted font-size-12"&gt;
+								&lt;u class="mr-3" th:utext="${map.user.username}"&gt;寒江雪&lt;/u&gt; 发布于 &lt;b th:text="${#dates.format(map.post.createTime,'yyyy-MM-dd HH:mm:ss')}"&gt;2019-04-15 15:32:18&lt;/b&gt;
+								&lt;ul class="d-inline float-right"&gt;
+									&lt;li class="d-inline ml-2"&gt;赞 11&lt;/li&gt;
+									&lt;li class="d-inline ml-2"&gt;|&lt;/li&gt;
+									&lt;li class="d-inline ml-2"&gt;回帖 7&lt;/li&gt;
+								&lt;/ul&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;						
+					&lt;/li&gt;
+				&lt;/ul&gt;
+				&lt;!-- 分页 --&gt;
+				&lt;nav class="mt-5" th:if="${page.rows&gt;0}"&gt;
+					&lt;ul class="pagination justify-content-center"&gt;
+						&lt;li class="page-item"&gt;
+							&lt;a class="page-link" th:href="@{${page.path}(current=1)}"&gt;首页&lt;/a&gt;
+						&lt;/li&gt;
+						&lt;li th:class="|page-item ${page.current==1?'disabled':''}|"&gt;
+							&lt;a class="page-link" th:href="@{${page.path}(current=${page.current-1})}"&gt;上一页&lt;/a&gt;&lt;/li&gt;
+						&lt;li th:class="|page-item ${i==page.current?'active':''}|" th:each="i:${#numbers.sequence(page.from,page.to)}"&gt;
+							&lt;a class="page-link" href="#" th:text="${i}"&gt;1&lt;/a&gt;
+						&lt;/li&gt;
+						&lt;li th:class="|page-item ${page.current==page.total?'disabled':''}|"&gt;
+							&lt;a class="page-link" th:href="@{${page.path}(current=${page.current+1})}"&gt;下一页&lt;/a&gt;
+						&lt;/li&gt;
+						&lt;li class="page-item"&gt;
+							&lt;a class="page-link" th:href="@{${page.path}(current=${page.total})}"&gt;末页&lt;/a&gt;
+						&lt;/li&gt;
+					&lt;/ul&gt;
+				&lt;/nav&gt;
+			&lt;/div&gt;
+		&lt;/div&gt;
+
+		&lt;!-- 尾部 --&gt;
+		&lt;footer class="bg-dark"&gt;
+			&lt;div class="container"&gt;
+				&lt;div class="row"&gt;
+					&lt;!-- 二维码 --&gt;
+					&lt;div class="col-4 qrcode"&gt;
+						&lt;img src="https://uploadfiles.nowcoder.com/app/app_download.png" class="img-thumbnail" style="width:136px;" /&gt;
+					&lt;/div&gt;
+					&lt;!-- 公司信息 --&gt;
+					&lt;div class="col-8 detail-info"&gt;
+						&lt;div class="row"&gt;
+							&lt;div class="col"&gt;
+								&lt;ul class="nav"&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;关于我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;加入我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;意见反馈&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;企业服务&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;联系我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;免责声明&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;友情链接&lt;/a&gt;
+									&lt;/li&gt;
+								&lt;/ul&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;
+						&lt;div class="row"&gt;
+							&lt;div class="col"&gt;
+								&lt;ul class="nav btn-group-vertical company-info"&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										公司地址：北京市朝阳区大屯路东金泉时代3-2708北京牛客科技有限公司
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										联系方式：010-60728802(电话)&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;admin@nowcoder.com
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										牛客科技©2018 All rights reserved
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										京ICP备14055008号-4 &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+										&lt;img src="http://static.nowcoder.com/company/images/res/ghs.png" style="width:18px;" /&gt;
+										京公网安备 11010502036488号
+									&lt;/li&gt;
+								&lt;/ul&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+				&lt;/div&gt;
+			&lt;/div&gt;
+		&lt;/footer&gt;
+	&lt;/div&gt;
+
+	&lt;script src="https://code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script th:src="@{/js/global.js}"&gt;&lt;/script&gt;
+	&lt;script th:src="@{js/index.js}"&gt;&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<h2>3.2开发分页组件，分页显示所有帖子</h2>
+<p>        在entity文件下创建page类，用于记录分页数据</p>
+<pre><code class="language-java">/**
+ * 封装分页相关的信息.
+ */
+public class Page {
+
+    // 当前页码
+    private int current = 1;
+    // 显示上限
+    private int limit = 10;
+    // 数据总数(用于计算总页数)
+    private int rows;
+    // 查询路径(用于复用分页链接)
+    private String path;
+
+    public int getCurrent() {
+        return current;
+    }
+
+    public void setCurrent(int current) {
+        if (current &gt;= 1) {
+            this.current = current;
+        }
+    }
+
+    public int getLimit() {
+        return limit;
+    }
+
+    public void setLimit(int limit) {
+        if (limit &gt;= 1 &amp;&amp; limit &lt;= 100) {
+            this.limit = limit;
+        }
+    }
+
+    public int getRows() {
+        return rows;
+    }
+
+    public void setRows(int rows) {
+        if (rows &gt;= 0) {
+            this.rows = rows;
+        }
+    }
+
+    public String getPath() {
+        return path;
+    }
+
+    public void setPath(String path) {
+        this.path = path;
+    }
+
+    /**
+     * 获取当前页的起始行
+     *
+     * @return
+     */
+    public int getOffset() {
+        // current * limit - limit
+        return (current - 1) * limit;
+    }
+
+    /**
+     * 获取总页数
+     *
+     * @return
+     */
+    public int getTotal() {
+        // rows / limit [+1]
+        if (rows % limit == 0) {
+            return rows / limit;
+        } else {
+            return rows / limit + 1;
+        }
+    }
+
+    /**
+     * 获取起始页码
+     *
+     * @return
+     */
+    public int getFrom() {
+        int from = current - 2;
+        return from &lt; 1 ? 1 : from;
+    }
+
+    /**
+     * 获取结束页码
+     *
+     * @return
+     */
+    public int getTo() {
+        int to = current + 2;
+        int total = getTotal();
+        return to &gt; total ? total : to;
+    }
+
+}</code></pre>
+<p>        更改HomeController，加入分页的方法。</p>
+<pre><code class="language-java">//Controller访问路径可以省略
+@Controller
+public class HomeController {
+
+    //注入对象
+    @Autowired
+    private DiscussPostService discussPostService;
+
+    @Autowired
+    private UserService userService;
+
+    //使用GET方法
+    @RequestMapping(path = "/index", method = RequestMethod.GET)
+
+    public String getIndexPage(Model model, Page page) {
+        // 方法调用钱,SpringMVC会自动实例化Model和Page,并将Page注入Model.
+        // 所以,在thymeleaf中可以直接访问Page对象中的数据.
+        page.setRows(discussPostService.findDiscussPostRows(0));
+        page.setPath("/index");
+
+        List&lt;DiscussPost&gt; list = discussPostService.findDiscussPosts(0, page.getOffset(), page.getLimit());
+        List&lt;Map&lt;String, Object&gt;&gt; discussPosts = new ArrayList&lt;&gt;();
+        if (list != null) {
+            for (DiscussPost post : list) {
+                Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+                map.put("post", post);
+                User user = userService.findUserById(post.getUserId());
+                map.put("user", user);
+                discussPosts.add(map);
+            }
+        }
+        model.addAttribute("discussPosts", discussPosts);
+        return "/index";
+    }
+
+}</code></pre>
+<p>        在更改Index.html问件中分页的方法</p>
+<pre><code class="language-html">&lt;!-- 分页 --&gt;
+				&lt;nav class="mt-5" th:if="${page.rows&gt;0}"&gt;
+					&lt;ul class="pagination justify-content-center"&gt;
+						&lt;li class="page-item"&gt;
+							&lt;a class="page-link" th:href="@{${page.path}(current=1)}"&gt;首页&lt;/a&gt;
+						&lt;/li&gt;
+						&lt;li th:class="|page-item ${page.current==1?'disabled':''}|"&gt;
+							&lt;a class="page-link" th:href="@{${page.path}(current=${page.current-1})}"&gt;上一页&lt;/a&gt;&lt;/li&gt;
+						&lt;li th:class="|page-item ${i==page.current?'active':''}|" th:each="i:${#numbers.sequence(page.from,page.to)}"&gt;
+							&lt;a class="page-link" href="#" th:text="${i}"&gt;1&lt;/a&gt;
+						&lt;/li&gt;
+						&lt;li th:class="|page-item ${page.current==page.total?'disabled':''}|"&gt;
+							&lt;a class="page-link" th:href="@{${page.path}(current=${page.current+1})}"&gt;下一页&lt;/a&gt;
+						&lt;/li&gt;
+						&lt;li class="page-item"&gt;
+							&lt;a class="page-link" th:href="@{${page.path}(current=${page.total})}"&gt;末页&lt;/a&gt;
+						&lt;/li&gt;
+					&lt;/ul&gt;
+				&lt;/nav&gt;
+			&lt;/div&gt;
+		&lt;/div&gt;</code></pre>
+<p>效果图如下：</p>
+<p><img alt="" height="894" src="image\72b634128a474d14865b4426c07b3185.png" width="1200"/></p>
+<h1>4.开发社区登录模块</h1>
+<h2>4.1邮件发送</h2>
+<p>           在<a class="link-info" href="https://mvnrepository.com/?__cf_chl_rt_tk=S6a5uVIFPsIePlnWmIGDLbRZ7HzzWfHp4Z8WlsQdi_g-1648901526-0-gaNycGzNCqU" title="Maven Repository">Maven Repository</a>搜索Spring Mail配置文件并加入到poml文件中，在application.properties文件中配置Mail的参数。</p>
+<pre><code># ServerProperties
+server.port=8080
+server.servlet.context-path=/community
+
+# ThymeleafProperties
+spring.thymeleaf.cache=false
+
+# DataSourceProperties
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.datasource.url=jdbc:mysql://localhost:3306/community?characterEncoding=utf-8&amp;useSSL=false&amp;serverTimezone=Hongkong
+spring.datasource.username=root
+spring.datasource.password=lihonghe
+spring.datasource.type=com.zaxxer.hikari.HikariDataSource
+spring.datasource.hikari.maximum-pool-size=15
+spring.datasource.hikari.minimum-idle=5
+spring.datasource.hikari.idle-timeout=30000
+
+# MybatisProperties
+mybatis.mapper-locations=classpath:mapper/*.xml
+mybatis.type-aliases-package=com.nowcoder.community.entity
+mybatis.configuration.useGeneratedKeys=true
+mybatis.configuration.mapUnderscoreToCamelCase=true
+
+
+# MailProperties
+spring.mail.host=smtp.sina.com
+spring.mail.port=465
+#自己的邮箱
+spring.mail.username=nowcoder@sina.com
+spring.mail.password=nowcoder123
+spring.mail.protocol=smtps
+spring.mail.properties.mail.smtp.ssl.enable=true</code></pre>
+<p>        如果发送不了邮件，需要在个人邮箱的网站设置启用授权码，验证手机，并修改properties文件中关于Email的配置</p>
+<pre><code># MailProperties
+spring.mail.host=smtp.sina.com
+#spring.mail.port=465
+spring.mail.username=nowcoder@sina.com
+spring.mail.password=3398c6c71399f9fe
+#spring.mail.protocol=smtps
+#spring.mail.properties.mail.smtp.ssl.enable=true
+spring.mail.properties.mail.smtl.auth=true</code></pre>
+<p>        在community文件下创建util工具文件包，并在util包中创建MailClient类使用@Component注解，并创建发送邮件的方法。</p>
+<pre><code class="language-java">@Component
+public class MailClient {
+
+    private static final Logger logger = LoggerFactory.getLogger(MailClient.class);
+
+    @Autowired
+    private JavaMailSender mailSender;
+    
+    //从配置文件中获取值
+    @Value("${spring.mail.username}")
+    private String from;
+
+    public void sendMail(String to, String subject, String content) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message);
+            helper.setFrom(from);
+            helper.setTo(to);
+            helper.setSubject(subject);
+            helper.setText(content, true);
+            mailSender.send(helper.getMimeMessage());
+        } catch (MessagingException e) {
+            logger.error("发送邮件失败:" + e.getMessage());
+        }
+    }
+
+}</code></pre>
+<h2>4.2注册功能</h2>
+<p><img alt="" height="746" src="image\696e8ed39700466481ed09dd4e13c65b.png" width="1200"/></p>
+<p>        在Controller层下创建LoginController类，实现登录界面跳转到注册页面，使用@Controller注解。</p>
+<pre><code class="language-java">@Controller
+public class LoginController implements CommunityConstant {
+
+    @RequestMapping(path = "/register", method = RequestMethod.GET)
+    public String getRegisterPage() {
+        return "/site/register";
+    }
+
+    @RequestMapping(path = "/login", method = RequestMethod.GET)
+    public String getLoginPage() {
+        return "/site/login";
+    }
+}
+
+    </code></pre>
+<p>         使用模板引擎thymeleaf修改注册页面regist.html。</p>
+<pre><code class="language-html">&lt;!doctype html&gt;
+&lt;html lang="en" xmlns:th="http://www.thymeleaf.org"&gt;
+&lt;head&gt;
+	&lt;meta charset="utf-8"&gt;
+	&lt;meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"&gt;
+	&lt;link rel="icon" href="https://static.nowcoder.com/images/logo_87_87.png"/&gt;
+	&lt;link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" crossorigin="anonymous"&gt;
+	&lt;link rel="stylesheet" th:href="@{/css/global.css}" /&gt;
+	&lt;link rel="stylesheet" th:href="@{/css/login.css}" /&gt;
+	&lt;title&gt;牛客网-注册&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+	&lt;div class="nk-container"&gt;
+		&lt;!-- 头部 --&gt;
+		&lt;header class="bg-dark sticky-top" th:replace="index::header"&gt;
+			&lt;div class="container"&gt;
+				&lt;!-- 导航 --&gt;
+				&lt;nav class="navbar navbar-expand-lg navbar-dark"&gt;
+					&lt;!-- logo --&gt;
+					&lt;a class="navbar-brand" href="#"&gt;&lt;/a&gt;
+					&lt;button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation"&gt;
+						&lt;span class="navbar-toggler-icon"&gt;&lt;/span&gt;
+					&lt;/button&gt;
+					&lt;!-- 功能 --&gt;
+					&lt;div class="collapse navbar-collapse" id="navbarSupportedContent"&gt;
+						&lt;ul class="navbar-nav mr-auto"&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="../index.html"&gt;首页&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link position-relative" href="letter.html"&gt;消息&lt;span class="badge badge-danger"&gt;12&lt;/span&gt;&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="register.html"&gt;注册&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="login.html"&gt;登录&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical dropdown"&gt;
+								&lt;a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"&gt;
+									&lt;img src="http://images.nowcoder.com/head/1t.png" class="rounded-circle" style="width:30px;"/&gt;
+								&lt;/a&gt;
+								&lt;div class="dropdown-menu" aria-labelledby="navbarDropdown"&gt;
+									&lt;a class="dropdown-item text-center" href="profile.html"&gt;个人主页&lt;/a&gt;
+									&lt;a class="dropdown-item text-center" href="setting.html"&gt;账号设置&lt;/a&gt;
+									&lt;a class="dropdown-item text-center" href="login.html"&gt;退出登录&lt;/a&gt;
+									&lt;div class="dropdown-divider"&gt;&lt;/div&gt;
+									&lt;span class="dropdown-item text-center text-secondary"&gt;nowcoder&lt;/span&gt;
+								&lt;/div&gt;
+							&lt;/li&gt;
+						&lt;/ul&gt;
+						&lt;!-- 搜索 --&gt;
+						&lt;form class="form-inline my-2 my-lg-0" action="search.html"&gt;
+							&lt;input class="form-control mr-sm-2" type="search" aria-label="Search" /&gt;
+							&lt;button class="btn btn-outline-light my-2 my-sm-0" type="submit"&gt;搜索&lt;/button&gt;
+						&lt;/form&gt;
+					&lt;/div&gt;
+				&lt;/nav&gt;
+			&lt;/div&gt;
+		&lt;/header&gt;
+
+		&lt;!-- 内容 --&gt;
+		&lt;div class="main"&gt;
+			&lt;div class="container pl-5 pr-5 pt-3 pb-3 mt-3 mb-3"&gt;
+				&lt;h3 class="text-center text-info border-bottom pb-3"&gt;注&amp;nbsp;&amp;nbsp;册&lt;/h3&gt;
+				&lt;form class="mt-5" method="post" th:action="@{/register}"&gt;
+					&lt;div class="form-group row"&gt;
+						&lt;label for="username" class="col-sm-2 col-form-label text-right"&gt;账号:&lt;/label&gt;
+						&lt;div class="col-sm-10"&gt;
+							&lt;input type="text"
+								   th:class="|form-control ${usernameMsg!=null?'is-invalid':''}|"
+								   th:value="${user!=null?user.username:''}"
+								   id="username" name="username" placeholder="请输入您的账号!" required&gt;
+							&lt;div class="invalid-feedback" th:text="${usernameMsg}"&gt;
+								该账号已存在!
+							&lt;/div&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+					&lt;div class="form-group row mt-4"&gt;
+						&lt;label for="password" class="col-sm-2 col-form-label text-right"&gt;密码:&lt;/label&gt;
+						&lt;div class="col-sm-10"&gt;
+							&lt;input type="password"
+								   th:class="|form-control ${passwordMsg!=null?'is-invalid':''}|"
+								   th:value="${user!=null?user.password:''}"
+								   id="password" name="password" placeholder="请输入您的密码!" required&gt;
+							&lt;div class="invalid-feedback" th:text="${passwordMsg}"&gt;
+								密码长度不能小于8位!
+							&lt;/div&gt;							
+						&lt;/div&gt;
+					&lt;/div&gt;
+					&lt;div class="form-group row mt-4"&gt;
+						&lt;label for="confirm-password" class="col-sm-2 col-form-label text-right"&gt;确认密码:&lt;/label&gt;
+						&lt;div class="col-sm-10"&gt;
+							&lt;input type="password" class="form-control"
+								   th:value="${user!=null?user.password:''}"
+								   id="confirm-password" placeholder="请再次输入密码!" required&gt;
+							&lt;div class="invalid-feedback"&gt;
+								两次输入的密码不一致!
+							&lt;/div&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+					&lt;div class="form-group row"&gt;
+						&lt;label for="email" class="col-sm-2 col-form-label text-right"&gt;邮箱:&lt;/label&gt;
+						&lt;div class="col-sm-10"&gt;
+							&lt;input type="email"
+								   th:class="|form-control ${emailMsg!=null?'is-invalid':''}|"
+								   th:value="${user!=null?user.email:''}"
+								   id="email" name="email" placeholder="请输入您的邮箱!" required&gt;
+							&lt;div class="invalid-feedback" th:text="${emailMsg}"&gt;
+								该邮箱已注册!
+							&lt;/div&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+					&lt;div class="form-group row mt-4"&gt;
+						&lt;div class="col-sm-2"&gt;&lt;/div&gt;
+						&lt;div class="col-sm-10 text-center"&gt;
+							&lt;button type="submit" class="btn btn-info text-white form-control"&gt;立即注册&lt;/button&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+				&lt;/form&gt;				
+			&lt;/div&gt;
+		&lt;/div&gt;
+
+		&lt;!-- 尾部 --&gt;
+		&lt;footer class="bg-dark"&gt;
+			&lt;div class="container"&gt;
+				&lt;div class="row"&gt;
+					&lt;!-- 二维码 --&gt;
+					&lt;div class="col-4 qrcode"&gt;
+						&lt;img src="https://uploadfiles.nowcoder.com/app/app_download.png" class="img-thumbnail" style="width:136px;" /&gt;
+					&lt;/div&gt;
+					&lt;!-- 公司信息 --&gt;
+					&lt;div class="col-8 detail-info"&gt;
+						&lt;div class="row"&gt;
+							&lt;div class="col"&gt;
+								&lt;ul class="nav"&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;关于我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;加入我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;意见反馈&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;企业服务&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;联系我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;免责声明&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;友情链接&lt;/a&gt;
+									&lt;/li&gt;
+								&lt;/ul&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;
+						&lt;div class="row"&gt;
+							&lt;div class="col"&gt;
+								&lt;ul class="nav btn-group-vertical company-info"&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										公司地址：北京市朝阳区大屯路东金泉时代3-2708北京牛客科技有限公司
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										联系方式：010-60728802(电话)&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;admin@nowcoder.com
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										牛客科技©2018 All rights reserved
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										京ICP备14055008号-4 &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+										&lt;img src="http://static.nowcoder.com/company/images/res/ghs.png" style="width:18px;" /&gt;
+										京公网安备 11010502036488号
+									&lt;/li&gt;
+								&lt;/ul&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+				&lt;/div&gt;
+			&lt;/div&gt;
+		&lt;/footer&gt;
+	&lt;/div&gt;
+
+	&lt;script src="https://code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script th:src="@{/js/global.js}"&gt;&lt;/script&gt;
+	&lt;script th:src="@{/js/register.js}"&gt;&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>         在<a class="link-info" href="https://mvnrepository.com/?__cf_chl_rt_tk=S6a5uVIFPsIePlnWmIGDLbRZ7HzzWfHp4Z8WlsQdi_g-1648901526-0-gaNycGzNCqU" title="Maven Repository">Maven Repository</a>搜索commons lang配置文件并加入到poml文件中。在properties文件中加入community的路径。</p>
+<pre><code># community
+community.path.domain=http://localhost:8080</code></pre>
+<p>在util中添加CommunityUtil工具类，方便生成密码。</p>
+<pre><code class="language-java">public class CommunityUtil {
+
+    // 生成随机字符串
+    public static String generateUUID() {
+        return UUID.randomUUID().toString().replaceAll("-", "");
+    }
+
+    // MD5加密
+    // hello -&gt; abc123def456
+    // hello + 3e4a8 -&gt; abc123def456abc
+    public static String md5(String key) {
+        if (StringUtils.isBlank(key)) {
+            return null;
+        }
+        return DigestUtils.md5DigestAsHex(key.getBytes());
+    }
+
+}
+</code></pre>
+<p>        在Service中更新UserService类，用于注册用户业务，并更新激活页面activation.html。</p>
+<pre><code class="language-java">@Service
+public class UserService implements CommunityConstant {
+
+    @Autowired
+    private UserMapper userMapper;
+
+    @Autowired
+    private MailClient mailClient;
+
+    @Autowired
+    private TemplateEngine templateEngine;
+
+    @Value("${community.path.domain}")
+    private String domain;
+
+    @Value("${server.servlet.context-path}")
+    private String contextPath;
+
+    @Autowired
+    private LoginTicketMapper loginTicketMapper;
+
+    public User findUserById(int id) {
+        return userMapper.selectById(id);
+    }
+
+    public Map&lt;String, Object&gt; register(User user) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+
+        // 空值处理
+        if (user == null) {
+            throw new IllegalArgumentException("参数不能为空!");
+        }
+        if (StringUtils.isBlank(user.getUsername())) {
+            map.put("usernameMsg", "账号不能为空!");
+            return map;
+        }
+        if (StringUtils.isBlank(user.getPassword())) {
+            map.put("passwordMsg", "密码不能为空!");
+            return map;
+        }
+        if (StringUtils.isBlank(user.getEmail())) {
+            map.put("emailMsg", "邮箱不能为空!");
+            return map;
+        }
+
+        // 验证账号
+        User u = userMapper.selectByName(user.getUsername());
+        if (u != null) {
+            map.put("usernameMsg", "该账号已存在!");
+            return map;
+        }
+
+        // 验证邮箱
+        u = userMapper.selectByEmail(user.getEmail());
+        if (u != null) {
+            map.put("emailMsg", "该邮箱已被注册!");
+            return map;
+        }
+
+        // 注册用户
+        user.setSalt(CommunityUtil.generateUUID().substring(0, 5));
+        user.setPassword(CommunityUtil.md5(user.getPassword() + user.getSalt()));
+        user.setType(0);
+        user.setStatus(0);
+        user.setActivationCode(CommunityUtil.generateUUID());
+        user.setHeaderUrl(String.format("http://images.nowcoder.com/head/%dt.png", new Random().nextInt(1000)));
+        user.setCreateTime(new Date());
+        userMapper.insertUser(user);
+
+        // 激活邮件
+        Context context = new Context();
+        context.setVariable("email", user.getEmail());
+        // http://localhost:8080/community/activation/101/code
+        String url = domain + contextPath + "/activation/" + user.getId() + "/" + user.getActivationCode();
+        context.setVariable("url", url);
+        String content = templateEngine.process("/mail/activation", context);
+        mailClient.sendMail(user.getEmail(), "激活账号", content);
+
+        return map;
+    }
+
+    public int activation(int userId, String code) {
+        User user = userMapper.selectById(userId);
+        if (user.getStatus() == 1) {
+            return ACTIVATION_REPEAT;
+        } else if (user.getActivationCode().equals(code)) {
+            userMapper.updateStatus(userId, 1);
+            return ACTIVATION_SUCCESS;
+        } else {
+            return ACTIVATION_FAILURE;
+        }
+    }
+
+    public Map&lt;String, Object&gt; login(String username, String password, int expiredSeconds) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+
+        // 空值处理
+        if (StringUtils.isBlank(username)) {
+            map.put("usernameMsg", "账号不能为空!");
+            return map;
+        }
+        if (StringUtils.isBlank(password)) {
+            map.put("passwordMsg", "密码不能为空!");
+            return map;
+        }
+
+        // 验证账号
+        User user = userMapper.selectByName(username);
+        if (user == null) {
+            map.put("usernameMsg", "该账号不存在!");
+            return map;
+        }
+
+        // 验证状态
+        if (user.getStatus() == 0) {
+            map.put("usernameMsg", "该账号未激活!");
+            return map;
+        }
+
+        // 验证密码
+        password = CommunityUtil.md5(password + user.getSalt());
+        if (!user.getPassword().equals(password)) {
+            map.put("passwordMsg", "密码不正确!");
+            return map;
+        }
+
+        // 生成登录凭证
+        LoginTicket loginTicket = new LoginTicket();
+        loginTicket.setUserId(user.getId());
+        loginTicket.setTicket(CommunityUtil.generateUUID());
+        loginTicket.setStatus(0);
+        loginTicket.setExpired(new Date(System.currentTimeMillis() + expiredSeconds * 1000));
+        loginTicketMapper.insertLoginTicket(loginTicket);
+
+        map.put("ticket", loginTicket.getTicket());
+        return map;
+    }
+
+
+}
+</code></pre>
+<pre><code class="language-html">&lt;!doctype html&gt;
+&lt;html lang="en" xmlns:th="http://www.thymeleaf.org"&gt;
+&lt;head&gt;
+    &lt;meta charset="utf-8"&gt;
+    &lt;link rel="icon" href="https://static.nowcoder.com/images/logo_87_87.png"/&gt;
+    &lt;title&gt;牛客网-激活账号&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+	&lt;div&gt;
+		&lt;p&gt;
+			&lt;b th:text="${email}"&gt;xxx@xxx.com&lt;/b&gt;, 您好!
+		&lt;/p&gt;
+		&lt;p&gt;
+			您正在注册牛客网, 这是一封激活邮件, 请点击 
+			&lt;a th:href="${url}"&gt;此链接&lt;/a&gt;,
+			激活您的牛客账号!
+		&lt;/p&gt;
+	&lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+<p>        注册之后需要更新LoginController，处理注册完成的请求。</p>
+<pre><code class="language-java">@Controller
+public class LoginController implements CommunityConstant {
+
+    private static final Logger logger = LoggerFactory.getLogger(LoginController.class);
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private Producer kaptchaProducer;
+
+    @Value("${server.servlet.context-path}")
+    private String contextPath;
+
+    @RequestMapping(path = "/register", method = RequestMethod.GET)
+    public String getRegisterPage() {
+        return "/site/register";
+    }
+
+    @RequestMapping(path = "/login", method = RequestMethod.GET)
+    public String getLoginPage() {
+        return "/site/login";
+    }
+
+    @RequestMapping(path = "/register", method = RequestMethod.POST)
+    public String register(Model model, User user) {
+        Map&lt;String, Object&gt; map = userService.register(user);
+        if (map == null || map.isEmpty()) {
+            model.addAttribute("msg", "注册成功,我们已经向您的邮箱发送了一封激活邮件,请尽快激活!");
+            model.addAttribute("target", "/index");
+            return "/site/operate-result";
+        } else {
+            model.addAttribute("usernameMsg", map.get("usernameMsg"));
+            model.addAttribute("passwordMsg", map.get("passwordMsg"));
+            model.addAttribute("emailMsg", map.get("emailMsg"));
+            return "/site/register";
+        }
+    }
+
+    
+}
+</code></pre>
+<p>        更新operate-result页面。</p>
+<pre><code class="language-html">&lt;!doctype html&gt;
+&lt;html lang="en" xmlns:th="http://www.thymeleaf.org"&gt;
+&lt;head&gt;
+	&lt;meta charset="utf-8"&gt;
+	&lt;meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"&gt;
+	&lt;link rel="icon" href="https://static.nowcoder.com/images/logo_87_87.png"/&gt;
+	&lt;link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" crossorigin="anonymous"&gt;
+	&lt;link rel="stylesheet" th:href="@{/css/global.css}" /&gt;
+	&lt;title&gt;牛客网-操作结果&lt;/title&gt;
+&lt;/head&gt;
+&lt;body class="bg-white"&gt;
+	&lt;div class="nk-container"&gt;
+		&lt;!-- 头部 --&gt;
+		&lt;header class="bg-dark sticky-top" th:replace="index::header"&gt;
+			&lt;div class="container"&gt;
+				&lt;!-- 导航 --&gt;
+				&lt;nav class="navbar navbar-expand-lg navbar-dark"&gt;
+					&lt;!-- logo --&gt;
+					&lt;a class="navbar-brand" href="#"&gt;&lt;/a&gt;
+					&lt;button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation"&gt;
+						&lt;span class="navbar-toggler-icon"&gt;&lt;/span&gt;
+					&lt;/button&gt;
+					&lt;!-- 功能 --&gt;
+					&lt;div class="collapse navbar-collapse" id="navbarSupportedContent"&gt;
+						&lt;ul class="navbar-nav mr-auto"&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="../index.html"&gt;首页&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link position-relative" href="letter.html"&gt;消息&lt;span class="badge badge-danger"&gt;12&lt;/span&gt;&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="register.html"&gt;注册&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="login.html"&gt;登录&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical dropdown"&gt;
+								&lt;a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"&gt;
+									&lt;img src="http://images.nowcoder.com/head/1t.png" class="rounded-circle" style="width:30px;"/&gt;
+								&lt;/a&gt;
+								&lt;div class="dropdown-menu" aria-labelledby="navbarDropdown"&gt;
+									&lt;a class="dropdown-item text-center" href="profile.html"&gt;个人主页&lt;/a&gt;
+									&lt;a class="dropdown-item text-center" href="setting.html"&gt;账号设置&lt;/a&gt;
+									&lt;a class="dropdown-item text-center" href="login.html"&gt;退出登录&lt;/a&gt;
+									&lt;div class="dropdown-divider"&gt;&lt;/div&gt;
+									&lt;span class="dropdown-item text-center text-secondary"&gt;nowcoder&lt;/span&gt;
+								&lt;/div&gt;
+							&lt;/li&gt;
+						&lt;/ul&gt;
+						&lt;!-- 搜索 --&gt;
+						&lt;form class="form-inline my-2 my-lg-0" action="search.html"&gt;
+							&lt;input class="form-control mr-sm-2" type="search" aria-label="Search" /&gt;
+							&lt;button class="btn btn-outline-light my-2 my-sm-0" type="submit"&gt;搜索&lt;/button&gt;
+						&lt;/form&gt;
+					&lt;/div&gt;
+				&lt;/nav&gt;
+			&lt;/div&gt;
+		&lt;/header&gt;
+
+		&lt;!-- 内容 --&gt;
+		&lt;div class="main"&gt;
+			&lt;div class="container mt-5"&gt;
+				&lt;div class="jumbotron"&gt;
+					&lt;p class="lead" th:text="${msg}"&gt;您的账号已经激活成功,可以正常使用了!&lt;/p&gt;
+					&lt;hr class="my-4"&gt;
+					&lt;p&gt;
+						系统会在 &lt;span id="seconds" class="text-danger"&gt;8&lt;/span&gt; 秒后自动跳转,
+						您也可以点此 &lt;a id="target" th:href="@{${target}}" class="text-primary"&gt;链接&lt;/a&gt;, 手动跳转!
+					&lt;/p&gt;
+				&lt;/div&gt;
+			&lt;/div&gt;
+		&lt;/div&gt;
+
+		&lt;!-- 尾部 --&gt;
+		&lt;footer class="bg-dark"&gt;
+			&lt;div class="container"&gt;
+				&lt;div class="row"&gt;
+					&lt;!-- 二维码 --&gt;
+					&lt;div class="col-4 qrcode"&gt;
+						&lt;img src="https://uploadfiles.nowcoder.com/app/app_download.png" class="img-thumbnail" style="width:136px;" /&gt;
+					&lt;/div&gt;
+					&lt;!-- 公司信息 --&gt;
+					&lt;div class="col-8 detail-info"&gt;
+						&lt;div class="row"&gt;
+							&lt;div class="col"&gt;
+								&lt;ul class="nav"&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;关于我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;加入我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;意见反馈&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;企业服务&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;联系我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;免责声明&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;友情链接&lt;/a&gt;
+									&lt;/li&gt;
+								&lt;/ul&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;
+						&lt;div class="row"&gt;
+							&lt;div class="col"&gt;
+								&lt;ul class="nav btn-group-vertical company-info"&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										公司地址：北京市朝阳区大屯路东金泉时代3-2708北京牛客科技有限公司
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										联系方式：010-60728802(电话)&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;admin@nowcoder.com
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										牛客科技©2018 All rights reserved
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										京ICP备14055008号-4 &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+										&lt;img src="http://static.nowcoder.com/company/images/res/ghs.png" style="width:18px;" /&gt;
+										京公网安备 11010502036488号
+									&lt;/li&gt;
+								&lt;/ul&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+				&lt;/div&gt;
+			&lt;/div&gt;
+		&lt;/footer&gt;
+	&lt;/div&gt;
+
+	&lt;script src="https://code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script&gt;
+		$(function(){
+			setInterval(function(){
+				var seconds = $("#seconds").text();
+				$("#seconds").text(--seconds);
+				if(seconds == 0) {
+					location.href = $("#target").attr("href");
+				}
+			}, 1000);
+		});
+	&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>在utill中创建一个CommunityConstant接口，用于表示注册状态码。</p>
+<pre><code class="language-java">public interface CommunityConstant {
+
+    /**
+     * 激活成功
+     */
+    int ACTIVATION_SUCCESS = 0;
+
+    /**
+     * 重复激活
+     */
+    int ACTIVATION_REPEAT = 1;
+
+    /**
+     * 激活失败
+     */
+    int ACTIVATION_FAILURE = 2;
+
+    /**
+     * 默认状态的登录凭证的超时时间
+     */
+    int DEFAULT_EXPIRED_SECONDS = 3600 * 12;
+
+    /**
+     * 记住状态的登录凭证超时时间
+     */
+    int REMEMBER_EXPIRED_SECONDS = 3600 * 24 * 100;
+
+}
+</code></pre>
+<p>        更新LoginController的功能，并更改Index.html文件相对应位置的模板参数。</p>
+<pre><code class="language-java">@Controller
+public class LoginController implements CommunityConstant {
+
+    private static final Logger logger = LoggerFactory.getLogger(LoginController.class);
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private Producer kaptchaProducer;
+
+    @Value("${server.servlet.context-path}")
+    private String contextPath;
+
+    @RequestMapping(path = "/register", method = RequestMethod.GET)
+    public String getRegisterPage() {
+        return "/site/register";
+    }
+
+    @RequestMapping(path = "/login", method = RequestMethod.GET)
+    public String getLoginPage() {
+        return "/site/login";
+    }
+
+    @RequestMapping(path = "/register", method = RequestMethod.POST)
+    public String register(Model model, User user) {
+        Map&lt;String, Object&gt; map = userService.register(user);
+        if (map == null || map.isEmpty()) {
+            model.addAttribute("msg", "注册成功,我们已经向您的邮箱发送了一封激活邮件,请尽快激活!");
+            model.addAttribute("target", "/index");
+            return "/site/operate-result";
+        } else {
+            model.addAttribute("usernameMsg", map.get("usernameMsg"));
+            model.addAttribute("passwordMsg", map.get("passwordMsg"));
+            model.addAttribute("emailMsg", map.get("emailMsg"));
+            return "/site/register";
+        }
+    }
+
+    // http://localhost:8080/community/activation/101/code
+    @RequestMapping(path = "/activation/{userId}/{code}", method = RequestMethod.GET)
+    public String activation(Model model, @PathVariable("userId") int userId, @PathVariable("code") String code) {
+        int result = userService.activation(userId, code);
+        if (result == ACTIVATION_SUCCESS) {
+            model.addAttribute("msg", "激活成功,您的账号已经可以正常使用了!");
+            model.addAttribute("target", "/login");
+        } else if (result == ACTIVATION_REPEAT) {
+            model.addAttribute("msg", "无效操作,该账号已经激活过了!");
+            model.addAttribute("target", "/index");
+        } else {
+            model.addAttribute("msg", "激活失败,您提供的激活码不正确!");
+            model.addAttribute("target", "/index");
+        }
+        return "/site/operate-result";
+    }
+
+
+}
+</code></pre>
+<h2>4.3会话管理</h2>
+<p><img alt="" height="889" src="image\3147c842f3c4493ab620e7c0da5f6a58.png" width="1200"/></p>
+<p>         使用Cookie保存一些信息，可以使用浏览器插件查看Cookie(F12控制台)</p>
+<p><img alt="" height="731" src="image\d60cf17417c7408a8820f817bbfa232b.png" width="1200"/></p>
+<p>         有关Cookie的一个小示例：</p>
+<pre><code class="language-java">// cookie示例
+
+    @RequestMapping(path = "/cookie/set", method = RequestMethod.GET)
+    @ResponseBody
+    public String setCookie(HttpServletResponse response) {
+        // 创建cookie
+        Cookie cookie = new Cookie("code", CommunityUtil.generateUUID());
+        // 设置cookie生效的范围
+        cookie.setPath("/community/alpha");
+        // 设置cookie的生存时间
+        cookie.setMaxAge(60 * 10);
+        // 发送cookie
+        response.addCookie(cookie);
+
+        return "set cookie";
+    }
+
+    @RequestMapping(path = "/cookie/get", method = RequestMethod.GET)
+    @ResponseBody
+    public String getCookie(@CookieValue("code") String code) {
+        System.out.println(code);
+        return "get cookie";
+    }
+
+    // session示例
+
+    @RequestMapping(path = "/session/set", method = RequestMethod.GET)
+    @ResponseBody
+    public String setSession(HttpSession session) {
+        session.setAttribute("id", 1);
+        session.setAttribute("name", "Test");
+        return "set session";
+    }
+
+    @RequestMapping(path = "/session/get", method = RequestMethod.GET)
+    @ResponseBody
+    public String getSession(HttpSession session) {
+        System.out.println(session.getAttribute("id"));
+        System.out.println(session.getAttribute("name"));
+        return "get session";
+    }</code></pre>
+<p>cookie和session的区别<img alt="" height="711" src="image\f20fea2ce25644c580f8b556be54ad8a.png" width="1200"/></p>
+<p>后期可以考虑将Session数据传输到redis数据库中，用于保存一些登陆凭证</p>
+<h2>4.4生成验证码</h2>
+<p>        验证码使用Kaptcha jar包用于随机生成字符和图片。 在<a class="link-info" href="https://mvnrepository.com/?__cf_chl_rt_tk=S6a5uVIFPsIePlnWmIGDLbRZ7HzzWfHp4Z8WlsQdi_g-1648901526-0-gaNycGzNCqU" title="Maven Repository">Maven Repository</a>搜索Kaptcha配置文件，在resources文件包内的pom.xml文件中导入相关的配置文件依赖。在community目录下创建config文件包并创建KaptchaConfig配置类，使用@Configuration注解。</p>
+<pre><code class="language-java">@Configuration
+public class KaptchaConfig {
+
+    @Bean
+    public Producer kaptchaProducer() {
+        Properties properties = new Properties();
+        properties.setProperty("kaptcha.image.width", "100");
+        properties.setProperty("kaptcha.image.height", "40");
+        properties.setProperty("kaptcha.textproducer.font.size", "32");
+        properties.setProperty("kaptcha.textproducer.font.color", "0,0,0");
+        properties.setProperty("kaptcha.textproducer.char.string", "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYAZ");
+        properties.setProperty("kaptcha.textproducer.char.length", "4");
+        properties.setProperty("kaptcha.noise.impl", "com.google.code.kaptcha.impl.NoNoise");
+
+        DefaultKaptcha kaptcha = new DefaultKaptcha();
+        Config config = new Config(properties);
+        kaptcha.setConfig(config);
+        return kaptcha;
+    }
+
+}</code></pre>
+<p>        在LoginController文件中完善验证码功能，并完善登陆页面.html文件中验证码的模板，并实现刷新验证码的功能。</p>
+<pre><code class="language-java"> @RequestMapping(path = "/kaptcha", method = RequestMethod.GET)
+    public void getKaptcha(HttpServletResponse response, HttpSession session) {
+        // 生成验证码
+        String text = kaptchaProducer.createText();
+        BufferedImage image = kaptchaProducer.createImage(text);
+
+        // 将验证码存入session
+        session.setAttribute("kaptcha", text);
+
+        // 将突图片输出给浏览器
+        response.setContentType("image/png");
+        try {
+            OutputStream os = response.getOutputStream();
+            ImageIO.write(image, "png", os);
+        } catch (IOException e) {
+            logger.error("响应验证码失败:" + e.getMessage());
+        }
+    }
+
+    @RequestMapping(path = "/login", method = RequestMethod.POST)
+    public String login(String username, String password, String code, boolean rememberme,
+                        Model model, HttpSession session, HttpServletResponse response) {
+        // 检查验证码
+        String kaptcha = (String) session.getAttribute("kaptcha");
+        if (StringUtils.isBlank(kaptcha) || StringUtils.isBlank(code) || !kaptcha.equalsIgnoreCase(code)) {
+            model.addAttribute("codeMsg", "验证码不正确!");
+            return "/site/login";
+        }</code></pre>
+<p>        刷新验证码方法：</p>
+<pre><code class="language-html">&lt;script&gt;
+	function refresh_kaptcha() {
+		var path = CONTEXT_PATH + "/kaptcha?p=" + Math.random();
+		$("#kaptcha").attr("src", path);
+	}
+&lt;/script&gt;</code></pre>
+<h2>4.5登录、退出功能</h2>
+<p>密码使用MD5加密</p>
+<p><img alt="" height="777" src="image\0c121c7707d24585903a3d23b5c1bd51.png" width="1041"/></p>
+<p>         数据库中有关于登录凭证的ticket，使用这个ticket作为登陆凭证。涉及到数据库的操作，就要处理LoginTicketMapper。</p>
+<p>LoginTicketMapper(这里是mapper的另外一种写法，不用再resource里面创建mapper文件):</p>
+<pre><code class="language-java">@Mapper
+public interface LoginTicketMapper {
+
+    @Insert({
+            "insert into login_ticket(user_id,ticket,status,expired) ",
+            "values(#{userId},#{ticket},#{status},#{expired})"
+    })
+    @Options(useGeneratedKeys = true, keyProperty = "id")
+    int insertLoginTicket(LoginTicket loginTicket);
+
+    @Select({
+            "select id,user_id,ticket,status,expired ",
+            "from login_ticket where ticket=#{ticket}"
+    })
+    LoginTicket selectByTicket(String ticket);
+
+    @Update({
+            "&lt;script&gt;",
+            "update login_ticket set status=#{status} where ticket=#{ticket} ",
+            "&lt;if test=\"ticket!=null\"&gt; ",
+            "and 1=1 ",
+            "&lt;/if&gt;",
+            "&lt;/script&gt;"
+    })
+    int updateStatus(String ticket, int status);
+
+}
+</code></pre>
+<p>        在UserService中增加登陆的方法，并在login.html中增加相应的修改：</p>
+<pre><code class="language-java">public Map&lt;String, Object&gt; login(String username, String password, int expiredSeconds) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+
+        // 空值处理
+        if (StringUtils.isBlank(username)) {
+            map.put("usernameMsg", "账号不能为空!");
+            return map;
+        }
+        if (StringUtils.isBlank(password)) {
+            map.put("passwordMsg", "密码不能为空!");
+            return map;
+        }
+
+        // 验证账号
+        User user = userMapper.selectByName(username);
+        if (user == null) {
+            map.put("usernameMsg", "该账号不存在!");
+            return map;
+        }
+
+        // 验证状态
+        if (user.getStatus() == 0) {
+            map.put("usernameMsg", "该账号未激活!");
+            return map;
+        }
+
+        // 验证密码
+        password = CommunityUtil.md5(password + user.getSalt());
+        if (!user.getPassword().equals(password)) {
+            map.put("passwordMsg", "密码不正确!");
+            return map;
+        }
+
+        // 生成登录凭证
+        LoginTicket loginTicket = new LoginTicket();
+        loginTicket.setUserId(user.getId());
+        loginTicket.setTicket(CommunityUtil.generateUUID());
+        loginTicket.setStatus(0);
+        loginTicket.setExpired(new Date(System.currentTimeMillis() + expiredSeconds * 1000));
+        loginTicketMapper.insertLoginTicket(loginTicket);
+
+        map.put("ticket", loginTicket.getTicket());
+        return map;
+    }</code></pre>
+<p>        增加Controller层中的登录方法：</p>
+<pre><code class="language-java">@RequestMapping(path = "/login", method = RequestMethod.POST)
+    public String login(String username, String password, String code, boolean rememberme,
+                        Model model, HttpSession session, HttpServletResponse response) {
+        // 检查验证码
+        String kaptcha = (String) session.getAttribute("kaptcha");
+        if (StringUtils.isBlank(kaptcha) || StringUtils.isBlank(code) || !kaptcha.equalsIgnoreCase(code)) {
+            model.addAttribute("codeMsg", "验证码不正确!");
+            return "/site/login";
+        }
+
+        // 检查账号,密码
+        int expiredSeconds = rememberme ? REMEMBER_EXPIRED_SECONDS : DEFAULT_EXPIRED_SECONDS;
+        Map&lt;String, Object&gt; map = userService.login(username, password, expiredSeconds);
+        if (map.containsKey("ticket")) {
+            Cookie cookie = new Cookie("ticket", map.get("ticket").toString());
+            cookie.setPath(contextPath);
+            cookie.setMaxAge(expiredSeconds);
+            response.addCookie(cookie);
+            return "redirect:/index";
+        } else {
+            model.addAttribute("usernameMsg", map.get("usernameMsg"));
+            model.addAttribute("passwordMsg", map.get("passwordMsg"));
+            return "/site/login";
+        }
+    }
+
+    @RequestMapping(path = "/logout", method = RequestMethod.GET)
+    public String logout(@CookieValue("ticket") String ticket) {
+        userService.logout(ticket);
+        return "redirect:/login";
+    }</code></pre>
+<h2>4.6显示登陆信息</h2>
+<p>        使用拦截器实现        </p>
+<p><img alt="" height="737" src="image\ad16c5c4f4624720b2acb161e0309c40.png" width="1020"/></p>
+<p>在controller层下创建Interceptor文件包，</p>
+<p>拦截器的方法</p>
+<pre><code class="language-java"> // 在Controller之前执行
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        logger.debug("preHandle: " + handler.toString());
+        return true;
+    }
+
+    // 在Controller之后执行
+    @Override
+    public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
+        logger.debug("postHandle: " + handler.toString());
+    }
+
+    // 在TemplateEngine之后执行
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        logger.debug("afterCompletion: " + handler.toString());
+    }</code></pre>
+<p>在cpnfig文件下创建配置类WebMvcConfig，配置拦截器。</p>
+<pre><code class="language-java">@Configuration
+public class WebMvcConfig implements WebMvcConfigurer {
+
+    //测试拦截器方法
+    @Autowired
+    private AlphaInterceptor alphaInterceptor;
+
+    @Autowired
+    private LoginTicketInterceptor loginTicketInterceptor;
+
+    @Autowired
+    private LoginRequiredInterceptor loginRequiredInterceptor;
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(alphaInterceptor)
+                .excludePathPatterns("/**/*.css", "/**/*.js", "/**/*.png", "/**/*.jpg", "/**/*.jpeg")
+                .addPathPatterns("/register", "/login");
+
+        registry.addInterceptor(loginTicketInterceptor)
+                .excludePathPatterns("/**/*.css", "/**/*.js", "/**/*.png", "/**/*.jpg", "/**/*.jpeg");
+
+    }
+
+}</code></pre>
+<p>在请求开始之前查询登录用户：</p>
+<p>在Interceptor文件下创建LoginTicketInterceptor，实现拦截器的方法。</p>
+<pre><code class="language-java">@Component
+public class LoginTicketInterceptor implements HandlerInterceptor {
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private HostHolder hostHolder;
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        // 从cookie中获取凭证
+        String ticket = CookieUtil.getValue(request, "ticket");
+
+        if (ticket != null) {
+            // 查询凭证
+            LoginTicket loginTicket = userService.findLoginTicket(ticket);
+            // 检查凭证是否有效
+            if (loginTicket != null &amp;&amp; loginTicket.getStatus() == 0 &amp;&amp; loginTicket.getExpired().after(new Date())) {
+                // 根据凭证查询用户
+                User user = userService.findUserById(loginTicket.getUserId());
+                // 在本次请求中持有用户
+                hostHolder.setUser(user);
+            }
+        }
+
+        return true;
+    }
+
+    @Override
+    public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
+        User user = hostHolder.getUser();
+        if (user != null &amp;&amp; modelAndView != null) {
+            modelAndView.addObject("loginUser", user);
+        }
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        hostHolder.clear();
+    }
+}</code></pre>
+<p>        在Util文件中创建Cookie工具，以及HostHolder工具用于代替session对象。完成过后修改相应的html文件。</p>
+<pre><code class="language-java">public class CookieUtil {
+
+    public static String getValue(HttpServletRequest request, String name) {
+        if (request == null || name == null) {
+            throw new IllegalArgumentException("参数为空!");
+        }
+
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (cookie.getName().equals(name)) {
+                    return cookie.getValue();
+                }
+            }
+        }
+
+        return null;
+    }
+
+}</code></pre>
+<pre><code class="language-java">/**
+ * 持有用户信息,用于代替session对象.
+ */
+@Component
+public class HostHolder {
+
+    private ThreadLocal&lt;User&gt; users = new ThreadLocal&lt;&gt;();
+
+    public void setUser(User user) {
+        users.set(user);
+    }
+
+    public User getUser() {
+        return users.get();
+    }
+
+    public void clear() {
+        users.remove();
+    }
+
+}
+</code></pre>
+<h2>4.7账号设置</h2>
+<p>        用户自己上传头像，请求必须是POST请求，表单：enctype = "multipart/form-data",SpringMVC通过MutipartFile上传文件。</p>
+<p>        创建Usercontroller</p>
+<pre><code class="language-java">@Controller
+@RequestMapping("/user")
+public class UserController {
+
+    private static final Logger logger = LoggerFactory.getLogger(UserController.class);
+
+    @Value("${community.path.upload}")
+    private String uploadPath;
+
+    @Value("${community.path.domain}")
+    private String domain;
+
+    @Value("${server.servlet.context-path}")
+    private String contextPath;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private HostHolder hostHolder;
+
+    @LoginRequired
+    @RequestMapping(path = "/setting", method = RequestMethod.GET)
+    public String getSettingPage() {
+        return "/site/setting";
+    }
+
+    @LoginRequired
+    @RequestMapping(path = "/upload", method = RequestMethod.POST)
+    public String uploadHeader(MultipartFile headerImage, Model model) {
+        if (headerImage == null) {
+            model.addAttribute("error", "您还没有选择图片!");
+            return "/site/setting";
+        }
+
+        String fileName = headerImage.getOriginalFilename();
+        String suffix = fileName.substring(fileName.lastIndexOf("."));
+        if (StringUtils.isBlank(suffix)) {
+            model.addAttribute("error", "文件的格式不正确!");
+            return "/site/setting";
+        }
+
+        // 生成随机文件名
+        fileName = CommunityUtil.generateUUID() + suffix;
+        // 确定文件存放的路径
+        File dest = new File(uploadPath + "/" + fileName);
+        try {
+            // 存储文件
+            headerImage.transferTo(dest);
+        } catch (IOException e) {
+            logger.error("上传文件失败: " + e.getMessage());
+            throw new RuntimeException("上传文件失败,服务器发生异常!", e);
+        }
+
+        // 更新当前用户的头像的路径(web访问路径)
+        // http://localhost:8080/community/user/header/xxx.png
+        User user = hostHolder.getUser();
+        String headerUrl = domain + contextPath + "/user/header/" + fileName;
+        userService.updateHeader(user.getId(), headerUrl);
+
+        return "redirect:/index";
+    }
+
+    @RequestMapping(path = "/header/{fileName}", method = RequestMethod.GET)
+    public void getHeader(@PathVariable("fileName") String fileName, HttpServletResponse response) {
+        // 服务器存放路径
+        fileName = uploadPath + "/" + fileName;
+        // 文件后缀
+        String suffix = fileName.substring(fileName.lastIndexOf("."));
+        // 响应图片
+        response.setContentType("image/" + suffix);
+        try (
+                FileInputStream fis = new FileInputStream(fileName);
+                OutputStream os = response.getOutputStream();
+        ) {
+            byte[] buffer = new byte[1024];
+            int b = 0;
+            while ((b = fis.read(buffer)) != -1) {
+                os.write(buffer, 0, b);
+            }
+        } catch (IOException e) {
+            logger.error("读取头像失败: " + e.getMessage());
+        }
+    }
+
+}
+</code></pre>
+<p>配置setting.html的静态资源路径</p>
+<pre><code class="language-html">&lt;!doctype html&gt;
+&lt;html lang="en" xmlns:th="http://www.thymeleaf.org"&gt;
+&lt;head&gt;
+	&lt;meta charset="utf-8"&gt;
+	&lt;meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"&gt;
+	&lt;link rel="icon" href="https://static.nowcoder.com/images/logo_87_87.png"/&gt;
+	&lt;link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" crossorigin="anonymous"&gt;
+	&lt;link rel="stylesheet" th:href="@{/css/global.css}" /&gt;
+	&lt;link rel="stylesheet" th:href="@{/css/login.css}" /&gt;
+	&lt;title&gt;牛客网-账号设置&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+	&lt;div class="nk-container"&gt;
+		&lt;!-- 头部 --&gt;
+		&lt;header class="bg-dark sticky-top" th:replace="index::header"&gt;
+			&lt;div class="container"&gt;
+				&lt;!-- 导航 --&gt;
+				&lt;nav class="navbar navbar-expand-lg navbar-dark"&gt;
+					&lt;!-- logo --&gt;
+					&lt;a class="navbar-brand" href="#"&gt;&lt;/a&gt;
+					&lt;button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation"&gt;
+						&lt;span class="navbar-toggler-icon"&gt;&lt;/span&gt;
+					&lt;/button&gt;
+					&lt;!-- 功能 --&gt;
+					&lt;div class="collapse navbar-collapse" id="navbarSupportedContent"&gt;
+						&lt;ul class="navbar-nav mr-auto"&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="../index.html"&gt;首页&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link position-relative" href="letter.html"&gt;消息&lt;span class="badge badge-danger"&gt;12&lt;/span&gt;&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="register.html"&gt;注册&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical"&gt;
+								&lt;a class="nav-link" href="login.html"&gt;登录&lt;/a&gt;
+							&lt;/li&gt;
+							&lt;li class="nav-item ml-3 btn-group-vertical dropdown"&gt;
+								&lt;a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"&gt;
+									&lt;img src="http://images.nowcoder.com/head/1t.png" class="rounded-circle" style="width:30px;"/&gt;
+								&lt;/a&gt;
+								&lt;div class="dropdown-menu" aria-labelledby="navbarDropdown"&gt;
+									&lt;a class="dropdown-item text-center" href="profile.html"&gt;个人主页&lt;/a&gt;
+									&lt;a class="dropdown-item text-center" href="setting.html"&gt;账号设置&lt;/a&gt;
+									&lt;a class="dropdown-item text-center" href="login.html"&gt;退出登录&lt;/a&gt;
+									&lt;div class="dropdown-divider"&gt;&lt;/div&gt;
+									&lt;span class="dropdown-item text-center text-secondary"&gt;nowcoder&lt;/span&gt;
+								&lt;/div&gt;
+							&lt;/li&gt;
+						&lt;/ul&gt;
+						&lt;!-- 搜索 --&gt;
+						&lt;form class="form-inline my-2 my-lg-0" action="search.html"&gt;
+							&lt;input class="form-control mr-sm-2" type="search" aria-label="Search" /&gt;
+							&lt;button class="btn btn-outline-light my-2 my-sm-0" type="submit"&gt;搜索&lt;/button&gt;
+						&lt;/form&gt;
+					&lt;/div&gt;
+				&lt;/nav&gt;
+			&lt;/div&gt;
+		&lt;/header&gt;
+
+		&lt;!-- 内容 --&gt;
+		&lt;div class="main"&gt;
+			&lt;div class="container p-5 mt-3 mb-3"&gt;
+				&lt;!-- 上传头像 --&gt;
+				&lt;h6 class="text-left text-info border-bottom pb-2"&gt;上传头像&lt;/h6&gt;
+				&lt;form class="mt-5" method="post" enctype="multipart/form-data" th:action="@{/user/upload}"&gt;
+					&lt;div class="form-group row mt-4"&gt;
+						&lt;label for="head-image" class="col-sm-2 col-form-label text-right"&gt;选择头像:&lt;/label&gt;
+						&lt;div class="col-sm-10"&gt;
+							&lt;div class="custom-file"&gt;
+								&lt;input type="file" th:class="|custom-file-input ${error!=null?'is-invalid':''}|"
+									   id="head-image" name="headerImage" lang="es" required=""&gt;
+								&lt;label class="custom-file-label" for="head-image" data-browse="文件"&gt;选择一张图片&lt;/label&gt;
+								&lt;div class="invalid-feedback" th:text="${error}"&gt;
+									该账号不存在!
+								&lt;/div&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+					&lt;div class="form-group row mt-4"&gt;
+						&lt;div class="col-sm-2"&gt;&lt;/div&gt;
+						&lt;div class="col-sm-10 text-center"&gt;
+							&lt;button type="submit" class="btn btn-info text-white form-control"&gt;立即上传&lt;/button&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+				&lt;/form&gt;
+				&lt;!-- 修改密码 --&gt;
+				&lt;h6 class="text-left text-info border-bottom pb-2 mt-5"&gt;修改密码&lt;/h6&gt;
+				&lt;form class="mt-5"&gt;				
+					&lt;div class="form-group row mt-4"&gt;
+						&lt;label for="old-password" class="col-sm-2 col-form-label text-right"&gt;原密码:&lt;/label&gt;
+						&lt;div class="col-sm-10"&gt;
+							&lt;input type="password" class="form-control" id="old-password" placeholder="请输入原始密码!" required&gt;
+							&lt;div class="invalid-feedback"&gt;
+								密码长度不能小于8位!
+							&lt;/div&gt;							
+						&lt;/div&gt;
+					&lt;/div&gt;
+					&lt;div class="form-group row mt-4"&gt;
+						&lt;label for="new-password" class="col-sm-2 col-form-label text-right"&gt;新密码:&lt;/label&gt;
+						&lt;div class="col-sm-10"&gt;
+							&lt;input type="password" class="form-control" id="new-password" placeholder="请输入新的密码!" required&gt;
+							&lt;div class="invalid-feedback"&gt;
+								密码长度不能小于8位!
+							&lt;/div&gt;							
+						&lt;/div&gt;
+					&lt;/div&gt;
+					&lt;div class="form-group row mt-4"&gt;
+						&lt;label for="confirm-password" class="col-sm-2 col-form-label text-right"&gt;确认密码:&lt;/label&gt;
+						&lt;div class="col-sm-10"&gt;
+							&lt;input type="password" class="form-control" id="confirm-password" placeholder="再次输入新密码!" required&gt;
+							&lt;div class="invalid-feedback"&gt;
+								两次输入的密码不一致!
+							&lt;/div&gt;								
+						&lt;/div&gt;
+					&lt;/div&gt;				
+					&lt;div class="form-group row mt-4"&gt;
+						&lt;div class="col-sm-2"&gt;&lt;/div&gt;
+						&lt;div class="col-sm-10 text-center"&gt;
+							&lt;button type="submit" class="btn btn-info text-white form-control"&gt;立即保存&lt;/button&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+				&lt;/form&gt;				
+			&lt;/div&gt;
+		&lt;/div&gt;
+
+		&lt;!-- 尾部 --&gt;
+		&lt;footer class="bg-dark"&gt;
+			&lt;div class="container"&gt;
+				&lt;div class="row"&gt;
+					&lt;!-- 二维码 --&gt;
+					&lt;div class="col-4 qrcode"&gt;
+						&lt;img src="https://uploadfiles.nowcoder.com/app/app_download.png" class="img-thumbnail" style="width:136px;" /&gt;
+					&lt;/div&gt;
+					&lt;!-- 公司信息 --&gt;
+					&lt;div class="col-8 detail-info"&gt;
+						&lt;div class="row"&gt;
+							&lt;div class="col"&gt;
+								&lt;ul class="nav"&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;关于我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;加入我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;意见反馈&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;企业服务&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;联系我们&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;免责声明&lt;/a&gt;
+									&lt;/li&gt;
+									&lt;li class="nav-item"&gt;
+										&lt;a class="nav-link text-light" href="#"&gt;友情链接&lt;/a&gt;
+									&lt;/li&gt;
+								&lt;/ul&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;
+						&lt;div class="row"&gt;
+							&lt;div class="col"&gt;
+								&lt;ul class="nav btn-group-vertical company-info"&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										公司地址：北京市朝阳区大屯路东金泉时代3-2708北京牛客科技有限公司
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										联系方式：010-60728802(电话)&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;admin@nowcoder.com
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										牛客科技©2018 All rights reserved
+									&lt;/li&gt;
+									&lt;li class="nav-item text-white-50"&gt;
+										京ICP备14055008号-4 &amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;
+										&lt;img src="http://static.nowcoder.com/company/images/res/ghs.png" style="width:18px;" /&gt;
+										京公网安备 11010502036488号
+									&lt;/li&gt;
+								&lt;/ul&gt;
+							&lt;/div&gt;
+						&lt;/div&gt;
+					&lt;/div&gt;
+				&lt;/div&gt;
+			&lt;/div&gt;
+		&lt;/footer&gt;
+	&lt;/div&gt;
+
+	&lt;script src="https://code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script src="https://cdn.jsdelivr.net/npm/bs-custom-file-input/dist/bs-custom-file-input.js" crossorigin="anonymous"&gt;&lt;/script&gt;
+	&lt;script th:src="@{/js/global.js}"&gt;&lt;/script&gt;
+	&lt;script&gt;
+		$(function(){
+			bsCustomFileInput.init();
+		});
+	&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>修改配置文件中，上传文件的保存位置。</p>
+<pre><code>community.path.upload=d:/work/data/upload</code></pre>
+<h2>4.8检查登陆状态</h2>
+<p>        防止未登录访问某些资源，可以使用拦截器和注解。</p>
+<p>       使用注解，在community创建annotation文件创建Login注解。</p>
+<pre><code class="language-java">@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface LoginRequired {
+
+
+
+}</code></pre>
+<p>        给Usercontroller中的方法，加入@LoginRequire注解，并创建拦截器拦截带注解的方法。</p>
+<p>创建一个新的拦截器LoginRequireInterceptor。</p>
+<pre><code class="language-java">@Component
+public class LoginRequiredInterceptor implements HandlerInterceptor {
+
+    @Autowired
+    private HostHolder hostHolder;
+
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        //保证拦截的是方法
+        if (handler instanceof HandlerMethod) {
+            HandlerMethod handlerMethod = (HandlerMethod) handler;
+            Method method = handlerMethod.getMethod();
+            LoginRequired loginRequired = method.getAnnotation(LoginRequired.class);
+            if (loginRequired != null &amp;&amp; hostHolder.getUser() == null) {
+                response.sendRedirect(request.getContextPath() + "/login");
+                return false;
+            }
+        }
+        return true;
+    }
+}
+</code></pre>
+<h1></h1>
+<h1></h1>
+<h2>项目代码及相关资源：<a href="https://github.com/Ming-XMU" title="Ming-XMU (Yiming Zhang) · GitHub">Ming-XMU (Yiming Zhang) · GitHub</a></h2>
+<h1>麻烦点点小星星！！！！！！</h1>
+<p>CSDN下载需要积分<a href="https://download.csdn.net/download/qq_43351888/85072880" title="基于SpringBoot仿牛客网讨论社区项目-Java文档类资源-CSDN下载">基于SpringBoot仿牛客网讨论社区项目-Java文档类资源-CSDN下载</a></p>
+<p><a href="https://blog.csdn.net/qq_43351888/article/details/123928000?spm=1001.2014.3001.5501" title="从零开始—仿牛客网讨论社区项目（一）_芙蓉铁蛋的博客-CSDN博客">从零开始—仿牛客网讨论社区项目（一）_芙蓉铁蛋的博客-CSDN博客</a></p>
+<p><a href="https://blog.csdn.net/qq_43351888/article/details/123936613?spm=1001.2014.3001.5501" title=" 从零开始—仿牛客网讨论社区项目（二）_芙蓉铁蛋的博客-CSDN博客"> 从零开始—仿牛客网讨论社区项目（二）_芙蓉铁蛋的博客-CSDN博客</a></p>
+<p><a href="https://blog.csdn.net/qq_43351888/article/details/123943949?spm=1001.2014.3001.5501" title="从零开始—仿牛客网讨论社区项目（三）_芙蓉铁蛋的博客-CSDN博客">从零开始—仿牛客网讨论社区项目（三）_芙蓉铁蛋的博客-CSDN博客</a></p>
+<p><a href="https://blog.csdn.net/qq_43351888/article/details/123953939?spm=1001.2014.3001.5501" title="从零开始—仿牛客网讨论社区项目（四）_芙蓉铁蛋的博客-CSDN博客">从零开始—仿牛客网讨论社区项目（四）_芙蓉铁蛋的博客-CSDN博客</a></p>
+<p><a href="https://blog.csdn.net/qq_43351888/article/details/123959047?spm=1001.2014.3001.5501" title="从零开始—仿牛客网讨论社区项目（五）_芙蓉铁蛋的博客-CSDN博客">从零开始—仿牛客网讨论社区项目（五）_芙蓉铁蛋的博客-CSDN博客</a></p>
+<p><a href="https://blog.csdn.net/qq_43351888/article/details/123968582?spm=1001.2014.3001.5501" title="从零开始—仿牛客网讨论社区项目（六）_芙蓉铁蛋的博客-CSDN博客">从零开始—仿牛客网讨论社区项目（六）_芙蓉铁蛋的博客-CSDN博客</a></p>
+<p><a href="https://blog.csdn.net/qq_43351888/article/details/123974771?spm=1001.2014.3001.5501" title="仿牛客网讨论社区项目—优化网站性能_芙蓉铁蛋的博客-CSDN博客">仿牛客网讨论社区项目—优化网站性能_芙蓉铁蛋的博客-CSDN博客</a></p>
+<p><a href="https://blog.csdn.net/qq_43351888/article/details/123997073?spm=1001.2014.3001.5501" title="仿牛客网讨论社区项目—项目总结及项目常见面试题_芙蓉铁蛋的博客-CSDN博客">仿牛客网讨论社区项目—项目总结及项目常见面试题_芙蓉铁蛋的博客-CSDN博客</a></p>
+</div>
+</div>

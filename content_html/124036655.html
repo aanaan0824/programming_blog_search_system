@@ -1,0 +1,127 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>Unity 2019.4.30<br/> URP 7.7.1<br/> 刚把测试项目升级到URP，本想看官方的Demo工程学习写一个简单后效，快速GettingStart<br/> 结果官方示例已经是 Unity 2020 URP 10.8.1 内容变化很多</p>
+<p>最后还是结合Unity教程，终于把简单的后效跑起来了</p>
+<h2><a id="Forward_Renderer_Data_7"></a>Forward Renderer Data</h2>
+<p>创建Pipeline Asset之后，有一个同名的Forward Renderer Data</p>
+<p>创建Forward Render Data，我命名的是DistortForwardData，扭曲的效果，测试的话默认ImageEffect就行。</p>
+<p>添加到 PipelineAsset RenderList</p>
+<p><img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/158ac3e15aa44b83b637cde948079e44.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5aKo5rGg6LGh54mZ55m9,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>回到DistortForwardData</p>
+<p>Add Renderer Feature 可以添加Renderer Feature，但是此时只能添加Renderer Objects，还是实验性的</p>
+<p>后效需要构建自己的Renderer Feature</p>
+<h2><a id="Renderer_Feature_28"></a>Renderer Feature</h2>
+<p>创建DistortFeature类，继承ScriptableRendererFeature</p>
+<p>再加两个类，逻辑比较简单直接作为内部类就行。</p>
+<p>CustomPass类，继承ScriptableRenderPass，核心的渲染逻辑写在这里。</p>
+<p>DistortSettings类，主要是用于传参，会出现在Renderer Feature的面板上，可以把材质参数放这里。</p>
+<p>这时候在DistortForwardData就可以看到我们写的Feature啦</p>
+<p><img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/79b127a3306e45978e9d7eb6f445f18a.png"/></p>
+<p>大致的代码结构如下：</p>
+<p><img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/1fe11d92c3054cb58f208dd8787957bb.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5aKo5rGg6LGh54mZ55m9,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>Create()</p>
+<p>可以在这里做初始化操作。</p>
+<p>比如把Setting的参数赋值给CustomPass，我们会在CustomPass对材质参数进行设置。</p>
+<pre><code>    public override void Create()
+    {
+        customPass = new CustomPass();
+        customPass.renderPassEvent = Settings.renderPassEvent;
+        customPass.Material = Settings.Material;
+        customPass.Distortion = Settings.Distortion;
+        customPass.Scale = Settings.Scale;
+    }
+</code></pre>
+<p>AddRenderPasses()</p>
+<p>在这里将CustomPass加入队列</p>
+<p>我们的CustomPass还需要相机的输出，就来自ScriptableRenderer.cameraColorTarget，</p>
+<p>给CustomPass增加Setup方法，在加入队列之前，由Setup传给CustomPass</p>
+<pre><code class="prism language-c#"> public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
+ {
+     customPass.Setup(renderer.cameraColorTarget);
+     renderer.EnqueuePass(customPass);
+ }
+</code></pre>
+<h2><a id="Renderer_Pass_95"></a>Renderer Pass</h2>
+<p>核心方法就是Execute，我们在这里创建CommandBuffer，由ScriptableRenderContext执行。</p>
+<p>CustomPass的父类ScriptableRenderPass属性renderPassEvent指定执行的阶段。</p>
+<pre><code class="prism language-c#">public class DistortFeature : ScriptableRendererFeature
+{
+    [System.Serializable]
+    public class DistortSettings
+    {
+        public RenderPassEvent renderPassEvent = RenderPassEvent.AfterRenderingTransparents;
+        public Material Material = null;
+        [Range(0.001f, 10)] public float Distortion;
+        [Range(0.001f, 10)] public float Scale;
+    }
+
+    public class CustomPass : ScriptableRenderPass
+    {
+        static readonly string renderTag = "My Distort Effect";
+        public Material Material = null;
+        public float Distortion;
+        public float Scale;
+
+        RenderTargetIdentifier currentTarget;
+        int TempTargetId = Shader.PropertyToID("_TempTarget");
+
+        public void Setup(in RenderTargetIdentifier target)
+        {
+            currentTarget = target;
+        }
+
+        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+        {
+            if (Material == null) return;
+
+            var source = currentTarget;
+            var destination = TempTargetId;
+
+            Material.SetFloat("_distortion", Distortion);
+            Material.SetFloat("_scale", Scale);
+
+            CommandBuffer cmd = CommandBufferPool.Get(renderTag);
+            cmd.Clear();
+
+            cmd.GetTemporaryRT(destination, Screen.width, Screen.height, 0);
+            cmd.Blit(source, destination, Material);
+            cmd.Blit(destination, source);
+
+            context.ExecuteCommandBuffer(cmd);
+            CommandBufferPool.Release(cmd);
+        }
+    }
+
+    public DistortSettings Settings = new DistortSettings();
+
+    private CustomPass customPass;
+
+    public override void Create()
+    {
+        customPass = new CustomPass();
+        customPass.renderPassEvent = Settings.renderPassEvent;
+        customPass.Material = Settings.Material;
+        customPass.Distortion = Settings.Distortion;
+        customPass.Scale = Settings.Scale;
+    }
+
+    public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
+    {
+        customPass.Setup(renderer.cameraColorTarget);
+        renderer.EnqueuePass(customPass);
+    }
+}
+</code></pre>
+<p>回到场景把相机设置上<br/> <img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/1991d5f0195047198978960afd3db04f.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5aKo5rGg6LGh54mZ55m9,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>然后就可以在Forward Renderer Data修改参数查看效果</p>
+<p><img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/026af72b73ab4bf58b7ac6b2e546bb75.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5aKo5rGg6LGh54mZ55m9,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>参考资料：</p>
+<p>[1] URP系列教程 | 如何使用Scriptable Renderer Feature来自定义后处理效果(https://zhuanlan.zhihu.com/p/373273390)</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

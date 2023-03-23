@@ -1,0 +1,218 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>异步操作表示执行某项操作之后不等待操作结束，但可以在操作结束后收到通知。</p>
+<p>示例：</p>
+<pre><code class="language-cs">    public static class demo13
+    {
+        public static void Send(IPAddress address, int port)
+        {
+            var client = new TcpClient();
+            try
+            {
+                client.Connect(address, port);
+                client.GetStream().Write(Encoding.ASCII.GetBytes("Hello"));
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                throw;
+            }
+            finally
+            {
+                client.Close();
+            }
+        }
+    }</code></pre>
+<p>示例是一个调用阻塞操作的例子。tcp连接的方法就是一个阻塞操作，只有连接成功或是失败的时候才会回复。发送数据也是同样的。线程阻塞的时候操作系统会调度这些执行操作的线程进入等待状态，等到操作完成后再重新把线程放入待运行队列中并调度执行。</p>
+<p>这种方式会出现一个问题，如果我们要同时管理多个tcp连接，那么我们就需要创建很多的线程，每个线程分配的栈空间加起来就会消耗很多的内存。在linux平台下，一个线程栈会默认分配8~10M的空间，也就是说太多的线程就会导致内存空间不足。并且操作系统调度线程需要的时间也会变长，会导致性能下降。<br/>  </p>
+<h2>Event Loop</h2>
+<hr/>
+<p>解决多线程缺陷的方法之一就是使用Event Loop。</p>
+<p>Event Loop事件循环机制。程序有一个或多个线程专门用于捕获对象检查状态，把执行的阻塞操作换为非阻塞操作，再注册事件以在处理完成后收到通知。js中的异步就是使用的事件循环机制实现的。</p>
+<p></p>
+<h2>APM</h2>
+<hr/>
+<p>异步编程模型，.NET提供的基于异步回调的操作。</p>
+<p>.NET Core在不同的系统上使用不同的方式实现APM。在windows上是通过IOCP（一组支持多个同时发生异步I/O操作的接口）实现的；在Linux上是通过epoll（多路复用IO接口）实现的；而在mac上是通过kqueue接口实现的。虽然针对不同的系统使用的方式不同，但是实现出来的功能是相同的。</p>
+<p>示例：</p>
+<pre><code class="language-cs">    public static class demo11
+    {
+        public static void Send(IPAddress address, int port)
+        {
+            var client = new TcpClient();
+            // 开始异步连接
+            client.BeginConnect(address,port,ar =&gt;
+            {
+                // 无论成功还是失败都会调用这个回调
+                try
+                {
+                    client.EndConnect(ar);
+                }
+                catch (Exception e) {
+                    Console.WriteLine(e);
+                    client.Close();
+                }
+
+                var bytes = Encoding.ASCII.GetBytes("Hello");
+                var stream = client.GetStream();
+                stream.BeginWrite(bytes, 0, bytes.Length, result =&gt;
+                {
+                    try
+                    {
+
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                    }
+                    finally
+                    {
+                        client.Close();
+                    }
+                },null);
+            },null);
+        }
+    }</code></pre>
+<p></p>
+<h2>TPL</h2>
+<hr/>
+<p>任务并行库。由于基于回调的异步操作的通用性不够强，.NET在此基础之上又封装了一层以任务（Task）为基础的接口。</p>
+<p>TPL最大的特点就是分离了执行异步操作与注册回调的处理。这样一来，我们就可以让任何异步操作都具有相同的方法注册回调、等待结束和处理错误。并且为支持之后的async、await打下了基础。</p>
+<p>示例：</p>
+<pre><code class="language-cs">    public static class demo12
+    {
+        public static void test(IPAddress address, int port)
+        {
+            // 创建1万个Task
+            var tasks = new Task[10000];
+            for (var i = 0; i &lt; tasks.Length; i++)
+            {
+                // SendAsync 本身就是一个异步方法
+                tasks[i] = SendAsync(address, port);
+            }
+            // 等待所有异步操作执行完成
+            Task.WaitAll(tasks);
+        }
+
+        public static Task SendAsync(IPAddress address, int port)
+        {
+            var client = new TcpClient();
+            // 异步连接
+            var task = client.ConnectAsync(address, port);
+            var a = new TaskFactory();
+
+            // 异步发送数据
+            var task1 = task.ContinueWith(t =&gt; {
+                var bytes = Encoding.ASCII.GetBytes("Hello");
+                var stream = client.GetStream();
+                // 返回一个新的task
+                // 这里会产生Task&lt;Task&gt;嵌套
+                // 在外部使用Unwrap方法解包
+                return stream.WriteAsync(bytes,0,bytes.Length);
+            }).Unwrap();
+
+            // 异步处理发送结果
+            var task2 = task1.ContinueWith(t =&gt; {
+                if (t.IsFaulted)
+                {
+                    // 失败
+                }
+                else if (t.IsCompleted)
+                { 
+                    // 完成
+                }
+                client.Close();
+            });
+            return task2;
+        }
+    }</code></pre>
+<p></p>
+<h2>async和await</h2>
+<hr/>
+<p>由TPL支持，极大的简化了异步方法的编写。</p>
+<p>async用于标记方法，标记的方法会使用await执行异步操作。然后把整个方法合并成一个异步操作。</p>
+<p>示例：</p>
+<pre><code class="language-cs">    public static class demo14
+    {
+        // async关键字是给编译器看的，为了生产状态机
+        public static async Task SendAsync(IPAddress address, int port)
+        {
+            var client = new TcpClient();
+            try
+            {
+                // 异步连接
+                await client.ConnectAsync(address,port);
+                // 连接成功后会从这里继续开始执行
+                // 失败时会抛出异常并在下面的catch块中被捕捉
+
+                var bytes = Encoding.ASCII.GetBytes("Hello");
+                var stream = client.GetStream();
+                // 异步发送数据
+                await stream.WriteAsync(bytes,0,bytes.Length);
+                // 发送成功后会从这里继续开始执行
+                // 失败时会抛出异常并在下面的catch块中被捕捉
+                Console.WriteLine("发送完成");
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+            }
+            finally
+            {
+                client.Close();
+            }
+        }
+    }</code></pre>
+<p>前面的示例异步读取字符串中的行。 读取每一行后，代码将枚举字符串中的每个单词。 调用方将使用 <code>await foreach</code> 语句枚举每个单词。 当需要从源字符串异步读取下一行时，该方法将等待。</p>
+<p></p>
+<h2>取消任务</h2>
+<hr/>
+<p>在.Net和C#中运行异步代码相当简单，但是我们有时候需要<strong>取消正在进行的异步操作</strong>，这时我们可以通过CancellationToken来取消任务。</p>
+<p><strong>1. 可重复执行的耗时方法。</strong>示例：</p>
+<pre><code class="language-cs">Task _task = null;
+CancellationTokenSource _cts = null;
+
+private void Refresh()
+{
+  if(this._task != null &amp;&amp; !this._task.IsCompleted)
+    this._cts.Cancel();
+  //
+  this._cts = new CancellationTokenSource();
+  this._task = Task.Run(() =&gt; {
+    if(this._cts.IsCancellationRequested)
+      return;
+    
+    //do something
+  }, this._cts.Token);
+}
+
+</code></pre>
+<p><strong>2. 生命周期结束取消未完成任务。</strong>示例：</p>
+<pre><code class="language-cs">//本地变量
+Task _task = null;
+CancellationTokenSource _cts = null;
+
+//初始化时，开启倒计时任务
+private void Init()
+{
+  this._cts = new CancellationTokenSource();
+  this._task = Task.Run(() =&gt; {
+    if(this._cts.IsCancellationRequested)
+      return;
+
+    //do something
+  },  this._cts.Token)
+}
+
+//退出时，取消未完成任务
+private void Exit()
+{
+  if(this._task != null &amp;&amp; !this._task.IsCompleted)
+    this._cts.Cancel();
+}
+</code></pre>
+<p></p>
+<p>参考：<a class="link-info" href="https://docs.microsoft.com/zh-cn/dotnet/csharp/programming-guide/concepts/async/" title="Microsoft C# 异步编程">Microsoft C# 异步编程</a></p>
+</div>
+</div>

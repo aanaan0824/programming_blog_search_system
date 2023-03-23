@@ -1,0 +1,784 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>C++红黑树</h3>
+<ul><li><a href="#_2">零、前言</a></li><li><a href="#_6">一、红黑树的概念及性质</a></li><li><a href="#_41">二、红黑树结点的定义</a></li><li><a href="#_83">三、红黑树的插入操作</a></li><li><ul><li><a href="#1_105">1、变色处理</a></li><li><a href="#2_141">2、单旋+变色</a></li><li><a href="#3_173">3、双旋+变色</a></li><li><a href="#4_203">4、插入实现</a></li></ul>
+</li><li><a href="#_406">四、红黑树的验证</a></li><li><a href="#_469">五、红黑树的删除</a></li><li><a href="#AVL_475">六、红黑树与**AVL**树的比较</a></li></ul>
+</div>
+<p></p>
+<h1><a id="_2"></a>零、前言</h1>
+<blockquote>
+<p>本章继AVL树后继续讲解学习C++中另一个二叉搜索树–红黑树</p>
+</blockquote>
+<h1><a id="_6"></a>一、红黑树的概念及性质</h1>
+<ul><li>概念：</li></ul>
+<blockquote>
+<ol><li> <p>红黑树，是一种二叉搜索树，但在每个结点上增加一个存储位表示结点的颜色，可以是Red或Black</p> </li><li> <p>通过对任何一条从根到叶子的路径上各个结点着色方式的限制，红黑树确保没有一条路径会比其他路径长出俩倍，因而是接近平衡的</p> </li></ol>
+</blockquote>
+<blockquote>
+<p>注：AVL树是严格平衡的二叉搜索树，左右子树高度不超过1；红黑树是近似平衡，最长路径不超过最短路径的二倍</p>
+</blockquote>
+<ul><li>示图：</li></ul>
+<img alt="image-20220228175734450" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202202281757584.png"/>
+<ul><li>红黑树的性质：</li></ul>
+<blockquote>
+<ol><li> <p>每个结点不是红色就是黑色</p> </li><li> <p>根节点是黑色的</p> </li><li> <p>如果一个节点是红色的，则它的两个孩子结点是黑色的</p> </li><li> <p>对于每个结点，从该结点到其所有后代叶结点的简单路径上，均包含相同数目的黑色结点</p> </li><li> <p>每个NIL结点都是黑色的(此处的结点指的是空结点)（该条规则确定了路径条数）</p> </li></ol>
+</blockquote>
+<ul><li>为什么红黑树就能保证其最长路径中节点个数不会超过最短路径节点个数的两倍：</li></ul>
+<blockquote>
+<p>红黑树第三条性质说明红黑树不能存在连续（父子相连）的红结点，可以存在连续的黑结点，又由于第四条性质每个路径上的黑结点个数都相同 ，所以对于最短路径来说一定是都是黑色结点，对于最长路径来说一定是黑色红色相间的路径，所以最长路径不超过最短路径长度的二倍</p>
+</blockquote>
+<ul><li>示图：</li></ul>
+<img alt="image-20220228182237198" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202202281822265.png"/>
+<h1><a id="_41"></a>二、红黑树结点的定义</h1>
+<blockquote>
+<p>对于红黑树来说以颜色来代替AVL树的平衡因子的作用，除此之外在定义上没有什么区别</p>
+</blockquote>
+<ul><li>实现代码：</li></ul>
+<pre><code class="prism language-cpp"><span class="token keyword">enum</span> <span class="token class-name">Colour</span><span class="token comment">//颜色</span>
+<span class="token punctuation">{<!-- --></span>
+	RED<span class="token punctuation">,</span>
+	BLACK<span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">class</span> <span class="token class-name">K</span><span class="token punctuation">,</span> <span class="token keyword">class</span> <span class="token class-name">V</span><span class="token operator">&gt;</span>
+<span class="token keyword">struct</span> <span class="token class-name">RBTreeNode</span>
+<span class="token punctuation">{<!-- --></span>
+	RBTreeNode<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span><span class="token operator">*</span> _left<span class="token punctuation">;</span>
+	RBTreeNode<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span><span class="token operator">*</span> _right<span class="token punctuation">;</span>
+	RBTreeNode<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span><span class="token operator">*</span> _parent<span class="token punctuation">;</span>
+
+	pair<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span> _kv<span class="token punctuation">;</span>
+	Colour _col<span class="token punctuation">;</span>
+
+	<span class="token function">RBTreeNode</span><span class="token punctuation">(</span><span class="token keyword">const</span> pair<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span><span class="token operator">&amp;</span> kv<span class="token punctuation">)</span>
+		<span class="token operator">:</span><span class="token function">_left</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_right</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_parent</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_kv</span><span class="token punctuation">(</span>kv<span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_col</span><span class="token punctuation">(</span>RED<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span><span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre>
+<blockquote>
+<p>注：此处采用枚举来表示，当然也可以使用其他方式</p>
+</blockquote>
+<ul><li>在节点的定义中为什么要将节点的默认颜色给成红色的：</li></ul>
+<blockquote>
+<ol><li> <p>如果默认颜色为黑，那么在插入中插入一个黑结点一定会让该路径上的黑结点数量加1，从而与其他路径上黑结点数量造成不一致，而一定会影响该棵红黑树</p> </li><li> <p>如果默认颜色为红，那么在插入中插入一个红结点，可能新插入结点的父结点为黑色结点则没有影响，也可能新插入结点的父结点为红结点，由于不能存在连续的（父子相连的）红色结点，而对该棵树造成影响</p> </li><li> <p>所以默认为红色比较黑色来说是好的</p> </li></ol>
+</blockquote>
+<h1><a id="_83"></a>三、红黑树的插入操作</h1>
+<blockquote>
+<p>红黑树是在二叉搜索树的基础上加上其平衡限制条件，当违反限制条件时就需要做出相应的调整</p>
+</blockquote>
+<ul><li>红黑树的插入可分为两步：</li></ul>
+<blockquote>
+<ol><li> <p>按照二叉搜索的树规则插入新节点</p> </li><li> <p>新节点插入后检查红黑树的性质是否造到破坏</p> </li></ol>
+</blockquote>
+<ul><li>注意：</li></ul>
+<blockquote>
+<ol><li> <p>因为新节点的默认颜色是红色，如果其父亲节点的颜色是黑色，则没有违反红黑树任何性质，则不需要调整</p> </li><li> <p>当新插入节点的父亲节点颜色为红色时，就违反了性质三不能有连在一起的红色节点，此时需要对红黑树分情况来讨论</p> </li><li> <p>因为插入结点的父结点是红色的，说明父结点不是根结点（根结点是黑色的），因此插入结点的祖父结点（父结点的父结点）就一定存在</p> </li><li> <p>红黑树调整时具体应该如何调整，主要是看插入结点的叔叔（插入结点的父结点的兄弟结点），根据插入结点叔叔的不同，可将红黑树的调整分为三种情况</p> </li></ol>
+</blockquote>
+<blockquote>
+<p>注：约定<strong>cur</strong>为当前节点，<strong>p</strong>为父节点，<strong>g</strong>为祖父节点，<strong>u</strong>为叔叔节点</p>
+</blockquote>
+<h2><a id="1_105"></a>1、变色处理</h2>
+<blockquote>
+<p>情况一: <strong>cur</strong>为红，<strong>p</strong>为红，<strong>g</strong>为黑，<strong>u</strong>存在且为红</p>
+</blockquote>
+<ul><li>示图：</li></ul>
+<img alt="image-20220301124649974" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011246014.png"/>
+<ul><li>分析：</li></ul>
+<blockquote>
+<ol><li> <p>为了让该以 g 为根的子树不存在连续的红色结点，并且不增加路径上的黑色结点，我们让 g 的颜色变红，让 u 和 p 的颜色变黑，各路径上黑色结点数量没变，以此达到红黑树的性质</p> </li><li> <p>因为 p 和 u 的颜色变黑，对其子树没有影响，但是 g 的颜色变红，可能存在影响，需要继续向上判断</p> </li></ol>
+</blockquote>
+<ul><li>判断逻辑：</li></ul>
+<blockquote>
+<ol><li> <p>如果 g 就是该棵树的根那么最后需要将 g 的颜色变黑</p> </li><li> <p>如果 g 是整棵树的子树，如果 g 的父节点是是黑色结点则不用调整，如果是红色结点则需要根据具体情况来做出调整</p> </li></ol>
+</blockquote>
+<ul><li>解决方式：</li></ul>
+<blockquote>
+<p>将p,u改为黑，g改为红，然后把g当成cur，继续向上调整</p>
+</blockquote>
+<ul><li>抽象示图：</li></ul>
+<img alt="image-20220301123629153" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011236222.png"/>
+<ul><li>动图演示1：</li></ul>
+<img alt="红黑树变色处理" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011219610.gif"/>
+<ul><li>动图演示2：</li></ul>
+<img alt="红黑树变色处理2" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011222339.gif"/>
+<h2><a id="2_141"></a>2、单旋+变色</h2>
+<blockquote>
+<p>情况二: <strong>cur</strong>为红，<strong>p</strong>为红，<strong>g</strong>为黑，<strong>u</strong>不存在**/u**为黑</p>
+</blockquote>
+<ul><li>示图：</li></ul>
+<img alt="image-20220301125108739" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011251806.png"/>
+<ul><li>分析：</li></ul>
+<blockquote>
+<ol><li> <p>当 u 节点不存在时，说明cur一定是插入节点，如果 cur 不是新插入节点，那么在插入前时 cur 一定是黑色结点（由黑色变红），则插入前就不符合路径上黑结点数量相同的性质</p> </li><li> <p>当 u 节点存在且为黑色时，说明 cur 的颜色插入前一定是黑色，进过插入后变色为红色，否则在插入前就存在连续的红色结点，不符合红黑树性质</p> </li></ol>
+</blockquote>
+<ul><li>解决方法：</li></ul>
+<blockquote>
+<ol><li> <p>如果p为g的左孩子，cur为p的左孩子，则进行右单旋转，p变黑，g变红</p> </li><li> <p>如果p为g的右孩子，cur为p的右孩子，则进行左单旋转，p变黑，g变红</p> </li></ol>
+</blockquote>
+<ul><li>抽象示图：</li></ul>
+<img alt="image-20220301123356450" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011233506.png"/>
+<ul><li>动态示图：</li></ul>
+<img alt="红黑树单旋处理1" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011348329.gif"/>
+<ul><li>动图演示2：</li></ul>
+<img alt="红黑树单旋处理2" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011354920.gif"/>
+<h2><a id="3_173"></a>3、双旋+变色</h2>
+<blockquote>
+<p>情况三: <strong>cur</strong>为红，<strong>p</strong>为红，<strong>g</strong>为黑，<strong>u</strong>不存在**/u**为黑</p>
+</blockquote>
+<ul><li>示图：</li></ul>
+<img alt="image-20220301130843518" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011308576.png"/>
+<ul><li>分析：</li></ul>
+<blockquote>
+<p>这里显然一次旋转也无法让达到红黑树平衡，由此就需要进行两次旋转</p>
+</blockquote>
+<ul><li>解决方式：</li></ul>
+<blockquote>
+<ol><li> <p>如果p为g的左孩子，cur为p的右孩子，则针对p做左单旋转，p旋转后再对g进行右单旋，旋转后将cur变黑，g变红</p> </li><li> <p>如果p为g的右孩子，cur为p的左孩子，则针对p做右单旋转，p旋转后再对g进行左单旋，旋转后将cur变黑，g变红</p> </li></ol>
+</blockquote>
+<ul><li>抽象示图：</li></ul>
+<img alt="image-20220301133953237" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011339328.png"/>
+<ul><li>动图演示1：</li></ul>
+<img alt="红黑树双旋处理1" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011401065.gif"/>
+<ul><li>动图演示2：</li></ul>
+<img alt="红黑树双旋处理2" src="https://typoracole.oss-cn-guangzhou.aliyuncs.com/blogimage-master/blogimage-master/https_/gitee.com/zheng-guijun/blogimage/202203011402439.gif"/>
+<h2><a id="4_203"></a>4、插入实现</h2>
+<p>插入主体实现：</p>
+<pre><code class="prism language-cpp">pair<span class="token operator">&lt;</span>Node<span class="token operator">*</span><span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token operator">&gt;</span> <span class="token function">Insert</span><span class="token punctuation">(</span><span class="token keyword">const</span> pair<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span><span class="token operator">&amp;</span> kv<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//空树的情况</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>_root <span class="token operator">==</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        _root <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token function">Node</span><span class="token punctuation">(</span>kv<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        _root<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token function">make_pair</span><span class="token punctuation">(</span>_root<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">//查找位置插入节点</span>
+    Node<span class="token operator">*</span> cur <span class="token operator">=</span> _root<span class="token punctuation">,</span> <span class="token operator">*</span> parent <span class="token operator">=</span> _root<span class="token punctuation">;</span>
+    <span class="token keyword">while</span> <span class="token punctuation">(</span>cur<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>cur<span class="token operator">-&gt;</span>_kv<span class="token punctuation">.</span>first <span class="token operator">&gt;</span> kv<span class="token punctuation">.</span>first<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            parent <span class="token operator">=</span> cur<span class="token punctuation">;</span>
+            cur <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>cur<span class="token operator">-&gt;</span>_kv<span class="token punctuation">.</span>first <span class="token operator">&lt;</span> kv<span class="token punctuation">.</span>first<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            parent <span class="token operator">=</span> cur<span class="token punctuation">;</span>
+            cur <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_right<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> <span class="token function">make_pair</span><span class="token punctuation">(</span>cur<span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token comment">//创建链接节点</span>
+    cur <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token function">Node</span><span class="token punctuation">(</span>kv<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    Node<span class="token operator">*</span> newnode <span class="token operator">=</span> cur<span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>parent<span class="token operator">-&gt;</span>_kv<span class="token punctuation">.</span>first <span class="token operator">&gt;</span> kv<span class="token punctuation">.</span>first<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        parent<span class="token operator">-&gt;</span>_left <span class="token operator">=</span> cur<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">else</span>
+    <span class="token punctuation">{<!-- --></span>
+        parent<span class="token operator">-&gt;</span>_right <span class="token operator">=</span> cur<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    cur<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> parent<span class="token punctuation">;</span>
+    
+    <span class="token comment">//父节点存在且为红，则需要调整（不能存在连续的红色节点）</span>
+    <span class="token keyword">while</span> <span class="token punctuation">(</span>parent <span class="token operator">&amp;&amp;</span> parent<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//此时当前节点一定有祖父节点</span>
+        Node<span class="token operator">*</span> granparent <span class="token operator">=</span> parent<span class="token operator">-&gt;</span>_parent<span class="token punctuation">;</span>
+        <span class="token comment">//具体调整情况主要看叔叔节点</span>
+        <span class="token comment">//分左右讨论</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>parent <span class="token operator">==</span> granparent<span class="token operator">-&gt;</span>_left<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Node<span class="token operator">*</span> uncle <span class="token operator">=</span> granparent<span class="token operator">-&gt;</span>_right<span class="token punctuation">;</span>
+            <span class="token comment">//情况1：叔叔节点存在且为红</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>uncle <span class="token operator">&amp;&amp;</span> uncle<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token comment">//修改颜色，继续向上检查</span>
+                granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+                parent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> uncle<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+
+                cur <span class="token operator">=</span> granparent<span class="token punctuation">;</span>
+                parent <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_parent<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span><span class="token comment">//情况2和3：叔叔节点不存在 或者存在且为黑</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token comment">//单旋(三代节点为斜线)+变色</span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>cur <span class="token operator">==</span> parent<span class="token operator">-&gt;</span>_left<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token function">RotateR</span><span class="token punctuation">(</span>granparent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                    granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+                    parent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token keyword">else</span><span class="token comment">//双旋(三代节点为折线)+变色</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token function">RotateL</span><span class="token punctuation">(</span>parent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token function">RotateR</span><span class="token punctuation">(</span>granparent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                    cur<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+                    granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token comment">//旋转后不需再向上调整了</span>
+                <span class="token keyword">break</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span><span class="token comment">//parent=grandparent-&gt;right</span>
+        <span class="token punctuation">{<!-- --></span>
+            Node<span class="token operator">*</span> uncle <span class="token operator">=</span> granparent<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>uncle <span class="token operator">&amp;&amp;</span> uncle<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                parent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> uncle<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+                granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+
+                cur <span class="token operator">=</span> granparent<span class="token punctuation">;</span>
+                parent <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_parent<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>cur <span class="token operator">==</span> parent<span class="token operator">-&gt;</span>_right<span class="token punctuation">)</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token function">RotateL</span><span class="token punctuation">(</span>granparent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                    parent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+                    granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token keyword">else</span>
+                <span class="token punctuation">{<!-- --></span>
+                    <span class="token function">RotateR</span><span class="token punctuation">(</span>parent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token function">RotateL</span><span class="token punctuation">(</span>granparent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                    cur<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+                    granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+                <span class="token keyword">break</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    
+    <span class="token comment">//确保根节点为黑</span>
+    _root<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+    <span class="token keyword">return</span> <span class="token function">make_pair</span><span class="token punctuation">(</span>newnode<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>旋转实现：</p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token function">RotateL</span><span class="token punctuation">(</span>Node<span class="token operator">*</span> parent<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    Node<span class="token operator">*</span> subR <span class="token operator">=</span> parent<span class="token operator">-&gt;</span>_right<span class="token punctuation">;</span>
+    Node<span class="token operator">*</span> subRL <span class="token operator">=</span> subR<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+    Node<span class="token operator">*</span> parentP <span class="token operator">=</span> parent<span class="token operator">-&gt;</span>_parent<span class="token punctuation">;</span>
+
+
+    parent<span class="token operator">-&gt;</span>_right <span class="token operator">=</span> subRL<span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>subRL<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        subRL<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> parent<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    subR<span class="token operator">-&gt;</span>_left <span class="token operator">=</span> parent<span class="token punctuation">;</span>
+    parent<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> subR<span class="token punctuation">;</span>
+
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>parent <span class="token operator">==</span> _root<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        _root <span class="token operator">=</span> subR<span class="token punctuation">;</span>
+        subR<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> <span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">else</span>
+    <span class="token punctuation">{<!-- --></span>
+        subR<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> parentP<span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>parentP<span class="token operator">-&gt;</span>_left <span class="token operator">==</span> parent<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            parentP<span class="token operator">-&gt;</span>_left <span class="token operator">=</span> subR<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span>
+        <span class="token punctuation">{<!-- --></span>
+            parentP<span class="token operator">-&gt;</span>_right <span class="token operator">=</span> subR<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> <span class="token function">RotateR</span><span class="token punctuation">(</span>Node<span class="token operator">*</span> parent<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    Node<span class="token operator">*</span> subL <span class="token operator">=</span> parent<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+    Node<span class="token operator">*</span> subLR <span class="token operator">=</span> subL<span class="token operator">-&gt;</span>_right<span class="token punctuation">;</span>
+    Node<span class="token operator">*</span> parentP <span class="token operator">=</span> parent<span class="token operator">-&gt;</span>_parent<span class="token punctuation">;</span>
+
+
+    parent<span class="token operator">-&gt;</span>_left <span class="token operator">=</span> subLR<span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>subLR<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        subLR<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> parent<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    subL<span class="token operator">-&gt;</span>_right <span class="token operator">=</span> parent<span class="token punctuation">;</span>
+    parent<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> subL<span class="token punctuation">;</span>
+
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>parent <span class="token operator">==</span> _root<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        _root <span class="token operator">=</span> subL<span class="token punctuation">;</span>
+        subL<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> <span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">else</span>
+    <span class="token punctuation">{<!-- --></span>
+        subL<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> parentP<span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>parentP<span class="token operator">-&gt;</span>_left <span class="token operator">==</span> parent<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            parentP<span class="token operator">-&gt;</span>_left <span class="token operator">=</span> subL<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span>
+        <span class="token punctuation">{<!-- --></span>
+            parentP<span class="token operator">-&gt;</span>_right <span class="token operator">=</span> subL<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h1><a id="_406"></a>四、红黑树的验证</h1>
+<ul><li>红黑树的检测分为两步：</li></ul>
+<blockquote>
+<ol><li> <p>检测其是否满足二叉搜索树(中序遍历是否为有序序列)</p> </li><li> <p>检测其是否满足红黑树的性质</p> </li></ol>
+</blockquote>
+<ul><li>实现代码：</li></ul>
+<pre><code class="prism language-cpp"><span class="token keyword">bool</span> <span class="token function">IsRBTree</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//空树</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>_root <span class="token operator">==</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//根节点为黑色</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>_root<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        cout <span class="token operator">&lt;&lt;</span> <span class="token string">"根节点为红色"</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//黑色结点数量各路径上相同</span>
+    <span class="token comment">//先走一条得到基准值</span>
+    <span class="token keyword">int</span> Blacknum <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    Node<span class="token operator">*</span> cur <span class="token operator">=</span> _root<span class="token punctuation">;</span>
+    <span class="token keyword">while</span> <span class="token punctuation">(</span>cur<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>cur<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> BLACK<span class="token punctuation">)</span>
+            Blacknum<span class="token operator">++</span><span class="token punctuation">;</span>
+        cur <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//检查子树</span>
+    <span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> <span class="token function">_IsRBTree</span><span class="token punctuation">(</span>_root<span class="token punctuation">,</span> Blacknum<span class="token punctuation">,</span> i<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">bool</span> <span class="token function">_IsRBTree</span><span class="token punctuation">(</span>Node<span class="token operator">*</span> root<span class="token punctuation">,</span> <span class="token keyword">int</span> blacknum<span class="token punctuation">,</span> <span class="token keyword">int</span> count<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//递归到空节点</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>root <span class="token operator">==</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>blacknum <span class="token operator">==</span> count<span class="token punctuation">)</span>
+            <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+        cout <span class="token operator">&lt;&lt;</span> <span class="token string">"各路径上黑色节点个数不同"</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+	<span class="token comment">//子节点为红则检查父节点是否为红（通过父节点检查子节点会遇到空节点）</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>root<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED <span class="token operator">&amp;&amp;</span> root<span class="token operator">-&gt;</span>_parent<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        cout <span class="token operator">&lt;&lt;</span> <span class="token string">"存在连续红色节点"</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+	<span class="token comment">//计数黑结点</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>root<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> BLACK<span class="token punctuation">)</span>
+        count<span class="token operator">++</span><span class="token punctuation">;</span>
+	<span class="token comment">//递归左右子树</span>
+    <span class="token keyword">return</span> <span class="token function">_IsRBTree</span><span class="token punctuation">(</span>root<span class="token operator">-&gt;</span>_left<span class="token punctuation">,</span> blacknum<span class="token punctuation">,</span> count<span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span> <span class="token function">_IsRBTree</span><span class="token punctuation">(</span>root<span class="token operator">-&gt;</span>_right<span class="token punctuation">,</span> blacknum<span class="token punctuation">,</span> count<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h1><a id="_469"></a>五、红黑树的删除</h1>
+<blockquote>
+<p>红黑树的删除不做讲解，有兴趣可参考：《算法导论》或者《STL源码剖析》<br/> http://www.cnblogs.com/fornever/archive/2011/12/02/2270692.html<br/> http://blog.csdn.net/chenhuajie123/article/details/11951777</p>
+</blockquote>
+<h1><a id="AVL_475"></a>六、红黑树与<strong>AVL</strong>树的比较</h1>
+<ul><li>分析总结：</li></ul>
+<blockquote>
+<ol><li> <p>红黑树和<strong>AVL</strong>树都是高效的平衡二叉树，增删改查的时间复杂度都是<strong>O( )</strong></p> </li><li> <p>红黑树不追求绝对平衡，其只需保证最长路径不超过最短路径的<strong>2</strong>倍，相对而言，降低了插入和旋转的次数</p> </li><li> <p>所以在经常进行增删的结构中性能比<strong>AVL</strong>树更优，而且红黑树实现比较简单，所以实际运用中红黑树更多</p> </li></ol>
+</blockquote>
+<ul><li> <p>附上源码</p> </li><li> <p>RBTree.h:</p> </li></ul>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">pragma</span> <span class="token expression">once</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;assert.h&gt;</span></span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span>
+
+<span class="token comment">//颜色</span>
+<span class="token keyword">enum</span> <span class="token class-name">Colour</span>
+<span class="token punctuation">{<!-- --></span>
+	RED<span class="token punctuation">,</span>
+	BLACK<span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">class</span> <span class="token class-name">K</span><span class="token punctuation">,</span> <span class="token keyword">class</span> <span class="token class-name">V</span><span class="token operator">&gt;</span>
+<span class="token keyword">struct</span> <span class="token class-name">RBTreeNode</span>
+<span class="token punctuation">{<!-- --></span>
+	RBTreeNode<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span><span class="token operator">*</span> _left<span class="token punctuation">;</span>
+	RBTreeNode<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span><span class="token operator">*</span> _right<span class="token punctuation">;</span>
+	RBTreeNode<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span><span class="token operator">*</span> _parent<span class="token punctuation">;</span>
+
+	pair<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span> _kv<span class="token punctuation">;</span>
+	Colour _col<span class="token punctuation">;</span>
+
+	<span class="token function">RBTreeNode</span><span class="token punctuation">(</span><span class="token keyword">const</span> pair<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span><span class="token operator">&amp;</span> kv<span class="token punctuation">)</span>
+		<span class="token operator">:</span><span class="token function">_left</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_right</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_parent</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_kv</span><span class="token punctuation">(</span>kv<span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_col</span><span class="token punctuation">(</span>RED<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span><span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword">template</span><span class="token operator">&lt;</span><span class="token keyword">class</span> <span class="token class-name">K</span><span class="token punctuation">,</span> <span class="token keyword">class</span> <span class="token class-name">V</span><span class="token operator">&gt;</span>
+<span class="token keyword">class</span> <span class="token class-name">RBTree</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">typedef</span> RBTreeNode<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span> Node<span class="token punctuation">;</span>
+<span class="token keyword">public</span><span class="token operator">:</span>
+	<span class="token function">RBTree</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+		<span class="token operator">:</span><span class="token function">_root</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+	<span class="token punctuation">}</span>
+
+	<span class="token keyword">void</span> <span class="token function">_Destory</span><span class="token punctuation">(</span>Node<span class="token operator">*</span><span class="token operator">&amp;</span> root<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>root <span class="token operator">==</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+			<span class="token keyword">return</span><span class="token punctuation">;</span>
+
+		<span class="token function">_Destory</span><span class="token punctuation">(</span>root<span class="token operator">-&gt;</span>_left<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token function">_Destory</span><span class="token punctuation">(</span>root<span class="token operator">-&gt;</span>_right<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+		<span class="token keyword">delete</span> root<span class="token punctuation">;</span>
+		root <span class="token operator">=</span> <span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+	<span class="token operator">~</span><span class="token function">RBTree</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">_Destory</span><span class="token punctuation">(</span>_root<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+	Node<span class="token operator">*</span> <span class="token function">Find</span><span class="token punctuation">(</span><span class="token keyword">const</span> K<span class="token operator">&amp;</span> key<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		Node<span class="token operator">*</span> cur <span class="token operator">=</span> _root<span class="token punctuation">;</span>
+		<span class="token keyword">while</span> <span class="token punctuation">(</span>cur<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			<span class="token keyword">if</span> <span class="token punctuation">(</span>cur<span class="token operator">-&gt;</span>_kv<span class="token punctuation">.</span>first <span class="token operator">&gt;</span> key<span class="token punctuation">)</span>
+			<span class="token punctuation">{<!-- --></span>
+				cur <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+			<span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>cur<span class="token operator">-&gt;</span>_kv<span class="token punctuation">.</span>first <span class="token operator">&lt;</span> key<span class="token punctuation">)</span>
+			<span class="token punctuation">{<!-- --></span>
+				cur <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_right<span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+			<span class="token keyword">else</span>
+			<span class="token punctuation">{<!-- --></span>
+				<span class="token keyword">return</span> cur<span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+		<span class="token punctuation">}</span>
+		<span class="token keyword">return</span> <span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+	pair<span class="token operator">&lt;</span>Node<span class="token operator">*</span><span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token operator">&gt;</span> <span class="token function">Insert</span><span class="token punctuation">(</span><span class="token keyword">const</span> pair<span class="token operator">&lt;</span>K<span class="token punctuation">,</span> V<span class="token operator">&gt;</span><span class="token operator">&amp;</span> kv<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token comment">//空树的情况</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>_root <span class="token operator">==</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			_root <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token function">Node</span><span class="token punctuation">(</span>kv<span class="token punctuation">)</span><span class="token punctuation">;</span>
+			_root<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+			<span class="token keyword">return</span> <span class="token function">make_pair</span><span class="token punctuation">(</span>_root<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+
+		<span class="token comment">//查找位置插入节点</span>
+		Node<span class="token operator">*</span> cur <span class="token operator">=</span> _root<span class="token punctuation">,</span> <span class="token operator">*</span> parent <span class="token operator">=</span> _root<span class="token punctuation">;</span>
+		<span class="token keyword">while</span> <span class="token punctuation">(</span>cur<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			<span class="token keyword">if</span> <span class="token punctuation">(</span>cur<span class="token operator">-&gt;</span>_kv<span class="token punctuation">.</span>first <span class="token operator">&gt;</span> kv<span class="token punctuation">.</span>first<span class="token punctuation">)</span>
+			<span class="token punctuation">{<!-- --></span>
+				parent <span class="token operator">=</span> cur<span class="token punctuation">;</span>
+				cur <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+			<span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>cur<span class="token operator">-&gt;</span>_kv<span class="token punctuation">.</span>first <span class="token operator">&lt;</span> kv<span class="token punctuation">.</span>first<span class="token punctuation">)</span>
+			<span class="token punctuation">{<!-- --></span>
+				parent <span class="token operator">=</span> cur<span class="token punctuation">;</span>
+				cur <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_right<span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+			<span class="token keyword">else</span>
+			<span class="token punctuation">{<!-- --></span>
+				<span class="token keyword">return</span> <span class="token function">make_pair</span><span class="token punctuation">(</span>cur<span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+		<span class="token punctuation">}</span>
+
+		<span class="token comment">//创建链接节点</span>
+		cur <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token function">Node</span><span class="token punctuation">(</span>kv<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		Node<span class="token operator">*</span> newnode <span class="token operator">=</span> cur<span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>parent<span class="token operator">-&gt;</span>_kv<span class="token punctuation">.</span>first <span class="token operator">&gt;</span> kv<span class="token punctuation">.</span>first<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			parent<span class="token operator">-&gt;</span>_left <span class="token operator">=</span> cur<span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+		<span class="token keyword">else</span>
+		<span class="token punctuation">{<!-- --></span>
+			parent<span class="token operator">-&gt;</span>_right <span class="token operator">=</span> cur<span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+		cur<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> parent<span class="token punctuation">;</span>
+
+		<span class="token comment">//父节点存在且为红，则需要调整（不能存在连续的红色节点）</span>
+		<span class="token keyword">while</span> <span class="token punctuation">(</span>parent <span class="token operator">&amp;&amp;</span> parent<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			<span class="token comment">//此时当前节点一定有祖父节点</span>
+			Node<span class="token operator">*</span> granparent <span class="token operator">=</span> parent<span class="token operator">-&gt;</span>_parent<span class="token punctuation">;</span>
+			<span class="token comment">//具体调整情况主要看叔叔节点</span>
+			<span class="token comment">//分左右讨论</span>
+			<span class="token keyword">if</span> <span class="token punctuation">(</span>parent <span class="token operator">==</span> granparent<span class="token operator">-&gt;</span>_left<span class="token punctuation">)</span>
+			<span class="token punctuation">{<!-- --></span>
+				Node<span class="token operator">*</span> uncle <span class="token operator">=</span> granparent<span class="token operator">-&gt;</span>_right<span class="token punctuation">;</span>
+				<span class="token comment">//情况1：叔叔节点存在且为红</span>
+				<span class="token keyword">if</span> <span class="token punctuation">(</span>uncle <span class="token operator">&amp;&amp;</span> uncle<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED<span class="token punctuation">)</span>
+				<span class="token punctuation">{<!-- --></span>
+					<span class="token comment">//修改颜色，继续向上检查</span>
+					granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+					parent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> uncle<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+
+					cur <span class="token operator">=</span> granparent<span class="token punctuation">;</span>
+					parent <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_parent<span class="token punctuation">;</span>
+				<span class="token punctuation">}</span>
+				<span class="token keyword">else</span><span class="token comment">//情况2和3：叔叔节点不存在 或者存在且为黑</span>
+				<span class="token punctuation">{<!-- --></span>
+					<span class="token comment">//单旋(三代节点为斜线)+变色</span>
+					<span class="token keyword">if</span> <span class="token punctuation">(</span>cur <span class="token operator">==</span> parent<span class="token operator">-&gt;</span>_left<span class="token punctuation">)</span>
+					<span class="token punctuation">{<!-- --></span>
+						<span class="token function">RotateR</span><span class="token punctuation">(</span>granparent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+						granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+						parent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+					<span class="token punctuation">}</span>
+					<span class="token keyword">else</span><span class="token comment">//双旋(三代节点为折线)+变色</span>
+					<span class="token punctuation">{<!-- --></span>
+						<span class="token function">RotateL</span><span class="token punctuation">(</span>parent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+						<span class="token function">RotateR</span><span class="token punctuation">(</span>granparent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+						cur<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+						granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+					<span class="token punctuation">}</span>
+					<span class="token comment">//旋转后不需再向上调整了</span>
+					<span class="token keyword">break</span><span class="token punctuation">;</span>
+				<span class="token punctuation">}</span>
+			<span class="token punctuation">}</span>
+			<span class="token keyword">else</span><span class="token comment">//parent=grandparent-&gt;right</span>
+			<span class="token punctuation">{<!-- --></span>
+				Node<span class="token operator">*</span> uncle <span class="token operator">=</span> granparent<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+				<span class="token keyword">if</span> <span class="token punctuation">(</span>uncle <span class="token operator">&amp;&amp;</span> uncle<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED<span class="token punctuation">)</span>
+				<span class="token punctuation">{<!-- --></span>
+					parent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> uncle<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+					granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+
+					cur <span class="token operator">=</span> granparent<span class="token punctuation">;</span>
+					parent <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_parent<span class="token punctuation">;</span>
+				<span class="token punctuation">}</span>
+				<span class="token keyword">else</span>
+				<span class="token punctuation">{<!-- --></span>
+					<span class="token keyword">if</span> <span class="token punctuation">(</span>cur <span class="token operator">==</span> parent<span class="token operator">-&gt;</span>_right<span class="token punctuation">)</span>
+					<span class="token punctuation">{<!-- --></span>
+						<span class="token function">RotateL</span><span class="token punctuation">(</span>granparent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+						parent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+						granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+					<span class="token punctuation">}</span>
+					<span class="token keyword">else</span>
+					<span class="token punctuation">{<!-- --></span>
+						<span class="token function">RotateR</span><span class="token punctuation">(</span>parent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+						<span class="token function">RotateL</span><span class="token punctuation">(</span>granparent<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+						cur<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+						granparent<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> RED<span class="token punctuation">;</span>
+					<span class="token punctuation">}</span>
+					<span class="token keyword">break</span><span class="token punctuation">;</span>
+				<span class="token punctuation">}</span>
+			<span class="token punctuation">}</span>
+		<span class="token punctuation">}</span>
+
+		<span class="token comment">//确保根节点为黑</span>
+		_root<span class="token operator">-&gt;</span>_col <span class="token operator">=</span> BLACK<span class="token punctuation">;</span>
+		<span class="token keyword">return</span> <span class="token function">make_pair</span><span class="token punctuation">(</span>newnode<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+	<span class="token keyword">bool</span> <span class="token function">IsRBTree</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>_root <span class="token operator">==</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			<span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>_root<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			cout <span class="token operator">&lt;&lt;</span> <span class="token string">"根节点为红色"</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+			<span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+
+		<span class="token keyword">int</span> Blacknum <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+		Node<span class="token operator">*</span> cur <span class="token operator">=</span> _root<span class="token punctuation">;</span>
+		<span class="token keyword">while</span> <span class="token punctuation">(</span>cur<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			<span class="token keyword">if</span> <span class="token punctuation">(</span>cur<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> BLACK<span class="token punctuation">)</span>
+				Blacknum<span class="token operator">++</span><span class="token punctuation">;</span>
+			cur <span class="token operator">=</span> cur<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+
+		<span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+		<span class="token keyword">return</span> <span class="token function">_IsRBTree</span><span class="token punctuation">(</span>_root<span class="token punctuation">,</span> Blacknum<span class="token punctuation">,</span> i<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+<span class="token keyword">private</span><span class="token operator">:</span>
+	<span class="token keyword">bool</span> <span class="token function">_IsRBTree</span><span class="token punctuation">(</span>Node<span class="token operator">*</span> root<span class="token punctuation">,</span> <span class="token keyword">int</span> blacknum<span class="token punctuation">,</span> <span class="token keyword">int</span> count<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>root <span class="token operator">==</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			<span class="token keyword">if</span> <span class="token punctuation">(</span>blacknum <span class="token operator">==</span> count<span class="token punctuation">)</span>
+				<span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+			cout <span class="token operator">&lt;&lt;</span> <span class="token string">"各路径上黑色节点个数不同"</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+			<span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>root<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED <span class="token operator">&amp;&amp;</span> root<span class="token operator">-&gt;</span>_parent<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> RED<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			cout <span class="token operator">&lt;&lt;</span> <span class="token string">"存在连续红色节点"</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+			<span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>root<span class="token operator">-&gt;</span>_col <span class="token operator">==</span> BLACK<span class="token punctuation">)</span>
+			count<span class="token operator">++</span><span class="token punctuation">;</span>
+
+		<span class="token keyword">return</span> <span class="token function">_IsRBTree</span><span class="token punctuation">(</span>root<span class="token operator">-&gt;</span>_left<span class="token punctuation">,</span> blacknum<span class="token punctuation">,</span> count<span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span> <span class="token function">_IsRBTree</span><span class="token punctuation">(</span>root<span class="token operator">-&gt;</span>_right<span class="token punctuation">,</span> blacknum<span class="token punctuation">,</span> count<span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+	<span class="token keyword">void</span> <span class="token function">RotateL</span><span class="token punctuation">(</span>Node<span class="token operator">*</span> parent<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		Node<span class="token operator">*</span> subR <span class="token operator">=</span> parent<span class="token operator">-&gt;</span>_right<span class="token punctuation">;</span>
+		Node<span class="token operator">*</span> subRL <span class="token operator">=</span> subR<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+		Node<span class="token operator">*</span> parentP <span class="token operator">=</span> parent<span class="token operator">-&gt;</span>_parent<span class="token punctuation">;</span>
+
+
+		parent<span class="token operator">-&gt;</span>_right <span class="token operator">=</span> subRL<span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>subRL<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			subRL<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> parent<span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+
+		subR<span class="token operator">-&gt;</span>_left <span class="token operator">=</span> parent<span class="token punctuation">;</span>
+		parent<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> subR<span class="token punctuation">;</span>
+
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>parent <span class="token operator">==</span> _root<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			_root <span class="token operator">=</span> subR<span class="token punctuation">;</span>
+			subR<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> <span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+		<span class="token keyword">else</span>
+		<span class="token punctuation">{<!-- --></span>
+			subR<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> parentP<span class="token punctuation">;</span>
+			<span class="token keyword">if</span> <span class="token punctuation">(</span>parentP<span class="token operator">-&gt;</span>_left <span class="token operator">==</span> parent<span class="token punctuation">)</span>
+			<span class="token punctuation">{<!-- --></span>
+				parentP<span class="token operator">-&gt;</span>_left <span class="token operator">=</span> subR<span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+			<span class="token keyword">else</span>
+			<span class="token punctuation">{<!-- --></span>
+				parentP<span class="token operator">-&gt;</span>_right <span class="token operator">=</span> subR<span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+
+	<span class="token keyword">void</span> <span class="token function">RotateR</span><span class="token punctuation">(</span>Node<span class="token operator">*</span> parent<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		Node<span class="token operator">*</span> subL <span class="token operator">=</span> parent<span class="token operator">-&gt;</span>_left<span class="token punctuation">;</span>
+		Node<span class="token operator">*</span> subLR <span class="token operator">=</span> subL<span class="token operator">-&gt;</span>_right<span class="token punctuation">;</span>
+		Node<span class="token operator">*</span> parentP <span class="token operator">=</span> parent<span class="token operator">-&gt;</span>_parent<span class="token punctuation">;</span>
+
+
+		parent<span class="token operator">-&gt;</span>_left <span class="token operator">=</span> subLR<span class="token punctuation">;</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>subLR<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			subLR<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> parent<span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+
+		subL<span class="token operator">-&gt;</span>_right <span class="token operator">=</span> parent<span class="token punctuation">;</span>
+		parent<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> subL<span class="token punctuation">;</span>
+
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>parent <span class="token operator">==</span> _root<span class="token punctuation">)</span>
+		<span class="token punctuation">{<!-- --></span>
+			_root <span class="token operator">=</span> subL<span class="token punctuation">;</span>
+			subL<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> <span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+		<span class="token punctuation">}</span>
+		<span class="token keyword">else</span>
+		<span class="token punctuation">{<!-- --></span>
+			subL<span class="token operator">-&gt;</span>_parent <span class="token operator">=</span> parentP<span class="token punctuation">;</span>
+			<span class="token keyword">if</span> <span class="token punctuation">(</span>parentP<span class="token operator">-&gt;</span>_left <span class="token operator">==</span> parent<span class="token punctuation">)</span>
+			<span class="token punctuation">{<!-- --></span>
+				parentP<span class="token operator">-&gt;</span>_left <span class="token operator">=</span> subL<span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+			<span class="token keyword">else</span>
+			<span class="token punctuation">{<!-- --></span>
+				parentP<span class="token operator">-&gt;</span>_right <span class="token operator">=</span> subL<span class="token punctuation">;</span>
+			<span class="token punctuation">}</span>
+		<span class="token punctuation">}</span>
+	<span class="token punctuation">}</span>
+
+<span class="token keyword">private</span><span class="token operator">:</span>
+	Node<span class="token operator">*</span> _root<span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre>
+<ul><li>test.cpp:</li></ul>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">_CRT_SECURE_NO_WARNINGS</span> <span class="token expression"><span class="token number">1</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">"RBTree.h"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;vector&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;string&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;stdlib.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;time.h&gt;</span></span>
+
+<span class="token keyword">void</span> <span class="token function">TestRBTree</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token comment">//int a[] = { 16, 3, 7, 11, 9, 26, 18, 14, 15 };</span>
+	<span class="token comment">//int a[] = { 4, 2, 6, 1, 3, 5, 15, 7, 16, 14 };</span>
+	RBTree<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">,</span> <span class="token keyword">int</span><span class="token operator">&gt;</span> t<span class="token punctuation">;</span>
+	<span class="token keyword">int</span> n <span class="token operator">=</span> <span class="token number">1000000</span><span class="token punctuation">;</span>
+	<span class="token function">srand</span><span class="token punctuation">(</span><span class="token function">time</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> n<span class="token punctuation">;</span> <span class="token operator">++</span>i<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token keyword">int</span> e <span class="token operator">=</span> <span class="token function">rand</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+		t<span class="token punctuation">.</span><span class="token function">Insert</span><span class="token punctuation">(</span><span class="token function">make_pair</span><span class="token punctuation">(</span>e<span class="token punctuation">,</span> e<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+
+	<span class="token comment">//t.InOrder();</span>
+	cout <span class="token operator">&lt;&lt;</span> t<span class="token punctuation">.</span><span class="token function">IsRBTree</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token keyword">void</span> <span class="token function">test_RBTree</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	<span class="token keyword">int</span> a<span class="token punctuation">[</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span> <span class="token number">4</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">,</span> <span class="token number">6</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token punctuation">,</span> <span class="token number">15</span><span class="token punctuation">,</span> <span class="token number">7</span><span class="token punctuation">,</span> <span class="token number">16</span><span class="token punctuation">,</span> <span class="token number">14</span> <span class="token punctuation">}</span><span class="token punctuation">;</span>
+	RBTree<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token punctuation">,</span> <span class="token keyword">int</span><span class="token operator">&gt;</span> t<span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">auto</span> e <span class="token operator">:</span> a<span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		t<span class="token punctuation">.</span><span class="token function">Insert</span><span class="token punctuation">(</span><span class="token function">make_pair</span><span class="token punctuation">(</span>e<span class="token punctuation">,</span> e<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+	<span class="token punctuation">}</span>
+	cout <span class="token operator">&lt;&lt;</span> t<span class="token punctuation">.</span><span class="token function">IsRBTree</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token function">test_RBTree</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token function">TestRBTree</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

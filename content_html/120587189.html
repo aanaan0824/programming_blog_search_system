@@ -1,0 +1,220 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h3>一：线程与进程</h3>
+<p>每次启动一个应用程序就是启动一个进程，一个进程中可以包含一个或多个线程，在进程入口执行的第一个线程被视为这个进程的主线程<br/> 对于所有需要等待的操作，例如移动文件，数据库和网络访问都需要一定的时间，此时就可以启动一个新的线程去执行这些耗时的操作，一个CPU在同一时刻只能运行一个线程，但是多个CPU在同一时刻就可以运行多个线程。<span style="color:#fe2c24;">开启一个线程后并不是立即执行，CPU会把这个线程标记为可执行状态，具体执行时间由CPU决定</span></p>
+<blockquote>
+<p>前台线程与后台线程：只要有任何一个前台进程在运行那么应用程序的进程就会在运行，默认情况下使用Thread创建的线程都是前台线程，使用线程池创建的线程都是后台线程，使用Thread类创建的线程可以通过Thread.IsBackground进行设置，当所有前台线程都运行完毕后如果还有后台线程在运行，那么所有的后台线程都会被终止掉</p>
+</blockquote>
+<hr/>
+<h3>二：多线程的优缺点</h3>
+<p>优点<br/> ——提高了CPU的利用率<br/> ——提高了程序的执行速度</p>
+<p>缺点<br/> ——线程也是程序，所以线程需要占用内存，线程越多，占用内存也越多<br/> ——多线程需要协调和管理，所以需要占用CPU时间以便跟踪线程<br/> ——线程之间对共享资源的访问会相互影响，必须解决争用共享资源的问题<br/> ——线程太多会导致控制太复杂，最终可能造成很多程序缺陷</p>
+<hr/>
+<h3>三：线程的开启——通过异步委托</h3>
+<pre><code class="language-cs">using System;
+using System.Threading;
+
+class MainClass
+{
+    delegate void Test1_DEL();
+    delegate void Test2_DEL(int n);
+    delegate int Test3_DEL();
+
+    public static void Main(string[] args)
+    {
+        Test1_DEL test1_del = Test1;
+        test1_del.BeginInvoke(null, null);
+
+        Test2_DEL test2_del = Test2;
+        test2_del.BeginInvoke(11, null, null);
+
+        Test3_DEL test3_del = Test3;
+        test3_del.BeginInvoke((r) =&gt;
+        {
+            int result = test3_del.EndInvoke(r);
+            Console.WriteLine(result);
+        }, null);
+
+        Console.WriteLine("this is main");
+        Console.ReadKey();
+    }
+
+    static void Test1()
+    {
+        Console.WriteLine("this is test1");
+    }
+
+    //使用Task开启带参数的多线程时参数必须为object类型且参数只能有一个
+    static void Test2(int num)
+    {
+        Console.WriteLine("this is test2");
+    }
+
+    static int Test3()
+    {
+        Console.WriteLine("this is test3");
+        Thread.Sleep(3000);
+        return 11;
+    }
+}</code></pre>
+<hr/>
+<h3>四：线程的开启——通过Thread类</h3>
+<blockquote>
+<p>一个CPU在同一时间只能执行一个线程，当有很多线程需要被执行的时候线程调度器会根据优先级判断先执行哪一个线程，如果优先级相同则逐个执行，可以通过Thread类中的Priority属性去设置优先级</p>
+</blockquote>
+<pre><code class="language-cs">using System;
+using System.Threading;
+
+class MainClass
+{
+    public static void Main(string[] args)
+    {
+        Thread test1_thread = new Thread(Test1);
+        test1_thread.Start();
+
+        Thread test2_thread = new Thread(Test2);
+        test2_thread.Start(1);
+
+        //通过Thread类无法开启一个带返回值的线程
+        //Thread test3_thread = new Thread(Test3);
+        //test3_thread.Start(1);
+
+        Console.WriteLine("this is main");
+        Console.ReadKey();
+    }
+
+    static void Test1()
+    {
+        Console.WriteLine("this is test1");
+    }
+
+    //使用Thread开启带参数的多线程时参数必须为object类型且参数只能有一个，在开启线程的start方法中传递参数
+    static void Test2(object o)
+    {
+        Console.WriteLine("this is test2");
+    }
+
+    static int Test3()
+    {
+        Console.WriteLine("this is test3");
+        return 11;
+    }
+}</code></pre>
+<blockquote>
+<p><span style="color:#0d0016;">当创建一个线程时，线程的状态是Unstarted状态，当使用Start开启线程后</span><span style="color:#0d0016;">线程的状态仍然是Unstarted状态并不会立即变为Running状态，因为线程调度器会按照顺序选择要执行的线程，当选择到此线程后状态才会被修改为Running状态</span> </p>
+</blockquote>
+<hr/>
+<h3>五：线程的开启——通过线程池</h3>
+<blockquote>
+<p>线程的创建和销毁需要耗费一定的开销，过多的使用线程会造成内存资源的浪费，出于对性能的考虑，于是引入了线程池的概念。线程池维护一个请求队列，线程池的代码从队列提取任务，然后委派给线程池的一个线程执行，<span style="color:#fe2c24;">线程执行完不会被立即销毁</span>，这样既可以在后台执行任务，又可以减少线程创建和销毁所带来的开销。如果一个线程的时间非常长，就不建议用线程池。<br/><span style="color:#fe2c24;">线程池开启的线程默认为后台线程</span></p>
+</blockquote>
+<pre><code class="language-cs">using System;
+using System.Threading;
+
+class MainClass
+{
+    public static void Main(string[] args)
+    {
+        ThreadPool.QueueUserWorkItem(Test1);
+
+        Console.WriteLine("this is main");
+        Console.ReadKey();
+    }
+
+    static void Test1(object o)
+    {
+        Console.WriteLine("this is test1");
+    }
+}</code></pre>
+<hr/>
+<h3>六：线程的开启——通过Task类</h3>
+<blockquote>
+<p><span style="color:#fe2c24;">Task类默认使用线程池中的线程</span><br/> 可以使用Task类中的ContinueWith去设置连续任务或判断线程完毕</p>
+</blockquote>
+<pre><code class="language-cs">using System;
+using System.Threading.Tasks;
+
+class MainClass
+{
+    public static void Main(string[] args)
+    {
+        Task test1_task = new Task(Test1);
+        test1_task.Start();
+        //TaskFactory test1_taskFactory = new TaskFactory();
+        //Task task = test1_taskFactory.StartNew(Test1);
+
+        Task test2_task = new Task(Test2, 1);
+        test2_task.Start();
+
+        Task&lt;int&gt; test3_task = new Task&lt;int&gt;(Test3);
+        test3_task.Start();
+        test3_task.ContinueWith((r) =&gt; Console.WriteLine(r.Result));
+
+        Console.WriteLine("this is main");
+        Console.ReadKey();
+    }
+
+    static void Test1()
+    {
+        Console.WriteLine("this is test1");
+    }
+
+    //使用Task开启带参数的多线程时参数必须为object类型且参数只能有一个
+    static void Test2(object o)
+    {
+        Console.WriteLine("this is test2");
+    }
+
+    static int Test3()
+    {
+        Console.WriteLine("this is test3");
+        return 11;
+    }
+}</code></pre>
+<hr/>
+<h3>七：线程的其他操作</h3>
+<pre><code class="language-cs">//获取当前线程id
+Thread.CurrentThread.ManagedThreadId
+
+//暂停线程
+Thread.Sleep(1000);</code></pre>
+<hr/>
+<h3>八：多线程锁</h3>
+<pre><code class="language-cs">using System;
+using System.Threading;
+
+class MainClass
+{
+    static Object locker = new Object();
+    private static int state = 1;
+    static void Test()
+    {
+        while (true)
+        {
+            lock (locker)//添加互斥锁
+            {
+                state++;
+                if (state == 1)
+                {
+                    Console.WriteLine("equal 1");
+                }
+                state = 1;
+            }
+        }
+    }
+
+    static void Main(string[] args)
+    {
+        Thread t1 = new Thread(Test);
+        t1.Start();
+
+        Thread t2 = new Thread(Test);
+        t2.Start();
+    }
+}</code></pre>
+<hr/>
+<h3>九：Unity中的协程</h3>
+<p>协程与线程区别很大，Unity中的协程在在遇到yield return XXX语句之前，协程方法和一般的方法是相同的，也就是程序在执行到yield return XXX语句之后，接着才会执行的是 StartCoroutine()方法之后的程序，走的还是单线程模式，仅仅是将yield return XXX语句之后的内容暂时挂起，等到特定的时间才执行 </p>
+</div>
+</div>

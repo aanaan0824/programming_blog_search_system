@@ -1,0 +1,90 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2>一：Http、Dict和file等协议的利用</h2>
+<h3>1，内网访问</h3>
+<p><img alt="" height="722" src="image\d6e0dae787d8479984f934628627127f.png" width="822"/></p>
+<p>所以构造：</p>
+<pre><code>/?url=http://127.0.0.1/flag.php</code></pre>
+<p>得到：</p>
+<p><img alt="" height="38" src="image\f7899c4dbd3a4537ba98246f51e26968.png" width="403"/></p>
+<p>ctfhub{ce475b59a4baee959112777b}</p>
+<p></p>
+<h3>2，伪协议读取文件</h3>
+<p><img alt="" height="471" src="image\912c5ad28fbd4388980ded91b52a2f31.png" width="820"/></p>
+<p>最经典的PHP伪协议就是file:///协议了，可以用来读取php源码</p>
+<p>构造payload：</p>
+<pre><code>/?url=file:///var/www/html/flag.php</code></pre>
+<p> 得到：</p>
+<p><img alt="" height="915" src="image\1982842a0fdf44988a5f162439a4290e.png" width="1200"/></p>
+<p>在单击右键查看源代码：</p>
+<p><img alt="" height="877" src="image\f53fdbad3b664af7a4697d6799fd39cd.png" width="1200"/></p>
+<p> 得到flag：</p>
+<pre id="line1">ctfhub{2cb81fa54b60a1977eee2f4b}
+</pre>
+<p></p>
+<h3>3，端口扫描</h3>
+<p><img alt="" height="465" src="image\0245888633924e31a069599939909f76.png" width="807"/></p>
+<p>我们就要利用ssrf漏洞探测目标主机上还开放了哪些端口。在SSRF中，dict协议与http协议可用来探测内网的主机存活与端口开放情况。</p>
+<p>burpsuite来抓包：</p>
+<p>先打开burpsuite，打开FoxyProxy代理，开始抓包</p>
+<p>传到Intruder，构造：</p>
+<p></p>
+<p> 字典爆破：</p>
+<p><img alt="" height="975" src="image\b802f682ee9f4d709d6ceea76131b9ab.png" width="1200"/></p>
+<p> 开始攻击，发现在8442端口长度异常：</p>
+<p><img alt="" height="765" src="image\a834509a45b54759b470999b0341c689.png" width="840"/></p>
+<p> 再利用ssrf加http协议访问目标主机的8592端口即可得到flag：</p>
+<p><img alt="" height="970" src="image\2c8bf034e1ef459a86f7d457812f73b7.png" width="1200"/></p>
+<p></p>
+<p> ctfhub{d037b2d4334473f351160228}</p>
+<p> </p>
+<h2>二，gopher协议利用</h2>
+<p>理论:</p>
+<p>Gopher是Internet上一个非常有名的信息查找系统，它将Internet上的文件组织成某种索引，很方便地将用户从Internet的一处带到另一处。在WWW出现之前，Gopher是Internet上最主要的信息检索工具，Gopher站点也是最主要的站点，使用tcp70端口。</p>
+<p>但在WWW出现后，Gopher失去了昔日的辉煌。现在它基本过时，人们很少再使用它；</p>
+<p>gopher协议支持发出GET、POST请求：可以先截获get请求包和post请求包，在构成符合gopher协议的请求。gopher协议是ssrf利用中最强大的协议</p>
+<p><strong>Gopher协议格式</strong>：</p>
+<blockquote>
+<p>URL:gopher://&lt;host&gt;:&lt;port&gt;/&lt;gopher-path&gt;_后接TCP数据流</p>
+</blockquote>
+<ul><li>gopher的默认端口是70</li><li>如果发起post请求，回车换行需要使用%0d%0a，如果多个参数，参数之间的&amp;也需要进行URL编码</li></ul>
+<p><strong>Gopher发送请求HTTP GET请求：</strong></p>
+<p>使用Gopher协议发送一个请求，环境为：nc起一个监听，curl发送gopher请求</p>
+<p>nc启动监听，监听2333端口：nc -lp 2333</p>
+<p>使用curl发送http请求，命令为</p>
+<pre><code>root@kali ~# curl gopher://192.168.17.129:2333/abcd
+</code></pre>
+<p>此时nc收到的消息为：</p>
+<pre><code>root@Ubuntu ~# nc -lp 2333
+bcd
+</code></pre>
+<p>可以发现url中的a没有被nc接受到，如果命令变为</p>
+<pre><code>root@kali ~# curl gopher://192.168.17.129:2333/_abcd
+</code></pre>
+<p>此时nc收到的消息为：</p>
+<pre><code>root@Ubuntu ~# nc -lp 2333
+abcd
+</code></pre>
+<p>所以需要在使用gopher协议时在url后加入一个字符（该字符可随意写）</p>
+<p>那么如何发送HTTP的请求呢？例如GET请求。此时我们联想到，直接发送一个原始的HTTP包不就可以吗？在gopher协议中发送HTTP的数据，需要以下三步：</p>
+<blockquote>
+<p>1、构造HTTP数据包<br/> 2、URL编码、替换回车换行为%0d%0a<br/> 3、发送gopher协议</p>
+</blockquote>
+<p>准备一个PHP代码</p>
+<pre><code>&lt;?php
+    echo "Hello ".$_GET["name"]."\n"
+?&gt;
+</code></pre>
+<p>一个GET型的HTTP包，如下：</p>
+<pre><code>GET /ssrf.php?name=c0tfl0g HTTP/1.1
+Host: 192.168.17.1
+</code></pre>
+<p>URL编码后为：</p>
+<pre><code>curl gopher://192.168.17.1:80/_GET%20/ssrf.php%3fname=c0tfl0g%20HTTP/1.1%0d%0AHost:%20192.168.17.1%0d%0A</code></pre>
+<blockquote>
+<p>1、问号（？）需要转码为URL编码，也就是%3f<br/> 2、回车换行要变为%0d%0a,但如果直接用工具转，可能只会有%0a<br/> 3、在HTTP包的最后要加%0d%0a，代表消息结束（具体可研究HTTP包结束） </p>
+</blockquote>
+<p> 先到这里</p>
+</div>
+</div>

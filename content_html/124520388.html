@@ -1,0 +1,243 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>最近一个项目需要用到前端COS上传文件，网上找了很多教程都是不清不楚的，搞懂了写个文章记录。</p>
+<h1><strong><span style="color:#fe2c24;">内容有点长，一点一点看</span></strong></h1>
+<p>VUE使用的是js的上传SDK，先给vue安装一下。</p>
+<pre><code class="language-javascript">npm i cos-js-sdk-v5 --save</code></pre>
+<p><span style="color:#fe2c24;"><strong>前端第一步的活儿干完了</strong></span>，然后就是后端，因为考虑安全问题，所以我使用了<span style="color:#fe2c24;">临时密钥上传</span>。</p>
+<p>我的后端是Thinkphp6，所以采用了php的临时密钥生成的代码。</p>
+<ul><li>composer 安装临时生成密钥</li></ul>
+<pre><code>如果根目录有composer.json文件则将创建"qcloud_sts/qcloud-sts-sdk": "3.0.*"加入require里面
+否则创建composer.json的文件，内容如下：
+{
+    "require":{
+        "qcloud_sts/qcloud-sts-sdk": "3.0.*"
+    }
+}
+
+添加好了后命令提示符到后端根目录下执行  composer update</code></pre>
+<p> 安装好了后新建一个文件，或者控制器，弄好了，试一试访问有没有问题哈，没问题的话响应是这样的</p>
+<p><span style="color:#ff9900;">{"code":10001,"status":"success","data":{"</span>expiredTime":1651332681,"expiration":"2022-04-30T15:31:21Z","credentials":{"sessionToken":"xxxxxxxxxxxxxxxxxxx","tmpSecretKey":"xxxxxxxxxxx="},"requestId":"xxxxxxxxxx","startTime":xxxxxxx}}</p>
+<p></p>
+<p><span style="color:#ff9900;">{"code":10001,"status":"success","data":{<!-- --></span> 这一节是我自己加上去的</p>
+<p><span style="color:#fe2c24;"><strong>下面是控制器的代码</strong></span></p>
+<pre><code class="language-php">&lt;?php
+
+declare(strict_types=1);
+
+namespace app\controller;
+
+use QCloud\COSSTS\Sts;
+
+class Cos
+{
+    /**
+     * 获取临时密钥，计算签名
+     *
+     * @return \think\Response
+     */
+    public function index()
+    {
+        $sts = new Sts();
+        $config = array(
+            'url' =&gt; 'https://sts.tencentcloudapi.com/', // url和domain保持一致
+            'domain' =&gt; 'sts.tencentcloudapi.com', // 域名，非必须，默认为 sts.tencentcloudapi.com
+            'proxy' =&gt; '',
+            'secretId' =&gt; "XXXXXXXXXXXXXXXXXX", // 固定密钥,若为明文密钥，请直接以'xxx'形式填入，不要填写到getenv()函数中
+            'secretKey' =&gt; "XXXXXXXXXXXXXXXXXX", // 固定密钥,若为明文密钥，请直接以'xxx'形式填入，不要填写到getenv()函数中
+            'bucket' =&gt; "储存桶名称", // 换成你的 bucket
+            'region' =&gt; "储存桶地区", // 换成 bucket 所在园区
+            'durationSeconds' =&gt; 1800, // 密钥有效期
+            'allowPrefix' =&gt; '*', // 这里改成允许的路径前缀，可以根据自己网站的用户登录态判断允许上传的具体路径，例子： a.jpg 或者 a/* 或者 * (使用通配符*存在重大安全风险, 请谨慎评估使用)
+            // 密钥的权限列表。简单上传和分片需要以下的权限，其他权限列表请看 https://cloud.tencent.com/document/product/436/31923
+            'allowActions' =&gt; array(
+                // 简单上传
+                'name/cos:PutObject',
+                'name/cos:PostObject',
+                // 分片上传
+                'name/cos:InitiateMultipartUpload',
+                'name/cos:ListMultipartUploads',
+                'name/cos:ListParts',
+                'name/cos:UploadPart',
+                'name/cos:CompleteMultipartUpload'
+            )
+        );
+
+        // 获取临时密钥，计算签名
+        $tempKeys = $sts-&gt;getTempKeys($config);
+        return success($tempKeys);
+        //这个success()是我自己弄的个方法写在公共方法里的
+        //就像这样
+        //function success($data)
+        //{
+        //   return json(['code' =&gt; 10001, 'status' =&gt; 'success', 'data' =&gt; $data]);
+        //}
+    }
+}
+</code></pre>
+<p><strong><span style="color:#fe2c24;">下一步流程</span></strong></p>
+<p>注意，我是使用的子账号，所以我有在腾讯云COS控制台配置权限，</p>
+<p><img alt="" height="956" src="image\aeba86f1cc5d44acabc7849fd1a51389.png" width="1200"/></p>
+<p> 访问管理新建一个子用户，然后点击授权，搜索cos的，相关的权限都勾选上基本不会出问题。</p>
+<p>添加的时候应该会给你一个secretId和secretKey，记录下来，需要写入到上面的php控制器文件里的</p>
+<p>然后储存桶管理添加配置跨域规则跟防盗链哈 </p>
+<p><img alt="" height="936" src="image\bf6350257b2e45b686d3bf638f95d0dc.png" width="1200"/></p>
+<p><img alt="" height="399" src="image\e0953236c5f54db992a163a70dd42623.png" width="1200"/></p>
+<p><img alt="" height="399" src="image\891751e96f0d4276abbaa9906641f34c.png" width="1200"/></p>
+<p> 储存桶管理里面配置子账户权限</p>
+<p><img alt="" height="836" src="image\a0697b9bd1bc4754a1fbabed0b0f45ef.png" width="1200"/></p>
+<p> <span style="color:#fe2c24;">存储桶访问权限</span>跟<span style="color:#fe2c24;">Policy权限设置</span>这样设置就行了。</p>
+<p><a href="https://console.cloud.tencent.com/cos/diagnose" title="自助诊断地址">自助诊断地址</a> 记住这个地址，后面会用到。</p>
+<p>然后这个后端这一块儿配置完了。</p>
+<h1><span style="color:#ed7976;">继续去配置前端的。</span></h1>
+<p>因为用了axios嘛，所以先给前端配置个API </p>
+<p>你们用的啥方法做http请求的就按自己的来哈，只要是个请求就行。</p>
+<p>这个是向后端请求临时密钥的接口，记得后端加个权限验证，登录了再给访问接口。</p>
+<p>cos.js文件，</p>
+<pre><code class="language-javascript">import request from '@/utils/request'
+
+export function getCos(params) {
+  return request({
+    url: '/Cos',
+    method: 'get',
+    params
+  })
+}
+</code></pre>
+<p>然后接口写好了就要访问嘛。</p>
+<p>新建一个js咯，这个里面引入了安装的sdk，跟上面的api，我这个文件放在路由的文件夹里面的，你看自个放哪儿都行</p>
+<pre><code class="language-javascript">// 前端
+// cos.js
+import COS from 'cos-js-sdk-v5';
+import {
+  getCos
+} from '@/api/cos';
+// 初始化实例
+export const cos = new COS({
+  // getAuthorization 必选参数
+  getAuthorization: function(options, callback) {
+    getCos().then(res =&gt; {
+      if (res.code == 10001) {
+        var credentials = res.data &amp;&amp; res.data.credentials;
+        if (!res || !credentials) return console.error('credentials invalid');
+        callback({
+          TmpSecretId: credentials.tmpSecretId,
+          TmpSecretKey: credentials.tmpSecretKey,
+          XCosSecurityToken: credentials.sessionToken,
+          // 建议返回服务器时间作为签名的开始时间，避免用户浏览器本地时间偏差过大导致签名错误
+          StartTime: res.data.startTime, // 时间戳，单位秒，如：1580000000
+          ExpiredTime: res.data.expiredTime, // 时间戳，单位秒，如：1580000900
+          // ScopeLimit: true, // 细粒度控制权限需要设为 true，会限制密钥只在相同请求时重复使用
+        });
+      }
+    })
+  }
+});
+</code></pre>
+<p><span style="color:#fe2c24;">上面这个代码是我改过的，能用，然后再放一段官方的代码你们看需求用的这个还是官方这个。</span></p>
+<pre><code class="language-javascript">var COS = require('cos-js-sdk-v5');
+var cos = new COS({
+    // getAuthorization 必选参数
+    getAuthorization: function (options, callback) {
+        // 异步获取临时密钥
+        // 服务端 JS 和 PHP 例子：https://github.com/tencentyun/cos-js-sdk-v5/blob/master/server/
+        // 服务端其他语言参考 COS STS SDK ：https://github.com/tencentyun/qcloud-cos-sts-sdk
+        // STS 详细文档指引看：https://cloud.tencent.com/document/product/436/14048
+
+        var url = 'http://example.com/server/sts.php'; // url替换成您自己的后端服务
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.onload = function (e) {
+            try {
+                var data = JSON.parse(e.target.responseText);
+                var credentials = data.credentials;
+            } catch (e) {
+            }
+            if (!data || !credentials) {
+              return console.error('credentials invalid:\n' + JSON.stringify(data, null, 2))
+            };
+            callback({
+              TmpSecretId: credentials.tmpSecretId,
+              TmpSecretKey: credentials.tmpSecretKey,
+              SecurityToken: credentials.sessionToken,
+              // 建议返回服务器时间作为签名的开始时间，避免用户浏览器本地时间偏差过大导致签名错误
+              StartTime: data.startTime, // 时间戳，单位秒，如：1580000000
+              ExpiredTime: data.expiredTime, // 时间戳，单位秒，如：1580000000
+          });
+        };
+        xhr.send();
+    }
+});</code></pre>
+<p>，然后获取密钥的OK了，那肯定要发送了嘛，随便做一个点击事件写个方法测试下。</p>
+<pre><code class="language-javascript">//先引入上面的文件哈
+  import {
+    cos
+  } from '@/router/cos'
+//然后写个方法里面这样的
+cos.putObject({
+   Bucket: 'edu-1255457652',
+     /* 必须 */
+    Region: 'ap-chengdu',
+     /* 存储桶所在地域，必须字段 */
+     Key: '1.jpg',
+     // 上传名称
+    body:'XXXX'
+    //文件上传对象或字符串
+   }, function(data) {
+            console.log(data);
+    });</code></pre>
+<p>我这里是成功的哈</p>
+<p><img alt="" height="815" src="image\d4171ab0b06942b1b58cc8bc98b965a0.png" width="1200"/></p>
+<p> 既然能上传了，那就封装下。</p>
+<p>跟获取临时密钥的放一起不放一起都行</p>
+<pre><code class="language-javascript">//引入COS获取密钥
+import {
+  cos
+} from '@/router/cos'
+// 导出上传方法
+export function uploadFile(file, keys) {
+  const key = 'Image/' + keys; // Key: 对象键（Object 的名称），对象在存储桶中的唯一标识
+  let res = Promise
+    .all([cos]) //获取临时密钥
+    .then((res) =&gt; {
+      return new Promise((resolve, reject) =&gt; {
+        cos.putObject({
+          Bucket: 'xxxxxxxxxx',
+          /* 后端返回的桶名称,我这里没有从后端返回 */
+          Region: 'xxxxxxxxxxx',
+          /* 桶的对应地区 */
+          Key: key,
+          /* 文件名，也是文件在桶里唯一的标识 */
+          StorageClass: 'STANDARD',
+          Body: file, // 上传文件对象
+          onProgress: function(progressData) {
+            // console.log(JSON.stringify(progressData));
+          }
+        }, function(err, data) { //回调函数
+          if (!err) {
+            //成功返回data对象
+            resolve(data);
+          } else {
+            //失败返回error信息
+            reject(err);
+          }
+        });
+      })
+    })
+  return res
+}
+</code></pre>
+<p>OK了，就这样，然后使用的话</p>
+<pre><code class="language-javascript">  import {
+    uploadFile
+  } from '@/router/update'
+//引入是必须的
+
+//使用
+uploadFile('1.text，我是名称，也可以是md5加密名字加上.png/.jpg啥的','我是内容，也可以是视频，图片对象啥的，这个地方一般字符串或者对象形式').then(res=&gt;{
+            console.log(res);
+          })</code></pre>
+<p><span style="color:#fe2c24;">到这儿就结束了，备忘一下。调试中出啥问题，都可以去自助诊断查询，实在不行提交工单，等待大佬技术支持。</span></p>
+</div>
+</div>

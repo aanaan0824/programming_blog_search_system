@@ -1,0 +1,50 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="_0"></a>一、概念</h2>
+<p>内存溢出(Out Of Memory，简称OOM)是指应用系统中存在无法回收的内存或使用的内存过多，最终使得程序运行要用到的内存大于能提供的最大内存。</p>
+<h2><a id="_3"></a>二、造成原因</h2>
+<p><strong>2.1、内存泄漏</strong></p>
+<p>由于长期保持某些资源的引用，垃圾回收器无法回收它，从而使该资源不能够及时释放，也称为内存泄露。因而尽量不要将所有引用都使用为强引用，可以在合适的地方使用弱引用和软引用。</p>
+<p><strong>2.2、超大对象</strong></p>
+<p>保存多个耗用内存过大或当加载单个超大的对象时，该对象的大小超过了当前剩余的可用内存空间。比如查询数据库中的数据，一次查询过多，直接导致内存溢出了。因此查询数据库如果数据过多尽量使用分页查询。</p>
+<p><strong>2.3、其他各种原因</strong></p>
+<p>比如是否存在死循环，大循环重复产生对象，是否有集合对象使用完之后，依然被引用着，导致无法清除，是否使用了不恰当的数据结构，导致占用空间过大等等。</p>
+<h2><a id="_16"></a>三、解决方案</h2>
+<p><strong>3.1、修改JVM启动参数，直接增加内存</strong></p>
+<p>JVM默认可以使用的内存为64M，Tomcat默认可以使用的内存为128MB，对于稍复杂一点的系统就会不够用。在某项目中，就因为启动参数使用的默认值，经常报“Out Of Memory”错误。因此，-Xms，-Xmx（堆内存的最小大小和最大大小值）参数一定不要忘记加。</p>
+<p><strong>3.2、找出可能发生内存溢出的位置，并解决</strong></p>
+<p>检查代码中是否有死循环或递归调用。</p>
+<p>检查是否有大循环重复产生新对象实体。</p>
+<p>检查对数据库查询中，是否有一次获得全部数据的查询。</p>
+<p>检查List、Map等集合对象是否有使用完后，未清除的问题。</p>
+<p>使用内存查看工具动态查看内存使用情况。</p>
+<h2><a id="XmnXmsXmxXss_33"></a>四、Xmn、Xms、Xmx、Xss参数的区别-含义及理解</h2>
+<p>首先，-Xmn、-Xms、-Xmx、-Xss都是JVM对内存的配置参数，我们可以根据不同需要区修改这些参数，以达到运行程序的最好效果。</p>
+<p><strong>4.1、-Xms、-Xmx</strong></p>
+<p>-Xms、-Xmx分配用来设置进程堆内存的最小大小和最大大小。</p>
+<p><strong>4.2、-Xmn</strong></p>
+<p>-Xmn用来设置堆内新生代的大小。通过这个值我们也可以得到老生代的大小：-Xmx减去-Xmn</p>
+<p><strong>4.3、-Xss</strong></p>
+<p>-Xss设置每个线程可使用的内存大小。</p>
+<p>在相同物理内存下，减小这个值能生成更多的线程。当然操作系统对一个进程内的线程数还是有限制的，不能无限生成，经验值在3000~5000左右。</p>
+<p>除了这些配置，JVM还有非常多的配置，常用的如下：</p>
+<p>-XX:PermSize、-XX:MaxPermSize<br/> 分配用来设置永久代的最小大小和最大大小。Java 8以后移除了方法区，取而代之的是本地元空间Metaspace，大小由-XX:MetaspaceSize和-XX:MaxMetaspaceSize调节。</p>
+<p>-XX:MaxTenuringThreshold<br/> 设置转入老生代的存活次数。如果是0，则直接跳过新生代进入老生代。</p>
+<p>-XX:NewRatio<br/> 设置老生代和新生代的比值，例如该值为3，则表示新生代与老生代比值为1:3。</p>
+<h2><a id="_61"></a>五、分析问题排查思路</h2>
+<p><strong>1、下载dump文件</strong></p>
+<p>dump文件定义: dump文件是java虚拟机内存在某一时间点的快照文件，一般是.hprof的扩展名文件。</p>
+<p>结合系统设置的生产环境JVM参数，可见：-Xmx1024m -Xms1024m -Xss512k<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/66b4cb6dd80e40d58a35e55cab3cc568.png"/><br/> Xmx：堆内存的初始大小，默认为物理内存的1/64<br/> Xms：堆内存的最大大小，默认为物理内存的1/4<br/> Xss：设置每个线程的堆栈大小。JDK5.0以后每个线程堆栈大小为1M，以前每个线程堆栈大小为256K。更具应用的线程所需内存大小进行调整。在相同物理内存下，减小这个值能生成更多的线程。但是操作系统对一个进程内的线程数还是有限制的，不能无限生成，经验值在3000~5000左右。<br/> -XX:+HeapDumpOnOutOfMemoryError 表示当JVM发生OOM时，自动生成dump文件，dump文件在：KaTeX parse error: Expected group after ‘_’ at position 23: …G_PATH}java_pid_̲{APPNAME}%t%p.hprof 路径下。<br/> 找到该dump文件路径，用sz命令下载该dump文件<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/62d908ebf71e4f47a3c39b61f184e00d.png"/></p>
+<p><strong>2、了解MAT工具</strong></p>
+<p>MAT(Memory Analyzer Tool)定义：一种内存分析工具，它可以帮助我们查找内存泄漏和减少内存消耗。使用内存分析工具从众多的对象中进行分析，快速的计算出在内存中对象的占用大小，看看是谁阻止了垃圾收集器的回收工作，并可以通过报表直观的查看到可能造成这种结果的对象。</p>
+<p>在eclipse上有mat的插件，或者苹果电脑有也有单独下载的mac版本mat，均可百度自行安装。</p>
+<p><strong>3、导入mat分析</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/589e369ab79a4daca11ccab51e505334.png"/><br/> 导入完成，如下图所示：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a227b63b08634e1296246786f276f6fd.png"/><br/> 点击深蓝色的饼图部分，我们解读到：一共935.5MB的内存空间，KafkaMessageListenerContainer这个线程线程竟然占据了822.2M，其中Shallow size占了120B，Retained Size占了822.2M。</p>
+<p>Shallow Size：对象自身占用的内存大小，不包括它引用的对象。<br/> Retained Size：可理解为当前对象被GC后，从Heap上总共能释放掉的内存。<br/> 我们知道，频繁的内存泄露会导致内存溢出，大部分因为没及时垃圾回收清除对象释放内存空间，接着点击Leak Suspects（内存泄露建议）按钮如下：</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

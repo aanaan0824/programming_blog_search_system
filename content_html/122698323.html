@@ -1,0 +1,166 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><a href="#_1">零.前言</a></li><li><a href="#1_4">1.一张图展示内存分布</a></li><li><a href="#2C_12">2.C语言的动态内存开辟</a></li><li><a href="#3C_22">3.C++动态内存开辟</a></li><li><ul><li><a href="#1newdelete_23">(1)new与delete</a></li><li><a href="#2newdelete_46">(2)new与delete的底层</a></li><li><a href="#3operator_newoperator_delete_78">(3)operator new与operator delete</a></li><li><ul><li><a href="#_79">用法</a></li><li><a href="#_86">底层源码</a></li></ul>
+</li><li><a href="#4_130">(4)内存池概念</a></li><li><a href="#5_135">(5)构造函数的直接调用</a></li><li><a href="#6mallocfreenewdelete_158">(6)总结：malloc/free与new/delete的区别</a></li></ul>
+</li><li><a href="#4_166">4.内存泄漏</a></li><li><ul><li><a href="#1_167">(1)原因</a></li><li><a href="#2_169">(2)危害</a></li><li><a href="#3_186">(3)如何避免</a></li></ul>
+</li><li><a href="#5_189">5.总结</a></li></ul>
+</div>
+<p></p>
+<h1><a id="_1"></a>零.前言</h1>
+<p>在C语言的学习中，我们了解到了动态开辟内存的两个重要的函数malloc以及free，C++在此基础上对动态内存的开辟以及空间的释放进行了简化，以期望更加满足面向对象编程的特点，本文将介绍C/C++的内存管理，C++中动态开辟内存的两个操作符以及它们底层的实现，并提出了内存池的概念，以及内存泄漏问题。</p>
+<h1><a id="1_4"></a>1.一张图展示内存分布</h1>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/797dcedc173f479796e74dabe44c7014.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5Y2W5a-C5a-e55qE5bCP55S35a2p,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<blockquote>
+<p>1.栈：非静态局部变量/函数参数/返回值等等，栈时向下增长的。<br/> 2.内存映射段：是高效的I/O映射方式，用于装载一个共享的动态内存库。用户可使用系统接口创建共享内存，做进程间通信。<br/> 3.堆：用于程序运行的动态内存分配，堆是可以上增长的。<br/> 4.代码段：可执行的代码/只读常量。</p>
+</blockquote>
+<h1><a id="2C_12"></a>2.C语言的动态内存开辟</h1>
+<p>C语言使用malloc，calloc，ralloc进行动态内存的开辟和处理。<br/> 使用free函数来进行动态内存的释放。</p>
+<pre><code class="prism language-c"><span class="token keyword">int</span><span class="token operator">*</span> p1<span class="token operator">=</span><span class="token punctuation">(</span><span class="token keyword">int</span><span class="token operator">*</span><span class="token punctuation">)</span><span class="token function">malloc</span><span class="token punctuation">(</span><span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//开辟一个int大小的空间</span>
+<span class="token keyword">int</span><span class="token operator">*</span> p2<span class="token operator">=</span><span class="token punctuation">(</span><span class="token keyword">int</span><span class="token operator">*</span><span class="token punctuation">)</span><span class="token function">calloc</span><span class="token punctuation">(</span><span class="token number">4</span><span class="token punctuation">,</span><span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//开辟了4个大小为int的空间</span>
+<span class="token keyword">int</span><span class="token operator">*</span> p3<span class="token operator">=</span><span class="token punctuation">(</span><span class="token keyword">int</span><span class="token operator">*</span><span class="token punctuation">)</span><span class="token function">realloc</span><span class="token punctuation">(</span>p2<span class="token punctuation">,</span><span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span><span class="token operator">*</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//对p2增加40个字节大小的空间</span>
+<span class="token function">free</span><span class="token punctuation">(</span>p1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token function">free</span><span class="token punctuation">(</span>p3<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//释放p1和p3的空间</span>
+</code></pre>
+<h1><a id="3C_22"></a>3.C++动态内存开辟</h1>
+<h2><a id="1newdelete_23"></a>(1)new与delete</h2>
+<p>在C++中使用new和delete来进行动态内存的管理，原因有二：</p>
+<blockquote>
+<p>1.自定义类型对象动态申请的时候，解决初始化和清理的问题。（new和delet会调用构造函数和析构函数）<br/> 2. new失败后要求抛异常，符合面向对象语言出错处理机制。</p>
+</blockquote>
+<p>下面给出不同的开辟空间的方式：</p>
+<pre><code class="prism language-cpp">    <span class="token keyword">int</span><span class="token operator">*</span> a1 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">;</span><span class="token comment">//开辟一个int大小的空间</span>
+	<span class="token keyword">int</span><span class="token operator">*</span> a2 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">[</span><span class="token number">10</span><span class="token punctuation">]</span><span class="token punctuation">;</span><span class="token comment">//开辟一个10个int大小的空间</span>
+	<span class="token keyword">int</span><span class="token operator">*</span> a3 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">(</span><span class="token number">10</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//开辟一个int大小的空间并初始化为10</span>
+	A<span class="token operator">*</span> a <span class="token operator">=</span> <span class="token keyword">new</span> A<span class="token punctuation">;</span><span class="token comment">//开辟一个A类型的对象</span>
+	<span class="token keyword">delete</span> a1<span class="token punctuation">;</span><span class="token comment">//删除a1的空间</span>
+	<span class="token keyword">delete</span><span class="token punctuation">[</span><span class="token punctuation">]</span> a2<span class="token punctuation">;</span><span class="token comment">//删除数组的空间</span>
+	<span class="token keyword">delete</span> a3<span class="token punctuation">;</span><span class="token comment">//删除a3的空间</span>
+	<span class="token keyword">delete</span> a<span class="token punctuation">;</span><span class="token comment">//删除A类型对象的空间</span>
+</code></pre>
+<p><font color="red">注意：在为数组开辟空间后，进行删除时一定要在delete后加[]。</font><br/> 在使用new构造对象和用delete删除对象的时候会调用构造和析构函数：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/4b130b6cf80f4981bd8dea724b1a4573.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5Y2W5a-C5a-e55qE5bCP55S35a2p,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 总结：<br/> new=申请空间+初始化<br/> delete=调用析构函数清理+释放空间<br/> <font color="red">在使用new申请空间的时候，不需要申请失败的检查，因为new失败会抛异常。</font></p>
+<h2><a id="2newdelete_46"></a>(2)new与delete的底层</h2>
+<p>当我们使用new时：</p>
+<pre><code class="prism language-cpp"><span class="token keyword">class</span> <span class="token class-name">Stack</span>
+<span class="token punctuation">{<!-- --></span>
+<span class="token keyword">private</span><span class="token operator">:</span>
+	<span class="token keyword">int</span><span class="token operator">*</span> a<span class="token punctuation">;</span>
+	<span class="token keyword">int</span> _top<span class="token punctuation">;</span>
+	<span class="token keyword">int</span> _capacity<span class="token punctuation">;</span>
+<span class="token keyword">public</span><span class="token operator">:</span>
+	<span class="token function">Stack</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+		<span class="token operator">:</span><span class="token function">a</span><span class="token punctuation">(</span><span class="token keyword">nullptr</span><span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_top</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span>
+		<span class="token punctuation">,</span> <span class="token function">_capacity</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span><span class="token punctuation">}</span>
+	<span class="token operator">~</span><span class="token function">Stack</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+	<span class="token punctuation">{<!-- --></span>
+		<span class="token function">free</span><span class="token punctuation">(</span>a<span class="token punctuation">)</span><span class="token punctuation">;</span>
+		_top <span class="token operator">=</span> _capacity <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+	Stack<span class="token operator">*</span> p1 <span class="token operator">=</span> <span class="token keyword">new</span> Stack<span class="token punctuation">;</span>
+	<span class="token keyword">delete</span> p1<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>对于Stack* p1 = new Stack;这段代码转到反汇编之后可以看到，主要调用了两个函数：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/0bb0cb0008c34a328fd5adbc0d23d6d7.png"/><br/> 一个是我们即将要说的operator new还有一个就是构造函数：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/e9b3334553cd45b292cb705e0e33de78.png"/><br/> 同理delete也调用了两个函数，一个是析构函数还有一个就是operator delete（注意两者的顺序）</p>
+<h2><a id="3operator_newoperator_delete_78"></a>(3)operator new与operator delete</h2>
+<h3><a id="_79"></a>用法</h3>
+<p>operator new和operator delete的用法与malloc和free是相同的，我们可以直接使用operator new来开辟空间，用operator delete来进行空间的释放。</p>
+<pre><code class="prism language-cpp">Stack<span class="token operator">*</span> p2 <span class="token operator">=</span> <span class="token punctuation">(</span>Stack<span class="token operator">*</span><span class="token punctuation">)</span><span class="token keyword">operator</span> <span class="token keyword">new</span><span class="token punctuation">(</span><span class="token keyword">sizeof</span><span class="token punctuation">(</span>Stack<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">operator</span> <span class="token keyword">delete</span><span class="token punctuation">(</span>p2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><font color="red">注意，operator new与operator delete并不是想给程序员使用的，我们使用new和delete就可以使用到它们</font></p>
+<h3><a id="_86"></a>底层源码</h3>
+<p>operator new的底层源码：</p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token operator">*</span>__CRTDECL <span class="token keyword">operator</span> <span class="token keyword">new</span><span class="token punctuation">(</span>size_t size<span class="token punctuation">)</span> <span class="token function">_THROW1</span><span class="token punctuation">(</span>_STD bad_alloc<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+<span class="token comment">// try to allocate size bytes</span>
+<span class="token keyword">void</span> <span class="token operator">*</span>p<span class="token punctuation">;</span>
+<span class="token keyword">while</span> <span class="token punctuation">(</span><span class="token punctuation">(</span>p <span class="token operator">=</span> <span class="token function">malloc</span><span class="token punctuation">(</span>size<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+<span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">_callnewh</span><span class="token punctuation">(</span>size<span class="token punctuation">)</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+<span class="token comment">// report no memory</span>
+<span class="token comment">// 如果申请内存失败了，这里会抛出bad_alloc 类型异常</span>
+<span class="token keyword">static</span> <span class="token keyword">const</span> std<span class="token operator">::</span>bad_alloc nomem<span class="token punctuation">;</span>
+<span class="token function">_RAISE</span><span class="token punctuation">(</span>nomem<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token keyword">return</span> <span class="token punctuation">(</span>p<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>operator delete的底层源码：</p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token keyword">operator</span> <span class="token keyword">delete</span><span class="token punctuation">(</span><span class="token keyword">void</span> <span class="token operator">*</span>pUserData<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+_CrtMemBlockHeader <span class="token operator">*</span> pHead<span class="token punctuation">;</span>
+<span class="token function">RTCCALLBACK</span><span class="token punctuation">(</span>_RTC_Free_hook<span class="token punctuation">,</span> <span class="token punctuation">(</span>pUserData<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">if</span> <span class="token punctuation">(</span>pUserData <span class="token operator">==</span> <span class="token constant">NULL</span><span class="token punctuation">)</span>
+<span class="token keyword">return</span><span class="token punctuation">;</span>
+<span class="token function">_mlock</span><span class="token punctuation">(</span>_HEAP_LOCK<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">/* block other threads */</span>
+__TRY
+<span class="token comment">/* get a pointer to memory block header */</span>
+pHead <span class="token operator">=</span> <span class="token function">pHdr</span><span class="token punctuation">(</span>pUserData<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">/* verify block type */</span>
+<span class="token function">_ASSERTE</span><span class="token punctuation">(</span><span class="token function">_BLOCK_TYPE_IS_VALID</span><span class="token punctuation">(</span>pHead<span class="token operator">-</span><span class="token operator">&gt;</span>nBlockUse<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token function">_free_dbg</span><span class="token punctuation">(</span> pUserData<span class="token punctuation">,</span> pHead<span class="token operator">-</span><span class="token operator">&gt;</span>nBlockUse <span class="token punctuation">)</span><span class="token punctuation">;</span>
+__FINALLY
+<span class="token function">_munlock</span><span class="token punctuation">(</span>_HEAP_LOCK<span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">/* release other threads */</span>
+__END_TRY_FINALLY
+<span class="token keyword">return</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>free的实现：</p>
+<pre><code class="prism language-cpp"><span class="token macro property">#<span class="token directive keyword">define</span> free(p) _free_dbg(p, _NORMAL_BLOCK)</span>
+</code></pre>
+<p>从这两段源码不难看出，operator new和operator delete本质上就是对malloc和free的封装。并且实现了当malloc申请内存失败之后的抛异常处理，这更加符合C++的处理机制。</p>
+<h2><a id="4_130"></a>(4)内存池概念</h2>
+<p>当我们动态开辟多个对象的时候，我们调用的是operator new[]，其本质上是对operator new的封装，但是每开辟一段空间我们就需要申请一次。我们可以通过<strong>内存池</strong>或者为函数定制专属的<strong>operator new</strong>来解决这一问题。<br/> 就好比从山上向山下取水一样，每一次下山都需要消耗大量人力物力，不如一次性取很多水，在山上建立一个池塘。从而提高效率。<br/> C++为了避免出现多次申请空间的现象，提出来了内存池的概念，STL中的内存池叫做空间配置器。<br/> 关于内存池的具体做法在以后的文章中会提及。</p>
+<h2><a id="5_135"></a>(5)构造函数的直接调用</h2>
+<p>我们知道，构造函数在创建变量的时候就已经调用了，是不能够进行直接调用的。<br/> new分为两个部分，一个是调用operator new还有一部分就是调用构造函数。<br/> 如果我们已经手动调用了operator new那么如何手动调用构造函数呢？</p>
+<pre><code class="prism language-cpp"><span class="token keyword">new</span><span class="token punctuation">(</span>p2<span class="token punctuation">)</span>Stack<span class="token punctuation">;</span>
+</code></pre>
+<p>C++提供了如上的方式进行构造函数的调用，即对已经开辟出空间的p2进行初始化。当然Stack后面是可以用括号跟参数的。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6749af5750144eba91922cc0b5e4a812.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5Y2W5a-C5a-e55qE5bCP55S35a2p,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <font color="blue">但是析构函数是可以进行直接调用的。</font><br/> 以下四段代码两两等价：</p>
+<pre><code class="prism language-cpp">    Stack<span class="token operator">*</span> p1 <span class="token operator">=</span> <span class="token keyword">new</span> Stack<span class="token punctuation">;</span>
+	
+	Stack<span class="token operator">*</span> p2 <span class="token operator">=</span> <span class="token punctuation">(</span>Stack<span class="token operator">*</span><span class="token punctuation">)</span><span class="token keyword">operator</span> <span class="token keyword">new</span><span class="token punctuation">(</span><span class="token keyword">sizeof</span><span class="token punctuation">(</span>Stack<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">new</span><span class="token punctuation">(</span>p2<span class="token punctuation">)</span>Stack<span class="token punctuation">;</span>
+</code></pre>
+<pre><code class="prism language-cpp">    <span class="token keyword">delete</span> p1<span class="token punctuation">;</span>
+
+	p2<span class="token operator">-</span><span class="token operator">&gt;</span><span class="token operator">~</span><span class="token function">Stack</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//直接调用析构函数</span>
+	<span class="token keyword">operator</span> <span class="token keyword">delete</span><span class="token punctuation">(</span>p2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="6mallocfreenewdelete_158"></a>(6)总结：malloc/free与new/delete的区别</h2>
+<p>共通点：都是从堆上申请空间，都需要用户手动释放。<br/> 不同点：<br/> 1.malloc和free是函数，new和delete是操作符。<br/> 2.malloc申请的空间不会初始化，new可以初始化。<br/> 3.malloc申请空间时需要手动计算空间大小，并进行传递，new只需要其后跟上空间的类型即可。<br/> 4.malloc的返回值为void*，在使用时必须强转，new不需要，但new会捕获异常。<br/> 5.申请自定义类型对象时，malloc/free只会开辟空间，不会调用构造函数与析构函数，而new在申请空间后会调用构造函数完成对象的初始化，delete在释放空间前会调用析构函数完成空间中资源的清理。</p>
+<h1><a id="4_166"></a>4.内存泄漏</h1>
+<h2><a id="1_167"></a>(1)原因</h2>
+<p>动态申请的内存不用了，但没有进行释放。</p>
+<h2><a id="2_169"></a>(2)危害</h2>
+<p>1.出现内存泄漏的进程，正常结束，这些内存会还给系统不会造成大的危害。<br/> 2.出现内存泄漏的进程非正常结束，出现僵尸进程，长时间运行的程序出现内存泄漏，危害很大，系统会越来越慢，甚至卡死宕机（比如服务器程序，后台程序等）。<br/> 举一个例子：</p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token function">MemoryLeaks</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+<span class="token comment">// 1.内存申请了忘记释放</span>
+<span class="token keyword">int</span><span class="token operator">*</span> p1 <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token operator">*</span><span class="token punctuation">)</span><span class="token function">malloc</span><span class="token punctuation">(</span><span class="token keyword">sizeof</span><span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">int</span><span class="token operator">*</span> p2 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">;</span>
+<span class="token comment">// 2.异常安全问题</span>
+<span class="token keyword">int</span><span class="token operator">*</span> p3 <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token keyword">int</span><span class="token punctuation">[</span><span class="token number">10</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token function">Func</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">// 这里Func函数抛异常导致 delete[] p3未执行，p3没被释放.</span>
+<span class="token keyword">delete</span><span class="token punctuation">[</span><span class="token punctuation">]</span> p3<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>比如这段代码就由于抛异常导致p3没有被释放。</p>
+<h2><a id="3_186"></a>(3)如何避免</h2>
+<p>1.事前预防使用智能指针。<br/> 2.事后查错使用内存泄漏检测工具。</p>
+<h1><a id="5_189"></a>5.总结</h1>
+<p>内存的处理在不同的操作系统中一直以来是一个很重要复杂的问题，小米的创始人雷军大佬就曾经写过处理内存的工具，至今仍被使用着。了解内存的处理不仅可以让我们编程感到更加扎实也可以为计算机减轻负担，文章看完了，点赞你要亮，三连更漂亮我们下篇再见（比心）。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

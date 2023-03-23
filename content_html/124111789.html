@@ -1,0 +1,1230 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-github-gist" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>前文我们说了CSharp中四种开源操作Excel的组件，其中包括NPOI、Aspose.Cells for .NET、EPPlus、MiniExcel。本文来详细的讲解一下四种开源组件操作Excel的代码和效率比对</p>
+<h1><a id="1_Demo_2"></a>1. Demo代码框架和数据说明</h1>
+<h2><a id="11_Demo_4"></a>1.1. Demo代码框架</h2>
+<h3><a id="111_Demo_6"></a>1.1.1. Demo代码思路：</h3>
+<p>主题思路为以下几条内容：</p>
+<ul><li> <p>从表中读取数据并将数据写入到Excel中</p>
+<ul><li>
+<ol><li>使用不同的数据体量写入到Excel中</li></ol> </li><li>
+<ol start="2"><li>同时也测试将数据按每一个单页最大为50000行数据，测试大数据量数据</li></ol> </li></ul> </li><li> <p>读取Excel中的数据,测试不同的数据量，测试打开的方式是否会出现OOM问题。而读取之后的信息不使用内存记录，只是取出来即可。</p> </li><li> <p>测试Excel的特殊功能是否支持，比如：</p>
+<ul><li>
+<ol><li>合并单元格</li></ol> </li><li>
+<ol start="2"><li>单元格样式</li></ol> </li><li>
+<ol start="3"><li>公式计算</li></ol> </li><li>
+<ol start="4"><li>插入图</li></ol> </li></ul> </li></ul>
+<h3><a id="112__21"></a>1.1.2. 代码框架</h3>
+<ol><li>代码使用.NetFramework4.8的控制台应用程序，设置不同数据量级别的集合，并将其写入到Excel中。</li><li>上述的四种操作Excel的开源组件都通过Nuget获取。</li></ol>
+<ul><li>NPOI</li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ab8af0b195b04eecace6680e5258bcef.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA6Ieq5bex55qE5Lmd5Y-I5Zub5YiG5LmL5LiJ56uZ5Y-w,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<ul><li>Aspose.Cells for .NET</li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/28fd0278b7ff4dc9b1a95f36e97bebb8.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA6Ieq5bex55qE5Lmd5Y-I5Zub5YiG5LmL5LiJ56uZ5Y-w,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<ul><li>EPPlus</li></ul>
+<p>https://github.com/JanKallman/EPPlus/wiki/Formula-Calculation</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/24a19379e0994c878a2bc5bf7435c314.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA6Ieq5bex55qE5Lmd5Y-I5Zub5YiG5LmL5LiJ56uZ5Y-w,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<ul><li>MiniExcel</li></ul>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/cc8d9940ebd04228b03900ec57e29578.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA6Ieq5bex55qE5Lmd5Y-I5Zub5YiG5LmL5LiJ56uZ5Y-w,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>以下为代码引用结果</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/9b20a3e43e7f446496bf381273ed0b09.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA6Ieq5bex55qE5Lmd5Y-I5Zub5YiG5LmL5LiJ56uZ5Y-w,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h3><a id="113__54"></a>1.1.3. 代码</h3>
+<pre><code class="prism language-C#">using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace ConsoleReadWriteExcel
+{
+    internal class Program
+    {
+        private static string OutputExcelFolderPath = @"C:\Users\HTHT\Desktop\caogao\导出文件夹";
+        private static string InputExcelFolderPath = @"C:\Users\HTHT\Desktop\caogao\导出文件夹";
+
+        static void Main(string[] args)
+        {
+            EPPlus_ExcelHelper.EPPlus_ExcelHelperLicenseContext();
+            //WriteData2ExcelDemo();
+            ReadData4ExcelDemo();
+            Console.ReadKey(); ;
+        }
+
+        #region ReadData4ExcelDemo
+        private static void ReadData4ExcelDemo()
+        {
+            ReadData4Excel(1000);
+            ReadData4Excel(10000);
+            ReadData4Excel(50000);
+            ReadData4Excel(100000);
+            ReadData4Excel(200000);
+            ReadData4Excel(500000);
+            ReadData4Excel(1000000);
+            Console.WriteLine("-------------------------***********************-------------------------");
+            Console.WriteLine("读取Excel完成...");
+            Console.WriteLine("-------------------------***********************-------------------------");
+        }
+
+        private static void ReadData4Excel(int dataCount)
+        {
+            Console.Write($"| {dataCount} |");
+
+            SimpleUseReadExcel(dataCount, ReadData4Excel4NPOI);
+
+            SimpleUseReadExcel(dataCount, ReadData4Excel4AsposeCell);
+
+            SimpleUseReadExcel(dataCount, ReadData4Excel4EPPlus);
+
+            SimpleUseReadExcel(dataCount, ReadData4Excel4MiniExcel);
+
+            Console.WriteLine();
+        }
+
+        private static void ReadData4Excel4MiniExcel(int dataCount)
+        {
+            string strOutputExcelPath = System.IO.Path.Combine(InputExcelFolderPath, "MiniExcel", $"导出数据_{dataCount}.xlsx");
+
+            MiniExcel_ExcelHelper pMiniExcel_ExcelHelper = new MiniExcel_ExcelHelper();
+            pMiniExcel_ExcelHelper.ReadData(strOutputExcelPath);
+        }
+
+        private static void ReadData4Excel4EPPlus(int dataCount)
+        {
+            string strOutputExcelPath = System.IO.Path.Combine(InputExcelFolderPath, "EPPlus", $"导出数据_{dataCount}.xlsx");
+
+            EPPlus_ExcelHelper pEPPlus_ExcelHelper = new EPPlus_ExcelHelper();
+            pEPPlus_ExcelHelper.ReadData(ReadData, strOutputExcelPath, 1, 1);
+        }
+
+        private static void ReadData4Excel4AsposeCell(int dataCount)
+        {
+            string strOutputExcelPath = System.IO.Path.Combine(InputExcelFolderPath, "AsposeCell", $"导出数据_{dataCount}.xls");
+
+            AsposeCell_ExcelHelper pAsposeCell_ExcelHelper = new AsposeCell_ExcelHelper(strOutputExcelPath);
+            pAsposeCell_ExcelHelper.GetData(ReadData, 0, 0);
+
+        }
+
+        public static bool ReadData(List&lt;object&gt; ListRangeObjValue, bool IsColumn)
+        {
+            return true;
+        }
+
+
+        private  static void ReadData4Excel4NPOI(int dataCount)
+        {
+            string strOutputExcelPath = System.IO.Path.Combine(InputExcelFolderPath, "NPOI", $"导出数据_{dataCount}.xlsx");
+
+            NPOI_ExcelHelper pNPOI_ExcelHelper = new NPOI_ExcelHelper(strOutputExcelPath);
+            pNPOI_ExcelHelper.ReadExcel(strOutputExcelPath,1,0);
+
+        }
+
+
+        /// &lt;summary&gt;
+        /// 数据结构的简单使用
+        /// &lt;/summary&gt;
+        /// &lt;param name="action"&gt;&lt;/param&gt;
+        public static void SimpleUseReadExcel(int dataCount, Action&lt;int&gt; action)
+        {
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+            try
+            {
+                action(dataCount);
+                sw.Stop();
+                TimeSpan ts2 = sw.Elapsed;
+
+                //显示程序的内存占用信息
+                ShowProcessInfoTabel();
+
+                显示程序的耗时信息
+                //Console.Write($"   {ts2.TotalSeconds} s  |");
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+
+                //显示程序的耗时信息
+                Console.Write($"   {ex.Message}  |");
+            }
+        }
+        #endregion
+
+        #region WriteData2ExcelDemo
+        private static void WriteData2ExcelDemo()
+        {
+            System.IO.Directory.Delete(OutputExcelFolderPath, true);
+            WriteData2Excel(1000);
+            WriteData2Excel(10000);
+            WriteData2Excel(50000);
+            WriteData2Excel(100000);
+            WriteData2Excel(200000);
+            WriteData2Excel(500000);
+            WriteData2Excel(1000000);
+            Console.WriteLine("-------------------------***********************-------------------------");
+            Console.WriteLine("导出Excel完成...");
+            Console.WriteLine("-------------------------***********************-------------------------");
+        }
+
+        private static void WriteData2Excel(int dataCount)
+        {
+            string strDemoModelExcel = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"Config\Demo.xlsx");
+            List&lt;string&gt; listData = new List&lt;string&gt;();
+            for (int i = 0; i &lt; dataCount; i++)
+            {
+                listData.Add($"导出数据到Excel文件中_{i}");
+            }
+            Console.Write($"| {dataCount} |");
+
+            SimpleUseWriteExcel(strDemoModelExcel, listData, WriteData2Excel4NPOI);
+
+            SimpleUseWriteExcel(strDemoModelExcel, listData, WriteData2Excel4AsposeCell);
+
+            SimpleUseWriteExcel(strDemoModelExcel, listData, WriteData2Excel4EPPlus);
+
+            SimpleUseWriteExcel(strDemoModelExcel, listData, WriteData2Excel4MiniExcel);
+
+            Console.WriteLine();
+        }
+
+        private static void WriteData2Excel4MiniExcel(string strDemoModelExcel, List&lt;string&gt; listData)
+        {
+            string strOutputExcelPath = System.IO.Path.Combine(OutputExcelFolderPath, "MiniExcel", $"导出数据_{listData.Count}.xlsx");
+            if (!System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(strOutputExcelPath)))
+            {
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(strOutputExcelPath));
+            }
+            MiniExcel_ExcelHelper pMiniExcel_ExcelHelper = new MiniExcel_ExcelHelper();
+            pMiniExcel_ExcelHelper.SaveExcel(strOutputExcelPath, listData);
+        }
+
+        private static void WriteData2Excel4EPPlus(string strDemoModelExcel, List&lt;string&gt; listData)
+        {
+            string strOutputExcelPath = System.IO.Path.Combine(OutputExcelFolderPath, "EPPlus", $"导出数据_{listData.Count}.xlsx");
+            if (!System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(strOutputExcelPath)))
+            {
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(strOutputExcelPath));
+            }
+            System.IO.File.Copy(strDemoModelExcel, strOutputExcelPath, true);
+            EPPlus_ExcelHelper pEPPlus_ExcelHelper = new EPPlus_ExcelHelper();
+            pEPPlus_ExcelHelper.SaveExcel(strOutputExcelPath, listData);
+        }
+
+        private static void WriteData2Excel4AsposeCell(string strDemoModelExcel, List&lt;string&gt; listData)
+        {
+            string strOutputExcelPath = System.IO.Path.Combine(OutputExcelFolderPath, "AsposeCell", $"导出数据_{listData.Count}.xls");
+            if (!System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(strOutputExcelPath)))
+            {
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(strOutputExcelPath));
+            }
+            System.IO.File.Copy(strDemoModelExcel, strOutputExcelPath, true);
+            AsposeCell_ExcelHelper pAsposeCell_ExcelHelper = new AsposeCell_ExcelHelper(strOutputExcelPath);
+            pAsposeCell_ExcelHelper.WriteExcel(0, listData);
+            pAsposeCell_ExcelHelper.Save();
+        }
+
+        private static void WriteData2Excel4NPOI(string strDemoModelExcel, List&lt;string&gt; listData)
+        {
+            string strOutputExcelPath = System.IO.Path.Combine(OutputExcelFolderPath, "NPOI", $"导出数据_{listData.Count}.xlsx");
+            if (!System.IO.Directory.Exists(System.IO.Path.GetDirectoryName(strOutputExcelPath)))
+            {
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(strOutputExcelPath));
+            }
+            System.IO.File.Copy(strDemoModelExcel, strOutputExcelPath, true);
+            NPOI_ExcelHelper pNPOI_ExcelHelper = new NPOI_ExcelHelper(strOutputExcelPath);
+            pNPOI_ExcelHelper.WriteExcel(0, listData);
+            pNPOI_ExcelHelper.SaveXlsxChange(strOutputExcelPath);
+        }
+
+        /// &lt;summary&gt;
+        /// 数据结构的简单使用
+        /// &lt;/summary&gt;
+        /// &lt;param name="action"&gt;&lt;/param&gt;
+        public static void SimpleUseWriteExcel(string strPhaseInfo, List&lt;string&gt; listData, Action&lt;string,List&lt;string&gt;&gt; action)
+        {
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+            action(strPhaseInfo, listData);
+            sw.Stop();
+            TimeSpan ts2 = sw.Elapsed;
+            显示程序的内存占用信息
+            //ShowProcessInfoTabel();
+            
+            //显示程序的耗时信息
+            Console.Write($"   {ts2.TotalSeconds} s  |");
+        }
+        #endregion
+
+        private static int MB_DIV = 1024 * 1024;
+        /// &lt;summary&gt;
+        /// 显示程序的内存占用信息
+        /// &lt;/summary&gt;
+        /// &lt;param name="strPhaseInfo"&gt;&lt;/param&gt;
+        public static void ShowProcessInfoTabel()
+        {
+            var name = Process.GetCurrentProcess().ProcessName;
+            PerformanceCounter curpcp = new PerformanceCounter("Process", "Working Set - Private", name);
+            PerformanceCounter curtime = new PerformanceCounter("Process", "% Processor Time", name);
+            Console.Write($"   {curpcp.NextValue() / MB_DIV}  |");
+
+            //实时分析内存至关重要
+            GC.Collect();
+
+            Application.DoEvents();
+        }
+    }
+}
+</code></pre>
+<h2><a id="12__307"></a>1.2. 数据说明</h2>
+<p>加载指定个数的List数据写入到Excel中</p>
+<pre><code class="prism language-C#">
+private static void WriteData2Excel(int dataCount)
+{
+    ....
+    List&lt;string&gt; listData = new List&lt;string&gt;();
+    for (int i = 0; i &lt; dataCount; i++)
+    {
+        listData.Add($"导出数据到Excel文件中_{i}");
+    }
+    ....
+}
+</code></pre>
+<h1><a id="2__325"></a>2. 使用场景</h1>
+<h2><a id="21_Excel100w_327"></a>2.1. 写入Excel(最大测试数据量100w)</h2>
+<h3><a id="211_s_329"></a>2.1.1. 时间复杂度随数据变化表(单位秒s)</h3>
+<table><thead><tr><th>数量</th><th>NPOI</th><th>AsposeCell</th><th>EPPlus</th><th>MiniExcel</th></tr></thead><tbody><tr><td>1000</td><td>0.655017 s</td><td>3.3880952 s</td><td>0.5505515 s</td><td>0.0799069 s</td></tr><tr><td>10000</td><td>0.6553409 s</td><td>0.0792955 s</td><td>0.2258814 s</td><td>0.4185034 s</td></tr><tr><td>50000</td><td>3.9576648 s</td><td>0.3697489 s</td><td>0.9928818 s</td><td>1.2196221 s</td></tr><tr><td>100000</td><td>4.3536023 s</td><td>0.5724796 s</td><td>2.0721173 s</td><td>2.4347283 s</td></tr><tr><td>200000</td><td>8.50407 s</td><td>1.3098775 s</td><td>4.0333762 s</td><td>4.8701496 s</td></tr><tr><td>500000</td><td>22.2753958 s</td><td>2.8274853 s</td><td>10.5082423 s</td><td>12.2345609 s</td></tr><tr><td>1000000</td><td>45.3316621 s</td><td>6.1340543 s</td><td>21.8507034 s</td><td>25.1136424 s</td></tr></tbody></table>
+<h3><a id="212_MB_341"></a>2.1.2. 空间复杂度随数据变化表(单位MB)</h3>
+<table><thead><tr><th>数量</th><th>NPOI</th><th>AsposeCell</th><th>EPPlus</th><th>MiniExcel</th></tr></thead><tbody><tr><td>1000</td><td>25.76563</td><td>27.04688</td><td>28.57422</td><td>29.11719</td></tr><tr><td>10000</td><td>50.0625</td><td>36.01953</td><td>36.82813</td><td>39.96484</td></tr><tr><td>50000</td><td>127.0039</td><td>79.07422</td><td>40.37891</td><td>57.02734</td></tr><tr><td>100000</td><td>237.3555</td><td>114.6094</td><td>50.47266</td><td>83.75</td></tr><tr><td>200000</td><td>449.0469</td><td>191.8789</td><td>70.65625</td><td>137.7734</td></tr><tr><td>500000</td><td>981.5508</td><td>428.0078</td><td>155.4609</td><td>320.4336</td></tr><tr><td>1000000</td><td>1942.848</td><td>527.793</td><td>324.6563</td><td>657.3281</td></tr></tbody></table>
+<h2><a id="22_Excel_353"></a>2.2. 读取Excel</h2>
+<h3><a id="221_s_355"></a>2.2.1. 时间复杂度随数据变化表(单位秒s)</h3>
+<table><thead><tr><th>数量</th><th>NPOI</th><th>AsposeCell</th><th>EPPlus</th><th>MiniExcel</th></tr></thead><tbody><tr><td>1000</td><td>0.317878 s</td><td>0.4092103 s</td><td>0.1444332 s</td><td>0.1053007 s</td></tr><tr><td>10000</td><td>0.9976334 s</td><td>0.0674619 s</td><td>0.2152765 s</td><td>0.457786 s</td></tr><tr><td>50000</td><td>5.9264671 s</td><td>0.1819693 s</td><td>0.8495237 s</td><td>1.5807224 s</td></tr><tr><td>100000</td><td>10.4264675 s</td><td>0.2611479 s</td><td>1.9973989 s</td><td>3.1554743 s</td></tr><tr><td>200000</td><td>21.0787552 s</td><td>0.3267718 s</td><td>3.3810386 s</td><td>6.3185499 s</td></tr><tr><td>500000</td><td>55.867668 s</td><td>0.7786071 s</td><td>7.9100544 s</td><td>15.2742102 s</td></tr><tr><td>1000000</td><td>OOM</td><td>1.772818 s</td><td>17.7469745 s</td><td>31.9800223 s</td></tr></tbody></table>
+<h3><a id="222_MB_367"></a>2.2.2. 空间复杂度随数据变化表(单位MB)</h3>
+<table><thead><tr><th>数量</th><th>NPOI</th><th>AsposeCell</th><th>EPPlus</th><th>MiniExcel</th></tr></thead><tbody><tr><td>1000</td><td>26.58984</td><td>27.29688</td><td>28.48047</td><td>29.44922</td></tr><tr><td>10000</td><td>87.02344</td><td>35.41797</td><td>40.04688</td><td>39.5</td></tr><tr><td>50000</td><td>340.7305</td><td>51.49609</td><td>65.78906</td><td>63.10547</td></tr><tr><td>100000</td><td>674.832</td><td>74.82422</td><td>104.2539</td><td>97.94141</td></tr><tr><td>200000</td><td>1340.066</td><td>113.4141</td><td>181.9219</td><td>167.75</td></tr><tr><td>500000</td><td>1788.254</td><td>216.7305</td><td>419.707</td><td>381.0391</td></tr><tr><td>1000000</td><td>OOM</td><td>454.9883</td><td>654.3984</td><td>578.8906</td></tr></tbody></table>
+<h2><a id="23_Excel_379"></a>2.3. Excel特殊功能</h2>
+<table><thead><tr><th>特殊功能</th><th>NPOI</th><th>AsposeCell</th><th>EPPlus</th><th>MiniExcel</th></tr></thead><tbody><tr><td>合并单元格</td><td>True</td><td>True</td><td>True</td><td>暂时没有发现</td></tr><tr><td>单元格样式</td><td>True</td><td>True</td><td>True</td><td>暂时没有发现</td></tr><tr><td>公式计算</td><td>True</td><td>True</td><td>True</td><td>暂时没有发现</td></tr><tr><td>插入图</td><td>True</td><td>True</td><td>True</td><td>暂时没有发现</td></tr></tbody></table>
+<ol><li>AsposeCell合并单元格</li></ol>
+<p>https://blog.csdn.net/u010104384/article/details/108123728</p>
+<ol start="2"><li>AsposeCell设置单元格样式</li></ol>
+<p>https://wenku.baidu.com/view/52e34c10f211f18583d049649b6648d7c1c708d0.html</p>
+<ol start="3"><li>AsposeCell公式计算</li></ol>
+<pre><code class="prism language-C#">XlsSaveOptions saveOpt = new XlsSaveOptions();
+CurrentWorkBook.CalculateFormula(true);
+</code></pre>
+<ol start="4"><li>AsposeCell插入图表</li></ol>
+<p>https://blog.csdn.net/qq_46035189/article/details/119966058</p>
+<ol start="5"><li>EPPlus 合并单元格</li></ol>
+<pre><code class="prism language-C#">ws.Cells["A1:C1"].Merge = true;
+</code></pre>
+<pre><code class="prism language-C#">public static string GetMegerValue(ExcelWorksheet wSheet, int row, int column)
+{
+    string range = wSheet.MergedCells[row, column];
+    if (range == null)
+        if (wSheet.Cells[row, column].Value != null)
+            return wSheet.Cells[row, column].Value.ToString();
+        else
+            return "";
+    object value =
+        wSheet.Cells[(new ExcelAddress(range)).Start.Row, (new ExcelAddress(range)).Start.Column].Value;
+    if (value != null)
+        return value.ToString();
+    else
+        return "";
+}
+</code></pre>
+<ol start="6"><li>EPPlus 设置单元格样式</li></ol>
+<p>https://wenku.baidu.com/view/5061cae50f22590102020740be1e650e52eacfd9.html</p>
+<ol start="7"><li>EPPlus 公式计算</li></ol>
+<pre><code class="prism language-C#">// RowCount、ColumnCount 整数，分别是行计数器、列计数器
+ThisCell = Worksheet.Cells[RowCount, ColumnCount];
+string StartCell = Worksheet.Cells[4, ColumnCount].Address;
+string EndCell = Worksheet.Cells[(RowCount - 1), ColumnCount].Address;
+Formula = String.Format("=SUM({0}:{1})", StartCell, EndCell);
+ThisCell.Formula = Formula;
+
+string cell = Worksheet.Cells[1, 1].Address;
+</code></pre>
+<ol start="8"><li>EPPlus 插入图表</li></ol>
+<p>https://www.cnblogs.com/miaosha5s/p/13168868.html?ivk_sa=1024320u</p>
+<h1><a id="3__452"></a>3. 附件代码</h1>
+<pre><code class="prism language-C#">using NPOI.SS.UserModel;
+using NPOI.XSSF.Streaming;
+using NPOI.XSSF.UserModel;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace ConsoleReadWriteExcel
+{
+    public class NPOI_ExcelHelper
+    {
+        public NPOI_ExcelHelper()
+        {
+        }
+
+        public NPOI_ExcelHelper(string strFilePath)
+        {
+            Open(strFilePath, 0);
+            CurrentSheet = CurrentExcelWorkbook.GetSheetAt(CurrentExcelWorkbook.ActiveSheetIndex);
+        }
+
+
+
+        #region Property
+        /// &lt;summary&gt;
+        /// 当前Excel操作文档
+        /// &lt;/summary&gt;
+        public IWorkbook CurrentExcelWorkbook
+        {
+            get;
+            private set;
+        }
+
+        /// &lt;summary&gt;
+        /// 当前Excel操作Sheet
+        /// &lt;/summary&gt;
+        public ISheet CurrentSheet
+        {
+            get;
+            private set;
+        }
+
+        /// &lt;summary&gt;
+        /// 当前操作中的异常Exception
+        /// &lt;/summary&gt;
+        public Exception CurrentException { get; set; }
+
+        private IFont _CurrentFont = null;
+        /// &lt;summary&gt;
+        /// 当前的字体
+        /// &lt;/summary&gt;
+        public IFont CurrentFont
+        {
+            get
+            {
+                if (_CurrentFont == null &amp;&amp; CurrentExcelWorkbook != null)
+                {
+                    _CurrentFont = CurrentExcelWorkbook.CreateFont();
+                }
+                return _CurrentFont;
+            }
+            private set
+            {
+                _CurrentFont = value;
+            }
+        }
+
+        private ICellStyle _CurrentCellStyle = null;
+        /// &lt;summary&gt;
+        /// 当前的单元格样式
+        /// &lt;/summary&gt;
+        public ICellStyle CurrentCellStyle
+        {
+            get
+            {
+                if (_CurrentCellStyle == null &amp;&amp; CurrentExcelWorkbook != null)
+                {
+                    _CurrentCellStyle = CurrentExcelWorkbook.CreateCellStyle();
+                }
+                return _CurrentCellStyle;
+            }
+            set
+            {
+                _CurrentCellStyle = value;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 得到当前Sheet页的行数
+        /// &lt;/summary&gt;
+        public int CurrentSheetRow
+        {
+            get
+            {
+                return CurrentSheet == null ? 0 : CurrentSheet.PhysicalNumberOfRows;
+            }
+        }
+        private int sheetNum = -1;
+        /// &lt;summary&gt;
+        /// 得到当前Sheet页最大单元格数
+        /// &lt;/summary&gt;
+        public int CurrentSheetColumn
+        {
+            get
+            {
+                if (sheetNum &lt; 0)
+                {
+                    sheetNum = 0;
+                    if (CurrentSheet != null)
+                    {
+                        for (int i = 0; i &lt; CurrentSheet.PhysicalNumberOfRows; i++)
+                        {
+                            int colNum = GetRowColNum(i);
+                            if (colNum &gt; sheetNum)
+                            {
+                                sheetNum = colNum;
+                            }
+                        }
+                    }
+                }
+
+                return sheetNum;
+            }
+        }
+
+        public int GetRowColNum(int rowIndex)
+        {
+            int colNum = 0;
+            if (CurrentSheet != null &amp;&amp; rowIndex &gt;= 0)
+            {
+                IRow pRow = CurrentSheet.GetRow(rowIndex);
+                if (pRow != null)
+                {
+                    colNum = pRow.LastCellNum;
+                }
+            }
+            return colNum;
+        }
+        #endregion
+
+        /// &lt;summary&gt;
+        /// 打开Excel中的Sheet页（索引）
+        /// &lt;/summary&gt;
+        /// &lt;param name="strFilePath"&gt;&lt;/param&gt;
+        /// &lt;param name="SheetIndex"&gt;&lt;/param&gt;
+        /// &lt;param name="IsBigOperation"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool Open(string strFilePath, int SheetIndex, bool IsBigOperation = false)
+        {
+            CurrentExcelWorkbook = OpenFile(strFilePath, IsBigOperation);
+            try
+            {
+                CurrentSheet = CurrentExcelWorkbook.GetSheetAt(SheetIndex);
+            }
+            catch (Exception ex)
+            {
+                CurrentException = ex;
+                return false;
+            }
+            return true;
+        }
+
+        /// &lt;summary&gt;
+        /// 打开Excel文件
+        /// &lt;/summary&gt;
+        /// &lt;param name="strFilePath"&gt;&lt;/param&gt;
+        /// &lt;param name="isBigOperation"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private IWorkbook OpenFile(string strFilePath, bool isBigOperation)
+        {
+            try
+            {
+                using (FileStream fs = new FileStream(strFilePath, FileMode.Open, FileAccess.Read))
+                {
+                    IWorkbook workbook = null;
+                    if (isBigOperation)
+                    {
+                        XSSFWorkbook pXSSFWorkbook = new XSSFWorkbook(fs);
+                        workbook = new SXSSFWorkbook(pXSSFWorkbook, 1000);
+                    }
+                    else
+                    {
+                        workbook = WorkbookFactory.Create(fs);
+                    }
+                    return workbook;
+                }
+            }
+            catch (Exception ex)
+            {
+                CurrentException = ex;
+                return null;
+            }
+        }
+
+
+        /// &lt;summary&gt;
+        /// 写Excel
+        /// &lt;/summary&gt;
+        /// &lt;param name="startRowIndex"&gt;&lt;/param&gt;
+        /// &lt;param name="pTable"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool WriteExcel(int startRowIndex, List&lt;string&gt; listData)
+        {
+            try
+            {
+                ISheet sheet = CurrentExcelWorkbook.GetSheetAt(0);
+                for (int i = 0; i &lt; listData.Count; i++)
+                {
+                    IRow pRow = sheet.CreateRow(startRowIndex);
+                    for (int j = 0; j &lt; 5; j++)
+                    {
+                        pRow.CreateCell(j).SetCellValue(listData[i].ToString());
+                    }
+                    startRowIndex++;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 保存Xlsx格式修改
+        /// &lt;/summary&gt;
+        /// &lt;param name="strExcelFilePath"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool SaveXlsxChange(string strExcelFilePath)
+        {
+            try
+            {
+                using (var file = new FileStream(strExcelFilePath, FileMode.Create, FileAccess.Write))
+                {
+                    CurrentExcelWorkbook.Write(file);
+                    file.Close();
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+        }
+        
+        
+        /// &lt;summary&gt;
+         /// 读取Excel文件内容转换为DataSet,列名依次为 "c0"……c[columnlength-1]
+         /// &lt;/summary&gt;
+         /// &lt;param name="FileName"&gt;文件绝对路径&lt;/param&gt;
+         /// &lt;param name="startRow"&gt;数据开始行数(1为第一行)&lt;/param&gt;
+         /// &lt;param name="StrartCol"&gt;每列的数据类型&lt;/param&gt;
+         /// &lt;returns&gt;&lt;/returns&gt;
+        public DataTable ReadExcel(string FileName, int startRow, int StrartCol)
+        {
+            int ertime = 0;
+            int intime = 0;
+            DataTable dt = new DataTable(Path.GetFileName(FileName));
+            DataRow dr;
+            StringBuilder sb = new StringBuilder();
+            NpoiDataType[] ColumnDataType = null;
+            string ColName = "ColName";
+            using (FileStream stream = new FileStream(@FileName, FileMode.Open, FileAccess.Read))
+            {
+
+                IWorkbook workbook = WorkbookFactory.Create(stream);  //使用接口，自动识别excel2003/2007格式
+                ISheet sheet = workbook.GetSheetAt(0);//得到里面第一个sheet
+                int sheetNum = workbook.NumberOfSheets;
+                int j;
+                IRow row;
+                #region ColumnDataType赋值
+                if (ColumnDataType == null || ColumnDataType.Length &lt;= 0)
+                {
+                    row = sheet.GetRow(startRow - 1);//得到第i行
+                    ColumnDataType = new NpoiDataType[row.LastCellNum + 30 - StrartCol];
+                    for (int i = StrartCol; i &lt; ColumnDataType.Length; i++)
+                    {
+                        ICell hs = row.GetCell(i);
+                        ColumnDataType[i - StrartCol] = GetCellDataType(hs);
+                    }
+                }
+                #endregion
+                for (j = StrartCol; j &lt; ColumnDataType.Length; j++)
+                {
+                    row = sheet.GetRow(startRow - 1);//得到第i行
+                    Type tp = GetDataTableType(ColumnDataType[j]);
+                    string strColumnName = string.Format("{0}{1}", ColName, j); ;
+                    dt.Columns.Add(strColumnName, tp);
+                }
+
+                Dictionary&lt;int, int&gt; dic = new Dictionary&lt;int, int&gt;();
+                List&lt;int&gt; startCols = new List&lt;int&gt;();
+                List&lt;int&gt; endCols = new List&lt;int&gt;();
+                int RowCout = sheet.PhysicalNumberOfRows &gt; sheet.LastRowNum ? sheet.PhysicalNumberOfRows : sheet.LastRowNum;
+                for (int k = 0; k &lt;= RowCout; k++)
+                {
+                    row = sheet.GetRow(k);
+                    if (row == null) continue;
+                    int start = 0, end = 0;
+                    for (int i = 0; i &lt; row.Cells.Count; i++)
+                    {
+                        if (!string.IsNullOrEmpty(row.Cells[i].ToString()))
+                        {
+                            start = i;
+                            break;
+                        }
+                    }
+                    startCols.Add(start);
+                    for (int i = 0; i &lt; row.Cells.Count; i++)
+                    {
+                        if (!string.IsNullOrEmpty(row.Cells[i].ToString()))
+                        {
+                            end = row.Cells[i].ColumnIndex;
+                        }
+                    }
+                    endCols.Add(end);
+                }
+                int Start_Col = 9999, End_Col = 0;
+                for (int i = 0; i &lt; startCols.Count; i++)
+                {
+                    int s = startCols[i], e = endCols[i];
+                    if (s &lt; Start_Col)
+                        Start_Col = s;
+                    if (e &gt; End_Col)
+                        End_Col = e;
+                }
+
+                for (int i = startRow; i &lt;= RowCout; i++)
+                {
+                    row = sheet.GetRow(i);//得到第i行
+                    if (row == null) continue;
+                    try
+                    {
+                        dr = dt.NewRow();
+
+                        for (j = StrartCol; j &lt; ColumnDataType.Length; j++)
+                        {
+                            dr[j - StrartCol] = GetCellData(row, j);
+                        }
+                        dt.Rows.Add(dr);
+                        intime++;
+                    }
+
+                    catch (Exception ex)
+                    {
+                        ertime++;
+                        sb.Append(string.Format("第{0}行出错：{1}\r\n", i + 1, ex.Message));
+                        continue;
+                    }
+                }
+                for (int i = dt.Columns.Count - 1; i &gt; End_Col - StrartCol; i--)
+                {
+                    dt.Columns.RemoveAt(i);
+                }
+                if (Start_Col &gt; 0)
+                {
+                    for (int l = Start_Col - 1; l &gt;= 0; l--)
+                    {
+                        dt.Columns.RemoveAt(l);
+                    }
+                }
+            }
+            return dt;
+        }
+
+        /// &lt;summary&gt;
+        /// 读Excel-根据NpoiDataType创建的DataTable列的数据类型
+        /// &lt;/summary&gt;
+        /// &lt;param name="datatype"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private Type GetDataTableType(NpoiDataType datatype)
+        {
+            Type tp = typeof(string);//Type.GetType("System.String")
+            switch (datatype)
+            {
+                case NpoiDataType.Bool:
+                    tp = typeof(bool);
+                    break;
+                case NpoiDataType.Datetime:
+                    tp = typeof(DateTime);
+                    break;
+                case NpoiDataType.Numeric:
+                    tp = typeof(double);
+                    break;
+                case NpoiDataType.Error:
+                    tp = typeof(string);
+                    break;
+                case NpoiDataType.Blank:
+                    tp = typeof(string);
+                    break;
+            }
+            return tp;
+        }
+
+        /// &lt;summary&gt;
+        /// 获取单元格数据类型
+        /// &lt;/summary&gt;
+        /// &lt;param name="hs"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private NpoiDataType GetCellDataType(ICell hs)
+        {
+            NpoiDataType dtype = NpoiDataType.String;
+            return dtype;
+        }
+
+
+        /// &lt;summary&gt;
+        /// 读Excel-得到不同数据类型单元格的数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="datatype"&gt;数据类型&lt;/param&gt;
+        /// &lt;param name="row"&gt;数据中的一行&lt;/param&gt;
+        /// &lt;param name="column"&gt;哪列&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private object GetCellData(IRow row, int column)
+        {
+            ICell cell = row.GetCell(column);
+            if (cell != null)
+            {
+                if (cell == null)
+                {
+                    return "";
+                }
+                CellType datatype = cell.CellType;
+                switch (datatype)
+                {
+                    case CellType.String:
+                        try { return cell.StringCellValue; }
+                        catch (Exception ex)
+                        {
+                            return "";
+                        }
+                    case CellType.Boolean:
+                        try { return cell.BooleanCellValue; }
+                        catch (Exception ex)
+                        {
+                            return cell.StringCellValue;
+                        }
+                    case CellType.Numeric:
+                        decimal d;
+                        string strValue = cell.ToString();
+
+                        if (System.Decimal.TryParse(strValue, out d))
+                        {
+                            return d;
+                        }
+                        else
+                        {
+                            try { return cell.DateCellValue; }
+                            catch (Exception ex)
+                            {
+                                return cell.StringCellValue;
+                            }
+                        }
+                    case CellType.Formula:
+                        try
+                        {
+                            return cell.NumericCellValue;
+                        }
+                        catch (Exception)
+                        {
+                            try
+                            {
+                                return cell.StringCellValue;
+                            }
+                            catch (Exception ex)
+                            {
+                                return "";
+                            }
+                        }
+                    case CellType.Error:
+                        try
+                        {
+                            return cell.ErrorCellValue;
+                        }
+                        catch (Exception ex)
+                        {
+                            return cell.StringCellValue;
+                        }
+                    case CellType.Blank:
+                        try
+                        {
+                            return cell.StringCellValue;
+                        }
+                        catch (Exception ex)
+                        {
+                            return "";
+                        }
+                    default:
+                        return "";
+                }
+            }
+            else
+            {
+                return "";
+            }
+        }
+    }
+
+
+
+    /// &lt;summary&gt;
+    /// 枚举(Excel单元格数据类型)
+    /// &lt;/summary&gt;
+    public enum NpoiDataType
+    {
+        /// &lt;summary&gt;
+        /// 字符串类型-值为1
+        /// &lt;/summary&gt;
+        String,
+        /// &lt;summary&gt;
+        /// 布尔类型-值为2
+        /// &lt;/summary&gt;
+        Bool,
+        /// &lt;summary&gt;
+        /// 时间类型-值为3
+        /// &lt;/summary&gt;
+        Datetime,
+        /// &lt;summary&gt;
+        /// 数字类型-值为4
+        /// &lt;/summary&gt;
+        Numeric,
+        /// &lt;summary&gt;
+        /// 复杂文本类型-值为5
+        /// &lt;/summary&gt;
+        Richtext,
+        /// &lt;summary&gt;
+        /// 空白
+        /// &lt;/summary&gt;
+        Blank,
+        /// &lt;summary&gt;
+        /// 错误
+        /// &lt;/summary&gt;
+        Error
+    }
+}
+</code></pre>
+<pre><code class="prism language-C#">using Aspose.Cells;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace ConsoleReadWriteExcel
+{
+    public class AsposeCell_ExcelHelper
+    {
+        public AsposeCell_ExcelHelper() { }
+
+        public AsposeCell_ExcelHelper(string excelPath)
+        {
+            Open(excelPath, 0);
+            CurrentSheet = CurrentWorkBook.Worksheets[CurrentWorkBook.Worksheets.ActiveSheetIndex];
+        }
+
+        private Exception _CurrentException = null;
+        /// &lt;summary&gt;
+        /// Excel操作异常
+        /// &lt;/summary&gt;
+        public Exception CurrentException
+        {
+            get
+            {
+                return _CurrentException;
+            }
+            set
+            {
+                _CurrentException = value;
+            }
+        }
+        /// &lt;summary&gt;
+        /// 当前操作的excel
+        /// &lt;/summary&gt;
+        public Workbook CurrentWorkBook
+        {
+            get;
+            private set;
+        }
+        /// &lt;summary&gt;
+        /// 当前操作的Sheet
+        /// &lt;/summary&gt;
+        public Worksheet CurrentSheet
+        {
+            get;
+            private set;
+        }
+
+        public int CurrentSheetColumn
+        {
+            get
+            {
+                int colNum = 0;
+                if (CurrentSheet != null)
+                {
+                    colNum = CurrentSheet.Cells.MaxColumn + 1;
+                }
+                return colNum;
+            }
+        }
+
+        public int CurrentSheetRow
+        {
+            get
+            {
+                int rowNum = 0;
+                if (CurrentSheet != null)
+                {
+                    rowNum = CurrentSheet.Cells.Rows.Count;
+                }
+                return rowNum;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 打开Excel指定Sheet索引
+        /// &lt;/summary&gt;
+        /// &lt;param name="strFilePath"&gt;&lt;/param&gt;
+        /// &lt;param name="SheetIndex"&gt;&lt;/param&gt;
+        /// &lt;param name="IsBigOperation"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool Open(string strFilePath, int SheetIndex, bool IsBigOperation = false)
+        {
+            try
+            {
+                CurrentWorkBook = new Workbook(strFilePath);
+                CurrentSheet = CurrentWorkBook.Worksheets[SheetIndex];
+                return true;
+            }
+            catch (Exception ex)
+            {
+                CurrentException = ex;
+                return false;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 保存当前Excel
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool Save()
+        {
+            try
+            {
+                if (CurrentWorkBook != null)
+                {
+                    if (!string.IsNullOrEmpty(CurrentWorkBook.FileName))
+                    {
+                        string filePath = CurrentWorkBook.FileName;
+                        XlsSaveOptions saveOpt = new XlsSaveOptions();
+                        CurrentWorkBook.CalculateFormula(true);
+                        saveOpt.CreateDirectory = true;
+                        CurrentWorkBook.Save(filePath, saveOpt);
+                        return true;
+                    }
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                CurrentException = ex;
+                return false;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 写Excel
+        /// &lt;/summary&gt;
+        /// &lt;param name="startRowIndex"&gt;&lt;/param&gt;
+        /// &lt;param name="pTable"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool WriteExcel(int startRowIndex, List&lt;string&gt; listData)
+        {
+            try
+            {
+
+                for (int i = 0; i &lt; listData.Count; i++)
+                {
+                    for (int j = 0; j &lt; 5; j++)
+                    {
+                        CurrentSheet.Cells[i, j].PutValue(listData[i].ToString());
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                CurrentException = ex;
+                return false;
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 按行读取指定范围单元格值
+        /// &lt;/summary&gt;
+        /// &lt;param name="pReadDataDelegate"&gt;&lt;/param&gt;
+        /// &lt;param name="StartRowIndex"&gt;&lt;/param&gt;
+        /// &lt;param name="StartColumnIndex"&gt;&lt;/param&gt;
+        public void GetData(ReadDataDelegate pReadDataDelegate, int StartRowIndex, int StartColumnIndex)
+        {
+            if (CurrentSheet != null)
+            {
+                int rowMax = CurrentSheet.Cells.MaxRow + 1;
+                int colMax = CurrentSheet.Cells.MaxColumn + 1;
+                for (int i = StartRowIndex; i &lt; CurrentSheet.Cells.Rows.Count; i++)
+                {
+                    List&lt;object&gt; readDatas = new List&lt;object&gt;();
+                    for (int j = StartColumnIndex; j &lt; CurrentSheet.Cells.Columns.Count; j++)
+                    {
+                        readDatas.Add(CurrentSheet.Cells.Rows[i][j].Value);
+                    }
+                    pReadDataDelegate.Invoke(readDatas, false);
+                }
+            }
+        }
+    }
+}
+
+</code></pre>
+<pre><code class="prism language-C#">using OfficeOpenXml;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace ConsoleReadWriteExcel
+{
+    public class EPPlus_ExcelHelper
+    {
+        public static void EPPlus_ExcelHelperLicenseContext()
+        {
+            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+        }
+
+        public void SaveExcel(string strExcelPath,List&lt;string&gt; listData)
+        {
+            using (var package = new ExcelPackage(new FileInfo(strExcelPath)))
+            {
+                ExcelWorksheet worksheet = package.Workbook.Worksheets[0];
+                for (int i = 0; i &lt; listData.Count; i++)
+                {
+                    for (int j = 0; j &lt; 5; j++)
+                    {
+                        worksheet.Cells[i+1, j+1].Value=listData[i].ToString();
+                    }
+                }
+
+                package.Save();//保存excel
+            }
+        }
+
+        public void ReadData(ReadDataDelegate pReadDataDelegate, string path, int StartRowIndex, int StartColumnIndex)
+        {
+            var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
+            var excel = new ExcelPackage(fs);
+            var worksheet = excel.Workbook.Worksheets[0];
+
+            var row = worksheet.Dimension.End.Row;
+            var col = worksheet.Dimension.End.Column;
+
+            for (var i = StartRowIndex; i &lt;= row; i++)
+            {
+                List&lt;object&gt; readDatas = new List&lt;object&gt;();
+                for (var j = StartColumnIndex; j &lt;= col; j++)
+                {
+                    readDatas.Add(worksheet.Cells[i, j].Value);
+                }
+                pReadDataDelegate.Invoke(readDatas, false);
+            }
+        }
+    }
+}
+
+</code></pre>
+<pre><code class="prism language-C#">using MiniExcelLibs;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace ConsoleReadWriteExcel
+{
+    public class MiniExcel_ExcelHelper
+    {
+        public void SaveExcel(string strExcelPath, List&lt;string&gt; listData)
+        {
+            var values = new List&lt;Dictionary&lt;string, object&gt;&gt;();
+
+            foreach (var item in listData)
+            {
+                Dictionary&lt;string, object&gt; dic = new Dictionary&lt;string, object&gt;();
+                for (int i = 0; i &lt; 5; i++)
+                {
+                    dic.Add($"Column{i + 1}", item);
+                }
+                values.Add(dic);
+            }
+            MiniExcel.SaveAs(strExcelPath, values);
+        }
+
+        internal IEnumerable&lt;UserAccount&gt; ReadData(string strOutputExcelPath)
+        {
+            var rows = MiniExcel.Query&lt;UserAccount&gt;(strOutputExcelPath);
+            int count = rows.Count(a =&gt; true);
+            return rows;
+        }
+    }
+
+    class UserAccount
+    {
+        public string Column1 { get; set; }
+        public string Column2 { get; set; }
+        public string Column3 { get; set; }
+        public string Column4 { get; set; }
+        public string Column5 { get; set; }
+    }
+}
+
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace ConsoleReadWriteExcel
+{
+    public class MiniExcel_ExcelHelper
+    {
+        public void SaveExcel(string strExcelPath, List&lt;string&gt; listData)
+        {
+            var values = new List&lt;Dictionary&lt;string, object&gt;&gt;();
+
+            foreach (var item in listData)
+            {
+                Dictionary&lt;string, object&gt; dic = new Dictionary&lt;string, object&gt;();
+                for (int i = 0; i &lt; 5; i++)
+                {
+                    dic.Add($"Column{i + 1}", item);
+                }
+                values.Add(dic);
+            }
+            MiniExcel.SaveAs(strExcelPath, values);
+        }
+
+        internal IEnumerable&lt;UserAccount&gt; ReadData(string strOutputExcelPath)
+        {
+            var rows = MiniExcel.Query&lt;UserAccount&gt;(strOutputExcelPath);
+            int count = rows.Count(a =&gt; true);
+            return rows;
+        }
+    }
+
+    class UserAccount
+    {
+        public string Column1 { get; set; }
+        public string Column2 { get; set; }
+        public string Column3 { get; set; }
+        public string Column4 { get; set; }
+        public string Column5 { get; set; }
+    }
+}
+
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

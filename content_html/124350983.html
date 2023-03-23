@@ -1,0 +1,84 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p>​ 拖拽操作其实与剪切与粘贴没有什么不同，只不过是它是使用鼠标而不是键盘，在两类操作中，都会有一个来源（被拖拽、被剪切的文字）和目标（拖往的、被粘贴的位置）。无论哪种操作，都会在内存中存在数据的一份副本，在剪切操作中会使用到剪切板，而在拖拽操作中，会使用到DataObject对象，这个DataObject对象就好比是一个<strong>私有</strong>的剪切板</p>
+<p>在应用程序中，是通过一系列事件，如DragEnter，DragLeave和DragDrop事件来实现在Windows应用程序中的拖拽操作。</p>
+<blockquote>
+<p>注意：只有当控件的<code>AllowDrag</code>属性为true时才能拖拽</p>
+<p>AllowDrop属性被设定成True的任何控件都可以是置放目标。您可以在设计阶段在“属性”窗口中将要作为目标控件的AllowDrop属性设定成True，或者是于运行阶段在窗体的Load事件处理函数中将要作为目标控件的AllowDrop属性设定成True。</p>
+</blockquote>
+<p>拖放操作在代码中是通过三步实现的：</p>
+<ol><li> <p>首先是<strong>启动拖放操作</strong>，在需要拖动数据的控件上实现MouseDown事件的响应代码，并调用DoDragDrop方法实现</p>
+<blockquote>
+<p><code>MouseDown</code>：当鼠标指针落在组件上方，并按下鼠标按钮时发生</p>
+</blockquote> <p>关于<code>DoDragDrop</code>方法，在类库中的定义为：</p> <pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token return-type class-name">DragDropEffects</span> <span class="token function">DoDragDrop</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> data<span class="token punctuation">,</span> <span class="token class-name">DragDropEffects</span> allowedEffects<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p>其中data参数为要拖放的数据，allowedEffects表示要拖放的效果，可以是复制、拖放、链接等效果，<code>DragDropEffects</code>是枚举值，具体为</p> <pre><code class="prism language-csharp"><span class="token keyword">public</span> <span class="token keyword">enum</span> <span class="token class-name">DragDropEffects</span>
+<span class="token punctuation">{<!-- --></span>
+    Scroll<span class="token operator">=</span><span class="token keyword">int</span><span class="token punctuation">.</span>MinValue<span class="token punctuation">,</span> 
+    All<span class="token operator">=</span><span class="token operator">-</span><span class="token number">2147483645</span><span class="token punctuation">,</span> 
+    None<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token comment">// 拖放目标不接受数据</span>
+    Copy<span class="token operator">=</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token comment">// 拖放源中的数据复制到放置目标</span>
+    Move<span class="token operator">=</span><span class="token number">2</span><span class="token punctuation">,</span> <span class="token comment">// 拖放源中的数据拖到放置目标</span>
+    Link<span class="token operator">=</span><span class="token number">4</span><span class="token punctuation">;</span>	<span class="token comment">// 拖动源中的数据链接到放置目标</span>
+<span class="token punctuation">}</span>
+</code></pre> <p>当开始调用DoDragDrop方法拖动一个数据对象时，DoDragDrops在拖放过程中，检测当前光标位置下的控件是不是有效的放置目标。如果当前光标下的控件是有效的放置目标，则GiveFeedBack事件以指定的拖放效果引发。在检测当前位置光标是否为有效的拖放目标时，DoDragDrops方法同时跟踪光标位置，键盘状态和鼠标状态的更改。</p>
+<ul><li> <p>如果用于移出了一个窗口，则引发DragLeave事件</p> </li><li> <p>如果移入了一个控件，则引发该控件的DragEnter事件</p> </li><li> <p>如果鼠标移动，但是停留在一个控件中，则引发DragOver事件</p> </li><li> <p>如果用一个有效的置放目标上放开鼠标按键，将会引发目标控件的DragDrop事件</p> </li></ul> <p>如果检测到更改了键盘或者鼠标状态,则引发拖放源的QueryContinueDrag事件, 并根据事件的QueryContinueDragEventArgs的Action属性值确定继续拖动，放置数据或取消操作</p>
+<ul><li> <p>如果Action属性指定为Continue，则将引发DragOver事件</p> </li><li> <p>如果Action属性指定为Drop，则将放置效果返回给源，以便应用程序对数据进行适当的操作；例如，如果是移动操作，则剪切数据</p> </li><li> <p>如果是DragAction的值为Cancel,则引发DragLeave事件</p> </li></ul> <p><strong>示例代码</strong></p> <pre><code class="prism language-csharp"><span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">listBox1_MouseDown</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">MouseEventArgs</span> e<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// 如果listBox中的元素为0直接返回</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>listBox1<span class="token punctuation">.</span>Items<span class="token punctuation">.</span>Count <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+        <span class="token keyword">return</span><span class="token punctuation">;</span>
+    <span class="token class-name"><span class="token keyword">int</span></span> index <span class="token operator">=</span> listBox1<span class="token punctuation">.</span>SelectedIndex<span class="token punctuation">;</span>
+    moveLayerIndex <span class="token operator">=</span> index<span class="token punctuation">;</span>
+    <span class="token comment">// 如果鼠标点在空白处自己返回</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>index <span class="token operator">&lt;</span> <span class="token number">0</span><span class="token punctuation">)</span>
+        <span class="token keyword">return</span><span class="token punctuation">;</span>
+    <span class="token class-name"><span class="token keyword">string</span></span> s <span class="token operator">=</span> listBox1<span class="token punctuation">.</span>Items<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">// 调用拖拽实现的方法-在本实验中依次触发DragEnter和DragDrop事件</span>
+    <span class="token class-name">DragDropEffects</span> dde <span class="token operator">=</span> <span class="token function">DoDragDrop</span><span class="token punctuation">(</span>s<span class="token punctuation">,</span> DragDropEffects<span class="token punctuation">.</span>Move<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    
+    <span class="token comment">// 如果是拖到上面，那么原来的位置为下移一层要删除，拖到下面，位置不变</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>s <span class="token operator">==</span> listBox1<span class="token punctuation">.</span>Items<span class="token punctuation">[</span>index<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        listBox1<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">RemoveAt</span><span class="token punctuation">(</span>index<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">else</span>
+        listBox1<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">RemoveAt</span><span class="token punctuation">(</span>index <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre> </li><li> <p><strong>实现拖放效果-DragEnter</strong>，使用DragDropEffects枚举类型实现移动或复制等拖动效果</p> <p>通常我们会在使用<code>GetDataPresent</code>方法去检测所拖曳的数据格式是否适用于目标控件，并使用DragEventArgs类型参数的Effect属性来设定所允许的置放操作</p> <p><strong>示例代码</strong></p> <pre><code class="prism language-csharp"><span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">listBox1_DragEnter</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">DragEventArgs</span> e<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//使用GetDataPresent方法来检查被拖曳的数据是否为纯文字(DataFormats.Text)</span>
+    <span class="token comment">//是的话将e.Effect属性设定为Move，否则设定为None表示不接受该数据</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>e<span class="token punctuation">.</span>Data<span class="token punctuation">.</span><span class="token function">GetDataPresent</span><span class="token punctuation">(</span>DataFormats<span class="token punctuation">.</span>Text<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        e<span class="token punctuation">.</span>Effect <span class="token operator">=</span> DragDropEffects<span class="token punctuation">.</span>Move<span class="token punctuation">;</span>
+    <span class="token keyword">else</span>
+        e<span class="token punctuation">.</span>Effect <span class="token operator">=</span> DragDropEffects<span class="token punctuation">.</span>None<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre> </li><li> <p>实现<strong>放置数据操作</strong>，在目标控件上添加DragDrop响应代码，把数据添加到目标控件中</p> <p>也要先用<code>GetDataPresent</code>检查下数据源是不是字符串<code>DataFormats.StringFormat</code>，是的话执行后续的拖入操作</p> <p>中间的过程实现的是基于Arcgis Engine图层的拖拽效果，大家可以根据不同的需求完成</p> <p><strong>示例代码</strong></p> <pre><code class="prism language-csharp"><span class="token keyword">private</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">listBox1_DragDrop</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">object</span></span> sender<span class="token punctuation">,</span> <span class="token class-name">DragEventArgs</span> e<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    
+    <span class="token keyword">if</span><span class="token punctuation">(</span>e<span class="token punctuation">.</span>Data<span class="token punctuation">.</span><span class="token function">GetDataPresent</span><span class="token punctuation">(</span>DataFormats<span class="token punctuation">.</span>StringFormat<span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name">System<span class="token punctuation">.</span>Drawing<span class="token punctuation">.</span>Point</span> point <span class="token operator">=</span> listBox1<span class="token punctuation">.</span><span class="token function">PointToClient</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">System<span class="token punctuation">.</span>Drawing<span class="token punctuation">.</span>Point</span><span class="token punctuation">(</span>e<span class="token punctuation">.</span>X<span class="token punctuation">,</span> e<span class="token punctuation">.</span>Y<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">int</span></span> index <span class="token operator">=</span> listBox1<span class="token punctuation">.</span><span class="token function">IndexFromPoint</span><span class="token punctuation">(</span>point<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>index <span class="token operator">&gt;</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span><span class="token string">"你将把"</span> <span class="token operator">+</span> e<span class="token punctuation">.</span>Data<span class="token punctuation">.</span><span class="token function">GetData</span><span class="token punctuation">(</span>DataFormats<span class="token punctuation">.</span>StringFormat<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">"图层移动到"</span> <span class="token operator">+</span> listBox1<span class="token punctuation">.</span>Items<span class="token punctuation">[</span>index<span class="token punctuation">]</span> <span class="token operator">+</span> <span class="token string">"之上"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            listBox1<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Insert</span><span class="token punctuation">(</span>index<span class="token punctuation">,</span> listBox1<span class="token punctuation">.</span>SelectedItem<span class="token punctuation">)</span><span class="token punctuation">;</span>    <span class="token comment">// Insert是插在index之上</span>
+            axMapControl1<span class="token punctuation">.</span><span class="token function">MoveLayerTo</span><span class="token punctuation">(</span>moveLayerIndex<span class="token punctuation">,</span> index<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span>
+        <span class="token punctuation">{<!-- --></span>
+            MessageBox<span class="token punctuation">.</span><span class="token function">Show</span><span class="token punctuation">(</span><span class="token string">"你将把"</span> <span class="token operator">+</span> e<span class="token punctuation">.</span>Data<span class="token punctuation">.</span><span class="token function">GetData</span><span class="token punctuation">(</span>DataFormats<span class="token punctuation">.</span>StringFormat<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">"图层移动到最底层"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            listBox1<span class="token punctuation">.</span>Items<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>listBox1<span class="token punctuation">.</span>SelectedItem<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            axMapControl1<span class="token punctuation">.</span><span class="token function">MoveLayerTo</span><span class="token punctuation">(</span>moveLayerIndex<span class="token punctuation">,</span> axMapControl1<span class="token punctuation">.</span>LayerCount<span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre> </li></ol>
+<p><strong>参考博客</strong><br/> <a href="https://blog.csdn.net/weixin_33735077/article/details/86099119?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522165054724016780261917540%2522%252C%2522scm%2522%253A%252220140713.130102334..%2522%257D&amp;request_id=165054724016780261917540&amp;biz_id=0&amp;utm_medium=distribute.pc_search_result.none-task-blog-2~all~sobaiduend~default-1-86099119.142%5Ev9%5Epc_search_result_control_group,157%5Ev4%5Econtrol&amp;utm_term=DragDropEffects&amp;spm=1018.2226.3001.4187">C# DragDropEffects类与拖动实现</a><br/> <a href="https://blog.csdn.net/3cts/article/details/1701127?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522165059707916780366542779%2522%252C%2522scm%2522%253A%252220140713.130102334..%2522%257D&amp;request_id=165059707916780366542779&amp;biz_id=0&amp;utm_medium=distribute.pc_search_result.none-task-blog-2~all~baidu_landing_v2~default-1-1701127.142%5Ev9%5Epc_search_result_control_group,157%5Ev4%5Econtrol&amp;utm_term=c%23+GiveFeedBack&amp;spm=1018.2226.3001.4187">C# 拖放操作源码详解1</a></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

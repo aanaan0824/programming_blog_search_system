@@ -1,0 +1,583 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>opencv--findCircle源码笔记 </h3>
+<ul><li><a href="#_2">函数处理流程</a></li><li><a href="#_7">源码分析</a></li><li><ul><li><a href="#findCirclesGrid_11">findCirclesGrid源码</a></li><li><a href="#findCirclesGrid2__21">findCirclesGrid2 函数源码</a></li><li><ul><li><a href="#CirclesGridFinderfindHoles__151">CirclesGridFinder::findHoles 函数源码</a></li><li><ul><li><a href="#CirclesGridFindercomputeRNG__177">CirclesGridFinder::computeRNG 函数源码</a></li><li><a href="#CirclesGridFinderfilterOutliersByDensity___226">CirclesGridFinder::filterOutliersByDensity 函数源码</a></li><li><a href="#CirclesGridFinderfindBasis__255">CirclesGridFinder::findBasis 源码</a></li><li><a href="#CirclesGridFinderfindMCS__343">CirclesGridFinder::findMCS 源码</a></li><li><ul><li><a href="#findLongestPath__413">findLongestPath 源码分析</a></li><li><a href="#addHolesByGraph_485">addHolesByGraph源码</a></li></ul>
+</li></ul>
+</li><li><a href="#rectifyGrid__510">rectifyGrid 函数源码</a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<h1><a id="_2"></a>函数处理流程</h1>
+<p>提取圆形网格有两种方法，第一种是基于聚类的方法，第二种是基于距离向量的方法，此外，圆形网格还有对称和非对称，本篇文章将介绍第二种方法提取对称圆形网格。提取流程如下：</p>
+<p><img alt="圆形网格提取流程" src="https://img-blog.csdnimg.cn/f5c34f575a3c4bb6916f5060b0bd1ce8.jpeg#pic_center"/></p>
+<h1><a id="_7"></a>源码分析</h1>
+<p>本文实验时是以下面这张图片作为输入，Debug分析函数的处理流程（关于opencv源码调试的配置网上由许多教程）。<strong>后面展示的代码会将源码中部分无关的代码给删除，便于算法的理解</strong>。</p>
+<p><img alt="输入图片" height="265" src="https://img-blog.csdnimg.cn/981efe114b7143d2914f0ffcac4433f5.bmp#pic_center" width="350"/></p>
+<h2><a id="findCirclesGrid_11"></a>findCirclesGrid源码</h2>
+<p>该函数内部直接调用findCirclesGrid2函数</p>
+<pre><code class="prism language-cpp"><span class="token keyword">bool</span> <span class="token function">findCirclesGrid</span><span class="token punctuation">(</span>InputArray _image<span class="token punctuation">,</span> Size patternSize<span class="token punctuation">,</span>
+                     OutputArray _centers<span class="token punctuation">,</span> <span class="token keyword">int</span> flags<span class="token punctuation">,</span> <span class="token keyword">const</span> Ptr<span class="token operator">&lt;</span>FeatureDetector<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>blobDetector<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">return</span> cv<span class="token double-colon punctuation">::</span><span class="token function">findCirclesGrid2</span><span class="token punctuation">(</span>_image<span class="token punctuation">,</span> patternSize<span class="token punctuation">,</span> _centers<span class="token punctuation">,</span> flags<span class="token punctuation">,</span> blobDetector<span class="token punctuation">,</span> <span class="token function">CirclesGridFinderParameters2</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="findCirclesGrid2__21"></a>findCirclesGrid2 函数源码</h2>
+<p>提取网格前，会先调用FeatureDetector类的detect方法检测斑点，对于该函数有许多文章介绍，本文不分析，从输入图片中共检测到如下57个斑点(不同的参数检测到的斑点可能会不同)。<br/> {x=450.351746 y=541.933289 }<br/> {x=702.884644 y=541.117859 }<br/> {x=660.913635 y=541.265869 }<br/> {x=618.978760 y=541.394836 }<br/> {x=576.906372 y=541.419922 }<br/> {x=534.894287 y=541.474426 }<br/> {x=492.848663 y=541.467468 }<br/> {x=450.299591 y=500.272919 }<br/> {x=703.152405 y=499.412323 }<br/> {x=661.153748 y=499.559418 }<br/> {x=619.142029 y=499.691437 }<br/> {x=577.047241 y=499.749542 }<br/> {x=534.983032 y=499.820282 }<br/> {x=492.865265 y=499.785675 }<br/> {x=619.321289 y=457.898041 }<br/> {x=577.148376 y=457.953430 }<br/> {x=535.045349 y=458.008728 }<br/> {x=492.900116 y=457.997284 }<br/> {x=450.287537 y=458.460907 }<br/> {x=703.406006 y=457.627686 }<br/> {x=661.354248 y=457.777527 }<br/> {x=619.425903 y=415.991364 }<br/> {x=577.232239 y=416.060608 }<br/> {x=535.069641 y=416.080322 }<br/> {x=492.906128 y=416.133026 }<br/> {x=450.271027 y=416.573059 }<br/> {x=703.605286 y=415.771484 }<br/> {x=661.530212 y=415.896912 }<br/> {x=450.200745 y=374.489288 }<br/> {x=703.747742 y=373.774719 }<br/> {x=661.654114 y=373.868896 }<br/> {x=619.513733 y=373.977051 }<br/> {x=577.312500 y=374.025116 }<br/> {x=535.106689 y=374.059265 }<br/> {x=492.884338 y=374.070251 }<br/> {x=450.173920 y=332.365631 }<br/> {x=703.903564 y=331.690369 }<br/> {x=661.787842 y=331.757385 }<br/> {x=619.618530 y=331.834778 }<br/> {x=577.357910 y=331.877655 }<br/> {x=535.137329 y=331.917389 }<br/> {x=492.884796 y=331.933594 }<br/> {x=704.000427 y=289.565308 }<br/> {x=661.844299 y=289.628479 }<br/> {x=619.650513 y=289.658173 }<br/> {x=577.386047 y=289.713257 }<br/> {x=535.139709 y=289.759460 }<br/> {x=492.869232 y=289.746613 }<br/> {x=450.145630 y=290.128418 }<br/> {x=445.127472 y=102.963287 }<br/> {x=475.568237 y=90.3130951 }<br/> {x=508.711945 y=92.3338394 }<br/> {x=509.194763 y=80.1243744 }<br/> {x=504.870880 y=607.987488 }<br/> {x=367.777588 y=106.329857 }<br/> {x=802.892395 y=30.8430290 }<br/> {x=485.435120 y=609.837585 }</p>
+<pre><code class="prism language-cpp"><span class="token comment">//InputArray _image:输入图片;    Size patternSize:网格大小;    _centers:提取的网格点中心;  </span>
+<span class="token comment">//flags:是否为对称网格;           blobDetector:斑点检测器;      parameters:参数</span>
+<span class="token keyword">bool</span> <span class="token function">findCirclesGrid2</span><span class="token punctuation">(</span>InputArray _image<span class="token punctuation">,</span> Size patternSize<span class="token punctuation">,</span>
+                      OutputArray _centers<span class="token punctuation">,</span> <span class="token keyword">int</span> flags<span class="token punctuation">,</span> <span class="token keyword">const</span> Ptr<span class="token operator">&lt;</span>FeatureDetector<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>blobDetector<span class="token punctuation">,</span>
+                      CirclesGridFinderParameters2 parameters<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//判断是否为对称网格</span>
+    <span class="token keyword">bool</span> isAsymmetricGrid <span class="token operator">=</span> <span class="token punctuation">(</span>flags <span class="token operator">&amp;</span> CALIB_CB_ASYMMETRIC_GRID<span class="token punctuation">)</span> <span class="token operator">?</span> <span class="token boolean">true</span> <span class="token operator">:</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    <span class="token keyword">bool</span> isSymmetricGrid  <span class="token operator">=</span> <span class="token punctuation">(</span>flags <span class="token operator">&amp;</span> CALIB_CB_SYMMETRIC_GRID <span class="token punctuation">)</span> <span class="token operator">?</span> <span class="token boolean">true</span> <span class="token operator">:</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    <span class="token comment">//圆形网格点中心</span>
+    std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> centers<span class="token punctuation">;</span>
+	<span class="token comment">//斑点检测得到的斑点中心</span>
+    std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> points<span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>blobDetector<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>KeyPoint<span class="token operator">&gt;</span> keypoints<span class="token punctuation">;</span>
+        <span class="token comment">//斑点检测</span>
+        blobDetector<span class="token operator">-&gt;</span><span class="token function">detect</span><span class="token punctuation">(</span>_image<span class="token punctuation">,</span> keypoints<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> keypoints<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            points<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>keypoints<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">.</span>pt<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    
+    <span class="token keyword">bool</span> isValid <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    <span class="token keyword">const</span> <span class="token keyword">int</span> attempts <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+    <span class="token keyword">const</span> size_t minHomographyPoints <span class="token operator">=</span> <span class="token number">4</span><span class="token punctuation">;</span>
+    Mat H<span class="token punctuation">;</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> attempts<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        centers<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//对称圆形网格点检测器</span>
+        CirclesGridFinder <span class="token function">boxFinder</span><span class="token punctuation">(</span>patternSize<span class="token punctuation">,</span> points<span class="token punctuation">,</span> parameters<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//提取圆形网格点</span>
+        <span class="token keyword">bool</span> isFound <span class="token operator">=</span> boxFinder<span class="token punctuation">.</span><span class="token function">findHoles</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//提取成功</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>isFound<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+           <span class="token comment">//获取圆形网格点</span>
+           boxFinder<span class="token punctuation">.</span><span class="token function">getHoles</span><span class="token punctuation">(</span>centers<span class="token punctuation">)</span><span class="token punctuation">;</span>
+           isValid <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+           <span class="token keyword">break</span><span class="token punctuation">;</span>  <span class="token comment">// done, return result</span>
+        <span class="token punctuation">}</span>
+        <span class="token comment">//提取失败时,获取提到的部分圆形网格点</span>
+        boxFinder<span class="token punctuation">.</span><span class="token function">getHoles</span><span class="token punctuation">(</span>centers<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//若不是在最后一次提取</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>i <span class="token operator">!=</span> attempts <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+        	<span class="token comment">//minHomographyPoints：表示计算单应性矩阵需要最少特征点数量</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>centers<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;</span> minHomographyPoints<span class="token punctuation">)</span>
+                <span class="token keyword">break</span><span class="token punctuation">;</span>
+            <span class="token comment">/*计算已提到的部分圆形网格点到一个标准网格的单应性矩阵，同时将斑点检测到的所有斑点通过这个单应性矩阵投影到
+              标x准网格。这样做的原因是该方法基于距离向量来提取，若是拍摄图片倾斜严重，会使得网格中相邻点间的距
+              离变化较大，导致提取失败，投影到标准网格后，相邻点间的距离变化就比较小，更容易提取成功。
+            */</span>
+            H <span class="token operator">=</span> <span class="token class-name">CirclesGridFinder</span><span class="token double-colon punctuation">::</span><span class="token function">rectifyGrid</span><span class="token punctuation">(</span>boxFinder<span class="token punctuation">.</span><span class="token function">getDetectedGridSize</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> centers<span class="token punctuation">,</span> points<span class="token punctuation">,</span> points<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+	<span class="token comment">//若是做了单应性投影提取，则要将提取到的圆形网格点投影回来</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>centers<span class="token punctuation">.</span><span class="token function">empty</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&amp;&amp;</span> <span class="token operator">!</span>H<span class="token punctuation">.</span><span class="token function">empty</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>  <span class="token comment">// undone rectification</span>
+    <span class="token punctuation">{<!-- --></span>
+        Mat orgPointsMat<span class="token punctuation">;</span>
+        <span class="token function">transform</span><span class="token punctuation">(</span>centers<span class="token punctuation">,</span> orgPointsMat<span class="token punctuation">,</span> H<span class="token punctuation">.</span><span class="token function">inv</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token function">convertPointsFromHomogeneous</span><span class="token punctuation">(</span>orgPointsMat<span class="token punctuation">,</span> centers<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token function">Mat</span><span class="token punctuation">(</span>centers<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">copyTo</span><span class="token punctuation">(</span>_centers<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> isValid<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="CirclesGridFinderfindHoles__151"></a>CirclesGridFinder::findHoles 函数源码</h3>
+<p>该函数会从前面检测到的斑点中提取圆形网格。</p>
+<pre><code class="prism language-cpp"><span class="token keyword">bool</span> <span class="token class-name">CirclesGridFinder</span><span class="token double-colon punctuation">::</span><span class="token function">findHoles</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+  <span class="token keyword">switch</span> <span class="token punctuation">(</span>parameters<span class="token punctuation">.</span>gridType<span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">case</span> CirclesGridFinderParameters<span class="token double-colon punctuation">::</span>SYMMETRIC_GRID<span class="token operator">:</span>
+    <span class="token punctuation">{<!-- --></span>
+      std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> vectors<span class="token punctuation">,</span> filteredVectors<span class="token punctuation">,</span> basis<span class="token punctuation">;</span>
+      Graph <span class="token function">rng</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token comment">//计算所有邻居点间的距离向量，并在邻居间添加一条边，保存到rng图中</span>
+      <span class="token function">computeRNG</span><span class="token punctuation">(</span>rng<span class="token punctuation">,</span> vectors<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token comment">//过滤向量</span>
+      <span class="token function">filterOutliersByDensity</span><span class="token punctuation">(</span>vectors<span class="token punctuation">,</span> filteredVectors<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Graph<span class="token operator">&gt;</span> basisGraphs<span class="token punctuation">;</span>
+      <span class="token comment">//将向量聚类为4类，并基于其中的两类生成两个图</span>
+      <span class="token function">findBasis</span><span class="token punctuation">(</span>filteredVectors<span class="token punctuation">,</span> basis<span class="token punctuation">,</span> basisGraphs<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token comment">//从生成的两个图中得到圆形网格点</span>
+      <span class="token function">findMCS</span><span class="token punctuation">(</span>basis<span class="token punctuation">,</span> basisGraphs<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token keyword">break</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">return</span> <span class="token punctuation">(</span><span class="token function">isDetectionCorrect</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h4><a id="CirclesGridFindercomputeRNG__177"></a>CirclesGridFinder::computeRNG 函数源码</h4>
+<p>该函数会计算所有邻居间的距离向量。判断两个点A、B是否为邻居，首先计算A、B间的距离 r = d<sub>AB</sub> ,然后分别以A、B为中心 r 为半径画圆，若两圆的公共区域（也即下图中的红色区域）没有其它点，则这两个点互为邻居，同时将距离向量P<sub>A</sub>-P<sub>B</sub> 与 P<sub>B</sub>-P<sub>A</sub>保存。</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ff6259a2a6c54f52a722e5f36aed354b.png#pic_center"/></p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token class-name">CirclesGridFinder</span><span class="token double-colon punctuation">::</span><span class="token function">computeRNG</span><span class="token punctuation">(</span>Graph <span class="token operator">&amp;</span>rng<span class="token punctuation">,</span> std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>cv<span class="token double-colon punctuation">::</span>Point2f<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>vectors<span class="token punctuation">,</span> Mat <span class="token operator">*</span>drawImage<span class="token punctuation">)</span> <span class="token keyword">const</span>
+<span class="token punctuation">{<!-- --></span>
+  rng <span class="token operator">=</span> <span class="token function">Graph</span><span class="token punctuation">(</span>keypoints<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  vectors<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">//TODO: use more fast algorithm instead of naive N^3</span>
+  <span class="token comment">//判断 i 于 j 是否为邻居</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> keypoints<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t j <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> j <span class="token operator">&lt;</span> keypoints<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> j<span class="token operator">++</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      <span class="token keyword">if</span> <span class="token punctuation">(</span>i <span class="token operator">==</span> j<span class="token punctuation">)</span>
+        <span class="token keyword">continue</span><span class="token punctuation">;</span>
+
+      Point2f vec <span class="token operator">=</span> keypoints<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">-</span> keypoints<span class="token punctuation">[</span>j<span class="token punctuation">]</span><span class="token punctuation">;</span>
+      <span class="token keyword">double</span> dist <span class="token operator">=</span> <span class="token function">norm</span><span class="token punctuation">(</span>vec<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+      <span class="token keyword">bool</span> isNeighbors <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+      <span class="token comment">//检查除 i 与 j 外的所有点 </span>
+      <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t k <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> k <span class="token operator">&lt;</span> keypoints<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> k<span class="token operator">++</span><span class="token punctuation">)</span>
+      <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>k <span class="token operator">==</span> i <span class="token operator">||</span> k <span class="token operator">==</span> j<span class="token punctuation">)</span>
+          <span class="token keyword">continue</span><span class="token punctuation">;</span>
+        <span class="token keyword">double</span> dist1 <span class="token operator">=</span> <span class="token function">norm</span><span class="token punctuation">(</span>keypoints<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">-</span> keypoints<span class="token punctuation">[</span>k<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">double</span> dist2 <span class="token operator">=</span> <span class="token function">norm</span><span class="token punctuation">(</span>keypoints<span class="token punctuation">[</span>j<span class="token punctuation">]</span> <span class="token operator">-</span> keypoints<span class="token punctuation">[</span>k<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token comment">//若以i j 为圆心，i j距离为半径的两圆相交的公共区域内存在一个点， 那么i 与 j 不是邻居</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>dist1 <span class="token operator">&lt;</span> dist <span class="token operator">&amp;&amp;</span> dist2 <span class="token operator">&lt;</span> dist<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+          isNeighbors <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+          <span class="token keyword">break</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+      <span class="token punctuation">}</span>
+	  <span class="token comment">// 若i 与 j 是邻居，在i j间增加一条边，同时计算它们间的距离向量</span>
+      <span class="token keyword">if</span> <span class="token punctuation">(</span>isNeighbors<span class="token punctuation">)</span>
+      <span class="token punctuation">{<!-- --></span>
+        rng<span class="token punctuation">.</span><span class="token function">addEdge</span><span class="token punctuation">(</span>i<span class="token punctuation">,</span> j<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        vectors<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>keypoints<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">-</span> keypoints<span class="token punctuation">[</span>j<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>该函数还可以被优化 ，事实上圆形网格上的邻居点在图像上的距离 d 会有一个取值范围，在图像中只有圆形网格时，d取得最大值 d<sub>max</sub>= max(img.width，img.height) / min(circleGrid.width，circleGrid.height)，img.width与img.height表示图像宽高，circleGrid.width与circleGrid.height表示圆形网格横向与竖向的点数目。求点P的邻居时可以先将斑点按照 x坐标排序，然后在<span class="katex--inline"><span class="katex"><span class="katex-mathml">
+    
+     
+      
+       
+         
+       
+       
+        x
+       
+       
+        ∈
+       
+       
+        [
+       
+       
+        P
+       
+       
+        .
+       
+       
+        x
+       
+       
+        −
+       
+       
+        
+         d
+        
+        
+         
+          m
+         
+         
+          a
+         
+         
+          x
+         
+        
+       
+       
+        ,
+       
+       
+        P
+       
+       
+        .
+       
+       
+        x
+       
+       
+        +
+       
+       
+        
+         d
+        
+        
+         
+          m
+         
+         
+          a
+         
+         
+          x
+         
+        
+       
+       
+        ]
+       
+      
+      
+       \ x \in\mathbb [P.x-d_{max},P.x+d_{max}]
+      
+     
+    </span><span class="katex-html"><span class="base"><span class="strut" style="height: 0.5782em; vertical-align: -0.0391em;"></span><span class="mspace"> </span><span class="mord mathdefault">x</span><span class="mspace" style="margin-right: 0.277778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right: 0.277778em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mopen">[</span><span class="mord mathdefault" style="margin-right: 0.13889em;">P</span><span class="mord">.</span><span class="mord mathdefault">x</span><span class="mspace" style="margin-right: 0.222222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right: 0.222222em;"></span></span><span class="base"><span class="strut" style="height: 0.88888em; vertical-align: -0.19444em;"></span><span class="mord"><span class="mord mathdefault">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.151392em;"><span class="" style="top: -2.55em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathdefault mtight">m</span><span class="mord mathdefault mtight">a</span><span class="mord mathdefault mtight">x</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.15em;"><span class=""></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right: 0.166667em;"></span><span class="mord mathdefault" style="margin-right: 0.13889em;">P</span><span class="mord">.</span><span class="mord mathdefault">x</span><span class="mspace" style="margin-right: 0.222222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right: 0.222222em;"></span></span><span class="base"><span class="strut" style="height: 1em; vertical-align: -0.25em;"></span><span class="mord"><span class="mord mathdefault">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height: 0.151392em;"><span class="" style="top: -2.55em; margin-left: 0em; margin-right: 0.05em;"><span class="pstrut" style="height: 2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathdefault mtight">m</span><span class="mord mathdefault mtight">a</span><span class="mord mathdefault mtight">x</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height: 0.15em;"><span class=""></span></span></span></span></span></span><span class="mclose">]</span></span></span></span></span> 这个范围搜索。</p>
+<h4><a id="CirclesGridFinderfilterOutliersByDensity___226"></a>CirclesGridFinder::filterOutliersByDensity 函数源码</h4>
+<p>对于前面计算的每一个向量，在以向量的终点为中心的窗口内统计向量个数，若数量小于阈值，该向量会被剔除。如下图中的P向量，由于在红色窗口内只有一个向量，则可能会被舍弃；q向量由于窗口内有四个向量，则可能会被保留下来。</p>
+<p><img alt="在这里插入图片描述" height="280" src="https://img-blog.csdnimg.cn/8df06e3a5db94695b85c4f553b4d952b.jpeg#pic_center" width="350"/></p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token class-name">CirclesGridFinder</span><span class="token double-colon punctuation">::</span><span class="token function">filterOutliersByDensity</span><span class="token punctuation">(</span><span class="token keyword">const</span> std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>samples<span class="token punctuation">,</span> 
+												std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>filteredSamples<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+  filteredSamples<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> samples<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+  	<span class="token comment">// 生成以samples[i]为中心,parameters.densityNeighborhoodSize 大小的矩形</span>
+  	<span class="token comment">//parameters.densityNeighborhoodSiz为Size类型，默认值为(16,16)</span>
+    Rect_<span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span> <span class="token function">rect</span><span class="token punctuation">(</span>samples<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">-</span> <span class="token function">Point2f</span><span class="token punctuation">(</span>parameters<span class="token punctuation">.</span>densityNeighborhoodSize<span class="token punctuation">)</span> <span class="token operator">*</span> <span class="token number">0.5</span><span class="token punctuation">,</span>
+                      parameters<span class="token punctuation">.</span>densityNeighborhoodSize<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">int</span> neighborsCount <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token comment">//统计矩形内向量的个数</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t j <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> j <span class="token operator">&lt;</span> samples<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> j<span class="token operator">++</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      <span class="token keyword">if</span> <span class="token punctuation">(</span>rect<span class="token punctuation">.</span><span class="token function">contains</span><span class="token punctuation">(</span>samples<span class="token punctuation">[</span>j<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        neighborsCount<span class="token operator">++</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//当个数&gt;=parameters.minDensity时保留下来, parameters.minDensity默认值为10</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>neighborsCount <span class="token operator">&gt;=</span> parameters<span class="token punctuation">.</span>minDensity<span class="token punctuation">)</span>
+      filteredSamples<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>samples<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h4><a id="CirclesGridFinderfindBasis__255"></a>CirclesGridFinder::findBasis 源码</h4>
+<p>该函数执行后basis.size()与basisGraphs.szie()都为2，basis[0]值为{x=42.2135696 y=-0.125327706 }，basis[1]的值为{x=-0.0775655136 y=41.9493866 }。basisGraphs[0]与basisGraphs[1]建立的图可以用下面的图来近似模拟。<br/> <img alt="basisGraphs建立的示意图" src="https://img-blog.csdnimg.cn/e89904d04d424501a800ea5ef7969974.jpeg#pic_center"/></p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token class-name">CirclesGridFinder</span><span class="token double-colon punctuation">::</span><span class="token function">findBasis</span><span class="token punctuation">(</span><span class="token keyword">const</span> std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>samples<span class="token punctuation">,</span> 
+								  std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>basis<span class="token punctuation">,</span> std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Graph<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>basisGraphs<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+  basis<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  Mat bestLabels<span class="token punctuation">;</span>
+  TermCriteria termCriteria<span class="token punctuation">;</span>
+  Mat centers<span class="token punctuation">;</span>
+  <span class="token keyword">const</span> <span class="token keyword">int</span> clustersCount <span class="token operator">=</span> <span class="token number">4</span><span class="token punctuation">;</span>
+  <span class="token comment">//将向量聚类为4类</span>
+  <span class="token function">kmeans</span><span class="token punctuation">(</span><span class="token function">Mat</span><span class="token punctuation">(</span>samples<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">reshape</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> clustersCount<span class="token punctuation">,</span> bestLabels<span class="token punctuation">,</span> termCriteria<span class="token punctuation">,</span> parameters<span class="token punctuation">.</span>kmeansAttempts<span class="token punctuation">,</span>
+         KMEANS_RANDOM_CENTERS<span class="token punctuation">,</span> centers<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> basisIndices<span class="token punctuation">;</span>
+  <span class="token comment">//TODO: only remove duplicate</span>
+  <span class="token comment">//对于每一个聚类中心(x,y)，若x y中绝对值最大的那个变量大于0，则将该聚类中心加入到basis</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> clustersCount<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">int</span> maxIdx <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token function">fabs</span><span class="token punctuation">(</span>centers<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">at</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span></span></span> <span class="token punctuation">(</span>i<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token operator">&lt;</span> <span class="token function">fabs</span><span class="token punctuation">(</span>centers<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">at</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span></span></span> <span class="token punctuation">(</span>i<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>centers<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">at</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span></span></span> <span class="token punctuation">(</span>i<span class="token punctuation">,</span> maxIdx<span class="token punctuation">)</span> <span class="token operator">&gt;</span> <span class="token number">0</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      Point2f <span class="token function">vec</span><span class="token punctuation">(</span>centers<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">at</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span></span></span> <span class="token punctuation">(</span>i<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> centers<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">at</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">float</span><span class="token operator">&gt;</span></span></span> <span class="token punctuation">(</span>i<span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+      basis<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>vec<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      basisIndices<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  <span class="token comment">//若保留下来的聚类中心不只两个(正确情况下是保留2个聚类中心，且他们接近垂直)</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>basis<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">!=</span> <span class="token number">2</span><span class="token punctuation">)</span>
+    <span class="token function">CV_Error</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token string">"Basis size is not 2"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+  <span class="token comment">//将x取值较大的聚类中心放在vector的第一个位置</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>basis<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">.</span>x <span class="token operator">&gt;</span> basis<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">.</span>x<span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    std<span class="token double-colon punctuation">::</span><span class="token function">swap</span><span class="token punctuation">(</span>basis<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span> basis<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    std<span class="token double-colon punctuation">::</span><span class="token function">swap</span><span class="token punctuation">(</span>basisIndices<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span> basisIndices<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+
+  <span class="token keyword">const</span> <span class="token keyword">float</span> minBasisDif <span class="token operator">=</span> <span class="token number">2</span><span class="token punctuation">;</span>
+  <span class="token comment">//两个聚类中心距离要&gt;=2</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">norm</span><span class="token punctuation">(</span>basis<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span> <span class="token operator">-</span> basis<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token operator">&lt;</span> minBasisDif<span class="token punctuation">)</span>
+    <span class="token function">CV_Error</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token string">"degenerate basis"</span> <span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">//将属于basis[0]类的向量放在cluster[0]中，属于basis[1]类的向量放在cluster[1]中</span>
+  std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> <span class="token operator">&gt;</span> <span class="token function">clusters</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">hulls</span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> k <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> k <span class="token operator">&lt;</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>samples<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> k<span class="token operator">++</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">int</span> label <span class="token operator">=</span> bestLabels<span class="token punctuation">.</span><span class="token generic-function"><span class="token function">at</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span></span></span> <span class="token punctuation">(</span>k<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">int</span> idx <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>label <span class="token operator">==</span> basisIndices<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+      idx <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>label <span class="token operator">==</span> basisIndices<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+      idx <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>idx <span class="token operator">&gt;=</span> <span class="token number">0</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      clusters<span class="token punctuation">[</span>idx<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>basis<span class="token punctuation">[</span>idx<span class="token punctuation">]</span> <span class="token operator">+</span> parameters<span class="token punctuation">.</span>convexHullFactor <span class="token operator">*</span> <span class="token punctuation">(</span>samples<span class="token punctuation">[</span>k<span class="token punctuation">]</span> <span class="token operator">-</span> basis<span class="token punctuation">[</span>idx<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  <span class="token comment">//计算cluster[0]与cluster[1]的凸包，保存在hull[0]与hull[1]中</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> basis<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    <span class="token function">convexHull</span><span class="token punctuation">(</span>clusters<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span> hulls<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token comment">//初始化两个图basisGraphs[0]与basisGraphs[1]，图中结点为斑点检测出的所有斑点，无边</span>
+  basisGraphs<span class="token punctuation">.</span><span class="token function">resize</span><span class="token punctuation">(</span>basis<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token function">Graph</span><span class="token punctuation">(</span>keypoints<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">//向两个图中添加边</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> keypoints<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t j <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> j <span class="token operator">&lt;</span> keypoints<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> j<span class="token operator">++</span><span class="token punctuation">)</span>
+       <span class="token punctuation">{<!-- --></span>
+      <span class="token keyword">if</span> <span class="token punctuation">(</span>i <span class="token operator">==</span> j<span class="token punctuation">)</span>
+        <span class="token keyword">continue</span><span class="token punctuation">;</span>
+      Point2f vec <span class="token operator">=</span> keypoints<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">-</span> keypoints<span class="token punctuation">[</span>j<span class="token punctuation">]</span><span class="token punctuation">;</span>
+      <span class="token comment">//如果vec在hull[0]中，则在图basisGraphs[0]中添加一条i到j的边</span>
+      <span class="token comment">//如果vec在hull[1]中，则在图basisGraphs[1]中添加一条i到j的边</span>
+      <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t k <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> k <span class="token operator">&lt;</span> hulls<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> k<span class="token operator">++</span><span class="token punctuation">)</span>
+      <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">pointPolygonTest</span><span class="token punctuation">(</span>hulls<span class="token punctuation">[</span>k<span class="token punctuation">]</span><span class="token punctuation">,</span> vec<span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">)</span> <span class="token operator">&gt;=</span> <span class="token number">0</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+          basisGraphs<span class="token punctuation">[</span>k<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">addEdge</span><span class="token punctuation">(</span>i<span class="token punctuation">,</span> j<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>在函数的后面向basisGraphs[0]与basisGraphs[1]添加边时是遍历任意两个点之间的边，事实上只需要检查所有邻居间的边就足够，由于computeRNG 函数中已经构建了一个邻居图，所以可以通过检查已构建的邻居图中的边来进行优化。</p>
+<h4><a id="CirclesGridFinderfindMCS__343"></a>CirclesGridFinder::findMCS 源码</h4>
+<p>该函数先是在前一步建立的两个图中寻找最长路径并将该路径作为初始行，然后以初始行为基准向两边扩充剩余的行。其扩充过程可以用下图模拟（这里假设最长路径在第一个图中，若在第二个图中，最长路径是竖直）。<br/> <img alt="网格搜寻过程示意图" src="https://img-blog.csdnimg.cn/e22f2da6a8004218a95f26e601d4adff.jpeg#pic_center"/></p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token class-name">CirclesGridFinder</span><span class="token double-colon punctuation">::</span><span class="token function">findMCS</span><span class="token punctuation">(</span><span class="token keyword">const</span> std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>basis<span class="token punctuation">,</span> std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Graph<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>basisGraphs<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+  holes<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  Path longestPath<span class="token punctuation">;</span>
+  <span class="token comment">/*
+    在上一步建立的两个图中寻找最长路径，保存在longestPath中，并返回该路径所在图的索引。
+    Path是一个struct，有四个成员分别是int firstVertex, int lastVertex, int length;
+    vector&lt;size_t&gt; vertices;前面三个成员默认值为-1。
+  */</span>
+  size_t bestGraphIdx <span class="token operator">=</span> <span class="token function">findLongestPath</span><span class="token punctuation">(</span>basisGraphs<span class="token punctuation">,</span> longestPath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">//将寻找出来的最长路径作为初始行。</span>
+  std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>size_t<span class="token operator">&gt;</span> holesRow <span class="token operator">=</span> longestPath<span class="token punctuation">.</span>vertices<span class="token punctuation">;</span>
+  <span class="token comment">//如果最长路径长度超过网格最大边的长度，剔除路径中的首尾点。注意，如果patternSize=（7，7），</span>
+  <span class="token comment">//holesRow.size()=8，处理后holesRow.size()=6，这样不会对结果造成影响。</span>
+  <span class="token keyword">while</span> <span class="token punctuation">(</span>holesRow<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&gt;</span> std<span class="token double-colon punctuation">::</span><span class="token function">max</span><span class="token punctuation">(</span>patternSize<span class="token punctuation">.</span>width<span class="token punctuation">,</span> patternSize<span class="token punctuation">.</span>height<span class="token punctuation">)</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    holesRow<span class="token punctuation">.</span><span class="token function">pop_back</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    holesRow<span class="token punctuation">.</span><span class="token function">erase</span><span class="token punctuation">(</span>holesRow<span class="token punctuation">.</span><span class="token function">begin</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token comment">//如果最长路径在第一个图中，则在第二个图中向两边扩充行，为何如此做，可以看后续对于addHolesByGraph函数源码的分析。</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>bestGraphIdx <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    <span class="token comment">//holes是一个向量，存放最终提取到的网格点。</span>
+    holes<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>holesRow<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    size_t w <span class="token operator">=</span> holes<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    size_t h <span class="token operator">=</span> holes<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//扩充行的最小置信度，如果新扩充的行的置信度大于该值，将该行加入到最终网格中。parameters.existingVertexGain=10000</span>
+    parameters<span class="token punctuation">.</span>minGraphConfidence <span class="token operator">=</span> holes<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> parameters<span class="token punctuation">.</span>existingVertexGain<span class="token punctuation">;</span>
+    <span class="token comment">//扩充patternSize.height-1行。在basisGraphs[1]中寻找。</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> h<span class="token punctuation">;</span> i <span class="token operator">&lt;</span> patternSize<span class="token punctuation">.</span>height<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      <span class="token function">addHolesByGraph</span><span class="token punctuation">(</span>basisGraphs<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">,</span> basis<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//如果w小于patternSize.width,则需要扩充列。在basisGraphs[0]中寻找列。</span>
+    parameters<span class="token punctuation">.</span>minGraphConfidence <span class="token operator">=</span> holes<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> parameters<span class="token punctuation">.</span>existingVertexGain<span class="token punctuation">;</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> w<span class="token punctuation">;</span> i <span class="token operator">&lt;</span> patternSize<span class="token punctuation">.</span>width<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      <span class="token function">addHolesByGraph</span><span class="token punctuation">(</span>basisGraphs<span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">,</span> basis<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  <span class="token comment">//如果最长路径在第二个图中，则在第一个图中向两边扩充行</span>
+  <span class="token keyword">else</span>
+  <span class="token punctuation">{<!-- --></span>
+    holes<span class="token punctuation">.</span><span class="token function">resize</span><span class="token punctuation">(</span>holesRow<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> holesRow<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+      holes<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>holesRow<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    size_t w <span class="token operator">=</span> holes<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    size_t h <span class="token operator">=</span> holes<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    parameters<span class="token punctuation">.</span>minGraphConfidence <span class="token operator">=</span> holes<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> parameters<span class="token punctuation">.</span>existingVertexGain<span class="token punctuation">;</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> w<span class="token punctuation">;</span> i <span class="token operator">&lt;</span> patternSize<span class="token punctuation">.</span>width<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      <span class="token function">addHolesByGraph</span><span class="token punctuation">(</span>basisGraphs<span class="token punctuation">,</span> <span class="token boolean">false</span><span class="token punctuation">,</span> basis<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    parameters<span class="token punctuation">.</span>minGraphConfidence <span class="token operator">=</span> holes<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">*</span> parameters<span class="token punctuation">.</span>existingVertexGain<span class="token punctuation">;</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> h<span class="token punctuation">;</span> i <span class="token operator">&lt;</span> patternSize<span class="token punctuation">.</span>height<span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      <span class="token function">addHolesByGraph</span><span class="token punctuation">(</span>basisGraphs<span class="token punctuation">,</span> <span class="token boolean">true</span><span class="token punctuation">,</span> basis<span class="token punctuation">[</span><span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<h5><a id="findLongestPath__413"></a>findLongestPath 源码分析</h5>
+<p>函数搜寻一条最长路径，并返回该路径所在图的索引，若有多条路径长度相等，则输出最先搜到的路径。若最长路径在第一个图中，函数保证路径从左到右；若在第二个图中，函数保证路径从上到下。</p>
+<pre><code class="prism language-cpp">size_t <span class="token class-name">CirclesGridFinder</span><span class="token double-colon punctuation">::</span><span class="token function">findLongestPath</span><span class="token punctuation">(</span>std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Graph<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>basisGraphs<span class="token punctuation">,</span> Path <span class="token operator">&amp;</span>bestPath<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+  std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Path<span class="token operator">&gt;</span> <span class="token function">longestPaths</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span><span class="token keyword">int</span><span class="token operator">&gt;</span> confidences<span class="token punctuation">;</span>
+  size_t bestGraphIdx <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+  <span class="token keyword">const</span> <span class="token keyword">int</span> infinity <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+  <span class="token comment">//遍历所有的图(2个)</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t graphIdx <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> graphIdx <span class="token operator">&lt;</span> basisGraphs<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> graphIdx<span class="token operator">++</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">const</span> Graph <span class="token operator">&amp;</span>g <span class="token operator">=</span> basisGraphs<span class="token punctuation">[</span>graphIdx<span class="token punctuation">]</span><span class="token punctuation">;</span>
+    Mat distanceMatrix<span class="token punctuation">;</span>
+    <span class="token comment">//使用Floyd-Warshall算法求任意两点间的最短距离</span>
+    g<span class="token punctuation">.</span><span class="token function">floydWarshall</span><span class="token punctuation">(</span>distanceMatrix<span class="token punctuation">,</span> infinity<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    Mat predecessorMatrix<span class="token punctuation">;</span>
+    <span class="token comment">//计算i到j的最长路径中j前面的一个点。</span>
+    <span class="token function">computePredecessorMatrix</span><span class="token punctuation">(</span>distanceMatrix<span class="token punctuation">,</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>g<span class="token punctuation">.</span><span class="token function">getVerticesCount</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> predecessorMatrix<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">double</span> maxVal<span class="token punctuation">;</span>
+    Point maxLoc<span class="token punctuation">;</span>
+    <span class="token comment">//计算最大路径的长度maxVal，maxLoc.x记录路径的起始点，maxLoc.y记录路径的终点。</span>
+    <span class="token function">minMaxLoc</span><span class="token punctuation">(</span>distanceMatrix<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>maxVal<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> <span class="token operator">&amp;</span>maxLoc<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token comment">//新的最长路径最长，则将longestPaths清空。</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>maxVal <span class="token operator">&gt;</span> longestPaths<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">.</span>length<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      longestPaths<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+      confidences<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+      bestGraphIdx <span class="token operator">=</span> graphIdx<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token comment">//将新的最长路径加入到longestPaths中</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>longestPaths<span class="token punctuation">.</span><span class="token function">empty</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">||</span> <span class="token punctuation">(</span>maxVal <span class="token operator">==</span> longestPaths<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">.</span>length <span class="token operator">&amp;&amp;</span> graphIdx <span class="token operator">==</span> bestGraphIdx<span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      Path path <span class="token operator">=</span> <span class="token function">Path</span><span class="token punctuation">(</span>maxLoc<span class="token punctuation">.</span>x<span class="token punctuation">,</span> maxLoc<span class="token punctuation">.</span>y<span class="token punctuation">,</span> <span class="token function">cvRound</span><span class="token punctuation">(</span>maxVal<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+      size_t id1 <span class="token operator">=</span> <span class="token generic-function"><span class="token function">static_cast</span><span class="token generic class-name"><span class="token operator">&lt;</span>size_t<span class="token operator">&gt;</span></span></span> <span class="token punctuation">(</span>maxLoc<span class="token punctuation">.</span>x<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      size_t id2 <span class="token operator">=</span> <span class="token generic-function"><span class="token function">static_cast</span><span class="token generic class-name"><span class="token operator">&lt;</span>size_t<span class="token operator">&gt;</span></span></span> <span class="token punctuation">(</span>maxLoc<span class="token punctuation">.</span>y<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token comment">//根据predecessorMatrix得到最长路径上的所有点</span>
+      <span class="token function">computeShortestPath</span><span class="token punctuation">(</span>predecessorMatrix<span class="token punctuation">,</span> id1<span class="token punctuation">,</span> id2<span class="token punctuation">,</span> path<span class="token punctuation">.</span>vertices<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      longestPaths<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>path<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token keyword">int</span> conf <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+      <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> v2 <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> v2 <span class="token operator">&lt;</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>path<span class="token punctuation">.</span>vertices<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> v2<span class="token operator">++</span><span class="token punctuation">)</span>
+      <span class="token punctuation">{<!-- --></span>
+        conf <span class="token operator">+=</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>basisGraphs<span class="token punctuation">[</span><span class="token number">1</span> <span class="token operator">-</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>graphIdx<span class="token punctuation">]</span><span class="token punctuation">.</span><span class="token function">getDegree</span><span class="token punctuation">(</span>v2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token punctuation">}</span>
+      confidences<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>conf<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">int</span> maxConf <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+  <span class="token keyword">int</span> bestPathIdx <span class="token operator">=</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+  <span class="token comment">//寻找最好的那条最长路径，事实上longestPaths中只有一条路径。</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> <span class="token punctuation">(</span><span class="token keyword">int</span><span class="token punctuation">)</span>confidences<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>confidences<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">&gt;</span> maxConf<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      maxConf <span class="token operator">=</span> confidences<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+      bestPathIdx <span class="token operator">=</span> i<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  bestPath <span class="token operator">=</span> longestPaths<span class="token punctuation">.</span><span class="token function">at</span><span class="token punctuation">(</span>bestPathIdx<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">//后续的步骤是保证最长路径是从左到右或者从上到下。</span>
+  <span class="token keyword">bool</span> needReverse <span class="token operator">=</span> <span class="token punctuation">(</span>bestGraphIdx <span class="token operator">==</span> <span class="token number">0</span> <span class="token operator">&amp;&amp;</span> keypoints<span class="token punctuation">[</span>bestPath<span class="token punctuation">.</span>lastVertex<span class="token punctuation">]</span><span class="token punctuation">.</span>x <span class="token operator">&lt;</span> keypoints<span class="token punctuation">[</span>bestPath<span class="token punctuation">.</span>firstVertex<span class="token punctuation">]</span><span class="token punctuation">.</span>x<span class="token punctuation">)</span>
+      <span class="token operator">||</span> <span class="token punctuation">(</span>bestGraphIdx <span class="token operator">==</span> <span class="token number">1</span> <span class="token operator">&amp;&amp;</span> keypoints<span class="token punctuation">[</span>bestPath<span class="token punctuation">.</span>lastVertex<span class="token punctuation">]</span><span class="token punctuation">.</span>y <span class="token operator">&lt;</span> keypoints<span class="token punctuation">[</span>bestPath<span class="token punctuation">.</span>firstVertex<span class="token punctuation">]</span><span class="token punctuation">.</span>y<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>needReverse<span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    std<span class="token double-colon punctuation">::</span><span class="token function">swap</span><span class="token punctuation">(</span>bestPath<span class="token punctuation">.</span>lastVertex<span class="token punctuation">,</span> bestPath<span class="token punctuation">.</span>firstVertex<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    std<span class="token double-colon punctuation">::</span><span class="token function">reverse</span><span class="token punctuation">(</span>bestPath<span class="token punctuation">.</span>vertices<span class="token punctuation">.</span><span class="token function">begin</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> bestPath<span class="token punctuation">.</span>vertices<span class="token punctuation">.</span><span class="token function">end</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">return</span> bestGraphIdx<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><strong>该函数求最长路径时采用的Floyd-Warshall算法，该算法时间复杂度为O(N^3)，太过暴力。事实上可以用图的深度优先遍历来寻找最长路径，遍历时从度为1的点开始遍历即可。</strong></p>
+<h5><a id="addHolesByGraph_485"></a>addHolesByGraph源码</h5>
+<p>该函数向holes（holes中按序保存已找到的网格行）中新增加一行或一列，当addRow为true时，向holes中增加一行；当addRow为false时，向holes中增加一列。</p>
+<pre><code class="prism language-cpp"><span class="token keyword">void</span> <span class="token class-name">CirclesGridFinder</span><span class="token double-colon punctuation">::</span><span class="token function">addHolesByGraph</span><span class="token punctuation">(</span><span class="token keyword">const</span> std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Graph<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>basisGraphs<span class="token punctuation">,</span> <span class="token keyword">bool</span> addRow<span class="token punctuation">,</span> Point2f basisVec<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+  std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>size_t<span class="token operator">&gt;</span> above<span class="token punctuation">,</span> below<span class="token punctuation">,</span> aboveSeeds<span class="token punctuation">,</span> belowSeeds<span class="token punctuation">;</span>
+  <span class="token comment">/*
+  分别向上和向下扩展。。
+  
+  若addRow为true，aboveSeeds保存holes()中第一行，above保存向最上扩展的行；否则，aboveSeeds保存holes的第一列，
+  above保存向最右扩展的列，且有above[index]=aboveSeeds-basisVec。
+  
+  若addRow为false，belowSeeds保存holes()中最后一行，below保存向最下扩展的行；否则，belowSeeds保存holes的最后一列，
+  below保存向最左扩展的列，且有above[index]=aboveSeeds+basisVec。
+  */</span>
+  <span class="token function">findCandidateHoles</span><span class="token punctuation">(</span>above<span class="token punctuation">,</span> below<span class="token punctuation">,</span> addRow<span class="token punctuation">,</span> basisVec<span class="token punctuation">,</span> aboveSeeds<span class="token punctuation">,</span> belowSeeds<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">//计算扩展above的置信值，该置信值是根据新扩展的点在basisGraphs图中是否有边与其相连来计算。</span>
+  <span class="token keyword">float</span> aboveConfidence <span class="token operator">=</span> <span class="token function">computeGraphConfidence</span><span class="token punctuation">(</span>basisGraphs<span class="token punctuation">,</span> addRow<span class="token punctuation">,</span> above<span class="token punctuation">,</span> aboveSeeds<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">//计算扩展below的置信值。</span>
+  <span class="token keyword">float</span> belowConfidence <span class="token operator">=</span> <span class="token function">computeGraphConfidence</span><span class="token punctuation">(</span>basisGraphs<span class="token punctuation">,</span> addRow<span class="token punctuation">,</span> below<span class="token punctuation">,</span> belowSeeds<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token comment">//根据返回的置信值判断新扩展的点是否可以加入到最终网格中。在两个新扩展都可加入时，只加入above扩展。</span>
+  <span class="token comment">//above扩展加入到holes的第一行或第一列前面，below扩展加入到holes的最后一行或最后一列后面。</span>
+  <span class="token function">insertWinner</span><span class="token punctuation">(</span>aboveConfidence<span class="token punctuation">,</span> belowConfidence<span class="token punctuation">,</span> parameters<span class="token punctuation">.</span>minGraphConfidence<span class="token punctuation">,</span> addRow<span class="token punctuation">,</span> above<span class="token punctuation">,</span> below<span class="token punctuation">,</span> holes<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="rectifyGrid__510"></a>rectifyGrid 函数源码</h3>
+<pre><code class="prism language-cpp">Mat <span class="token class-name">CirclesGridFinder</span><span class="token double-colon punctuation">::</span><span class="token function">rectifyGrid</span><span class="token punctuation">(</span>Size detectedGridSize<span class="token punctuation">,</span> <span class="token keyword">const</span> std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span><span class="token operator">&amp;</span> centers<span class="token punctuation">,</span>
+                                   <span class="token keyword">const</span> std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>keypoints<span class="token punctuation">,</span> std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> <span class="token operator">&amp;</span>warpedKeypoints<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+  <span class="token comment">//标准网格的圆点中心距为30</span>
+  <span class="token keyword">const</span> <span class="token keyword">float</span> edgeLength <span class="token operator">=</span> <span class="token number">30</span><span class="token punctuation">;</span>
+  <span class="token keyword">const</span> Point2f <span class="token function">offset</span><span class="token punctuation">(</span><span class="token number">150</span><span class="token punctuation">,</span> <span class="token number">150</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> dstPoints<span class="token punctuation">;</span>
+  <span class="token comment">//计算  (centers[centers.size()-centers[0])与(centers[detectedGridSize.width - 1]-centers[0])的向量积</span>
+  <span class="token keyword">bool</span> isClockwiseBefore <span class="token operator">=</span>
+      <span class="token function">getDirection</span><span class="token punctuation">(</span>centers<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token punctuation">,</span> centers<span class="token punctuation">[</span>detectedGridSize<span class="token punctuation">.</span>width <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">,</span> centers<span class="token punctuation">[</span>centers<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token operator">&lt;</span> <span class="token number">0</span><span class="token punctuation">;</span>
+  <span class="token keyword">int</span> iStart <span class="token operator">=</span> isClockwiseBefore <span class="token operator">?</span> <span class="token number">0</span> <span class="token operator">:</span> detectedGridSize<span class="token punctuation">.</span>height <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">;</span>
+  <span class="token keyword">int</span> iEnd <span class="token operator">=</span> isClockwiseBefore <span class="token operator">?</span> detectedGridSize<span class="token punctuation">.</span>height <span class="token operator">:</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+  <span class="token keyword">int</span> iStep <span class="token operator">=</span> isClockwiseBefore <span class="token operator">?</span> <span class="token number">1</span> <span class="token operator">:</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>
+  <span class="token comment">//生成标准网格上的点</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> iStart<span class="token punctuation">;</span> i <span class="token operator">!=</span> iEnd<span class="token punctuation">;</span> i <span class="token operator">+=</span> iStep<span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> j <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> j <span class="token operator">&lt;</span> detectedGridSize<span class="token punctuation">.</span>width<span class="token punctuation">;</span> j<span class="token operator">++</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+      dstPoints<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>offset <span class="token operator">+</span> <span class="token function">Point2f</span><span class="token punctuation">(</span>edgeLength <span class="token operator">*</span> j<span class="token punctuation">,</span> edgeLength <span class="token operator">*</span> i<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  <span class="token comment">//计算单应性矩阵</span>
+  Mat H <span class="token operator">=</span> <span class="token function">findHomography</span><span class="token punctuation">(</span>centers<span class="token punctuation">,</span> dstPoints<span class="token punctuation">,</span> RANSAC<span class="token punctuation">)</span>；
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>H<span class="token punctuation">.</span><span class="token function">empty</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+      H <span class="token operator">=</span> <span class="token class-name">Mat</span><span class="token double-colon punctuation">::</span><span class="token function">zeros</span><span class="token punctuation">(</span><span class="token number">3</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">,</span> CV_64FC1<span class="token punctuation">)</span><span class="token punctuation">;</span>
+      warpedKeypoints<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+      <span class="token keyword">return</span> H<span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  
+  std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> srcKeypoints<span class="token punctuation">;</span>
+  <span class="token comment">//keypoints保存的是斑点检测的点</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> keypoints<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    srcKeypoints<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>keypoints<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  Mat dstKeypointsMat<span class="token punctuation">;</span>
+  <span class="token comment">//将斑点检测到的所有点投影到标准网格上</span>
+  <span class="token function">transform</span><span class="token punctuation">(</span>srcKeypoints<span class="token punctuation">,</span> dstKeypointsMat<span class="token punctuation">,</span> H<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>Point2f<span class="token operator">&gt;</span> dstKeypoints<span class="token punctuation">;</span>
+  <span class="token comment">//将Mat点集转为vector&lt;Point2f&gt; 点集 </span>
+  <span class="token function">convertPointsFromHomogeneous</span><span class="token punctuation">(</span>dstKeypointsMat<span class="token punctuation">,</span> dstKeypoints<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  warpedKeypoints<span class="token punctuation">.</span><span class="token function">clear</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">for</span> <span class="token punctuation">(</span>size_t i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> dstKeypoints<span class="token punctuation">.</span><span class="token function">size</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span>
+  <span class="token punctuation">{<!-- --></span>
+    Point2f pt <span class="token operator">=</span> dstKeypoints<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+    warpedKeypoints<span class="token punctuation">.</span><span class="token function">push_back</span><span class="token punctuation">(</span>pt<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword">return</span> H<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><strong>结尾：从函数源码我们可以知道该函数并没有考虑偏心误差。</strong></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

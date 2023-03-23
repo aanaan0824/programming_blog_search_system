@@ -1,0 +1,117 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>都2022了，再写PHP的文章是不是过时了？现在还坚持搞PHP的不多了吧。</p>
+<p></p>
+<p>今天按照官方文档安装完Nginx和PHP之后，打开本地localhost，出现了这个错误：No input file specified.</p>
+<p></p>
+<h3>一. 安装 Nginx</h3>
+<p>系统是Ubuntu-20.04.1，Nginx是通过官方文档 apt 方式安装的，参考官方wiki：<a href="https://www.nginx.com/resources/wiki/start/topics/tutorials/install/" title="Install | NGINX">Install | NGINX</a>，</p>
+<p>Ubuntu系统默认的apt源里是有Nginx的，不过版本不是最新的1.20，而是1.18.按照Nginx官方文档的教程安装最新版本，首先添加Nginx的源，在<code>/etc/apt/sources.list里添加以下代码，或者新建一个/etc/apt/sources.list.d/nginx.list文件添加以下代码</code></p>
+<pre><code>## Replace $release with your corresponding Ubuntu release.
+deb https://nginx.org/packages/ubuntu/ $release nginx
+#deb-src https://nginx.org/packages/ubuntu/ $release nginx</code></pre>
+<p>将代码中的 $release 换成Ubuntu系统版本的代号，比如20.04的代号是 focal，替换后为</p>
+<pre><code>deb https://nginx.org/packages/ubuntu/ focal nginx
+#deb-src https://nginx.org/packages/ubuntu/ focal nginx</code></pre>
+<p>然后执行 </p>
+<pre>sudo apt update</pre>
+<p>更新 apt 包信息，如果出现以下错误</p>
+<p>W: GPG error: https://nginx.org/packages/ubuntu focal InRelease: The following signatures couldn't be verified because the public key is not available: NO_PUBKEY <span style="color:#fe2c24;">$key</span></p>
+<p>是 nginx.org 公钥的问题，其中 $key 是一个数字串，执行以下代码，注意替换$key为上面报错信息里的数字串</p>
+<pre><code class="language-bash">## 把 $key 替换成报错的那个数字串
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys $key
+sudo apt update</code></pre>
+<p>不报错的话，apt 源就更新成功了，如图</p>
+<p style="text-align:center;"><img alt="" src="image\aaa7960ee2eb470193ce9defd7184bb2.png"/></p>
+<p> 然后安装nginx。</p>
+<pre><code class="language-bash">sudo apt install nginx</code></pre>
+<p>安装成功后，启动 nginx。可以通过 nginx命令启动，也可以通过systemctl 启动</p>
+<pre><code>sudo systemctl start nginx</code></pre>
+<h3>二. 安装 PHP</h3>
+<p>Ubuntu官方apt源里的PHP版本比较旧，PHP官方也没有 apt 源，按官方文档 <a href="https://www.php.net/manual/en/install.unix.nginx.php" title="PHP: Nginx 1.4.x on Unix systems - Manual">PHP: Nginx 1.4.x on Unix systems - Manual</a> 只能源码安装了。</p>
+<p>通过 <a href="https://www.php.net/downloads" title="PHP: Downloads">PHP: Downloads</a> 下载源码，我下载的是 <a href="https://www.php.net/distributions/php-8.0.18.tar.gz" title="php-8.0.18.tar.gz">php-8.0.18.tar.gz</a> ，解压</p>
+<pre><code class="language-bash">tar -xzvf php-8.0.18.tar.gz</code></pre>
+<p>进入到解压后的目录</p>
+<pre><code>cd php-8.0.18/</code></pre>
+<p>配置与编译</p>
+<pre><code>./configure --enable-fpm --with-mysqli
+make
+sudo make install</code></pre>
+<p>第一步./configure的时候会提示错误，缺少编译器，需要安装gcc，通过 sudo apt install gcc 安装即可。 也可能会提示缺少相关的工具，比如 libxml2, zlib等，同样通过 sudo apt install libxml2 libxml2-dev即可，需要注意的是提示缺少libxml2，光安装libxml2不行，还需要安装 libxml2-dev；安装zlib的时候，zlib的apt包名是 zlib1g，所以通过 sudo apt install zlib1g zlib1g-dev 来安装。其它缺少的包都这样安装就行。</p>
+<p>make的时间会稍有点长，一二十分钟吧。</p>
+<p>make完会提示让执行make test, 执行 make test 即可。</p>
+<p>sudo make install完成后即安装完成了，接下来开始配置。</p>
+<p>将源码目录中的 php.ini-development 拷贝到他们正确的位置，这个位置通过 php --ini 命令来查看，这个PHP默认加载php.ini的位置</p>
+<p style="text-align:center;"><img alt="" src="image\8a457931b7094eddb9a6d2e124e1c6be.png"/></p>
+<p> 目录是 /usr/local/lib， 拷贝到此目录</p>
+<pre><code>cp php.ini-development /usr/local/lib/php.ini</code></pre>
+<p>拷贝 php-fpm 的配置文件和执行文件到指定位置</p>
+<pre><code>cp /usr/local/etc/php-fpm.conf.default /usr/local/etc/php-fpm.conf
+cp /usr/local/etc/php-fpm.d/www.conf.default /usr/local/etc/php-fpm.d/www.conf
+cp sapi/fpm/php-fpm /usr/local/bin</code></pre>
+<p>当文件不存在时阻止Nginx转发到后端 php-fpm，编辑 php.ini 修改一个配置项</p>
+<pre><code>vim /usr/local/lib/php.ini</code></pre>
+<p>定位到 cgi.fix_pathinfo=， 去掉前面的分号，修改成</p>
+<pre><code>cgi.fix_pathinfo=0</code></pre>
+<p>编辑 php-fpm 的配置文件，修改一下 php-fpm 的启动用户和组</p>
+<pre><code>vim /usr/local/etc/php-fpm.d/www.conf</code></pre>
+<p>找到 user = nobody  group = nobody 这里，改成</p>
+<pre><code>user = www-data
+group = www-data</code></pre>
+<p>启动 php-fpm</p>
+<pre><code>sudo /usr/local/bin/php-fpm</code></pre>
+<p>这里需要加 sudo，不然会提示没有权限。</p>
+<hr/>
+<p>配置完 PHP 的配置文件 和 php-fpm 的配置文件，接下来配置 Nginx 的配置文件了。</p>
+<p>首先找到Nginx的配置文件的位置，通过 nginx -V 命令可以查看。</p>
+<p style="text-align:center;"><img alt="" src="image\56e3889c8dbf4c35aadf35d881fbe03f.png"/></p>
+<p>编辑此文件</p>
+<p> </p>
+<pre><code>sudo vim /etc/nginx/nginx.conf </code></pre>
+<p>这个是 nginx 的总配置文件，打开后可以看到有两个重要信息</p>
+<p style="text-align:center;"><img alt="" src="image\24d5cd2b42dd476498c668338ef9d34e.png"/></p>
+<p>上面的 error_log 那一行是nginx的错误日志文件的位置，下面的 include 是包含的子配置文件的位置，这个文件以 http {} 为主， 在子配置文件里以 server{}为主，虚拟主机配置可以通过添加子配置文件来设置，打开子配置文件的目录 /etc/nignx/conf.d/ 看以下</p>
+<p style="text-align:center;"><img alt="" src="image\7d733f3df9e546ca8fe6025e1c97e0a1.png"/> </p>
+<p>只有一个子配置文件 default.conf，编辑此文件</p>
+<p> </p>
+<pre><code>sudo vim /etc/nginx/conf.d/default.conf</code></pre>
+<p>添加红框里内容</p>
+<p style="text-align:center;"><img alt="" src="image\70ad30d31cbe4968be7ffd48a9d1b711.png"/></p>
+<p> Nginx 配置完毕，重启一下。</p>
+<pre><code>sudo systemctl restart nginx</code></pre>
+<hr/>
+<p>完事了，建一个 .php 文件测试一下吧。找到 nginx 的 文档根目录，打开 nginx 的配置文件里面有</p>
+<pre><code>sudo vim /etc/nginx/nginx.conf</code></pre>
+<p style="text-align:center;"><img alt="" src="image\bcd71afde7bf40339860c2cce8887066.png"/></p>
+<p> 切换到此目录，创建 index.php</p>
+<pre><code>cd /usr/share/nginx/html/
+rm index.html
+vim index.php</code></pre>
+<p>输入以下php代码</p>
+<pre><code class="language-php">&lt;?php
+phpinfo();
+?&gt;
+</code></pre>
+<p>打开浏览器 http://localhost， 结果出现如下错误：</p>
+<p style="text-align:center;"><img alt="" src="image\804a145f4e734930afe8fc6059e1bb4d.png"/></p>
+<hr/>
+<p>一切都是按照官方文档配置下来的， 就这一个模糊信息，到底是 nginx 的配置有问题，还是 php-fpm的配置或者php的配置有问题？</p>
+<p>查看 headers，报的是 404 错误，根目录明明有 index.php，为什么还404错误呢？既然这里错误信息这么模糊，只能去错误日志里看看了。在上面的 /etc/nginx/nginx.conf 配置文件里可以看到 nginx 的错误日志目录在 /var/log/nginx/error.log， 打开此文件的最后看一下</p>
+<pre><code>tail /var/log/nginx/error.log</code></pre>
+<p style="text-align:center;"></p>
+<p style="text-align:center;"> <img alt="" src="image\77e8840ab51b4befb7f251aead471f1b.png"/></p>
+<p>有一个错误，显示FastCGI返回了一个错误，没有找到此文件，/etc/nginx/html/index.php，在 /etc/nginx/conf.d/default.conf 这个配置文件里，明明文档根目录是 /usr/share/nginx/html</p>
+<p style="text-align:center;"><img alt="" src="image\3a78238199a944b2815fc0f2647c20ae.png"/></p>
+<p> 为什么会去 /etc/nginx/html 目录去找呢？</p>
+<p>考虑到这个root 是在 location / 块里配置的， 新添加的那块是 location ~* \.php$ 块，有没有可能是那个块里也需要指定 root 配置项？ 试一下</p>
+<p style="text-align:center;"><img alt="" src="image\d983e3ff8b0d4c8cb7d00ed433d189ff.png"/></p>
+<p> 重启 nginx</p>
+<pre><code>sudo systemctl restart nginx</code></pre>
+<p>刷新浏览器 http;//localhost，终于出现如下页面</p>
+<p style="text-align:center;"><img alt="" src="image\57e561d3727e47bf9d1031ab2c4c2ffb.png"/></p>
+<p>成功解决。</p>
+<hr/>
+<p>总结：nginx 对于 php 文件的请求会转发给后端的 php-fpm， 但是出现404错误的时候，并没有显示出详细的错误信息，只是显示了一个 No input file specified. 详细的错误信息需要到错误日志里去看。 </p>
+</div>
+</div>

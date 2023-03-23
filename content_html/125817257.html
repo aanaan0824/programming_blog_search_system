@@ -1,0 +1,59 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2>今天写下这篇文章已是蓄谋已久了，背景是年初接到项目需求开发基于H5运行的视频学习平台，以及后来uniapp转小程序app开发。相信开发过uniapp的video应该或多或少都遇到过一些坑，开场就不多说了，直接上干货。</h2>
+<p><span style="color:#fe2c24;">项目要求用户不得拖动进度条，由播放进度触发对应事件</span></p>
+<hr/>
+<h3>首先说说uniappH5使用video</h3>
+<p>H5是基于浏览器运行，那么浏览器平台就是我们需要考虑的兼容问题，就像我们之前写pc端的时候对IE的多年奋战一样，给大家列举一下现在市上使用率比较高的浏览器平台</p>
+<p>QQ浏览器=&gt;360浏览器=&gt;UC浏览器=&gt;谷歌浏览器（这个如果不是开发者应该使用率不多）等等</p>
+<p style="text-align:center;"><img alt="" src="image\f31ee3272c4946f3b2c68974cb3e3750.png"/></p>
+<p> 就拿我们常见使用的浏览器举例把：</p>
+<p>QQ、UC、360浏览器等常见平台都会在渲染video标签时劫持播放器，渲染内置可脱离网页进行播放，严重与项目需求不符，无论用何种方法都绕不开，</p>
+<p>百度浏览器目前未发现劫持事件，但是运行百度时切入后台，过一段时间在切回浏览器项目是会白屏浏览器bug，无法绕开</p>
+<p><span style="color:#fe2c24;">开发H5如果需要背景和我一样的要注意及时和经理商量商量了</span></p>
+<h3><span style="color:#0d0016;">其次在说说app</span></h3>
+<p><span style="color:#0d0016;">各位开发者应该都知道video层级的问题，既然我们的需求是不然用户拖动进度条，那么就得考虑如何实现，我的思路是覆盖元素dom遮罩层，自己写播放控件，cover-view、cover-image是我们所需的救星，官方简介</span>部分组件如map、video、textarea、canvas通过原生控件实现，原生组件层级高于前端组件（类似flash层级高于div）。为了能正常覆盖原生组件，设计了cover-view。</p>
+<p>发现了光，但是开发一般发现video在全屏时cover-view不生效了，翻阅文档原理是app.vue页面video全屏不支持，得采用元素nvue页面写法</p>
+<p>video<strong>全屏</strong>后，如何自行绘制界面？比如加个标题、加个分享按钮</p>
+<p>app端 2.1.5 以上nvue页面的video也可以通过cover-view来绘制界面覆盖元素</p>
+<p>继续我们的开发过程，完成在app端覆盖自定义播放组件，新的问题出现了，获取播放进度</p>
+<p>@timeupdate="onTimeupdate"官方播放进度变化事件通过e.detail.currentTime获取进度赋值给initial-time达到保存进度，进入页面跳转到上传播放位置，但是发现nvue设置完毕后卡顿，timeupdate发现官方介绍说触发频率是250毫秒一次 ，且initial-time是实时推进的，打个比方timeupdate获取到的时间是4秒出发4次之后才是5秒，等于initial-time会被赋值4次，难，想办法，定义2个变量，一个进入页面赋值initial-time跳转到对应位置，一个通过timeupdate获取当前比方时间，ok了，</p>
+<p>播放下一个视频时问题又来了，initial-time直接去上一个视频的e.detail.currentTime播放时间直接跳转了，需求无法完成，换思路，还是改用.vue页面的方式写吧，起码e.detail.currentTime是正常的，那我们全屏的时候怎么办呢，videoContext.seek()跳转到指定播放位置，采用timeupdate事件监听播放进度变化，超过3秒就不是正常播放，为用户手动拖拽进度条</p>
+<pre><code>this.videoTime = parseInt(e.detail.duration)
+if((currenttime - this.curCourse.Progress &gt; 3 || currenttime - this.curCourse.Progress &lt;     
+   -1) &amp;&amp; this.plan.FinishedExam!== 1 &amp;&amp; this.plan.FinishedCourses !== 1){
+	this.videoContext.seek(this.curCourse.Progress)
+}else{
+	this.videoRealTime = currenttime
+	if(this.videoRealTime &gt; this.curCourse.Progress){
+		this.curCourse.Progress = this.videoRealTime
+	}
+}
+</code></pre>
+<p>这个大家应该能看懂把，变量在data中自行定义</p>
+<p>实现效果达到预期，不足的是用户拖拽进度条，在使用seek（）拖回来时video会触发@waiting事件加载，视频会卡顿一下。</p>
+<p>打包交给测试，测试反馈播放视频会不定期闪退，我懵逼了。这怎么搞，没遇到过啊</p>
+<p>开始因为是测试的手机太垃圾，死鸭子说你手机不行换手机测测，测试哄骗公司大大小小5,6个小姐姐的手机在测，现象一样，都是播放视频不定期会闪退。</p>
+<p>怎么办，解决呀。代码没问题呀，初步闪退为内存消耗搞导致的，面向百度把</p>
+<p><a class="link-info" href="https://ask.dcloud.net.cn/question/117091" title="https://ask.dcloud.net.cn/question/117091">https://ask.dcloud.net.cn/question/117091</a></p>
+<p><a class="link-info" href="https://ask.dcloud.net.cn/question/66095" title="https://ask.dcloud.net.cn/question/66095">https://ask.dcloud.net.cn/question/66095</a></p>
+<p><a class="link-info" href="https://ask.dcloud.net.cn/article/39136" title="video高阶组件">video高阶组件</a>重新按照官方进行修改，发现怎么都不管用，</p>
+<p>后来一直沿着这个思路百度优化，终于找到这篇文章，可以运行动态查看当前手机<a class="link-info" href="https://ask.dcloud.net.cn/article/13041" title="内存">内存</a>情况各位有时间组件研究一下把，问题找到了，但是解决方案？没有！！！</p>
+<p>根本没有任何一篇文章说相似我的bug，只能自己摸索了。</p>
+<p><span style="color:#fe2c24;">距离测试反馈的闪退bug已经4天了，依然没有解决，emo了！！！</span></p>
+<p><span style="color:#0d0016;">中间有想过是不是视频地址的编码问题或者是https等等，一一pas</span></p>
+<p><span style="color:#0d0016;">就在刚刚突然想到nvue页面开发是基于原生渲染的性能更好，说干就干，开整</span></p>
+<p><span style="color:#0d0016;">实际与预期一至，个人见解是nvue有更好的性能处理不vue页面更快，但是nvue缺点也是无奈，各位只能自己去摸索了，但是刚刚我们提到的</span>e.detail.currentTime应该怎么办呢，个人解决方案 放弃initial-time调用保存的播放进度 在play事件里利用seek方法给拉过去</p>
+<pre><code>onplay(e){																						    
+    //当开始/继续播放时触发play事件，这里的clStatus 是我自己定义的播放开始还是暂停的标识
+	console.log(this.clStatus,'onplay')
+	if(this.clStatus === 2){
+	this.videoContext.seek(this.curCourse.Progress)
+	this.clStatus = 1
+	this.videoContext.play()
+}</code></pre>
+<p>到此bug优化完成，其实video里面还是有很多坑。这里我就不一样解释了 ，如果大家有一些见解欢迎和我一起探讨，后期个人一会去话一些时间去写一个可以自定义进度条的video播放器，我相信很多项目是有这样的需求的。但是uniapp插件目前还没有这方面的实例</p>
+<p><span style="color:#fe2c24;">创作不易，转载请注明出处谢谢</span></p>
+</div>
+</div>

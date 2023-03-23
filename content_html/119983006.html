@@ -1,0 +1,159 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="1_0"></a>1、问题描述</h2>
+<p>C#使用Newtonsoft.Json将 <code>一般对象</code> 序列化和反序列化为json时，一般使用 <code>SerializeObject()</code> 和 <code>DeserializeObject()</code> 即可。<br/> 但是，当对象中包含一个自定义集合对象时，仅仅使用<code>DeserializeObject()</code> 无法正确实现反序列化。<br/> 有可能报错：</p>
+<blockquote>
+<p>无法将类型为“Newtonsoft.Json.Linq.JObject”的对象强制转换</p>
+</blockquote>
+<h2><a id="2_6"></a>2、代码说明</h2>
+<p>直接用一段示例代码，进行说明。</p>
+<h3><a id="21__9"></a>2.1 准备阶段</h3>
+<p>示例准备3个类：<br/> <code>Action</code> 类：表示一个动作。</p>
+<pre><code class="prism language-csharp"><span class="token keyword">class</span> <span class="token class-name">Action</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token function">Action</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token function">Action</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> name<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">int</span></span> step<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        m_name <span class="token operator">=</span> name<span class="token punctuation">;</span>
+        m_step <span class="token operator">=</span> step<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token keyword">override</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> <span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> <span class="token interpolation-string"><span class="token string">$"Action Name:</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">m_name</span><span class="token punctuation">}</span></span><span class="token string">, Step: </span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">m_step<span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span></span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">string</span></span> m_name<span class="token punctuation">;</span> <span class="token comment">// 动作名称</span>
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">int</span></span> m_step<span class="token punctuation">;</span> <span class="token comment">// 动作步骤</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> Name <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span> <span class="token operator">=&gt;</span> m_name<span class="token punctuation">;</span> <span class="token keyword">set</span> <span class="token operator">=&gt;</span> m_name <span class="token operator">=</span> <span class="token keyword">value</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> Step <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span> <span class="token operator">=&gt;</span> m_step<span class="token punctuation">;</span> <span class="token keyword">set</span> <span class="token operator">=&gt;</span> m_step <span class="token operator">=</span> <span class="token keyword">value</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><code>ActionCollection</code> 类：表示一个动作的集合类。</p>
+<pre><code class="prism language-csharp"><span class="token keyword">class</span> <span class="token class-name">ActionCollection</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">CollectionBase</span></span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Add</span><span class="token punctuation">(</span><span class="token class-name">Action</span> action<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>InnerList<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>action<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><code>Cat</code> 类：猫类，<code>Cat</code> 对象包含一个 <code>ActionCollection</code> 类实例。</p>
+<pre><code class="prism language-csharp"><span class="token keyword">class</span> <span class="token class-name">Cat</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">private</span> <span class="token class-name"><span class="token keyword">string</span></span> m_name<span class="token punctuation">;</span> <span class="token comment">// 猫的名字</span>
+    <span class="token keyword">private</span> <span class="token class-name">ActionCollection</span> m_actions<span class="token punctuation">;</span> <span class="token comment">// 具备的动作集合</span>
+    <span class="token keyword">public</span> <span class="token function">Cat</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token function">Cat</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> name<span class="token punctuation">,</span> <span class="token class-name">ActionCollection</span> ac<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>m_name <span class="token operator">=</span> name<span class="token punctuation">;</span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>m_actions <span class="token operator">=</span> ac<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> Name <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span> <span class="token operator">=&gt;</span> m_name<span class="token punctuation">;</span> <span class="token keyword">set</span> <span class="token operator">=&gt;</span> m_name <span class="token operator">=</span> <span class="token keyword">value</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+    <span class="token keyword">public</span> <span class="token return-type class-name">ActionCollection</span> Actions <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span> <span class="token operator">=&gt;</span> m_actions<span class="token punctuation">;</span> <span class="token keyword">set</span> <span class="token operator">=&gt;</span> m_actions <span class="token operator">=</span> <span class="token keyword">value</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="22__67"></a>2.2 序列化</h3>
+<p>使用 <code>SerializeObject()</code> 方法将一个 <code>Cat</code> 对象序列化为Json，并存储到文件中。</p>
+<pre><code class="prism language-csharp"><span class="token comment">/// &lt;summary&gt;</span>
+<span class="token comment">/// 序列化一个Cat对象到Json</span>
+<span class="token comment">/// &lt;/summary&gt;</span>
+<span class="token comment">/// &lt;param name="cat"&gt;&lt;/param&gt;</span>
+<span class="token comment">/// &lt;param name="jsonPath"&gt;&lt;/param&gt;</span>
+<span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Save</span><span class="token punctuation">(</span><span class="token class-name">Cat</span> cat<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> jsonPath<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token class-name"><span class="token keyword">string</span></span> jsonString <span class="token operator">=</span> JsonConvert<span class="token punctuation">.</span><span class="token function">SerializeObject</span><span class="token punctuation">(</span>cat<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    File<span class="token punctuation">.</span><span class="token function">WriteAllText</span><span class="token punctuation">(</span>jsonPath<span class="token punctuation">,</span> jsonString<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="23__83"></a>2.3 反序列化</h3>
+<p>简单地使用 <code>DeserializeObject()</code> 方法从json文件中读取json字符串，并反序列化为一个 <code>Cat</code> 对象。</p>
+<pre><code class="prism language-csharp"><span class="token comment">/// &lt;summary&gt;</span>
+<span class="token comment">/// 反序列化(错误方法)</span>
+<span class="token comment">/// &lt;/summary&gt;</span>
+<span class="token comment">/// &lt;param name="jsonPath"&gt;&lt;/param&gt;</span>
+<span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name">Cat</span> <span class="token function">Load</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> jsonPath<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token class-name"><span class="token keyword">string</span></span> jsonString <span class="token operator">=</span> File<span class="token punctuation">.</span><span class="token function">ReadAllText</span><span class="token punctuation">(</span>jsonPath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token class-name">Cat</span> cat <span class="token operator">=</span> JsonConvert<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">DeserializeObject</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>Cat<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span>jsonString<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> cat<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>使用测试代码进行调试，发现会报错：</p>
+<blockquote>
+<p>无法将类型为“Newtonsoft.Json.Linq.JObject”的对象强制转换为Action。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a9055085ae474ea2afa8ca3b6647f268.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBAWFnnmoTmioDmnK_nrJTorrA=,size_14,color_FFFFFF,t_70,g_se,x_16"/></p>
+</blockquote>
+<p><strong>原因说明：</strong></p>
+<p>简单地使用 <code>DeserializeObject()</code> 方法进行反序列化时，只会将 <code>ActionCollection</code> 集合类实例中的元素反序列化为一个<code>JObject</code>对象。<br/> <code>JObject</code>对象无法隐式转换为<code>Action</code>类对象，因而会报错。</p>
+<p><strong>解决方案：</strong><br/> 由于使用 <code>DeserializeObject()</code> 方法无法正确地将“集合对象字段”的元素反序列化出来。因此，需要手动修正。</p>
+<p><strong>代码如下：</strong></p>
+<pre><code class="prism language-csharp"><span class="token comment">/// &lt;summary&gt;</span>
+<span class="token comment">/// 反序列化(正确方法)</span>
+<span class="token comment">/// &lt;/summary&gt;</span>
+<span class="token comment">/// &lt;param name="jsonPath"&gt;&lt;/param&gt;</span>
+<span class="token comment">/// &lt;returns&gt;&lt;/returns&gt;</span>
+<span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token return-type class-name">Cat</span> <span class="token function">LoadJson</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> jsonPath<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token class-name"><span class="token keyword">string</span></span> jsonString <span class="token operator">=</span> File<span class="token punctuation">.</span><span class="token function">ReadAllText</span><span class="token punctuation">(</span>jsonPath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token class-name">Cat</span> cat <span class="token operator">=</span> JsonConvert<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">DeserializeObject</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>Cat<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span>jsonString<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token class-name">ActionCollection</span> actions <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">ActionCollection</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">foreach</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">var</span></span> item <span class="token keyword">in</span> cat<span class="token punctuation">.</span>Actions<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name"><span class="token keyword">string</span></span> itemString <span class="token operator">=</span> item<span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">Action</span> ac <span class="token operator">=</span> JsonConvert<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">DeserializeObject</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>Action<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span>itemString<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        actions<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>ac<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    cat<span class="token punctuation">.</span>Actions <span class="token operator">=</span> actions<span class="token punctuation">;</span>
+
+    <span class="token keyword">return</span> cat<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>再次使用测试代码进行调试，可以发现问题解决。<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/cc2283c880464920a45096044de67179.png"/></p>
+<h2><a id="3_138"></a>3、测试代码</h2>
+<p>如果需要测试报错，需要取消“错误方法取出猫”的注释。</p>
+<pre><code class="prism language-csharp"><span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token comment">// 准备一只猫</span>
+    <span class="token class-name">Action</span> run <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Action</span><span class="token punctuation">(</span><span class="token string">"Running"</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token class-name">Action</span> jump <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Action</span><span class="token punctuation">(</span><span class="token string">"Jump"</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token class-name">ActionCollection</span> actions <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">ActionCollection</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    actions<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>run<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    actions<span class="token punctuation">.</span><span class="token function">Add</span><span class="token punctuation">(</span>jump<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token class-name">Cat</span> helloKitty <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Cat</span><span class="token punctuation">(</span><span class="token string">"HelloKitty"</span><span class="token punctuation">,</span> actions<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">// 将猫放入json</span>
+    <span class="token class-name"><span class="token keyword">string</span></span> jsonPath <span class="token operator">=</span> <span class="token string">"cat.json"</span><span class="token punctuation">;</span>
+    <span class="token function">Save</span><span class="token punctuation">(</span>helloKitty<span class="token punctuation">,</span> jsonPath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment"> 错误方法取出猫</span>
+    <span class="token comment">//Cat helloKittyClone = Load(jsonPath);</span>
+
+    <span class="token comment">//Console.WriteLine(helloKittyClone.Name);</span>
+    <span class="token comment">//foreach (Action x in helloKittyClone.Actions)</span>
+    <span class="token comment">//{<!-- --></span>
+    <span class="token comment">//    Console.WriteLine(x.ToString());</span>
+    <span class="token comment">//}</span>
+
+    <span class="token comment">// 正确方法取出猫</span>
+    <span class="token class-name">Cat</span> helloKittyCloneX <span class="token operator">=</span> <span class="token function">LoadJson</span><span class="token punctuation">(</span>jsonPath<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span>helloKittyCloneX<span class="token punctuation">.</span>Name<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">foreach</span> <span class="token punctuation">(</span><span class="token class-name">Action</span> x <span class="token keyword">in</span> helloKittyCloneX<span class="token punctuation">.</span>Actions<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span>x<span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>代码附件：<a href="https://github.com/hxylonghui2017/Newtonsoft.Json.Problem">Github传送门</a></p>
+<p>以上为C#使用Newtonsoft.Json反序列化时遇到的一个问题。如果有更好的解决方案，欢迎留言交流。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

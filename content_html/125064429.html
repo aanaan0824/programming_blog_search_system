@@ -1,0 +1,104 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h2><a id="_1"></a>介绍</h2>
+<blockquote>
+<p>线程池维护者多个线程，等待着分配可并发执行的任务，可以避免在短时间创建和销毁大量线程带来时间成本。</p>
+</blockquote>
+<p>线程池的优点：</p>
+<ul><li>降低资源消耗。通过重复利用已创建的线程降低线程创建和销毁造成的消耗。</li><li>提高响应速度。当任务到达时，任务可以不需要的等到线程创建就能立即执行。</li><li>提高线程的可管理性。线程是稀缺资源，如果无限制的创建，不仅会消耗系统资源，还会降低系统的稳定性，使用线程池可以进行统一的分配，调优和监控。</li></ul>
+<h2><a id="_11"></a>原理</h2>
+<blockquote>
+<ul><li>线程池中有一个阻塞队列，用于存放上层发来的任务请求。</li><li>线程池中管理着一批线程，当任务到来时，空闲的线程从任务队列获取任务，并执行，当大量任务到来时，任务会被阻塞在队列中，等待空闲的线程来获取。当队列中没有任务时，线程将会被阻塞直到有任务到来。</li></ul>
+</blockquote>
+<p><img alt="image-20220531132058173" src="https://img-blog.csdnimg.cn/img_convert/8a7d12e875c8d4f124ccd0a4e4df82e5.png"/></p>
+<p>其实这就是一个基于生产者消费者模型来实现的线程池，那么同样遵守三种规则，生产者和生产者之间存在互斥，处理任务的线程之间存在互斥关系，生产者和消费者之间存在同步和互斥关系。</p>
+<h2><a id="_20"></a>实现</h2>
+<p>通过上面的分析可以写出基本的结构，考虑到线程池，只要存在一份实例就可以，可以设计为单例模式。</p>
+<pre><code class="prism language-c++">template &lt;class T&gt;
+class ThreadPool
+{
+private:
+    int _threadCount;//线程数量
+    pthread_mutex_t _mlock;
+    pthread_cond_t _cond;
+    static ThreadPool&lt;T&gt; *_instance;
+    queue&lt;T&gt; _queue;//用于存放任务的队列
+public:
+    static ThreadPool&lt;T&gt; *GetInstance()
+    {
+        static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+        if (_instance == nullptr)
+        {
+            pthread_mutex_lock(&amp;mtx);
+            if (_instance == nullptr)
+            {
+                _instance = new ThreadPool&lt;T&gt;;
+                _instance-&gt;Init();
+            }
+            pthread_mutex_unlock(&amp;mtx);
+        }
+        return _instance;
+    }
+};
+template &lt;class T&gt;
+ThreadPool&lt;T&gt; *ThreadPool&lt;T&gt;::_instance = nullptr;
+</code></pre>
+<p>线程池，线程池，那么肯定要有一批线程。</p>
+<pre><code class="prism language-c++">    void Init()
+    {
+        pthread_t tid;
+        for (int i = 0; i &lt; _threadCount; i++)
+        {
+            pthread_create(&amp;tid, nullptr, ？, ？);
+        }
+    }
+</code></pre>
+<p>到现在有线程了，那么这一批线程执行什么呢，怎么执行呢？</p>
+<p>线程池的作用就是减少大量频繁的创建销毁线程带来的时间成本，所以这一批线程，应该是一直执行的不能退出（有任务时执行任务，没有任务了阻塞等待任务）。</p>
+<p>线程的任务从哪里来呢，一定是从阻塞队列中获取，线程处理函数是void *(*start_routine) (void *)类型的，只有一个参数，那么也就意味着Handler函数必须是静态的（非静态成员函数有隐含的this指针），那么静态的函数也就无法访问类的非静态成员，也就无法获取到任务了，此时在就只能通过对象来调用了，就需要将ThreadPool的对象作为参数传给Handler。</p>
+<pre><code class="prism language-c++">    static void *Handler(void *arg)
+    {
+        ThreadPool&lt;T&gt; *obj = (ThreadPool&lt;T&gt; *)arg;
+        pthread_detach(pthread_self());
+        while (true)
+        {
+            obj-&gt;Lock();
+            //先获取任务，没有任务挂起
+            while (obj-&gt;Empty())
+            {
+                pthread_cond_wait(&amp;obj-&gt;_cond, &amp;obj-&gt;_mlock);
+            }
+            T t;
+            obj-&gt;Pop(&amp;t);
+            obj-&gt;Unlock();
+            //处理任务
+            t()//仿函数
+        }
+    }
+</code></pre>
+<p>线程池对外应该提供一个Push任务结构，向阻塞队列中添加任务。</p>
+<pre><code class="prism language-c++">    void Push(const T &amp;t)
+    {
+        Lock();
+        _queue.push(t);
+        Unlock();
+        //此时可能所有的线程已经全部休眠，需要唤醒一下
+        pthread_cond_signal(&amp;_cond);
+    }
+</code></pre>
+<p>线程获取任务，通过Pop从队列中获取，在获取任务时不需要加锁，因为此时线程处于临界区内。</p>
+<pre><code class="prism language-c++">    void Pop(T *t)
+    {
+        *t = _queue.front();
+        _queue.pop();
+    }
+</code></pre>
+<p>到这里就完成了线程池的主要内容，<a href="https://github.com/2856672598/2022/blob/main/ThreadPool/">详细代码</a></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

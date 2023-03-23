@@ -1,0 +1,491 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-dracula" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<blockquote>
+<p>人生最高理想，在求达于真理。——李大钊</p>
+</blockquote>
+<blockquote>
+<p>官方文档</p>
+<p>https://developers.weixin.qq.com/miniprogram/dev/api-backend/open-api/login/auth.code2Session.html</p>
+</blockquote>
+<h4><a id="_7"></a>环境</h4>
+<ul><li>.Net Core 6.0</li></ul>
+<h4><a id="_11"></a>工具</h4>
+<ul><li>Visual Studio 2022</li><li>微信开发者工具</li></ul>
+<h4><a id="_16"></a>流程</h4>
+<h5><a id="_18"></a>新建项目</h5>
+<p>我这里是这样新建的，当然也可以使用Visual Studio中的可视化新建。</p>
+<pre><code class="prism language-shell">dotnet new webapi --name AspNetCoreWeChatCode2Session
+</code></pre>
+<h5><a id="_26"></a>添加依赖</h5>
+<p>编辑<code>.csproj</code>文件。</p>
+<pre><code class="prism language-xml"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>Project</span> <span class="token attr-name">Sdk</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>Microsoft.NET.Sdk.Web<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>
+
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>PropertyGroup</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>TargetFramework</span><span class="token punctuation">&gt;</span></span>net6.0<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>TargetFramework</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>Nullable</span><span class="token punctuation">&gt;</span></span>enable<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>Nullable</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>ImplicitUsings</span><span class="token punctuation">&gt;</span></span>enable<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>ImplicitUsings</span><span class="token punctuation">&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>PropertyGroup</span><span class="token punctuation">&gt;</span></span>
+
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>ItemGroup</span><span class="token punctuation">&gt;</span></span>
+    <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>PackageReference</span> <span class="token attr-name">Include</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>Newtonsoft.Json<span class="token punctuation">"</span></span> <span class="token attr-name">Version</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>13.0.1<span class="token punctuation">"</span></span> <span class="token punctuation">/&gt;</span></span>
+  <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>ItemGroup</span><span class="token punctuation">&gt;</span></span>
+
+<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>Project</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<h5><a id="WeChat_46"></a>新增WeChat类进行封装</h5>
+<p>新建WeChat.cs文件。</p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">Newtonsoft<span class="token punctuation">.</span>Json</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Security<span class="token punctuation">.</span>Cryptography</span><span class="token punctuation">;</span>
+<span class="token keyword">using</span> <span class="token namespace">System<span class="token punctuation">.</span>Text</span><span class="token punctuation">;</span>
+
+<span class="token keyword">namespace</span> <span class="token namespace">AspNetCoreWeChatCode2Session</span>
+<span class="token punctuation">{<!-- --></span>
+
+    <span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">WeChat</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 小程序 appId</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> appid <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 小程序 appSecret</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> secret <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Code2SessionParamter</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 小程序 appId</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> appid <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 小程序 appSecret</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> secret <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 登录时获取的 code</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> js_code <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">///  授权类型，此处只需填写 authorization_code</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> grant_type <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span> <span class="token operator">=</span> <span class="token string">"authorization_code"</span><span class="token punctuation">;</span>
+
+            <span class="token keyword">public</span> <span class="token function">Code2SessionParamter</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> js_code<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">this</span><span class="token punctuation">.</span>js_code <span class="token operator">=</span> js_code<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            <span class="token keyword">public</span> <span class="token function">Code2SessionParamter</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> appid<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> secret<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> js_code<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">this</span><span class="token punctuation">.</span>appid <span class="token operator">=</span> appid<span class="token punctuation">;</span>
+                <span class="token keyword">this</span><span class="token punctuation">.</span>secret <span class="token operator">=</span> secret<span class="token punctuation">;</span>
+                <span class="token keyword">this</span><span class="token punctuation">.</span>js_code <span class="token operator">=</span> js_code<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Code2SessionResult</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 用户唯一标识</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> openid <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 会话密钥</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> session_key <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 用户在开放平台的唯一标识符，若当前小程序已绑定到微信开放平台帐号下会返回，详见 UnionID 机制说明。</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> unionid <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 错误码</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">int</span></span> errcode <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">///  错误信息</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> errmsg <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">enum</span> <span class="token class-name">Gender</span>
+        <span class="token punctuation">{<!-- --></span>
+            unkown <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">,</span>
+            man <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">,</span>
+            woman <span class="token operator">=</span> <span class="token number">2</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">UserInfo</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> openId <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 用户昵称</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> nickName <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 用户性别</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name">Gender</span> gender <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 用户所在国家</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> country <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 用户所在省份。</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> province <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 用户所在城市。</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> city <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 用户在开放平台的唯一标识符，若当前小程序已绑定到微信开放平台帐号下会返回，详见 UnionID 机制说明。</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> unionId <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 用户头像图片的 URL。URL 最后一个数值代表正方形头像大小（有 0、46、64、96、132 数值可选，0 代表 640x640 的正方形头像，46 表示 46x46 的正方形头像，剩余数值以此类推。默认132），用户没有头像时该项为空。若用户更换头像，原有头像 URL 将失效。</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> avatarUrl <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// </span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name">Watermark</span> watermark <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Watermark</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 敏感数据归属 appId，开发者可校验此参数与自身 appId 是否一致</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> appid <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 敏感数据获取的时间戳, 开发者可以用于数据时效性校验</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> timestamp <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token function">WeChat</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> appid<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> secret<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">this</span><span class="token punctuation">.</span>appid <span class="token operator">=</span> appid<span class="token punctuation">;</span>
+            <span class="token keyword">this</span><span class="token punctuation">.</span>secret <span class="token operator">=</span> secret<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 登录凭证校验。通过 wx.login 接口获得临时登录凭证 code 后传到开发者服务器调用此接口完成登录流程。更多使用方法详见 小程序登录。</span>
+        <span class="token comment">/// https://developers.weixin.qq.com/miniprogram/dev/framework/open-ability/login.html</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;param name="code2SessionParamter"&gt;参数&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;returns&gt;&lt;/returns&gt;</span>
+        <span class="token keyword">public</span> <span class="token keyword">async</span> <span class="token return-type class-name">Task<span class="token punctuation">&lt;</span>Code2SessionResult<span class="token punctuation">?</span><span class="token punctuation">&gt;</span></span> <span class="token function">GetCode2Session</span><span class="token punctuation">(</span><span class="token class-name">Code2SessionParamter</span> code2SessionParamter<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token keyword">string</span><span class="token punctuation">.</span><span class="token function">IsNullOrEmpty</span><span class="token punctuation">(</span>code2SessionParamter<span class="token punctuation">.</span>appid<span class="token punctuation">)</span><span class="token punctuation">)</span> code2SessionParamter<span class="token punctuation">.</span>appid <span class="token operator">=</span> appid<span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token keyword">string</span><span class="token punctuation">.</span><span class="token function">IsNullOrEmpty</span><span class="token punctuation">(</span>code2SessionParamter<span class="token punctuation">.</span>secret<span class="token punctuation">)</span><span class="token punctuation">)</span> code2SessionParamter<span class="token punctuation">.</span>secret <span class="token operator">=</span> secret<span class="token punctuation">;</span>
+            <span class="token class-name"><span class="token keyword">var</span></span> result <span class="token operator">=</span> <span class="token keyword">await</span> <span class="token function">Get</span><span class="token punctuation">(</span><span class="token interpolation-string"><span class="token string">$"https://api.weixin.qq.com/sns/jscode2session?appid=</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">code2SessionParamter<span class="token punctuation">.</span>appid</span><span class="token punctuation">}</span></span><span class="token string">&amp;secret=</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">code2SessionParamter<span class="token punctuation">.</span>secret</span><span class="token punctuation">}</span></span><span class="token string">&amp;js_code=</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">code2SessionParamter<span class="token punctuation">.</span>js_code</span><span class="token punctuation">}</span></span><span class="token string">&amp;grant_type=</span><span class="token interpolation"><span class="token punctuation">{<!-- --></span><span class="token expression language-csharp">code2SessionParamter<span class="token punctuation">.</span>grant_type</span><span class="token punctuation">}</span></span><span class="token string">"</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> JsonConvert<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">DeserializeObject</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>Code2SessionResult<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span>result<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 内部使用的通用方法</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;param name="url"&gt;&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;returns&gt;&lt;/returns&gt;</span>
+        <span class="token keyword">static</span> <span class="token keyword">async</span> <span class="token return-type class-name">Task<span class="token punctuation">&lt;</span><span class="token keyword">string</span><span class="token punctuation">&gt;</span></span> <span class="token function">Get</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> url<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">try</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token class-name"><span class="token keyword">var</span></span> httpClient <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">HttpClient</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name">HttpResponseMessage</span> response <span class="token operator">=</span> <span class="token keyword">await</span> httpClient<span class="token punctuation">.</span><span class="token function">GetAsync</span><span class="token punctuation">(</span>url<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> response<span class="token punctuation">.</span>IsSuccessStatusCode <span class="token punctuation">?</span> <span class="token keyword">await</span> response<span class="token punctuation">.</span>Content<span class="token punctuation">.</span><span class="token function">ReadAsStringAsync</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">:</span> <span class="token string">""</span><span class="token punctuation">;</span> <span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> ex<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Exception</span><span class="token punctuation">(</span><span class="token string">"Get 请求出错："</span> <span class="token operator">+</span> ex<span class="token punctuation">.</span>Message<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 解密获取用户信息 (不验证签名)</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;param name="iv"&gt;加密算法的初始向量&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="encryptedData"&gt;包括敏感数据在内的完整用户信息的加密数据&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="session_key"&gt;会话密钥&lt;/param&gt; </span>
+        <span class="token comment">/// &lt;returns&gt;&lt;/returns&gt;</span>
+        <span class="token keyword">public</span> <span class="token return-type class-name">UserInfo<span class="token punctuation">?</span></span> <span class="token function">GetUserInfo</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> iv<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> encryptedData<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> session_key<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">return</span> JsonConvert<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">DeserializeObject</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>UserInfo<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token function">AESDecrypt</span><span class="token punctuation">(</span>encryptedData<span class="token punctuation">,</span> session_key<span class="token punctuation">,</span> iv<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 解密获取用户信息 (验证签名)</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;param name="iv"&gt;加密算法的初始向量&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="encryptedData"&gt;包括敏感数据在内的完整用户信息的加密数据&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="session_key"&gt;会话密钥&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="rawData"&gt;不包括敏感信息的原始数据字符串，用于计算签名&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="signature"&gt;使用 sha1( rawData + sessionkey ) 得到字符串，用于校验用户信息&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;returns&gt;&lt;/returns&gt;</span>
+        <span class="token keyword">public</span> <span class="token return-type class-name">UserInfo<span class="token punctuation">?</span></span> <span class="token function">GetUserInfo</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> iv<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> encryptedData<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> session_key<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> rawData<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> signature<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token function">CheckSignature</span><span class="token punctuation">(</span>rawData<span class="token punctuation">,</span> session_key<span class="token punctuation">,</span> signature<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token function">GetUserInfo</span><span class="token punctuation">(</span>iv<span class="token punctuation">,</span> encryptedData<span class="token punctuation">,</span> session_key<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// 检查签名</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;param name="rawData"&gt;不包括敏感信息的原始数据字符串，用于计算签名&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="session_key"&gt;&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="signature"&gt;使用 sha1( rawData + sessionkey ) 得到字符串，用于校验用户信息&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;exception cref="Exception"&gt;&lt;/exception&gt;</span>
+        <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">CheckSignature</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> rawData<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> session_key<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> signature<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token function">SHA1Encryption</span><span class="token punctuation">(</span>rawData <span class="token operator">+</span> session_key<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span>signature<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">SHA1Encryption</span><span class="token punctuation">(</span>rawData <span class="token operator">+</span> session_key<span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">ToUpper</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">!=</span> signature<span class="token punctuation">.</span><span class="token function">ToUpper</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Exception</span><span class="token punctuation">(</span><span class="token string">"CheckSignature 签名校验失败，数据可能损坏。"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+
+
+        <span class="token comment">/// &lt;summary&gt;  </span>
+        <span class="token comment">/// SHA1 加密，返回大写字符串  </span>
+        <span class="token comment">/// &lt;/summary&gt;  </span>
+        <span class="token comment">/// &lt;param name="content"&gt;需要加密字符串&lt;/param&gt;  </span>
+        <span class="token comment">/// &lt;param name="encode"&gt;指定加密编码&lt;/param&gt;  </span>
+        <span class="token comment">/// &lt;returns&gt;返回40位大写字符串&lt;/returns&gt;  </span>
+        <span class="token return-type class-name"><span class="token keyword">string</span></span> <span class="token function">SHA1Encryption</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> content<span class="token punctuation">,</span> <span class="token class-name">Encoding</span> encode <span class="token operator">=</span> <span class="token keyword">null</span><span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">try</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>encode <span class="token operator">==</span> <span class="token keyword">null</span><span class="token punctuation">)</span> encode <span class="token operator">=</span> Encoding<span class="token punctuation">.</span>UTF8<span class="token punctuation">;</span>
+                <span class="token class-name">SHA1</span> sha1 <span class="token operator">=</span> SHA1<span class="token punctuation">.</span><span class="token function">Create</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> bytes_in <span class="token operator">=</span> encode<span class="token punctuation">.</span><span class="token function">GetBytes</span><span class="token punctuation">(</span>content<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name"><span class="token keyword">byte</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> bytes_out <span class="token operator">=</span> sha1<span class="token punctuation">.</span><span class="token function">ComputeHash</span><span class="token punctuation">(</span>bytes_in<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                sha1<span class="token punctuation">.</span><span class="token function">Dispose</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name"><span class="token keyword">string</span></span> result <span class="token operator">=</span> BitConverter<span class="token punctuation">.</span><span class="token function">ToString</span><span class="token punctuation">(</span>bytes_out<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                result <span class="token operator">=</span> result<span class="token punctuation">.</span><span class="token function">Replace</span><span class="token punctuation">(</span><span class="token string">"-"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> result<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> ex<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Exception</span><span class="token punctuation">(</span><span class="token string">"SHA1Encryption加密出错："</span> <span class="token operator">+</span> ex<span class="token punctuation">.</span>Message<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+        <span class="token comment">/// &lt;summary&gt;</span>
+        <span class="token comment">/// Aes 解密</span>
+        <span class="token comment">/// &lt;/summary&gt;</span>
+        <span class="token comment">/// &lt;param name="encryptedData"&gt;&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="sessionKey"&gt;&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;param name="iv"&gt;&lt;/param&gt;</span>
+        <span class="token comment">/// &lt;returns&gt;&lt;/returns&gt;</span>
+        <span class="token return-type class-name"><span class="token keyword">string</span></span> <span class="token function">AESDecrypt</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> encryptedData<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> sessionKey<span class="token punctuation">,</span> <span class="token class-name"><span class="token keyword">string</span></span> iv<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">try</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token class-name"><span class="token keyword">var</span></span> encryptedDataByte <span class="token operator">=</span> Convert<span class="token punctuation">.</span><span class="token function">FromBase64String</span><span class="token punctuation">(</span>encryptedData<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name"><span class="token keyword">var</span></span> aes <span class="token operator">=</span> Aes<span class="token punctuation">.</span><span class="token function">Create</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                aes<span class="token punctuation">.</span>Key <span class="token operator">=</span> Convert<span class="token punctuation">.</span><span class="token function">FromBase64String</span><span class="token punctuation">(</span>sessionKey<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                aes<span class="token punctuation">.</span>IV <span class="token operator">=</span> Convert<span class="token punctuation">.</span><span class="token function">FromBase64String</span><span class="token punctuation">(</span>iv<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                aes<span class="token punctuation">.</span>Mode <span class="token operator">=</span> CipherMode<span class="token punctuation">.</span>CBC<span class="token punctuation">;</span>
+                aes<span class="token punctuation">.</span>Padding <span class="token operator">=</span> PaddingMode<span class="token punctuation">.</span>PKCS7<span class="token punctuation">;</span>
+                <span class="token class-name"><span class="token keyword">var</span></span> transform <span class="token operator">=</span> aes<span class="token punctuation">.</span><span class="token function">CreateDecryptor</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name"><span class="token keyword">var</span></span> plainText <span class="token operator">=</span> transform<span class="token punctuation">.</span><span class="token function">TransformFinalBlock</span><span class="token punctuation">(</span>encryptedDataByte<span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> encryptedDataByte<span class="token punctuation">.</span>Length<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token class-name"><span class="token keyword">var</span></span> result <span class="token operator">=</span> Encoding<span class="token punctuation">.</span>Default<span class="token punctuation">.</span><span class="token function">GetString</span><span class="token punctuation">(</span>plainText<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> result<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> ex<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Exception</span><span class="token punctuation">(</span><span class="token string">"AESDecrypt解密出错："</span> <span class="token operator">+</span> ex<span class="token punctuation">.</span>Message<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h5><a id="Program_318"></a>编辑Program文件</h5>
+<p>修改Program.cs文件。</p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">AspNetCoreWeChatCode2Session</span><span class="token punctuation">;</span>
+
+<span class="token class-name"><span class="token keyword">var</span></span> builder <span class="token operator">=</span> WebApplication<span class="token punctuation">.</span><span class="token function">CreateBuilder</span><span class="token punctuation">(</span>args<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+builder<span class="token punctuation">.</span>Services<span class="token punctuation">.</span><span class="token function">AddControllers</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">// 添加WeChat单例服务</span>
+builder<span class="token punctuation">.</span>Services<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">AddSingleton</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>WeChat<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">WeChat</span><span class="token punctuation">(</span><span class="token string">"appid"</span><span class="token punctuation">,</span> <span class="token string">"secret"</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ 
+<span class="token class-name"><span class="token keyword">var</span></span> app <span class="token operator">=</span> builder<span class="token punctuation">.</span><span class="token function">Build</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>  
+app<span class="token punctuation">.</span><span class="token function">UseAuthorization</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 
+app<span class="token punctuation">.</span><span class="token function">MapControllers</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> 
+app<span class="token punctuation">.</span><span class="token function">Run</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h5><a id="appidsecret_337"></a>获取appid和secret</h5>
+<ol><li> <p>进入微信公众平台 https://mp.weixin.qq.com/ 。</p> </li><li> <p>进入开发设置中获取。</p> <p><img alt="image" src="https://img-blog.csdnimg.cn/img_convert/963f78492a330ba008bd655e244fba20.png"/></p> </li></ol>
+<h5><a id="_345"></a>新增接口进行测试</h5>
+<p>新建LoginController.cs文件放在Controllers文件夹中。</p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token namespace">Microsoft<span class="token punctuation">.</span>AspNetCore<span class="token punctuation">.</span>Mvc</span><span class="token punctuation">;</span>
+
+<span class="token comment">// For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860</span>
+
+<span class="token keyword">namespace</span> <span class="token namespace">AspNetCoreWeChatCode2Session<span class="token punctuation">.</span>Controllers</span>
+<span class="token punctuation">{<!-- --></span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">Route</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"api/[controller]"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">ApiController</span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">LoginController</span> <span class="token punctuation">:</span> <span class="token type-list"><span class="token class-name">ControllerBase</span></span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">readonly</span> <span class="token class-name">WeChat</span> _weChat<span class="token punctuation">;</span>
+
+        <span class="token keyword">static</span> <span class="token class-name"><span class="token keyword">string</span></span> session_key <span class="token operator">=</span> <span class="token string">""</span><span class="token punctuation">;</span>
+        <span class="token keyword">public</span> <span class="token function">LoginController</span><span class="token punctuation">(</span><span class="token class-name">WeChat</span> weChat<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            _weChat <span class="token operator">=</span> weChat<span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">HttpGet</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"{code}"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+        <span class="token keyword">public</span> <span class="token keyword">async</span> <span class="token return-type class-name">Task<span class="token punctuation">&lt;</span>IActionResult<span class="token punctuation">&gt;</span></span> <span class="token function">Get</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span></span> code<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">var</span></span> res <span class="token operator">=</span> <span class="token keyword">await</span> _weChat<span class="token punctuation">.</span><span class="token function">GetCode2Session</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">WeChat<span class="token punctuation">.</span>Code2SessionParamter</span><span class="token punctuation">(</span>code<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            session_key <span class="token operator">=</span> res<span class="token punctuation">.</span>session_key<span class="token punctuation">;</span>
+            <span class="token comment">// 注意: 这里是为了方便演示，开发的时候不应该去传给前端。</span>
+            <span class="token comment">// 为了数据不被篡改，开发者不应该把 session_key 传到小程序客户端等服务器外的环境。</span>
+            <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">JsonResult</span><span class="token punctuation">(</span>res<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">HttpPost</span></span><span class="token punctuation">]</span>
+        <span class="token keyword">public</span> <span class="token keyword">async</span> <span class="token return-type class-name">Task<span class="token punctuation">&lt;</span>IActionResult<span class="token punctuation">&gt;</span></span> <span class="token function">Post</span><span class="token punctuation">(</span><span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">FromBody</span></span><span class="token punctuation">]</span> <span class="token class-name">LoginParameter</span> parameter<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span><span class="token keyword">string</span><span class="token punctuation">.</span><span class="token function">IsNullOrEmpty</span><span class="token punctuation">(</span>parameter<span class="token punctuation">.</span>code<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token keyword">await</span> <span class="token function">Get</span><span class="token punctuation">(</span>parameter<span class="token punctuation">.</span>code<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">JsonResult</span><span class="token punctuation">(</span>_weChat<span class="token punctuation">.</span><span class="token function">GetUserInfo</span><span class="token punctuation">(</span>parameter<span class="token punctuation">.</span>iv<span class="token punctuation">,</span> parameter<span class="token punctuation">.</span>encryptedData<span class="token punctuation">,</span> session_key<span class="token punctuation">,</span> parameter<span class="token punctuation">.</span>rawData<span class="token punctuation">,</span> parameter<span class="token punctuation">.</span>signature<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+        <span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">LoginParameter</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 用于解析session_key</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span><span class="token punctuation">?</span></span> code <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 不包括敏感信息的原始数据字符串，用于计算签名</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> rawData <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 包括敏感数据在内的完整用户信息的加密数据</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> encryptedData <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 加密算法的初始向量</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> iv <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+            <span class="token comment">/// &lt;summary&gt;</span>
+            <span class="token comment">/// 使用 sha1( rawData + sessionkey ) 得到字符串，用于校验用户信息</span>
+            <span class="token comment">/// &lt;/summary&gt;</span>
+            <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">string</span></span> signature <span class="token punctuation">{<!-- --></span> <span class="token keyword">get</span><span class="token punctuation">;</span> <span class="token keyword">set</span><span class="token punctuation">;</span> <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h5><a id="_412"></a>新建小程序</h5>
+<p><img alt="image" src="https://img-blog.csdnimg.cn/img_convert/ddcce49c084df8c030c6467c3339d06c.png"/></p>
+<h5><a id="appts_416"></a>修改app.ts</h5>
+<p>在app.ts中调用获取openid接口</p>
+<pre><code class="prism language-typescript"><span class="token comment">// app.ts</span>
+<span class="token generic-function"><span class="token function">App</span><span class="token generic class-name"><span class="token operator">&lt;</span>IAppOption<span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>
+  globalData<span class="token operator">:</span> <span class="token punctuation">{<!-- --></span><span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token function">onLaunch</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    wx<span class="token punctuation">.</span><span class="token function">hideHomeButton</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    wx<span class="token punctuation">.</span><span class="token function">login</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>
+      <span class="token function-variable function">success</span><span class="token operator">:</span> <span class="token punctuation">(</span>res<span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+        wx<span class="token punctuation">.</span><span class="token function">request</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>
+          url<span class="token operator">:</span> <span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">http://localhost:5000/api/login/</span><span class="token interpolation"><span class="token interpolation-punctuation punctuation">${<!-- --></span>res<span class="token punctuation">.</span>code<span class="token interpolation-punctuation punctuation">}</span></span><span class="token template-punctuation string">`</span></span><span class="token punctuation">,</span>
+          method<span class="token operator">:</span> <span class="token string">"GET"</span><span class="token punctuation">,</span>
+          <span class="token function-variable function">success</span><span class="token operator">:</span> <span class="token punctuation">(</span>res<span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token builtin">console</span><span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span>res<span class="token punctuation">)</span><span class="token punctuation">;</span>
+          <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span><span class="token punctuation">)</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span><span class="token punctuation">)</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span>
+</code></pre>
+<h5><a id="test_441"></a>新建test页面</h5>
+<p>index.wxml</p>
+<pre><code class="prism language-html"><span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>view</span> <span class="token attr-name">bindtap</span><span class="token attr-value"><span class="token punctuation attr-equals">=</span><span class="token punctuation">"</span>getUserInfo<span class="token punctuation">"</span></span><span class="token punctuation">&gt;</span></span>获取用户信息<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;/</span>view</span><span class="token punctuation">&gt;</span></span>
+</code></pre>
+<p>index.ts</p>
+<pre><code class="prism language-typescript"><span class="token keyword">let</span> checkSession <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token builtin">Promise</span><span class="token operator">&lt;</span>WechatMiniprogram<span class="token punctuation">.</span>GeneralCallbackResult<span class="token operator">&gt;</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token class-name"><span class="token builtin">Promise</span></span><span class="token punctuation">(</span><span class="token punctuation">(</span>resolve<span class="token punctuation">,</span> reject<span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+    wx<span class="token punctuation">.</span><span class="token function">checkSession</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>
+      success<span class="token operator">:</span> resolve<span class="token punctuation">,</span>
+      fail<span class="token operator">:</span> reject
+    <span class="token punctuation">}</span><span class="token punctuation">)</span>
+  <span class="token punctuation">}</span><span class="token punctuation">)</span>
+<span class="token punctuation">}</span>
+<span class="token keyword">let</span> getUserProfile <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token builtin">Promise</span><span class="token operator">&lt;</span>WechatMiniprogram<span class="token punctuation">.</span>GetUserProfileSuccessCallbackResult <span class="token operator">&amp;</span> <span class="token punctuation">{<!-- --></span> iv<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">,</span> signature<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">,</span> encryptedData<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">,</span> rawData<span class="token operator">:</span> <span class="token builtin">string</span> <span class="token punctuation">}</span><span class="token operator">&gt;</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token class-name"><span class="token builtin">Promise</span></span><span class="token punctuation">(</span><span class="token punctuation">(</span>resolve<span class="token punctuation">,</span> reject<span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+    wx<span class="token punctuation">.</span><span class="token function">getUserProfile</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>
+      desc<span class="token operator">:</span> <span class="token string">"用于更好的展示。"</span><span class="token punctuation">,</span>
+      <span class="token function-variable function">success</span><span class="token operator">:</span> <span class="token punctuation">(</span>res<span class="token operator">:</span> <span class="token builtin">any</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token function">resolve</span><span class="token punctuation">(</span>res<span class="token punctuation">)</span><span class="token punctuation">,</span>
+      fail<span class="token operator">:</span> reject
+    <span class="token punctuation">}</span><span class="token punctuation">)</span>
+  <span class="token punctuation">}</span><span class="token punctuation">)</span>
+<span class="token punctuation">}</span>
+<span class="token keyword">let</span> login <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">:</span> <span class="token builtin">Promise</span><span class="token operator">&lt;</span>WechatMiniprogram<span class="token punctuation">.</span>LoginSuccessCallbackResult<span class="token operator">&gt;</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+  <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token class-name"><span class="token builtin">Promise</span></span><span class="token punctuation">(</span><span class="token punctuation">(</span>resolve<span class="token punctuation">,</span> reject<span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+    wx<span class="token punctuation">.</span><span class="token function">login</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>
+      success<span class="token operator">:</span> resolve<span class="token punctuation">,</span>
+      fail<span class="token operator">:</span> reject
+    <span class="token punctuation">}</span><span class="token punctuation">)</span>
+  <span class="token punctuation">}</span><span class="token punctuation">)</span>
+<span class="token punctuation">}</span>
+<span class="token function">Page</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>
+  data<span class="token operator">:</span> <span class="token punctuation">{<!-- --></span>
+    code<span class="token operator">:</span> <span class="token string">''</span><span class="token punctuation">,</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token keyword">async</span> <span class="token function">onLoad</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+      <span class="token keyword">await</span> <span class="token function">checkSession</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span> <span class="token keyword">catch</span> <span class="token punctuation">(</span>error<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+      <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token function">setData</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span> code<span class="token operator">:</span> <span class="token punctuation">(</span><span class="token keyword">await</span> <span class="token function">login</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span>code <span class="token punctuation">}</span><span class="token punctuation">)</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token keyword">async</span> <span class="token function">getUserInfo</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">let</span> code <span class="token operator">=</span> <span class="token keyword">this</span><span class="token punctuation">.</span>data<span class="token punctuation">.</span>code<span class="token punctuation">;</span>
+    <span class="token keyword">let</span> userRes <span class="token operator">=</span> <span class="token keyword">await</span> <span class="token function">getUserProfile</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">let</span> data <span class="token operator">=</span> <span class="token punctuation">{<!-- --></span>
+      encryptedData<span class="token operator">:</span> userRes<span class="token punctuation">.</span>encryptedData<span class="token punctuation">,</span>
+      iv<span class="token operator">:</span> userRes<span class="token punctuation">.</span>iv<span class="token punctuation">,</span>
+      signature<span class="token operator">:</span> userRes<span class="token punctuation">.</span>signature<span class="token punctuation">,</span>
+      rawData<span class="token operator">:</span> userRes<span class="token punctuation">.</span>rawData<span class="token punctuation">,</span>
+      code<span class="token punctuation">,</span>
+    <span class="token punctuation">}</span>
+    wx<span class="token punctuation">.</span><span class="token function">request</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span>
+      url<span class="token operator">:</span> <span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">http://localhost:5000/api/login</span><span class="token template-punctuation string">`</span></span><span class="token punctuation">,</span>
+      method<span class="token operator">:</span> <span class="token string">'POST'</span><span class="token punctuation">,</span>
+      data<span class="token punctuation">,</span>
+      <span class="token function-variable function">success</span><span class="token operator">:</span> <span class="token keyword">async</span> <span class="token punctuation">(</span>res<span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>res<span class="token punctuation">.</span>statusCode <span class="token operator">!=</span> <span class="token number">200</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+          <span class="token builtin">console</span><span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">"error"</span><span class="token punctuation">,</span> res<span class="token punctuation">)</span><span class="token punctuation">;</span>
+          <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token function">setData</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span> code<span class="token operator">:</span> <span class="token punctuation">(</span><span class="token keyword">await</span> <span class="token function">login</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span>code <span class="token punctuation">}</span><span class="token punctuation">)</span>
+        <span class="token punctuation">}</span>
+        <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+          <span class="token comment">// 防止code重复使用</span>
+          <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token function">setData</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span> code<span class="token operator">:</span> <span class="token string">""</span> <span class="token punctuation">}</span><span class="token punctuation">)</span>
+          <span class="token builtin">console</span><span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">"success"</span><span class="token punctuation">,</span> res<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+      <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token function-variable function">fail</span><span class="token operator">:</span> <span class="token keyword">async</span> <span class="token punctuation">(</span>err<span class="token punctuation">)</span> <span class="token operator">=&gt;</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token builtin">console</span><span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">"fail"</span><span class="token punctuation">,</span> err<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token function">setData</span><span class="token punctuation">(</span><span class="token punctuation">{<!-- --></span> code<span class="token operator">:</span> <span class="token punctuation">(</span><span class="token keyword">await</span> <span class="token function">login</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span>code <span class="token punctuation">}</span><span class="token punctuation">)</span>
+      <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span><span class="token punctuation">)</span>
+    <span class="token builtin">console</span><span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span>userRes<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span>
+</code></pre>
+<h5><a id="_523"></a>稍微测试一下</h5>
+<p><img alt="image" src="https://img-blog.csdnimg.cn/img_convert/e60c6bfb3ab4c3fa86f25d503c8c4097.png"/></p>
+<p>没啥大问题~</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

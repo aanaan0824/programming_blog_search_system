@@ -1,0 +1,494 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><ul><li><ul><li><ul><li><a href="#__4">一. 前言</a></li><li><a href="#__10">二. 基本功能</a></li><li><a href="#__103">三. 代码实现</a></li><li><ul><li><a href="#1_fdogloggerh_104">1. fdoglogger.h</a></li><li><a href="#2_fdogloggercpp_279">2. fdoglogger.cpp</a></li></ul>
+</li><li><a href="#__508">四. 测试用例</a></li><li><ul><li><a href="#1_fdoglogger_testcpp_513">1. fdoglogger_test.cpp</a></li></ul>
+</li></ul>
+</li></ul>
+</li></ul>
+</li></ul>
+</div>
+<p></p>
+<hr/>
+<h4><a id="__4"></a>一. 前言</h4>
+<p>哈喽，自从实习以来很久没有更文了，一是没有时间，二是实习了之后突然发现自己能写的东西也没有多少了。赶上1024有征文活动，就写一篇吧，在实习的这段时间，我更加认识到日志的重要性，客户端值没传过来？看日志，服务崩溃了？看日志，没错，日志是出现异常第一个想到的东西，它记录了程序运行过程中所调用的函数，所接受到的值，所执行的行为等等。大家也都看到这篇的标题了，我这个人有一个缺点，就是不太喜欢用别人的东西，如果有能力，我希望自己造，所以今天我们自己来动手撸一个日志库，文章重点讲实现过程，如果需要源码，可以前往github获取<a href="https://github.com/HuaGouFdog/FdogLog">FdogLog，一个轻量级C++日志库，用于日志服务。</a></p>
+<p><mark>跪求三连！</mark></p>
+<hr/>
+<h4><a id="__10"></a>二. 基本功能</h4>
+<p>我们先来捋一捋这个日志库应该实现那些功能。</p>
+<blockquote>
+<ol><li>日志最最最基本的功能是什么，当然是打印或记录日志。</li><li>信息应该包括哪些信息，时间？运行用户？所在文件？想要显示的信息？（自定义显示信息下篇实现）</li><li>信息虽然显示丰富，但是要尽可能让代码自己获取其他信息，调用者只需要设置最主要的信息。</li><li>信息有重要等级之分，所以我们需要对信息做必要分类，提高效率。</li><li>如何实现全局尽可能简洁的调用。</li><li>如果日志库是运行在多线程环境，如何保证线程安全。（下篇实现）</li></ol>
+</blockquote>
+<p>这些就是一个日志库所具备的最基本的功能，接下来继续思考，还需要什么。</p>
+<blockquote>
+<ol start="7"><li>怎么控制日志的行为。</li><li>如果保存在文件，如何定义文件名。</li><li>随着日志增加，文件会越来越大，如何解决。（下篇实现）</li></ol>
+</blockquote>
+<hr/>
+<p>简单规划完一个不那么完美的日志库所具备的能力，现在我们来对这几条做更详细的规划。</p>
+<ol><li>日志最最最基本的功能是什么，当然是打印或记录日志。</li><li>信息应该包括哪些信息，时间？运行用户？所在文件？想要显示的信息？</li></ol>
+<p>当我在调用一个名为function的函数时。</p>
+<pre><code class="prism language-cpp"><span class="token function">function</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>你希望它输出怎么样的信息。</p>
+<blockquote>
+<p>我被调用<br/> [2021-10-20 23:27:23] 我被调用<br/> [2021-10-20 23:27:23] INFO 我被调用<br/> [2021-10-20 23:27:23] INFO root 我被调用<br/> [2021-10-20 23:27:23] INFO root 17938 我被调用<br/> [2021-10-20 23:27:23] INFO root 17938 [/media/rcl/FdogIM/service.h function:8] 我被调用</p>
+</blockquote>
+<p>我想大部分人都会选择最后一种输出信息吧(虽然在这之前，我们都大量使用cout输出第一种)，所以我们的日志应该包括时间，日志等级，运行用户，进程ID，调用函数所在文件，以及调用时所在行数。当然总会有人不想全部输出，这将在后面给出方案。</p>
+<ol start="3"><li> <p>信息虽然显示丰富，但是要尽可能让代码自己获取其他信息，调用者只需要设置最主要的信息。</p> </li><li> <p>信息有重要等级之分，所以我们需要对信息做必要分类，提高效率。</p> </li><li> <p>如何实现全局尽可能简洁的调用.</p> </li></ol>
+<p>信息有重要等级之分，要可以对信息做区分，按照常见的等级之分，有：</p>
+<blockquote>
+<p>ERROR： 此信息输出后，主体系统核心模块不能正常工作，需要修复才能正常工作。<br/> WARN：   此信息输出后，系统一般模块存在问题，不影响系统运行。<br/> INFO：     此信息输出后，主要是记录系统运行状态等关联信息。<br/> DEBUG： 最细粒度的输出，除去上面各种情况后，你希望输出的相关信息，都可以在这里输出。<br/> TRACE：  最细粒度的输出，除去上面各种情况后，你希望输出的相关信息，都可以在这里输出。</p>
+</blockquote>
+<p>有了等级之分，如何实现全局尽可能简洁的调用，通俗的说就是去掉一切不必要的调用，只留下最主要的调用。</p>
+<p>例如：</p>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">"fdoglogger.h"</span>  <span class="token comment">//添加日志库头文件</span></span>
+
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> fdog<span class="token punctuation">;</span>   <span class="token comment">//日志库的命名空间</span>
+
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token function">FdogError</span><span class="token punctuation">(</span><span class="token string">"错误"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">FdogWarn</span><span class="token punctuation">(</span><span class="token string">"警告"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">FdogInfo</span><span class="token punctuation">(</span><span class="token string">"信息"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">FdogDebug</span><span class="token punctuation">(</span><span class="token string">"调试"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">FdogTrace</span><span class="token punctuation">(</span><span class="token string">"追踪"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>你不必初始化什么信息，调用什么多余的初始化函数，只需要用这五个类似函数的东西来输出即可，同样，如果是另一个源文件，依旧是这样的调用方式（这里可以使用单一模式来实现，其意图是保证一个类仅有一个实列，并提供一个访问它的全局访问点，该实例被所有程序模块共享。就比如日志的输出。）。</p>
+<ol start="6"><li>如果日志库是运行在多线程环境，如何保证线程安全。</li></ol>
+<p>到目前，一个基本的日志库的调用基本成形，如果在单线程，它可以很好的工作，但是到了多线程环境下，就不能保证了，第一点就是单例模式的创建，当两个线程同时去初始化时，无法保证单一实例被成功创建，第二，日志既然是输出到文件，不同线程写入文件时，如何保证写入数据不会错乱。既然写的是C++的日志输出，必然用到了cout ，cout 不是原子性的操作，所以在多线程下是不安全的，这些都是我们需要考虑到的。</p>
+<ol start="7"><li>怎么控制日志的行为。</li></ol>
+<p>这里使用配置文件进行日志的行为规定，包括打印什么日志，输入到文件，还是终端，输出的等级，以及日志开关，等等，配置文件将在程序启动时被读取。(提醒各位千万不要写死代码，后患无穷！！！)</p>
+<ol start="8"><li> <p>如果保存在文件，如何定义文件名。</p> </li><li> <p>随着日志增加，文件会越来越大，如何解决。</p> </li></ol>
+<p>日志的文件名由配置文件指定，但是创建时会在后面加上创建日期后缀，并且可以在配置文件中配置每隔多少天创建一个新的日志文件，如果配置中心有设置日志文件大小，则会优先大小判断，超过便创建一个新文件。</p>
+<hr/>
+<h4><a id="__103"></a>三. 代码实现</h4>
+<h5><a id="1_fdogloggerh_104"></a>1. fdoglogger.h</h5>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifndef</span> <span class="token expression">FDOGLOGGER_H</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">FDOGLOGGER_H</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;fstream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;map&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;mutex&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifndef</span> <span class="token expression">linux</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;unistd.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;sys/syscall.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;sys/stat.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;sys/types.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span> <span class="token string">&lt;pwd.h&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifndef</span> <span class="token expression">WIN32</span></span>
+<span class="token comment">//TODO</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> std<span class="token punctuation">;</span>
+
+<span class="token keyword">namespace</span> fdog <span class="token punctuation">{<!-- --></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">RED</span>   <span class="token string">"\e[1;31m"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">BLUE</span>  <span class="token string">"\e[1;34m"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">GREEN</span> <span class="token string">"\e[1;32m"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">WHITE</span> <span class="token string">"\e[1;37m"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">DEFA</span>  <span class="token string">"\e[0m"</span></span>
+
+<span class="token keyword">enum</span> <span class="token keyword">class</span> <span class="token class-name">coutType</span><span class="token operator">:</span> <span class="token base-clause"><span class="token keyword">int</span></span> <span class="token punctuation">{<!-- --></span>Error<span class="token punctuation">,</span> Warn<span class="token punctuation">,</span> Info<span class="token punctuation">,</span> Debug<span class="token punctuation">,</span> Trace<span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token keyword">enum</span> <span class="token keyword">class</span> <span class="token class-name">fileType</span><span class="token operator">:</span> <span class="token base-clause"><span class="token keyword">int</span></span> <span class="token punctuation">{<!-- --></span>Error<span class="token punctuation">,</span> Warn<span class="token punctuation">,</span> Info<span class="token punctuation">,</span> Debug<span class="token punctuation">,</span> Trace<span class="token punctuation">}</span><span class="token punctuation">;</span>
+<span class="token keyword">enum</span> <span class="token keyword">class</span> <span class="token class-name">terminalType</span><span class="token operator">:</span> <span class="token base-clause"><span class="token keyword">int</span></span> <span class="token punctuation">{<!-- --></span>Error<span class="token punctuation">,</span> Warn<span class="token punctuation">,</span> Info<span class="token punctuation">,</span> Debug<span class="token punctuation">,</span> Trace<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword">struct</span> <span class="token class-name">Logger</span> <span class="token punctuation">{<!-- --></span>
+    string logSwitch<span class="token punctuation">;</span>           <span class="token comment">//日志开关</span>
+    string logFileSwitch<span class="token punctuation">;</span>       <span class="token comment">//是否写入文件</span>
+    string logTerminalSwitch<span class="token punctuation">;</span>   <span class="token comment">//是否打印到终端</span>
+    string logName<span class="token punctuation">;</span>             <span class="token comment">//日志文件名字</span>
+    string logFilePath<span class="token punctuation">;</span>         <span class="token comment">//日志文件保存路径</span>
+    string logMixSize<span class="token punctuation">;</span>          <span class="token comment">//日志文件最大大小</span>
+    string logBehavior<span class="token punctuation">;</span>         <span class="token comment">//日志文件达到最大大小行为</span>
+    string logOverlay<span class="token punctuation">;</span>          <span class="token comment">//日志文件覆盖时间</span>
+    string logOutputLevelFile<span class="token punctuation">;</span>  <span class="token comment">//日志输出等级(file)</span>
+    string logOutputLevelTerminal<span class="token punctuation">;</span><span class="token comment">//日志输出等级</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token keyword">class</span> <span class="token class-name">FdogLogger</span> <span class="token punctuation">{<!-- --></span>
+<span class="token keyword">public</span><span class="token operator">:</span>
+    <span class="token keyword">void</span> <span class="token function">initLogConfig</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">void</span> <span class="token function">releaseConfig</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">static</span> FdogLogger<span class="token operator">*</span> <span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    string <span class="token function">getCoutType</span><span class="token punctuation">(</span>coutType coutType<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">bool</span> <span class="token function">getFileType</span><span class="token punctuation">(</span>fileType fileCoutBool<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">bool</span> <span class="token function">getTerminalType</span><span class="token punctuation">(</span>terminalType terminalCoutTyle<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    string <span class="token function">getLogCoutTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    string <span class="token function">getLogNameTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    string <span class="token function">getFilePash</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    string <span class="token function">getLogCoutProcessId</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    string <span class="token function">getLogCoutThreadId</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    string <span class="token function">getLogCoutUserName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">bool</span> <span class="token function">createFile</span><span class="token punctuation">(</span>string filePash<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">bool</span> <span class="token function">logFileWrite</span><span class="token punctuation">(</span>string messages<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">bool</span> <span class="token function">bindFileCoutMap</span><span class="token punctuation">(</span>string value1<span class="token punctuation">,</span> fileType value2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">bool</span> <span class="token function">bindTerminalCoutMap</span><span class="token punctuation">(</span>string value1<span class="token punctuation">,</span> terminalType value2<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token keyword">private</span><span class="token operator">:</span>
+    <span class="token keyword">char</span> szbuf<span class="token punctuation">[</span><span class="token number">128</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+    Logger logger<span class="token punctuation">;</span>
+    <span class="token keyword">static</span> FdogLogger <span class="token operator">*</span> singleObject<span class="token punctuation">;</span>
+    <span class="token keyword">static</span> mutex <span class="token operator">*</span> mutex_new<span class="token punctuation">;</span>
+    map<span class="token operator">&lt;</span>coutType<span class="token punctuation">,</span> string<span class="token operator">&gt;</span> coutTypeMap<span class="token punctuation">;</span>
+    map<span class="token operator">&lt;</span>fileType<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token operator">&gt;</span> fileCoutMap<span class="token punctuation">;</span>
+    map<span class="token operator">&lt;</span>terminalType<span class="token punctuation">,</span> <span class="token keyword">bool</span><span class="token operator">&gt;</span> terminalCoutMap<span class="token punctuation">;</span>
+
+<span class="token keyword">private</span><span class="token operator">:</span>
+    <span class="token function">FdogLogger</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token operator">~</span><span class="token function">FdogLogger</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">Error1</span> <span class="token expression"><span class="token function">__FDOGNAME__</span><span class="token punctuation">(</span>Error<span class="token punctuation">)</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">Warn1</span> <span class="token expression"><span class="token function">__FDOGNAME__</span><span class="token punctuation">(</span>Warn<span class="token punctuation">)</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">Info1</span> <span class="token expression"><span class="token function">__FDOGNAME__</span><span class="token punctuation">(</span>Info<span class="token punctuation">)</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">Debug1</span> <span class="token expression"><span class="token function">__FDOGNAME__</span><span class="token punctuation">(</span>Debug<span class="token punctuation">)</span></span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">Trace1</span> <span class="token expression"><span class="token function">__FDOGNAME__</span><span class="token punctuation">(</span>Trace<span class="token punctuation">)</span></span></span>
+
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">SQUARE_BRACKETS_LEFT</span> <span class="token string">" ["</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">SQUARE_BRACKETS_RIGHT</span> <span class="token string">"] "</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">SPACE</span> <span class="token string">" "</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">LINE_FEED</span> <span class="token string">"\n"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">COLON</span> <span class="token string">":"</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">SLASH</span> <span class="token string">"/"</span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">__FDOGTIME__</span>  <span class="token expression"><span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">getLogCoutTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span>          </span><span class="token comment">//时间宏</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">__FDOGPID__</span>   <span class="token expression"><span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">getLogCoutProcessId</span><span class="token punctuation">(</span><span class="token punctuation">)</span>     </span><span class="token comment">//进程宏</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">__FDOGTID__</span>   <span class="token expression"><span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">getLogCoutThreadId</span><span class="token punctuation">(</span><span class="token punctuation">)</span>      </span><span class="token comment">//线程宏</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">__FDOGFILE__</span>  <span class="token expression"><span class="token constant">__FILE__</span>        </span><span class="token comment">//文件名宏</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">__FDOGPASH__</span>  <span class="token expression"><span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">getFilePash</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">+</span> __FDOGFILE__ </span><span class="token comment">//文件路径</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">__FDOGFUNC__</span>   <span class="token expression"><span class="token constant">__func__</span>        </span><span class="token comment">//函数名宏</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">__FDOGLINE__</span>  <span class="token expression"><span class="token constant">__LINE__</span>        </span><span class="token comment">//行数宏</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name">__USERNAME__</span>  <span class="token expression"><span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">getLogCoutUserName</span><span class="token punctuation">(</span><span class="token punctuation">)</span>     </span><span class="token comment">//获取调用用户名字</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">__FDOGNAME__</span><span class="token expression"><span class="token punctuation">(</span>name<span class="token punctuation">)</span> #name        </span><span class="token comment">//名字宏</span></span>
+
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">COMBINATION_INFO_FILE</span><span class="token expression"><span class="token punctuation">(</span>coutTypeInfo<span class="token punctuation">,</span> message<span class="token punctuation">)</span> </span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">do</span><span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+        <span class="token expression">string messagesAll <span class="token operator">=</span> __FDOGTIME__ <span class="token operator">+</span> coutTypeInfo <span class="token operator">+</span> __USERNAME__ <span class="token operator">+</span> __FDOGTID__ <span class="token operator">+</span> SQUARE_BRACKETS_LEFT <span class="token operator">+</span> </span><span class="token punctuation">\</span>
+        <span class="token expression">__FDOGPASH__  <span class="token operator">+</span> SPACE <span class="token operator">+</span>__FDOGFUNC__ <span class="token operator">+</span> COLON <span class="token operator">+</span> <span class="token function">to_string</span><span class="token punctuation">(</span>__FDOGLINE__<span class="token punctuation">)</span> <span class="token operator">+</span> SQUARE_BRACKETS_RIGHT <span class="token operator">+</span> message <span class="token operator">+</span> LINE_FEED<span class="token punctuation">;</span></span><span class="token punctuation">\</span>
+        <span class="token expression"><span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">logFileWrite</span><span class="token punctuation">(</span>messagesAll<span class="token punctuation">)</span><span class="token punctuation">;</span> </span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token punctuation">}</span><span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span></span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">COMBINATION_INFO_TERMINAL</span><span class="token expression"><span class="token punctuation">(</span>coutTypeInfo<span class="token punctuation">,</span> message<span class="token punctuation">)</span> </span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">do</span><span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+        <span class="token expression">string messagesAll <span class="token operator">=</span> __FDOGTIME__ <span class="token operator">+</span> WHITE <span class="token operator">+</span> coutTypeInfo <span class="token operator">+</span> DEFA <span class="token operator">+</span> __USERNAME__ <span class="token operator">+</span> __FDOGTID__ <span class="token operator">+</span> SQUARE_BRACKETS_LEFT <span class="token operator">+</span> </span><span class="token punctuation">\</span>
+        <span class="token expression">__FDOGPASH__  <span class="token operator">+</span> SPACE <span class="token operator">+</span>__FDOGFUNC__ <span class="token operator">+</span> COLON <span class="token operator">+</span> <span class="token function">to_string</span><span class="token punctuation">(</span>__FDOGLINE__<span class="token punctuation">)</span> <span class="token operator">+</span> SQUARE_BRACKETS_RIGHT <span class="token operator">+</span> message <span class="token operator">+</span> LINE_FEED<span class="token punctuation">;</span></span><span class="token punctuation">\</span>
+        <span class="token expression">cout <span class="token operator">&lt;&lt;</span> messagesAll<span class="token punctuation">;</span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token punctuation">}</span><span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span></span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">LoggerCout</span><span class="token expression"><span class="token punctuation">(</span>coutTyle<span class="token punctuation">,</span> coutTypeInfo<span class="token punctuation">,</span> fileCoutBool<span class="token punctuation">,</span> terminalCoutBool<span class="token punctuation">,</span> message<span class="token punctuation">)</span> </span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">do</span> <span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+        <span class="token expression">string coutType <span class="token operator">=</span> <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">getCoutType</span><span class="token punctuation">(</span>coutTyle<span class="token punctuation">)</span><span class="token punctuation">;</span></span><span class="token punctuation">\</span>
+        <span class="token expression"><span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">getFileType</span><span class="token punctuation">(</span>fileCoutBool<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+            <span class="token expression"><span class="token function">COMBINATION_INFO_FILE</span><span class="token punctuation">(</span>coutTypeInfo<span class="token punctuation">,</span> message<span class="token punctuation">)</span></span><span class="token punctuation">\</span>
+        <span class="token expression"><span class="token punctuation">}</span></span><span class="token punctuation">\</span>
+        <span class="token expression"><span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">getTerminalType</span><span class="token punctuation">(</span>terminalCoutBool<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+            <span class="token expression"><span class="token function">COMBINATION_INFO_TERMINAL</span><span class="token punctuation">(</span>coutTypeInfo<span class="token punctuation">,</span> message<span class="token punctuation">)</span></span><span class="token punctuation">\</span>
+        <span class="token expression"><span class="token punctuation">}</span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token punctuation">}</span><span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span></span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">FdogError</span><span class="token expression"><span class="token punctuation">(</span>message<span class="token punctuation">)</span> </span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">do</span><span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+        <span class="token expression"><span class="token function">LoggerCout</span><span class="token punctuation">(</span>fdog<span class="token operator">::</span>coutType<span class="token operator">::</span>Error<span class="token punctuation">,</span> Error1<span class="token punctuation">,</span> fdog<span class="token operator">::</span>fileType<span class="token operator">::</span>Error<span class="token punctuation">,</span> fdog<span class="token operator">::</span>terminalType<span class="token operator">::</span>Error<span class="token punctuation">,</span> message<span class="token punctuation">)</span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token punctuation">}</span><span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span></span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">FdogWarn</span><span class="token expression"><span class="token punctuation">(</span>message<span class="token punctuation">)</span>  </span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">do</span><span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+        <span class="token expression"><span class="token function">LoggerCout</span><span class="token punctuation">(</span>fdog<span class="token operator">::</span>coutType<span class="token operator">::</span>Warn<span class="token punctuation">,</span> Warn1<span class="token punctuation">,</span> fdog<span class="token operator">::</span>fileType<span class="token operator">::</span>Warn<span class="token punctuation">,</span> fdog<span class="token operator">::</span>terminalType<span class="token operator">::</span>Warn<span class="token punctuation">,</span> message<span class="token punctuation">)</span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token punctuation">}</span><span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span></span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">FdogInfo</span><span class="token expression"><span class="token punctuation">(</span>message<span class="token punctuation">)</span>  </span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">do</span><span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+        <span class="token expression"><span class="token function">LoggerCout</span><span class="token punctuation">(</span>fdog<span class="token operator">::</span>coutType<span class="token operator">::</span>Info<span class="token punctuation">,</span> Info1<span class="token punctuation">,</span> fdog<span class="token operator">::</span>fileType<span class="token operator">::</span>Info<span class="token punctuation">,</span> fdog<span class="token operator">::</span>terminalType<span class="token operator">::</span>Info<span class="token punctuation">,</span> message<span class="token punctuation">)</span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token punctuation">}</span><span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span></span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">FdogDebug</span><span class="token expression"><span class="token punctuation">(</span>message<span class="token punctuation">)</span> </span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">do</span><span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+        <span class="token expression"><span class="token function">LoggerCout</span><span class="token punctuation">(</span>fdog<span class="token operator">::</span>coutType<span class="token operator">::</span>Debug<span class="token punctuation">,</span> Debug1<span class="token punctuation">,</span> fdog<span class="token operator">::</span>fileType<span class="token operator">::</span>Debug<span class="token punctuation">,</span> fdog<span class="token operator">::</span>terminalType<span class="token operator">::</span>Debug<span class="token punctuation">,</span> message<span class="token punctuation">)</span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token punctuation">}</span><span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span></span></span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">define</span> <span class="token macro-name function">FdogTrace</span><span class="token expression"><span class="token punctuation">(</span>message<span class="token punctuation">)</span> </span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token keyword">do</span><span class="token punctuation">{<!-- --></span></span><span class="token punctuation">\</span>
+        <span class="token expression"><span class="token function">LoggerCout</span><span class="token punctuation">(</span>fdog<span class="token operator">::</span>coutType<span class="token operator">::</span>Trace<span class="token punctuation">,</span> Trace1<span class="token punctuation">,</span> fdog<span class="token operator">::</span>fileType<span class="token operator">::</span>Trace<span class="token punctuation">,</span> fdog<span class="token operator">::</span>terminalType<span class="token operator">::</span>Trace<span class="token punctuation">,</span> message<span class="token punctuation">)</span></span><span class="token punctuation">\</span>
+    <span class="token expression"><span class="token punctuation">}</span><span class="token keyword">while</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">;</span></span></span>
+
+<span class="token punctuation">}</span>
+
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+
+</code></pre>
+<h5><a id="2_fdogloggercpp_279"></a>2. fdoglogger.cpp</h5>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">"fdoglogger.h"</span></span>
+
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> fdog<span class="token punctuation">;</span>
+
+
+FdogLogger <span class="token operator">*</span> FdogLogger<span class="token operator">::</span>singleObject <span class="token operator">=</span> <span class="token keyword">nullptr</span><span class="token punctuation">;</span>
+mutex <span class="token operator">*</span> FdogLogger<span class="token operator">::</span>mutex_new <span class="token operator">=</span> <span class="token keyword">new</span><span class="token punctuation">(</span>mutex<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">FdogLogger</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token function">initLogConfig</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token operator">~</span><span class="token function">FdogLogger</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+
+<span class="token punctuation">}</span>
+
+FdogLogger<span class="token operator">*</span> <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    mutex_new<span class="token operator">-&gt;</span><span class="token function">lock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span> <span class="token punctuation">(</span>singleObject <span class="token operator">==</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        singleObject <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token function">FdogLogger</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    mutex_new<span class="token operator">-&gt;</span><span class="token function">unlock</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> singleObject<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">void</span> <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">initLogConfig</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+
+    map<span class="token operator">&lt;</span>string<span class="token punctuation">,</span> string <span class="token operator">*</span><span class="token operator">&gt;</span> flogConfInfo<span class="token punctuation">;</span>
+    flogConfInfo<span class="token punctuation">[</span><span class="token string">"logSwitch"</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token operator">&amp;</span><span class="token keyword">this</span><span class="token operator">-&gt;</span>logger<span class="token punctuation">.</span>logSwitch<span class="token punctuation">;</span>
+    flogConfInfo<span class="token punctuation">[</span><span class="token string">"logFileSwitch"</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token operator">&amp;</span><span class="token keyword">this</span><span class="token operator">-&gt;</span>logger<span class="token punctuation">.</span>logFileSwitch<span class="token punctuation">;</span>
+    flogConfInfo<span class="token punctuation">[</span><span class="token string">"logTerminalSwitch"</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token operator">&amp;</span><span class="token keyword">this</span><span class="token operator">-&gt;</span>logger<span class="token punctuation">.</span>logTerminalSwitch<span class="token punctuation">;</span>
+    flogConfInfo<span class="token punctuation">[</span><span class="token string">"logName"</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token operator">&amp;</span><span class="token keyword">this</span><span class="token operator">-&gt;</span>logger<span class="token punctuation">.</span>logName<span class="token punctuation">;</span>
+    flogConfInfo<span class="token punctuation">[</span><span class="token string">"logFilePath"</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token operator">&amp;</span><span class="token keyword">this</span><span class="token operator">-&gt;</span>logger<span class="token punctuation">.</span>logFilePath<span class="token punctuation">;</span>
+    flogConfInfo<span class="token punctuation">[</span><span class="token string">"logMixSize"</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token operator">&amp;</span><span class="token keyword">this</span><span class="token operator">-&gt;</span>logger<span class="token punctuation">.</span>logMixSize<span class="token punctuation">;</span>
+    flogConfInfo<span class="token punctuation">[</span><span class="token string">"logBehavior"</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token operator">&amp;</span><span class="token keyword">this</span><span class="token operator">-&gt;</span>logger<span class="token punctuation">.</span>logBehavior<span class="token punctuation">;</span>
+    flogConfInfo<span class="token punctuation">[</span><span class="token string">"logOverlay"</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token operator">&amp;</span><span class="token keyword">this</span><span class="token operator">-&gt;</span>logger<span class="token punctuation">.</span>logOverlay<span class="token punctuation">;</span>
+    flogConfInfo<span class="token punctuation">[</span><span class="token string">"logOutputLevelFile"</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token operator">&amp;</span><span class="token keyword">this</span><span class="token operator">-&gt;</span>logger<span class="token punctuation">.</span>logOutputLevelFile<span class="token punctuation">;</span>
+    flogConfInfo<span class="token punctuation">[</span><span class="token string">"logOutputLevelTerminal"</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token operator">&amp;</span><span class="token keyword">this</span><span class="token operator">-&gt;</span>logger<span class="token punctuation">.</span>logOutputLevelTerminal<span class="token punctuation">;</span>
+
+    string str<span class="token punctuation">;</span>
+    ifstream file<span class="token punctuation">;</span>
+    <span class="token keyword">char</span> str_c<span class="token punctuation">[</span><span class="token number">100</span><span class="token punctuation">]</span><span class="token operator">=</span><span class="token punctuation">{<!-- --></span><span class="token number">0</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+    file<span class="token punctuation">.</span><span class="token function">open</span><span class="token punctuation">(</span><span class="token string">"fdoglogconf.conf"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span>file<span class="token punctuation">.</span><span class="token function">is_open</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        cout<span class="token operator">&lt;&lt;</span><span class="token string">"文件打开失败\n"</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">while</span><span class="token punctuation">(</span><span class="token function">getline</span><span class="token punctuation">(</span>file<span class="token punctuation">,</span> str<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span>str<span class="token punctuation">.</span><span class="token function">length</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">continue</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        string str_copy <span class="token operator">=</span> str<span class="token punctuation">;</span>
+        <span class="token comment">//cout&lt;&lt;"获取数据："&lt;&lt;str_copy&lt;&lt;endl;</span>
+        <span class="token keyword">int</span> j <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+        <span class="token keyword">for</span><span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> str<span class="token punctuation">.</span><span class="token function">length</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> i<span class="token operator">++</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>str<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token operator">==</span><span class="token string">' '</span><span class="token punctuation">)</span><span class="token keyword">continue</span><span class="token punctuation">;</span>
+            str_copy<span class="token punctuation">[</span>j<span class="token punctuation">]</span> <span class="token operator">=</span> str<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+            j<span class="token operator">++</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        str_copy<span class="token punctuation">.</span><span class="token function">erase</span><span class="token punctuation">(</span>j<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span>str_copy<span class="token punctuation">[</span><span class="token number">0</span><span class="token punctuation">]</span><span class="token operator">!=</span><span class="token string">'#'</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token function">sscanf</span><span class="token punctuation">(</span>str_copy<span class="token punctuation">.</span><span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token string">"%[^=]"</span><span class="token punctuation">,</span>str_c<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">auto</span> iter <span class="token operator">=</span> flogConfInfo<span class="token punctuation">.</span><span class="token function">find</span><span class="token punctuation">(</span>str_c<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span>iter<span class="token operator">!=</span>flogConfInfo<span class="token punctuation">.</span><span class="token function">end</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                <span class="token function">sscanf</span><span class="token punctuation">(</span>str_copy<span class="token punctuation">.</span><span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token string">"%*[^=]=%s"</span><span class="token punctuation">,</span>str_c<span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token operator">*</span>iter<span class="token operator">-&gt;</span>second <span class="token operator">=</span> str_c<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    logger<span class="token punctuation">.</span>logName <span class="token operator">=</span> logger<span class="token punctuation">.</span>logName <span class="token operator">+</span> <span class="token function">getLogNameTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token string">".log"</span><span class="token punctuation">;</span>
+
+    <span class="token function">bindFileCoutMap</span><span class="token punctuation">(</span><span class="token string">"5"</span><span class="token punctuation">,</span> fileType<span class="token operator">::</span>Error<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">bindFileCoutMap</span><span class="token punctuation">(</span><span class="token string">"4"</span><span class="token punctuation">,</span> fileType<span class="token operator">::</span>Warn<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">bindFileCoutMap</span><span class="token punctuation">(</span><span class="token string">"3"</span><span class="token punctuation">,</span> fileType<span class="token operator">::</span>Info<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">bindFileCoutMap</span><span class="token punctuation">(</span><span class="token string">"2"</span><span class="token punctuation">,</span> fileType<span class="token operator">::</span>Debug<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">bindFileCoutMap</span><span class="token punctuation">(</span><span class="token string">"1"</span><span class="token punctuation">,</span> fileType<span class="token operator">::</span>Trace<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token function">bindTerminalCoutMap</span><span class="token punctuation">(</span><span class="token string">"5"</span><span class="token punctuation">,</span> terminalType<span class="token operator">::</span>Error<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">bindTerminalCoutMap</span><span class="token punctuation">(</span><span class="token string">"4"</span><span class="token punctuation">,</span> terminalType<span class="token operator">::</span>Warn<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">bindTerminalCoutMap</span><span class="token punctuation">(</span><span class="token string">"3"</span><span class="token punctuation">,</span> terminalType<span class="token operator">::</span>Info<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">bindTerminalCoutMap</span><span class="token punctuation">(</span><span class="token string">"2"</span><span class="token punctuation">,</span> terminalType<span class="token operator">::</span>Debug<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">bindTerminalCoutMap</span><span class="token punctuation">(</span><span class="token string">"1"</span><span class="token punctuation">,</span> terminalType<span class="token operator">::</span>Trace<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">if</span><span class="token punctuation">(</span>logger<span class="token punctuation">.</span>logFileSwitch <span class="token operator">==</span> <span class="token string">"on"</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span><span class="token function">createFile</span><span class="token punctuation">(</span>logger<span class="token punctuation">.</span>logFilePath<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            std<span class="token operator">::</span>cout<span class="token operator">&lt;&lt;</span><span class="token string">"Log work path creation failed\n"</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"|========FdogLogger v2.0==========================|"</span> <span class="token operator">&lt;&lt;</span>endl <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"  日志开关："</span> <span class="token operator">&lt;&lt;</span> logger<span class="token punctuation">.</span>logSwitch <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"  文件输出："</span> <span class="token operator">&lt;&lt;</span> logger<span class="token punctuation">.</span>logFileSwitch <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"  终端输出："</span> <span class="token operator">&lt;&lt;</span> logger<span class="token punctuation">.</span>logTerminalSwitch <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"  日志输出等级(文件)："</span> <span class="token operator">&lt;&lt;</span> logger<span class="token punctuation">.</span>logOutputLevelFile <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>    
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"  日志输出等级(终端)："</span> <span class="token operator">&lt;&lt;</span> logger<span class="token punctuation">.</span>logOutputLevelTerminal <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"  日志文件名："</span> <span class="token operator">&lt;&lt;</span> logger<span class="token punctuation">.</span>logName <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"  日志保存路径："</span> <span class="token operator">&lt;&lt;</span> logger<span class="token punctuation">.</span>logFilePath <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"  单文件最大大小："</span><span class="token operator">&lt;&lt;</span> logger<span class="token punctuation">.</span>logMixSize <span class="token operator">&lt;&lt;</span> <span class="token string">"M"</span> <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"  日志保存时间 ："</span> <span class="token operator">&lt;&lt;</span> logger<span class="token punctuation">.</span>logOverlay <span class="token operator">&lt;&lt;</span> <span class="token string">"天"</span> <span class="token operator">&lt;&lt;</span> endl <span class="token operator">&lt;&lt;</span> endl<span class="token punctuation">;</span>
+    cout <span class="token operator">&lt;&lt;</span> <span class="token string">"|=================================================|"</span> <span class="token operator">&lt;&lt;</span>endl<span class="token punctuation">;</span>
+    
+    <span class="token keyword">return</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+string <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getCoutType</span><span class="token punctuation">(</span>coutType coutType<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">return</span> singleObject<span class="token operator">-&gt;</span>coutTypeMap<span class="token punctuation">[</span>coutType<span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">bool</span> <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getFileType</span><span class="token punctuation">(</span>fileType fileCoutBool<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">return</span> singleObject<span class="token operator">-&gt;</span>fileCoutMap<span class="token punctuation">[</span>fileCoutBool<span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">bool</span> <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getTerminalType</span><span class="token punctuation">(</span>terminalType terminalCoutTyle<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">return</span> singleObject<span class="token operator">-&gt;</span>terminalCoutMap<span class="token punctuation">[</span>terminalCoutTyle<span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+string <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getLogCoutTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    time_t timep<span class="token punctuation">;</span>
+    <span class="token function">time</span> <span class="token punctuation">(</span><span class="token operator">&amp;</span>timep<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">char</span> tmp<span class="token punctuation">[</span><span class="token number">64</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+    <span class="token function">strftime</span><span class="token punctuation">(</span>tmp<span class="token punctuation">,</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span>tmp<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token string">"%Y-%m-%d %H:%M:%S"</span><span class="token punctuation">,</span><span class="token function">localtime</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>timep<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    string tmp_str <span class="token operator">=</span> tmp<span class="token punctuation">;</span>
+
+    <span class="token keyword">return</span> SQUARE_BRACKETS_LEFT <span class="token operator">+</span> tmp_str <span class="token operator">+</span> SQUARE_BRACKETS_RIGHT<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+string <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getLogNameTime</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    time_t timep<span class="token punctuation">;</span>
+    <span class="token function">time</span> <span class="token punctuation">(</span><span class="token operator">&amp;</span>timep<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">char</span> tmp<span class="token punctuation">[</span><span class="token number">64</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+    <span class="token function">strftime</span><span class="token punctuation">(</span>tmp<span class="token punctuation">,</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span>tmp<span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token string">"%Y-%m-%d-%H:%M:%S"</span><span class="token punctuation">,</span><span class="token function">localtime</span><span class="token punctuation">(</span><span class="token operator">&amp;</span>timep<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> tmp<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+string <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getFilePash</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token function">getcwd</span><span class="token punctuation">(</span>szbuf<span class="token punctuation">,</span> <span class="token keyword">sizeof</span><span class="token punctuation">(</span>szbuf<span class="token punctuation">)</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    string szbuf_str <span class="token operator">=</span> szbuf<span class="token punctuation">;</span>
+    <span class="token keyword">return</span> szbuf_str <span class="token operator">+</span> SLASH<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+string <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getLogCoutProcessId</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifndef</span> <span class="token expression">linux</span></span>
+    <span class="token keyword">return</span> <span class="token function">to_string</span><span class="token punctuation">(</span><span class="token function">getpid</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifndef</span> <span class="token expression">WIN32</span></span>
+<span class="token comment">//  unsigned long GetPid(){<!-- --></span>
+<span class="token comment">//     return GetCurrentProcessId();</span>
+<span class="token comment">// }</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+<span class="token punctuation">}</span>
+
+string <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getLogCoutThreadId</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifndef</span> <span class="token expression">linux</span></span>
+    <span class="token keyword">return</span> <span class="token function">to_string</span><span class="token punctuation">(</span><span class="token function">syscall</span><span class="token punctuation">(</span>__NR_gettid<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">ifndef</span> <span class="token expression">WIN32</span></span>
+<span class="token comment">//  unsigned long GetTid(){<!-- --></span>
+<span class="token comment">//     return GetCurrentThreadId();</span>
+<span class="token comment">// }</span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">endif</span></span>
+<span class="token punctuation">}</span>
+
+string <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">getLogCoutUserName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">struct</span> <span class="token class-name">passwd</span> <span class="token operator">*</span>my_info<span class="token punctuation">;</span>
+    my_info <span class="token operator">=</span> <span class="token function">getpwuid</span><span class="token punctuation">(</span><span class="token function">getuid</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    string name <span class="token operator">=</span> my_info<span class="token operator">-&gt;</span>pw_name<span class="token punctuation">;</span>
+    <span class="token keyword">return</span> SPACE <span class="token operator">+</span> name <span class="token operator">+</span> SPACE<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">bool</span> <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">createFile</span><span class="token punctuation">(</span>string filePash<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">int</span> len <span class="token operator">=</span> filePash<span class="token punctuation">.</span><span class="token function">length</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span>len<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        filePash <span class="token operator">=</span> <span class="token string">"log"</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token number">0</span> <span class="token operator">!=</span> <span class="token function">access</span><span class="token punctuation">(</span>filePash<span class="token punctuation">.</span><span class="token function">c_str</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">-</span><span class="token number">1</span> <span class="token operator">==</span> <span class="token function">mkdir</span><span class="token punctuation">(</span>filePash<span class="token punctuation">.</span><span class="token function">c_str</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                std<span class="token operator">::</span>cout<span class="token operator">&lt;&lt;</span><span class="token string">"没路径"</span><span class="token punctuation">;</span>
+                <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    std<span class="token operator">::</span>string <span class="token function">filePash_cy</span><span class="token punctuation">(</span>len<span class="token punctuation">,</span><span class="token string">'\0'</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">for</span><span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>i<span class="token operator">&lt;</span>len<span class="token punctuation">;</span>i<span class="token operator">++</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        filePash_cy<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token operator">=</span>filePash<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span><span class="token punctuation">(</span>filePash_cy<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token operator">==</span><span class="token string">'/'</span> <span class="token operator">||</span> filePash_cy<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token operator">==</span><span class="token string">'\\'</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+            <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">-</span><span class="token number">1</span> <span class="token operator">==</span> <span class="token function">access</span><span class="token punctuation">(</span>filePash_cy<span class="token punctuation">.</span><span class="token function">c_str</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token operator">!=</span><span class="token function">mkdir</span><span class="token punctuation">(</span>filePash_cy<span class="token punctuation">.</span><span class="token function">c_str</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+                    std<span class="token operator">::</span>cout<span class="token operator">&lt;&lt;</span><span class="token string">"有路径"</span><span class="token punctuation">;</span>
+                    <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+                <span class="token punctuation">}</span>
+            <span class="token punctuation">}</span>
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+    <span class="token keyword">return</span> <span class="token number">1</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">bool</span> <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">logFileWrite</span><span class="token punctuation">(</span>string messages<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    ofstream file<span class="token punctuation">;</span>
+    file<span class="token punctuation">.</span><span class="token function">open</span><span class="token punctuation">(</span>logger<span class="token punctuation">.</span>logFilePath <span class="token operator">+</span> logger<span class="token punctuation">.</span>logName<span class="token punctuation">,</span> <span class="token operator">::</span>ios<span class="token operator">::</span>app <span class="token operator">|</span> ios<span class="token operator">::</span>out<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span><span class="token operator">!</span>file<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+        cout<span class="token operator">&lt;&lt;</span><span class="token string">"写失败"</span><span class="token operator">&lt;&lt;</span>endl<span class="token punctuation">;</span>
+        <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+    file <span class="token operator">&lt;&lt;</span> messages<span class="token punctuation">;</span>
+    file<span class="token punctuation">.</span><span class="token function">close</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> <span class="token number">1</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">bool</span> <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">bindFileCoutMap</span><span class="token punctuation">(</span>string value1<span class="token punctuation">,</span> fileType value2<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span>logger<span class="token punctuation">.</span>logOutputLevelFile<span class="token punctuation">.</span><span class="token function">find</span><span class="token punctuation">(</span>value1<span class="token punctuation">)</span><span class="token operator">!=</span>std<span class="token operator">::</span>string<span class="token operator">::</span>npos<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        fileCoutMap<span class="token punctuation">[</span>value2<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+        fileCoutMap<span class="token punctuation">[</span>value2<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+
+<span class="token keyword">bool</span> <span class="token class-name">FdogLogger</span><span class="token operator">::</span><span class="token function">bindTerminalCoutMap</span><span class="token punctuation">(</span>string value1<span class="token punctuation">,</span> terminalType value2<span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token keyword">if</span><span class="token punctuation">(</span>logger<span class="token punctuation">.</span>logOutputLevelTerminal<span class="token punctuation">.</span><span class="token function">find</span><span class="token punctuation">(</span>value1<span class="token punctuation">)</span><span class="token operator">!=</span>std<span class="token operator">::</span>string<span class="token operator">::</span>npos<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        terminalCoutMap<span class="token punctuation">[</span>value2<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{<!-- --></span>
+        terminalCoutMap<span class="token punctuation">[</span>value2<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<hr/>
+<h4><a id="__508"></a>四. 测试用例</h4>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/c9c26457391d4f4eb1fba951b4a4eabe.jpg?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA6Iqx54uXRmRvZw==,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h5><a id="1_fdoglogger_testcpp_513"></a>1. fdoglogger_test.cpp</h5>
+<pre><code class="prism language-cpp"><span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">&lt;iostream&gt;</span></span>
+<span class="token macro property"><span class="token directive-hash">#</span><span class="token directive keyword">include</span><span class="token string">"fdoglogger.h"</span>  <span class="token comment">//添加日志库头文件</span></span>
+
+<span class="token keyword">using</span> <span class="token keyword">namespace</span> fdog<span class="token punctuation">;</span>   <span class="token comment">//日志库的命名空间</span>
+
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">{<!-- --></span>
+    <span class="token function">FdogError</span><span class="token punctuation">(</span><span class="token string">"错误"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">FdogWarn</span><span class="token punctuation">(</span><span class="token string">"警告"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">FdogInfo</span><span class="token punctuation">(</span><span class="token string">"信息"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">FdogDebug</span><span class="token punctuation">(</span><span class="token string">"调试"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">FdogTrace</span><span class="token punctuation">(</span><span class="token string">"追踪"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7d3f8994735442518aa38c8fe6c3137e.jpg?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA6Iqx54uXRmRvZw==,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/42a8925f43ee41d686be1f336447351c.jpg?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBA6Iqx54uXRmRvZw==,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<p>暂时考虑到的就是这些，如有缺陷，欢迎评论区补充。(比如文件写入打开就关闭，很浪费资源，如何优化，下篇见)。</p>
+<p>源码已上传github，还原star！ <a href="https://github.com/HuaGouFdog/FdogLog">FdogLog，一个轻量级C++日志库，用于日志服务。</a></p>
+<hr/>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

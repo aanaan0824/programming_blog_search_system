@@ -1,0 +1,192 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>文章目录</h3>
+<ul><li><ul><li><a href="#1_7">1.单库事务</a></li><li><a href="#2_43">2.多租户事务(可跨库)</a></li><li><a href="#3_47">3.调试事务</a></li><li><a href="#4_59">4.语法糖</a></li><li><ul><li><a href="#41__63">4.1 语法糖一</a></li><li><a href="#42__77">4.2 语法糖二</a></li></ul>
+</li><li><a href="#5_103">5.跨方法事务</a></li><li><a href="#6CAP_106">6.CAP事务</a></li><li><a href="#7_109">7.异步事务</a></li><li><ul><li><a href="#71__113">7.1 用法一</a></li><li><a href="#72__136">7.2 用法二</a></li></ul>
+</li><li><a href="#8_175">8.设置事务隔离级别</a></li><li><ul><li><a href="#81__182">8.1 单库模式用法</a></li><li><a href="#82__199">8.2 多租户模式</a></li></ul>
+</li></ul>
+</li></ul>
+</div>
+<br/>
+<code>MySql注意事项：</code>
+<p></p>
+<ul><li>MYSQL不支持创建表和删除表处理事务,原生事务也一样</li><li>MyISAM 存储引擎不支持事务 需要改成 InnoDB</li></ul>
+<h2><a id="1_7"></a>1.单库事务</h2>
+<ul><li>单库事务是针一个db操作执行的事务，无论是 ISqlSugarClient和 SqlSugarClient 用法都一样</li></ul>
+<pre><code class="prism language-csharp">    <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">var</span></span> db <span class="token operator">=</span> Sugar<span class="token punctuation">.</span><span class="token function">GetInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            
+            <span class="token keyword">try</span>
+            <span class="token punctuation">{<!-- --></span>
+                db<span class="token punctuation">.</span>Ado<span class="token punctuation">.</span><span class="token function">BeginTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                db<span class="token punctuation">.</span><span class="token function">Insertable</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> Id <span class="token operator">=</span> <span class="token string">"1"</span><span class="token punctuation">,</span> Name <span class="token operator">=</span><span class="token string">"hpf"</span><span class="token punctuation">,</span> SchoolId <span class="token operator">=</span> <span class="token number">1</span> <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">ExecuteCommand</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                
+                 <span class="token keyword">throw</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Exception</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//手动抛出异常，回滚Sql</span>
+                 
+                db<span class="token punctuation">.</span>Ado<span class="token punctuation">.</span><span class="token function">CommitTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> ex<span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                db<span class="token punctuation">.</span>Ado<span class="token punctuation">.</span><span class="token function">RollbackTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            
+            Console<span class="token punctuation">.</span><span class="token function">ReadLine</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<ul><li>如果一个db就一个库，那么你也可以用多租户事务节约代码，因为2者在一个库的情况下作用一样</li></ul>
+<pre><code class="prism language-csharp">db<span class="token punctuation">.</span><span class="token function">BeginTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//去掉了.ado</span>
+db<span class="token punctuation">.</span><span class="token function">CommitTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//去掉了.ado</span>
+db<span class="token punctuation">.</span><span class="token function">RollbackTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token comment">//去掉了.ado</span>
+</code></pre>
+<h2><a id="2_43"></a>2.多租户事务(可跨库)</h2>
+<p>目前还没有学习多租户有关知识</p>
+<h2><a id="3_47"></a>3.调试事务</h2>
+<ul><li>db.ContextId从 <code>事务开始、CURD、事务结束</code> 必须一致 这个事务才会生效，如果是MYSQL也检查一下表引擎是否支持事务</li><li>SqlsugarClient 可以用变量 var db=外部Db; 所有操作使用db保证一致</li><li>SqlsuagrScope （该对象是线程安全对象，可以单例）可以用单例模式保证一致</li></ul>
+<p><strong>项目运行起来的时候，在监视中手动输入 db.ContextId ，以便监控值是否保持不变</strong></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/53e4546f06714b8e9864ce5797252952.png"/></p>
+<h2><a id="4_59"></a>4.语法糖</h2>
+<p>特定语法，方便实用</p>
+<h3><a id="41__63"></a>4.1 语法糖一</h3>
+<p><code>这种适合全局异常，直接出错扔出并且回滚</code><br/> <strong>这种方式我没测试过</strong></p>
+<pre><code class="prism language-csharp"><span class="token keyword">using</span> <span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">var</span></span> tran <span class="token operator">=</span> db<span class="token punctuation">.</span><span class="token function">UseTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token comment">//业务代码</span>
+        <span class="token comment">//里面禁止写 try处理事务逻辑，格式一定按现在的风格来</span>
+ 
+        tran<span class="token punctuation">.</span><span class="token function">CommitTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+     <span class="token punctuation">}</span>
+     <span class="token comment">//要写 try处理异常可以写在外面</span>
+</code></pre>
+<h3><a id="42__77"></a>4.2 语法糖二</h3>
+<p><code>这种适合没有异常处理的，减少了try 处理</code></p>
+<pre><code class="prism language-csharp">    <span class="token keyword">static</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">var</span></span> db <span class="token operator">=</span> Sugar<span class="token punctuation">.</span><span class="token function">GetInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token class-name"><span class="token keyword">var</span></span> result <span class="token operator">=</span> db<span class="token punctuation">.</span><span class="token function">UseTran</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+            <span class="token punctuation">{<!-- --></span>
+                db<span class="token punctuation">.</span><span class="token function">Insertable</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> Id <span class="token operator">=</span> <span class="token string">"2"</span><span class="token punctuation">,</span> Name <span class="token operator">=</span> <span class="token string">"hpf"</span><span class="token punctuation">,</span> SchoolId<span class="token operator">=</span> <span class="token number">2</span> <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">ExecuteCommand</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token comment">//throw new Exception(); //手动抛出异常，测试事务回滚功能</span>
+                <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+           <span class="token keyword">if</span> <span class="token punctuation">(</span>result<span class="token punctuation">.</span>Data <span class="token operator">==</span> <span class="token boolean">false</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>result<span class="token punctuation">.</span>IsSuccess <span class="token operator">==</span> <span class="token boolean">false</span><span class="token punctuation">)</span>
+                    Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"事务提交失败"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">else</span>
+                Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"事务提交完成"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                
+            Console<span class="token punctuation">.</span><span class="token function">ReadLine</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="5_103"></a>5.跨方法事务</h2>
+<p>目前还没有用到有关知识</p>
+<h2><a id="6CAP_106"></a>6.CAP事务</h2>
+<p>目前还没有用到有关知识</p>
+<h2><a id="7_109"></a>7.异步事务</h2>
+<p>请不要在同步方法里面写下面方代码，必须是异步方法才行 返回是要带有Task async</p>
+<h3><a id="71__113"></a>7.1 用法一</h3>
+<pre><code class="prism language-csharp"><span class="token keyword">static</span> <span class="token keyword">async</span> <span class="token return-type class-name">Task</span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">var</span></span> db <span class="token operator">=</span> Sugar<span class="token punctuation">.</span><span class="token function">GetInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">try</span>
+            <span class="token punctuation">{<!-- --></span>
+                db<span class="token punctuation">.</span><span class="token function">BeginTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+                <span class="token keyword">await</span> db<span class="token punctuation">.</span><span class="token function">Insertable</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> StudentId<span class="token operator">=</span><span class="token number">13</span><span class="token punctuation">,</span>  Name<span class="token operator">=</span><span class="token string">"qwe"</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">ExecuteCommandAsync</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+               <span class="token comment">//throw new Exception(); //手动抛出异常，测试事务回滚功能</span>
+                db<span class="token punctuation">.</span><span class="token function">CommitTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span><span class="token punctuation">)</span>
+            <span class="token punctuation">{<!-- --></span>
+                db<span class="token punctuation">.</span><span class="token function">RollbackTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+
+            Console<span class="token punctuation">.</span><span class="token function">ReadLine</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="72__136"></a>7.2 用法二</h3>
+<p><code>注意：</code><br/> await db.UseTranAsync 前面的await不要漏掉了</p>
+<pre><code class="prism language-csharp">    <span class="token keyword">public</span> <span class="token keyword">class</span> <span class="token class-name">Program</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">static</span> <span class="token keyword">async</span> <span class="token return-type class-name">Task</span> <span class="token function">Main</span><span class="token punctuation">(</span><span class="token class-name"><span class="token keyword">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span></span> args<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name"><span class="token keyword">var</span></span> db <span class="token operator">=</span> Sugar<span class="token punctuation">.</span><span class="token function">GetInstance</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            <span class="token keyword">await</span> <span class="token function">Test</span><span class="token punctuation">(</span>db<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            Console<span class="token punctuation">.</span><span class="token function">ReadLine</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+
+
+        <span class="token keyword">public</span> <span class="token keyword">static</span> <span class="token keyword">async</span> <span class="token return-type class-name">Task</span> <span class="token function">Test</span><span class="token punctuation">(</span><span class="token class-name">SqlSugarClient</span> db<span class="token punctuation">)</span>
+        <span class="token punctuation">{<!-- --></span>
+            <span class="token comment">//异步事务</span>
+            <span class="token class-name"><span class="token keyword">var</span></span> result <span class="token operator">=</span> <span class="token keyword">await</span> db<span class="token punctuation">.</span><span class="token function">UseTranAsync</span><span class="token punctuation">(</span><span class="token keyword">async</span> <span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">=&gt;</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">await</span> db<span class="token punctuation">.</span><span class="token function">Insertable</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">Student</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span> Id <span class="token operator">=</span> <span class="token string">"6"</span><span class="token punctuation">,</span> Name <span class="token operator">=</span> <span class="token string">"hpf"</span><span class="token punctuation">,</span>SchoolId <span class="token operator">=</span> <span class="token number">2</span> <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">ExecuteCommandAsync</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token comment">//throw new Exception();    //手动模拟抛异常</span>
+            <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+
+            <span class="token keyword">if</span> <span class="token punctuation">(</span>result<span class="token punctuation">.</span>Data<span class="token operator">==</span><span class="token boolean">false</span><span class="token punctuation">)</span> <span class="token comment">//返回值为false</span>
+            <span class="token punctuation">{<!-- --></span>
+                <span class="token keyword">if</span> <span class="token punctuation">(</span>result<span class="token punctuation">.</span>IsSuccess <span class="token operator">==</span> <span class="token boolean">true</span><span class="token punctuation">)</span> 
+                    Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"添加成功"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                <span class="token keyword">else</span> 
+                    Console<span class="token punctuation">.</span><span class="token function">WriteLine</span><span class="token punctuation">(</span><span class="token string">"添加失败"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+                    <span class="token keyword">throw</span> result<span class="token punctuation">.</span>ErrorException<span class="token punctuation">;</span>
+            <span class="token punctuation">}</span>
+            
+        <span class="token punctuation">}</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="8_175"></a>8.设置事务隔离级别</h2>
+<p>目前还没有用到有关知识</p>
+<p><a href="https://blog.csdn.net/eden_tpy/article/details/122401713">📄文档参考：数据库的事务隔离级别</a></p>
+<h3><a id="81__182"></a>8.1 单库模式用法</h3>
+<pre><code class="prism language-csharp"><span class="token keyword">try</span>
+<span class="token punctuation">{<!-- --></span>
+    db<span class="token punctuation">.</span>Ado<span class="token punctuation">.</span><span class="token function">BeginTran</span><span class="token punctuation">(</span>IsolationLevel<span class="token punctuation">.</span>ReadCommitted<span class="token punctuation">)</span><span class="token punctuation">;</span>
+         
+        <span class="token comment">//业务代码  </span>
+         
+    db<span class="token punctuation">.</span>Ado<span class="token punctuation">.</span><span class="token function">CommitTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+<span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> ex<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    db<span class="token punctuation">.</span><span class="token function">RollbackTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">throw</span> ex<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h3><a id="82__199"></a>8.2 多租户模式</h3>
+<pre><code class="prism language-csharp">
+ <span class="token class-name"><span class="token keyword">var</span></span> mysqlDb <span class="token operator">=</span> db<span class="token punctuation">.</span><span class="token function">GetConnection</span><span class="token punctuation">(</span><span class="token string">"mysql"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token class-name"><span class="token keyword">var</span></span> mssqlDb <span class="token operator">=</span> db<span class="token punctuation">.</span><span class="token function">GetConnection</span><span class="token punctuation">(</span><span class="token string">"mssql"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ <span class="token keyword">try</span>
+ <span class="token punctuation">{<!-- --></span>
+        mysqlDb<span class="token punctuation">.</span>Ado<span class="token punctuation">.</span><span class="token function">BeginTran</span><span class="token punctuation">(</span>IsolationLevel<span class="token punctuation">.</span>ReadCommitted<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//开启库1的事务</span>
+        mssqlDb<span class="token punctuation">.</span>Ado<span class="token punctuation">.</span><span class="token function">BeginTran</span><span class="token punctuation">(</span>IsolationLevel<span class="token punctuation">.</span>ReadCommitted<span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//开启库2的事务</span>
+                 
+         <span class="token comment">//业务代码 只能用  mysqlDb和 mssqlDb </span>
+ 
+        db<span class="token punctuation">.</span><span class="token function">CommitTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span><span class="token comment">//注意不能用db.ado.CommitTran</span>
+ <span class="token punctuation">}</span>
+ <span class="token keyword">catch</span> <span class="token punctuation">(</span><span class="token class-name">Exception</span> ex<span class="token punctuation">)</span>
+ <span class="token punctuation">{<!-- --></span>
+        db<span class="token punctuation">.</span><span class="token function">RollbackTran</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">throw</span> ex<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+</code></pre>
+<p><a href="https://www.donet5.com/home/Doc?typeId=1183">📄文档参考：数据事务</a></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

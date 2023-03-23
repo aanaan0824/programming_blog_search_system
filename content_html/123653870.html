@@ -1,0 +1,439 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h2 style="text-align:center;"><img alt="" src="image\dc799c34a5ea4e199f0342365bef4166.png"/></h2>
+<p></p>
+<p></p>
+<p></p>
+<h2>1.什么是串口？</h2>
+<p>在不会使用串口通讯之前，暂且可以把它理解为“一个可通讯的口”；使用篇不深入探讨理论及原理。能理解串口如何使用之后，可以查看<a class="link-info" href="https://blog.csdn.net/qq_42111674/article/details/123737732" title="Android串口通讯SerialPort(浅谈原理)">Android串口通讯SerialPort(浅谈原理)</a></p>
+<h2>2.添加依赖</h2>
+<p>1.）在 module 中的 build.gradle 中的 dependencies 中添加以下依赖：</p>
+<pre><code>dependencies {
+    //串口
+    implementation 'com.github.licheedev:Android-SerialPort-API:2.0.0'
+}</code></pre>
+<p>2.）低版本的 gradle 在Project 中的 build.gradle 中的 allprojects 中添加以下 maven仓库 (不添加任然无法加载SerialPort)；</p>
+<pre><code>allprojects {
+    repositories {
+        maven { url "https://jitpack.io" }//maven仓库
+    }
+}</code></pre>
+<p>高版本的 gradle 已经废弃了 allprojects 在 settings.gradle 中 repositories 添加以下maven仓库(不添加任然无法加载SerialPort)；</p>
+<pre><code>dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        jcenter() // Warning: this repository is going to shut down soon
+        maven { url "https://jitpack.io" }//maven仓库
+    }
+}</code></pre>
+<h2>3.编写串口处理类</h2>
+<p>1.）串口处理类：SerialHandle ；简单概括这个类，就是通过串口对象去获取两个流(输入流、输出流)，通过者两个流来<strong><span style="color:#f3f3f4;"><span style="background-color:#fe2c24;">监听数据</span></span></strong>或者<strong><span style="color:#f3f3f4;"><span style="background-color:#fe2c24;">写入指令</span></span></strong>，硬件收到后执行。同时注意配置参数(只要支持串口通讯的硬件，一般说明书上都会有写)</p>
+<pre><code class="language-java">package com.chj233.serialmode.serialUtil;
+
+import android.serialport.SerialPort;
+import android.util.Log;
+
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * 串口实处理类
+ */
+public class SerialHandle implements Runnable {
+
+    private static final String TAG = "串口处理类";
+    private String path = "";//串口地址
+    private SerialPort mSerialPort;//串口对象
+    private InputStream mInputStream;//串口的输入流对象
+    private BufferedInputStream mBuffInputStream;//用于监听硬件返回的信息
+    private OutputStream mOutputStream;//串口的输出流对象 用于发送指令
+    private SerialInter serialInter;//串口回调接口
+    private ScheduledFuture readTask;//串口读取任务
+
+    /**
+     * 添加串口回调
+     *
+     * @param serialInter
+     */
+    public void addSerialInter(SerialInter serialInter) {
+        this.serialInter = serialInter;
+    }
+
+    /**
+     * 打开串口
+     *
+     * @param devicePath 串口地址(根据平板的说明说填写)
+     * @param baudrate   波特率(根据对接的硬件填写 - 硬件说明书上"通讯"中会有标注)
+     * @param isRead     是否持续监听串口返回的数据
+     * @return 是否打开成功
+     */
+    public boolean open(String devicePath, int baudrate, boolean isRead) {
+        return open(devicePath, baudrate, 7, 1, 2, isRead);
+    }
+
+    /**
+     * 打开串口
+     *
+     * @param devicePath 串口地址(根据平板的说明说填写)
+     * @param baudrate   波特率(根据对接的硬件填写 - 硬件说明书上"通讯"中会有标注)
+     * @param dataBits   数据位(根据对接的硬件填写 - 硬件说明书上"通讯"中会有标注)
+     * @param stopBits   停止位(根据对接的硬件填写 - 硬件说明书上"通讯"中会有标注)
+     * @param parity     校验位(根据对接的硬件填写 - 硬件说明书上"通讯"中会有标注)
+     * @param isRead     是否持续监听串口返回的数据
+     * @return 是否打开成功
+     */
+    public boolean open(String devicePath, int baudrate, int dataBits, int stopBits, int parity, boolean isRead) {
+        boolean isSucc = false;
+        try {
+            if (mSerialPort != null) close();
+            File device = new File(devicePath);
+            mSerialPort = SerialPort // 串口对象
+                    .newBuilder(device, baudrate) // 串口地址地址，波特率
+                    .dataBits(dataBits) // 数据位,默认8；可选值为5~8
+                    .stopBits(stopBits) // 停止位，默认1；1:1位停止位；2:2位停止位
+                    .parity(parity) // 校验位；0:无校验位(NONE，默认)；1:奇校验位(ODD);2:偶校验位(EVEN)
+                    .build(); // 打开串口并返回
+            mInputStream = mSerialPort.getInputStream();
+            mBuffInputStream = new BufferedInputStream(mInputStream);
+            mOutputStream = mSerialPort.getOutputStream();
+            isSucc = true;
+            path = devicePath;
+            if (isRead) readData();//开启识别
+        } catch (Throwable tr) {
+            close();
+            isSucc = false;
+        } finally {
+            return isSucc;
+        }
+    }
+
+    // 读取数据
+    private void readData() {
+        if (readTask != null) {
+            readTask.cancel(true);
+            try {
+                Thread.sleep(160);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            //此处睡眠：当取消任务时 线程池已经执行任务，无法取消，所以等待线程池的任务执行完毕
+            readTask = null;
+        }
+        readTask = SerialManage
+                .getInstance()
+                .getScheduledExecutor()//获取线程池
+                .scheduleAtFixedRate(this, 0, 150, TimeUnit.MILLISECONDS);//执行一个循环任务
+    }
+
+    @Override//每隔 150 毫秒会触发一次run
+    public void run() {
+        if (Thread.currentThread().isInterrupted()) return;
+        try {
+            int available = mBuffInputStream.available();
+            if (available == 0) return;
+            byte[] received = new byte[1024];
+            int size = mBuffInputStream.read(received);//读取以下串口是否有新的数据
+            if (size &gt; 0 &amp;&amp; serialInter != null) serialInter.readData(path, received, size);
+        } catch (IOException e) {
+            Log.e(TAG, "串口读取数据异常:" + e.toString());
+        }
+    }
+
+    /**
+     * 关闭串口
+     */
+    public void close(){
+        try{
+            if (mInputStream != null) mInputStream.close();
+        }catch (Exception e){
+            Log.e(TAG,"串口输入流对象关闭异常：" +e.toString());
+        }
+        try{
+            if (mOutputStream != null) mOutputStream.close();
+        }catch (Exception e){
+            Log.e(TAG,"串口输出流对象关闭异常：" +e.toString());
+        }
+        try{
+            if (mSerialPort != null) mSerialPort.close();
+            mSerialPort = null;
+        }catch (Exception e){
+            Log.e(TAG,"串口对象关闭异常：" +e.toString());
+        }
+    }
+
+    /**
+     * 向串口发送指令
+     */
+    public void send(final String msg) {
+        byte[] bytes = hexStr2bytes(msg);//字符转成byte数组
+        try {
+            mOutputStream.write(bytes);//通过输出流写入数据
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 把十六进制表示的字节数组字符串，转换成十六进制字节数组
+     *
+     * @param
+     * @return byte[]
+     */
+    private byte[] hexStr2bytes(String hex) {
+        int len = (hex.length() / 2);
+        byte[] result = new byte[len];
+        char[] achar = hex.toUpperCase().toCharArray();
+        for (int i = 0; i &lt; len; i++) {
+            int pos = i * 2;
+            result[i] = (byte) (hexChar2byte(achar[pos]) &lt;&lt; 4 | hexChar2byte(achar[pos + 1]));
+        }
+        return result;
+    }
+
+    /**
+     * 把16进制字符[0123456789abcde]（含大小写）转成字节
+     * @param c
+     * @return
+     */
+    private static int hexChar2byte(char c) {
+        switch (c) {
+            case '0':
+                return 0;
+            case '1':
+                return 1;
+            case '2':
+                return 2;
+            case '3':
+                return 3;
+            case '4':
+                return 4;
+            case '5':
+                return 5;
+            case '6':
+                return 6;
+            case '7':
+                return 7;
+            case '8':
+                return 8;
+            case '9':
+                return 9;
+            case 'a':
+            case 'A':
+                return 10;
+            case 'b':
+            case 'B':
+                return 11;
+            case 'c':
+            case 'C':
+                return 12;
+            case 'd':
+            case 'D':
+                return 13;
+            case 'e':
+            case 'E':
+                return 14;
+            case 'f':
+            case 'F':
+                return 15;
+            default:
+                return -1;
+        }
+    }
+
+}
+</code></pre>
+<p>2.）串口回调SerialInter；简单概括一下这个类，就是将SerialHandle类中产生的结果，返回给上一层的业务代码，<span style="color:#f3f3f4;"><strong><span style="background-color:#fe2c24;">解偶合</span></strong></span></p>
+<pre><code class="language-java">package com.chj233.serialmode.serialUtil;
+
+/**
+ * 串口回调
+ */
+public interface SerialInter {
+
+    /**
+     * 连接结果回调
+     * @param path 串口地址(当有多个串口需要统一处理时，可以用地址来区分)
+     * @param isSucc 连接是否成功
+     */
+    void connectMsg(String path,boolean isSucc);
+
+    /**
+     * 读取到的数据回调
+     * @param path 串口地址(当有多个串口需要统一处理时，可以用地址来区分)
+     * @param bytes 读取到的数据
+     * @param size 数据长度
+     */
+    void readData(String path,byte[] bytes,int size);
+
+}
+</code></pre>
+<p> 3.）串口统一管理SerialManage；简单概括一下这个类，用于<span style="color:#f3f3f4;"><span style="background-color:#fe2c24;">管理串口</span></span>的连接以及发送等功能，尤其是发送指令，极短时间内发送多个指令(例如：1毫秒内发送10个指令)，多个指令之间会相互干扰。可能执行了第一个指令，可能一个都没执行。这个类不是必须的，如果有更好的方法可以自己定义。</p>
+<pre><code class="language-java">package com.chj233.serialmode.serialUtil;
+
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * 串口管理类
+ */
+public class SerialManage {
+
+    private static SerialManage instance;
+    private ScheduledExecutorService scheduledExecutor;//线程池 同一管理保证只有一个
+    private SerialHandle serialHandle;//串口连接 发送 读取处理对象
+    private Queue&lt;String&gt; queueMsg = new ConcurrentLinkedQueue&lt;String&gt;();//线程安全到队列
+    private ScheduledFuture sendStrTask;//循环发送任务
+    private boolean isConnect = false;//串口是否连接
+
+    private SerialManage() {
+        scheduledExecutor = Executors.newScheduledThreadPool(8);//初始化8个线程
+    }
+
+    public static SerialManage getInstance() {
+        if (instance == null) {
+            synchronized (SerialManage.class) {
+                if (instance == null) {
+                    instance = new SerialManage();
+                }
+            }
+        }
+        return instance;
+    }
+
+    /**
+     * 获取线程池
+     *
+     * @return
+     */
+    public ScheduledExecutorService getScheduledExecutor() {
+        return scheduledExecutor;
+    }
+
+    /**
+     * 串口初始化
+     *
+     * @param serialInter
+     */
+    public void init(SerialInter serialInter) {
+        if (serialHandle == null) {
+            serialHandle = new SerialHandle();
+            startSendTask();
+        }
+        serialHandle.addSerialInter(serialInter);
+
+    }
+
+    /**
+     * 打开串口
+     */
+    public void open() {
+        isConnect = serialHandle.open("/dev/ttyS1", 9600, true);//设置地址，波特率，开启读取串口数据
+    }
+
+    /**
+     * 发送指令
+     *
+     * @param msg
+     */
+    public void send(String msg) {
+        /*
+         此处没有直接使用 serialHandle.send(msg); 方法去发送指令
+         因为 某些硬件在极短时间内只能响应一个指令,232通讯一次发送多个指令会有物理干扰，
+         让硬件接收到指令不准确；所以 此处将指令添加到队列中，排队执行，确保每个指令一定执行.
+         若不相信可以试试用serialHandle.send(msg)方法循环发送10个不同的指令，看看10个指令
+         的执行结果。
+         */
+        queueMsg.offer(msg);//向队列添加指令
+    }
+
+    /**
+     * 关闭串口
+     */
+    public void colse() {
+        serialHandle.close();//关闭串口
+    }
+
+    //启动发送发送任务
+    private void startSendTask() {
+        cancelSendTask();//先检查是否已经启动了任务 ？ 若有则取消
+        //每隔100毫秒检查一次 队列中是否有新的指令需要执行
+        sendStrTask = scheduledExecutor.scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                if (!isConnect) return;//串口未连接 退出
+                if (serialHandle == null) return;//串口未初始化 退出
+                String msg = queueMsg.poll();//取出指令
+                if (msg == null || "".equals(msg)) return;//无效指令 退出
+                serialHandle.send(msg);//发送指令
+            }
+        }, 0, 100, TimeUnit.MILLISECONDS);
+    }
+
+    //取消发送任务
+    private void cancelSendTask() {
+        if (sendStrTask == null) return;
+        sendStrTask.cancel(true);
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        sendStrTask = null;
+    }
+
+}</code></pre>
+<h2>4.使用串口</h2>
+<pre><code class="language-java">package com.chj233.serialmode;
+
+import androidx.appcompat.app.AppCompatActivity;
+
+import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+
+import com.chj233.serialmode.serialUtil.SerialInter;
+import com.chj233.serialmode.serialUtil.SerialManage;
+
+public class MainActivity extends AppCompatActivity implements SerialInter {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        SerialManage.getInstance().init(this);//串口初始化
+        SerialManage.getInstance().open();//打开串口
+        findViewById(R.id.send_but).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                SerialManage.getInstance().send("Z");//发送指令 Z 
+            }
+        });
+    }
+
+    @Override
+    public void connectMsg(String path, boolean isSucc) {
+        String msg = isSucc ? "成功" : "失败";
+        Log.e("串口连接回调", "串口 "+ path + " -连接" + msg);
+    }
+
+    @Override//若在串口开启的方法中 传入false 此处不会返回数据
+    public void readData(String path, byte[] bytes, int size) {
+//        Log.e("串口数据回调","串口 "+ path + " -获取数据" + bytes);
+    }
+}</code></pre>
+<h2>5.总结</h2>
+<p>串口通讯对于Android开发者来说，仅需关注如何连接、操作(发送指令)、读取数据；无论是232、485还是422，对于开发者来说连接、操作、读取代码都是一样的</p>
+</div>
+</div>

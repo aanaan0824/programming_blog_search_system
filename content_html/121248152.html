@@ -1,0 +1,244 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<p></p>
+<div class="toc">
+<h3>使用C++部署TensorRT</h3>
+<ul><li><a href="#C_API_vs_Python_API_11">C++ API vs Python API</a></li><li><a href="#1_CTensorRT_17">1. C++实例化TensorRT对象</a></li><li><a href="#2_C_91">2. C++创建网络定义</a></li><li><ul><li><a href="#21_C_API_107">2.1. 使用C++ API从头开始创建网络定义</a></li><li><a href="#22_C_163">2.2. C++使用解析器导入模型</a></li><li><a href="#23_CAPICaffe_203">2.3. 使用C++解析器API导入Caffe模型</a></li><li><a href="#24_C_UFFAPITensorFlow_237">2.4. 使用C++ UFF解析器API导入TensorFlow模型</a></li><li><a href="#25_C_APIONNX_273">2.5. 使用C++ 解析器API导入ONNX模型</a></li></ul>
+</li><li><a href="#3_Cengine_308">3. C++构建engine</a></li><li><ul><li><a href="#31_Builder_336">3.1. Builder层时间缓存</a></li></ul>
+</li><li><a href="#4_C_347">4. C++序列化模型</a></li><li><a href="#5_C_373">5. C++执行推理</a></li><li><a href="#6_C_410">6. C++内存管理</a></li><li><a href="#7_engine_421">7. 改装engine</a></li></ul>
+</div>
+<p></p>
+<p>本文介绍了可以使用C ++ API执行的TensorRT用户目标和任务。 进一步的细节在 Samples 部分提供，并在适当的情况下链接到下面。</p>
+<p>假设您从一个已经训练好的模型开始。 本章将介绍使用TensorRT的以下必要步骤：</p>
+<ul><li>从模型中创建 TensorRT 网络定义</li><li>调用 TensorRT 构建器以从网络创建优化的运行时引擎</li><li>序列化和反序列化引擎，以便在运行时快速重新创建</li><li>喂入数据为引擎提供执行推理</li></ul>
+<h1><a id="C_API_vs_Python_API_11"></a>C++ API vs Python API</h1>
+<p>从本质上讲，C++ API和 Python API在支持您的需求方面应该完全相同。 C++ API应该用于任何性能关键场景，以及安全性很重要的场合，例如汽车行业。</p>
+<p>Python API的主要好处是数据预处理和后处理易于使用，因为您可以使用各种库，如 NumPy 和 SciPy。 有关 Python API 的更多信息，请参阅<a href="https://blog.csdn.net/wq_0708/article/details/121266031">使用Python部署TensorRT</a>.</p>
+<h1><a id="1_CTensorRT_17"></a>1. C++实例化TensorRT对象</h1>
+<p>要运行推理，需要使用 <code>IExecutionContext</code> 对象。 要创建 <code>IExecutionContext</code> 类型的对象，首先需要创建 <code>ICudaEngine</code> 类型的对象（引擎）。</p>
+<p>可以通过以下两种方式之一创建引擎：</p>
+<ul><li>通过用户模型的网络定义。 在这种情况下，可以选择将引擎序列化并保存以供以后使用。</li><li>通过从磁盘读取序列化引擎。 在这种情况下，性能更好，因为绕过了解析模型和创建中间对象的步骤。</li></ul>
+<p>需要全局创建 <code>ILogger</code> 类型的对象。 它用作 <code>TensorRT API</code> 的各种方法的参数。 一个演示Logger创建的简单示例如下所示：</p>
+<pre><code class="prism language-c++">class Logger : public ILogger           
+ {
+     void log(Severity severity, const char* msg) override
+     {
+         // suppress info-level messages
+         if (severity != Severity::kINFO)
+             std::cout &lt;&lt; msg &lt;&lt; std::endl;
+     }
+ } gLogger;
+</code></pre>
+<p>名为 <code>createInferBuilder(gLogger)</code>的全局 <code>TensorRT API</code> 方法用于创建 <code>IBuilder</code> 类型的对象，如下图所示。有关更多信息，请参阅 <a href="https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-723/api/c_api/classnvinfer1_1_1_i_builder.html">C++ IBuilder class reference</a>。</p>
+<p><img alt="img" src="https://img-blog.csdnimg.cn/img_convert/954a2e32454c47bf53e3e69442a0e703.png#pic_center"/></p>
+<center>
+ 使用ILogger作为输入参数创建IBuilder
+</center>
+<p>使用<code>IBuilder::createNetworkV2()</code>的方法用于创建 <code>INetworkDefinition </code>类型的对象，如下图所示。</p>
+<p><img alt="img" src="https://img-blog.csdnimg.cn/img_convert/ae8cb5c46d2cef4baf554d8b79d67b69.png#pic_center"/></p>
+<center>
+ createNetwork()用于创建网络
+</center>
+<p>使用 <code>INetwork </code>定义作为输入创建一个可用的解析器：</p>
+<blockquote>
+<ul><li>ONNX: <code>IParser* parser = nvonnxparser::createParser(*network, gLogger);</code></li><li>NVCaffe: <code>ICaffeParser* parser = createCaffeParser();</code></li><li>UFF: <code>IUffParser* parser = createUffParser();</code></li></ul>
+</blockquote>
+<p>调用来自 <code>IParser </code>类型的对象的名为 <code>parse()</code>的方法来读取模型文件并填充 TensorRT 网络:</p>
+<p><img alt="img" src="https://img-blog.csdnimg.cn/img_convert/1dbb6fd51fd0e0f6245274e00685ce0a.png#pic_center"/></p>
+<center>
+ Parsing the model file
+</center>
+<p>调用 <code>IBuilder </code>的一个名为 <code>buildCudaEngine()</code>的方法来创建一个 <code>ICudaEngine </code>类型的对象，如图所示：</p>
+<p><img alt="img" src="https://img-blog.csdnimg.cn/img_convert/8d0c6ea5093b8ebca4bc07a8d86fb71d.png#pic_center"/></p>
+<center>
+ Creating the TensorRT engine
+</center>
+<p>可以选择将引擎序列化并转储到文件中。</p>
+<p><img alt="img" src="https://img-blog.csdnimg.cn/img_convert/70a659869b34260bf015267e30f1b192.png#pic_center"/></p>
+<center>
+ Creating the TensorRT engine
+</center>
+<p>执行上下文用于执行推理。</p>
+<p><img alt="img" src="https://img-blog.csdnimg.cn/img_convert/e7bd4d74292afd7c85d150386b2b67af.png#pic_center"/></p>
+<center>
+ Creating an execution context
+</center>
+<p>如果序列化引擎被保留并保存到文件中，则可以绕过上述大多数步骤。</p>
+<p>名为 <code>createInferRuntime（gLogger）</code>的全局 TensorRT API 方法用于创建 <code>iRuntime</code> 类型的对象，如图所示：</p>
+<p><img alt="img" src="https://img-blog.csdnimg.cn/img_convert/5412bd7fa73b4321e5ef67daa9f93387.png#pic_center"/></p>
+<center>
+ Creating TensorRT runtime
+</center>
+<p>有关 TensorRT 运行时的更多信息，请参阅 <a href="https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-723/api/classnvinfer1_1_1_i_runtime.html">IRuntime class reference</a>。 通过调用运行时方法 <code>deserializeCudaEngine()</code> 来创建引擎。</p>
+<p>对于这两种使用模型，其推断是相同的。</p>
+<p>尽管可以避免创建 CUDA 上下文（将为您创建默认上下文），但这是不可取的。 建议在创建运行时<code>IRuntime</code>或构建器对象<code>IBuilder</code>之前创建和配置 CUDA 上下文。</p>
+<p>将使用与创建线程关联的 GPU 上下文创建构建器或运行时。 虽然如果默认上下文尚不存在，但会创建它，但建议在创建运行时或构建器对象之前创建和配置 CUDA 上下文。</p>
+<h1><a id="2_C_91"></a>2. C++创建网络定义</h1>
+<p>使用 <code>TensorRT</code> 进行推理的第一步是从您的模型创建 <code>TensorRT</code> 网络。</p>
+<p>实现此目的的最简单方法是使用 <code>TensorRT</code> 解析器库导入模型，该解析器库支持以下格式的序列化模型：</p>
+<ul><li><a href="https://github.com/NVIDIA/TensorRT/tree/release/7.2/samples/opensource/sampleMNIST">Object Detection With A TensorFlow SSD Network (sampleMNIST)</a>(both BVLC and NVCaffe)</li><li><a href="https://github.com/NVIDIA/TensorRT/tree/release/7.2/samples/opensource/sampleOnnxMNIST">“Hello World” For TensorRT From ONNX (sampleOnnxMNIST)</a></li><li><a href="https://github.com/NVIDIA/TensorRT/tree/release/7.2/samples/opensource/sampleUffMNIST">Import A TensorFlow Model And Run Inference (sampleUffMNIST)</a> (used for TensorFlow)</li></ul>
+<p>另一种方法是使用 <code>TensorRT API</code> 直接定义模型。 这要求您进行少量 <code>API</code> 调用以定义网络图中的每个层，并为模型的训练参数实现自己的导入机制。</p>
+<p>在任何一种情况下，都要告诉 <code>TensorRT</code> 需要哪些张量作为推断的输出。 未标记为输出的张量被认为是可由<code>iBuilder</code>优化的瞬态值。 输出张量的数量没有限制，但是，将张量标记为输出可能会禁止对张量进行一些优化。 输入和输出张量也必须给出名称（使用 <code>ITensor :: setName()</code> ）。 在推理时，您将为引擎提供一个指向输入和输出缓冲区的指针数组。 为了确定引擎对这些指针的预期顺序，您可以使用张量名称进行查询。</p>
+<p><code>TensorRT</code> 网络定义的一个重要方面是它包含指向模型权重的指针，这些指针由<code>IBuilder</code>复制到优化引擎中。 如果网络是通过解析器创建的，则解析器将拥有权重占用的内存，因此在<code>IBuilder</code>运行之前，不应删除解析器对象。</p>
+<h2><a id="21_C_API_107"></a>2.1. 使用C++ API从头开始创建网络定义</h2>
+<p>您也可以通过网络定义 <code>API</code> 直接将网络定义到 <code>TensorRT</code>，而不是使用解析器。 此方案假定在网络创建期间，每层权重已准备好在主机内存中传递给 <code>TensorRT</code>。</p>
+<p>在下面的示例中，我们将创建一个包含<code>Input</code>，<code>Convolution</code>，<code>Pooling</code>，<code>FullyConnected</code>，<code>Activation</code> 和 <code>SoftMax</code>层的简单网络。 要查看整体中的代码，请参阅位于 <code>/usr/src/tensorrt/samples/sampleMNISTAPI</code> 目录中的 <a href="https://github.com/NVIDIA/TensorRT/tree/release/7.2/samples/opensource/sampleMNISTAPI">Building A Simple MNIST Network Layer By Layer (sampleMNISTAPI)</a>。</p>
+<ol><li>创建builder和network：</li></ol>
+<pre><code class="prism language-cpp">IBuilder<span class="token operator">*</span> builder <span class="token operator">=</span> <span class="token function">createInferBuilder</span><span class="token punctuation">(</span>gLogger<span class="token punctuation">)</span><span class="token punctuation">;</span>
+INetworkDefinition<span class="token operator">*</span> network <span class="token operator">=</span> builder<span class="token operator">-&gt;</span><span class="token function">createNetwork</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<ol start="2"><li>使用输入维度的方式将输入层添加到网络。 网络可以有多个输入，但在此示例中只有一个：</li></ol>
+<pre><code class="prism language-cpp"><span class="token keyword">auto</span> data <span class="token operator">=</span> network<span class="token operator">-&gt;</span><span class="token function">addInput</span><span class="token punctuation">(</span>INPUT_BLOB_NAME<span class="token punctuation">,</span> dt<span class="token punctuation">,</span> Dims3<span class="token punctuation">{<!-- --></span><span class="token number">1</span><span class="token punctuation">,</span> INPUT_H<span class="token punctuation">,</span> INPUT_W<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<ol start="3"><li>添加具有隐藏层输入节点的 <code>Convolution</code> 图层，该层还带有过滤器和偏差的步幅和权重。 为了从图层中检索张量参考，我们可以使用：</li></ol>
+<pre><code class="prism language-cpp">layerName<span class="token operator">-&gt;</span><span class="token function">getOutput</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span>
+<span class="token keyword">auto</span> conv1 <span class="token operator">=</span> network<span class="token operator">-&gt;</span><span class="token function">addConvolution</span><span class="token punctuation">(</span><span class="token operator">*</span>data<span class="token operator">-&gt;</span><span class="token function">getOutput</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">20</span><span class="token punctuation">,</span> DimsHW<span class="token punctuation">{<!-- --></span><span class="token number">5</span><span class="token punctuation">,</span> <span class="token number">5</span><span class="token punctuation">}</span><span class="token punctuation">,</span> weightMap<span class="token punctuation">[</span><span class="token string">"conv1filter"</span><span class="token punctuation">]</span><span class="token punctuation">,</span> weightMap<span class="token punctuation">[</span><span class="token string">"conv1bias"</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+conv1<span class="token operator">-&gt;</span><span class="token function">setStride</span><span class="token punctuation">(</span>DimsHW<span class="token punctuation">{<!-- --></span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><strong>注意</strong>：传递给 <code>TensorRT</code> 层的权重在主机内存中。</p>
+<ol start="4"><li>添加 Pooling 层：</li></ol>
+<pre><code class="prism language-cpp"><span class="token keyword">auto</span> pool1 <span class="token operator">=</span> network<span class="token operator">-&gt;</span><span class="token function">addPooling</span><span class="token punctuation">(</span><span class="token operator">*</span>conv1<span class="token operator">-&gt;</span><span class="token function">getOutput</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> PoolingType<span class="token double-colon punctuation">::</span>kMAX<span class="token punctuation">,</span> DimsHW<span class="token punctuation">{<!-- --></span><span class="token number">2</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+pool1<span class="token operator">-&gt;</span><span class="token function">setStride</span><span class="token punctuation">(</span>DimsHW<span class="token punctuation">{<!-- --></span><span class="token number">2</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<ol start="5"><li>添加全连接和激活函数层：</li></ol>
+<pre><code class="prism language-cpp"><span class="token keyword">auto</span> ip1 <span class="token operator">=</span> network<span class="token operator">-&gt;</span><span class="token function">addFullyConnected</span><span class="token punctuation">(</span><span class="token operator">*</span>pool1<span class="token operator">-&gt;</span><span class="token function">getOutput</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">500</span><span class="token punctuation">,</span> weightMap<span class="token punctuation">[</span><span class="token string">"ip1filter"</span><span class="token punctuation">]</span><span class="token punctuation">,</span> weightMap<span class="token punctuation">[</span><span class="token string">"ip1bias"</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">auto</span> relu1 <span class="token operator">=</span> network<span class="token operator">-&gt;</span><span class="token function">addActivation</span><span class="token punctuation">(</span><span class="token operator">*</span>ip1<span class="token operator">-&gt;</span><span class="token function">getOutput</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> ActivationType<span class="token double-colon punctuation">::</span>kRELU<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<ol start="6"><li>添加 SoftMax 层以计算最终概率并将其设置为输出：</li></ol>
+<pre><code class="prism language-cpp"><span class="token keyword">auto</span> prob <span class="token operator">=</span> network<span class="token operator">-&gt;</span><span class="token function">addSoftMax</span><span class="token punctuation">(</span><span class="token operator">*</span>relu1<span class="token operator">-&gt;</span><span class="token function">getOutput</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+prob<span class="token operator">-&gt;</span><span class="token function">getOutput</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">setName</span><span class="token punctuation">(</span>OUTPUT_BLOB_NAME<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<ol start="7"><li>标记输出：</li></ol>
+<pre><code class="prism language-cpp">network<span class="token operator">-&gt;</span><span class="token function">markOutput</span><span class="token punctuation">(</span><span class="token operator">*</span>prob<span class="token operator">-&gt;</span><span class="token function">getOutput</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="22_C_163"></a>2.2. C++使用解析器导入模型</h2>
+<p>要使用 <code>C++ Parser API</code> 导入模型，您需要执行以下步骤：</p>
+<ol><li>创建builder和network.</li></ol>
+<pre><code class="prism language-cpp">IBuilder<span class="token operator">*</span> builder <span class="token operator">=</span> <span class="token function">createInferBuilder</span><span class="token punctuation">(</span>gLogger<span class="token punctuation">)</span><span class="token punctuation">;</span>
+nvinfer1<span class="token double-colon punctuation">::</span>INetworkDefinition<span class="token operator">*</span> network <span class="token operator">=</span> builder<span class="token operator">-&gt;</span><span class="token function">createNetwork</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<ol start="2"><li> <p>创建特定格式的解析器<br/> <strong>ONNX</strong></p> <pre><code class="prism language-cpp"><span class="token keyword">auto</span> parser <span class="token operator">=</span> nvonnxparser<span class="token double-colon punctuation">::</span><span class="token function">createParser</span><span class="token punctuation">(</span><span class="token operator">*</span>network<span class="token punctuation">,</span> gLogger<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p><strong>UFF</strong></p> <pre><code class="prism language-cpp"><span class="token keyword">auto</span> parser <span class="token operator">=</span> <span class="token function">createUffParser</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p><strong>NVCaffe</strong></p> <pre><code class="prism language-cpp">ICaffeParser<span class="token operator">*</span> parser <span class="token operator">=</span> <span class="token function">createCaffeParser</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li><li> <p>使用解析器解析导入的模型并填充网络</p> <pre><code class="prism language-cpp">parser<span class="token operator">-&gt;</span><span class="token function">parse</span><span class="token punctuation">(</span>args<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li></ol>
+<p>具体的 args 取决于使用什么格式的解析器。 有关更多信息，请参阅 <a href="https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-723/api/index.html">TensorRT API</a> 中解析器的文档。</p>
+<p>必须在network之前创建builder，因为它充当网络的工厂。 不同的解析器具有用于标记网络输出的不同机制。</p>
+<h2><a id="23_CAPICaffe_203"></a>2.3. 使用C++解析器API导入Caffe模型</h2>
+<p>以下步骤说明了如何使用 C ++ Parser API 导入 Caffe 模型。 有关更多信息，请参阅 <a href="https://github.com/NVIDIA/TensorRT/tree/release/7.2/samples/opensource/sampleMNIST">sampleMNIST</a>。</p>
+<ol><li> <p>创建builder和network:</p> <pre><code class="prism language-cpp">IBuilder<span class="token operator">*</span> builder <span class="token operator">=</span> <span class="token function">createInferBuilder</span><span class="token punctuation">(</span>gLogger<span class="token punctuation">)</span><span class="token punctuation">;</span>
+INetworkDefinition<span class="token operator">*</span> network <span class="token operator">=</span> builder<span class="token operator">-&gt;</span><span class="token function">createNetwork</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li><li> <p>创建Caffe parser:</p> <pre><code class="prism language-cpp">ICaffeParser<span class="token operator">*</span> parser <span class="token operator">=</span> <span class="token function">createCaffeParser</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li><li> <p>解析导入的模型:</p> <pre><code class="prism language-cpp"><span class="token keyword">const</span> IBlobNameToTensor<span class="token operator">*</span> blobNameToTensor <span class="token operator">=</span> parser<span class="token operator">-&gt;</span><span class="token function">parse</span><span class="token punctuation">(</span><span class="token string">"deploy_file"</span> <span class="token punctuation">,</span> <span class="token string">"modelFile"</span><span class="token punctuation">,</span> <span class="token operator">*</span>network<span class="token punctuation">,</span> DataType<span class="token double-colon punctuation">::</span>kFLOAT<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p>这将填充 <code>Caffe</code> 模型中的 <code>TensorRT</code> 网络。 最后一个参数指示解析器生成权重为 32 位浮点数的网络。 使用 <code>DataType::kHALF</code> 将生成具有 16 位权重的模型。</p> <p>除了填充网络定义之外，解析器还返回一个字典，该字典从 Caffe blob 名称映射到 TensorRT 张量。 与 Caffe 不同，TensorRT 网络定义没有in-place操作的概念。 当 Caffe 模型使用in-place操作时，字典中返回的 TensorRT 张量对应于对该blob 的最后一次写入。 例如，如果卷积写入 blob 并且后跟in-place ReLU，则该 blob 的名称将映射到 TensorRT 张量，该张量是 ReLU 的输出。</p> </li><li> <p>指定网络的输出:</p> <pre><code class="prism language-cpp"><span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">auto</span><span class="token operator">&amp;</span> s <span class="token operator">:</span> outputs<span class="token punctuation">)</span>
+    network<span class="token operator">-&gt;</span><span class="token function">markOutput</span><span class="token punctuation">(</span><span class="token operator">*</span>blobNameToTensor<span class="token operator">-&gt;</span><span class="token function">find</span><span class="token punctuation">(</span>s<span class="token punctuation">.</span><span class="token function">c_str</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li></ol>
+<h2><a id="24_C_UFFAPITensorFlow_237"></a>2.4. 使用C++ UFF解析器API导入TensorFlow模型</h2>
+<p><strong>注意</strong>：对于新项目，建议使用 TF-TRT集成作为转换 TensorFlow 网络以使用 TensorRT 进行推理的方法。 有关集成说明，请参阅 <a href="https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html/index.html">Accelerating Inference In TF-TRT User Guide</a>。</p>
+<p>从 TensorFlow 框架导入要求您将 TensorFlow 模型转换为中间格式 UFF（Universal Framework Format）。 有关转换的更多信息，请参阅 <a href="https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-723/developer-guide/index.html#samplecode3">Converting A Frozen Graph To UFF</a>。</p>
+<p>以下步骤说明了如何使用C++ Parser API导入TensorFlow模型。 有关UFF导入的更多信息，请参阅 <a href="https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-723/developer-guide/index.html#mnist_uff_sample">sampleUffMNIST</a>。</p>
+<ol><li>创建builder和network:</li></ol>
+<pre><code class="prism language-cpp">IBuilder<span class="token operator">*</span> builder <span class="token operator">=</span> <span class="token function">createInferBuilder</span><span class="token punctuation">(</span>gLogger<span class="token punctuation">)</span><span class="token punctuation">;</span>
+INetworkDefinition<span class="token operator">*</span> network <span class="token operator">=</span> builder<span class="token operator">-&gt;</span><span class="token function">createNetwork</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<ol start="2"><li>创建UFF parser:</li></ol>
+<pre><code class="prism language-cpp">IUFFParser<span class="token operator">*</span> parser <span class="token operator">=</span> <span class="token function">createUffParser</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<ol start="3"><li>声明网络的输入和输出到UFF parser中:</li></ol>
+<pre><code class="prism language-cpp">parser<span class="token operator">-&gt;</span><span class="token function">registerInput</span><span class="token punctuation">(</span><span class="token string">"Input_0"</span><span class="token punctuation">,</span> <span class="token function">DimsCHW</span><span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">28</span><span class="token punctuation">,</span> <span class="token number">28</span><span class="token punctuation">)</span><span class="token punctuation">,</span> UffInputOrder<span class="token double-colon punctuation">::</span>kNCHW<span class="token punctuation">)</span><span class="token punctuation">;</span>
+parser<span class="token operator">-&gt;</span><span class="token function">registerOutput</span><span class="token punctuation">(</span><span class="token string">"Binary_3"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p><strong>注意</strong>：TensorRT 期望输入张量为 CHW 顺序。 从 TensorFlow 导入时，请确保输入张量符合所需顺序，如果不是，请将其转换为 CHW。</p>
+<ol start="4"><li>解析导入的模型来填充网络:</li></ol>
+<pre><code class="prism language-cpp">parser<span class="token operator">-&gt;</span><span class="token function">parse</span><span class="token punctuation">(</span>uffFile<span class="token punctuation">,</span> <span class="token operator">*</span>network<span class="token punctuation">,</span> nvinfer1<span class="token double-colon punctuation">::</span>DataType<span class="token double-colon punctuation">::</span>kFLOAT<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="25_C_APIONNX_273"></a>2.5. 使用C++ 解析器API导入ONNX模型</h2>
+<p>通常，较新版本的 ONNX Parser 旨在向后兼容，因此，遇到早期版本的 ONNX 导出器生成的模型文件不应该导致问题。 当更改不向后兼容时，可能会有一些例外。 在这种情况下，将早期的 ONNX 模型文件转换为以后支持的版本。 有关此主题的更多信息，请参阅 <a href="https://github.com/onnx/onnx/blob/master/docs/OpsetVersionConverter.md">ONNX Model Opset Version Converter</a>。</p>
+<p>用户模型也可能是由支持后来的 opset 的导出工具生成的，而不是 TensorRT 附带的 ONNX 解析器所支持的。在这种情况下，请检查发布到 GitHub onnx-tensorrt 的最新版本的 TensorRT 是否支持所需的版本。 支持的版本由 <code>onnx_trt_backend.cpp</code> 中的 <code>BACKEND_OPSET_VERSION</code> 变量定义。 从 GitHub 下载并构建最新版本的 ONNX TensorRT Parser。 有关构建的说明，请访问：<a href="https://github.com/onnx/onnx-tensorrt/blob/master/README.md">TensorRT backend for ONNX</a>。</p>
+<p>有关 ONNX 导入的详细信息，请参阅 <a href="https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-723/developer-guide/index.html#onnx_mnist_sample">sampleOnnxMNIST</a>。</p>
+<p><strong>注意：</strong> 在TensorRT7.0，ONNX解析器只支持全维模式，意味着你的网络定义必须使用<code>explicitBatch</code>标志来创建。</p>
+<ol><li> <p>创建builder和network：</p> <pre><code class="prism language-cpp">IBuilder<span class="token operator">*</span> builder <span class="token operator">=</span> <span class="token function">createInferBuilder</span><span class="token punctuation">(</span>gLogger<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">const</span> <span class="token keyword">auto</span> explicitBatch <span class="token operator">=</span> <span class="token number">1U</span> <span class="token operator">&lt;&lt;</span> <span class="token generic-function"><span class="token function">static_cast</span><span class="token generic class-name"><span class="token operator">&lt;</span><span class="token keyword">uint32_t</span><span class="token operator">&gt;</span></span></span><span class="token punctuation">(</span>NetworkDefinitionCreationFlag<span class="token double-colon punctuation">::</span>kEXPLICIT_BATCH<span class="token punctuation">)</span><span class="token punctuation">;</span>  
+INetworkDefinition<span class="token operator">*</span> network <span class="token operator">=</span> builder<span class="token operator">-&gt;</span><span class="token function">createNetworkV2</span><span class="token punctuation">(</span>explicitBatch<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li><li> <p>创建ONNX解析器:</p> <pre><code class="prism language-cpp">nvonnxparser<span class="token double-colon punctuation">::</span>IParser<span class="token operator">*</span> parser <span class="token operator">=</span> 
+nvonnxparser<span class="token double-colon punctuation">::</span><span class="token function">createParser</span><span class="token punctuation">(</span><span class="token operator">*</span>network<span class="token punctuation">,</span> gLogger<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li><li> <p>解析模型:</p> <pre><code class="prism language-cpp">parser<span class="token operator">-&gt;</span><span class="token function">parseFromFile</span><span class="token punctuation">(</span>onnx_filename<span class="token punctuation">,</span> ILogger<span class="token double-colon punctuation">::</span>Severity<span class="token double-colon punctuation">::</span>kWARNING<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> parser<span class="token punctuation">.</span><span class="token function">getNbErrors</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span> <span class="token operator">++</span>i<span class="token punctuation">)</span>
+<span class="token punctuation">{<!-- --></span>
+    std<span class="token double-colon punctuation">::</span>cout <span class="token operator">&lt;&lt;</span> parser<span class="token operator">-&gt;</span><span class="token function">getError</span><span class="token punctuation">(</span>i<span class="token punctuation">)</span><span class="token operator">-&gt;</span><span class="token function">desc</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">&lt;&lt;</span> std<span class="token double-colon punctuation">::</span>endl<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre> </li></ol>
+<h1><a id="3_Cengine_308"></a>3. C++构建engine</h1>
+<p>下一步是调用 TensorRT 构建器来创建优化的运行时。 构建器的一个功能是搜索其 CUDA 内核目录以获得最快的可用实现，因此必须使用相同的 GPU 来构建优化引擎将运行的 GPU。</p>
+<p>构建器具有许多属性，您可以设置这些属性以控制网络应运行的精度，以及自动调整参数，例如 TensorRT 在确定哪个最快时（多次迭代会导致更长的运行时间，但是对噪声的敏感性较低）应该为每个内核计时多少次 。您还可以查询构建器，以找出硬件本身支持的精简类型。</p>
+<p>一个特别重要的属性是最大工作空间大小。</p>
+<ul><li>层算法通常需要临时工作空间。 此参数限制网络中任何层可以使用的最大大小。 如果提供的缓存不足，则TensorRT可能无法找到给定层的实现。</li></ul>
+<ol><li> <p>使用builder对象构建engine:</p> <pre><code class="prism language-cpp">IBuilderConfig<span class="token operator">*</span> config <span class="token operator">=</span> builder<span class="token operator">-&gt;</span><span class="token function">createBuilderConfig</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+config<span class="token operator">-&gt;</span><span class="token function">setMaxWorkspaceSize</span><span class="token punctuation">(</span><span class="token number">1</span> <span class="token operator">&lt;&lt;</span> <span class="token number">20</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+ICudaEngine<span class="token operator">*</span> engine <span class="token operator">=</span> builder<span class="token operator">-&gt;</span><span class="token function">buildEngineWithConfig</span><span class="token punctuation">(</span><span class="token operator">*</span>network<span class="token punctuation">,</span> <span class="token operator">*</span>config<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p>在构建引擎时，TensorRT会复制权重。</p> </li><li> <p>如果使用一次，销毁network, builder, and parser.</p> <pre><code class="prism language-cpp">engine<span class="token operator">-&gt;</span><span class="token function">destroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+network<span class="token operator">-&gt;</span><span class="token function">destroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+builder<span class="token operator">-&gt;</span><span class="token function">destroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li></ol>
+<h2><a id="31_Builder_336"></a>3.1. Builder层时间缓存</h2>
+<p>构建引擎可能很耗时，因为builder需要为每一层的候选内核计时。为了减少builder时间，TensorRT设置了一个层定时缓存，以在builder阶段保留层分析信息。</p>
+<p>如果有其他层具有相同的输入/输出张量配置和层参数，则builder将跳过分析，并将缓存结果重新用于重复的层。默认情况下，层定时缓存处于打开状态。可以通过设置生成器标志将其关闭。</p>
+<pre><code class="prism language-cpp"><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+config<span class="token operator">-&gt;</span><span class="token function">setFlag</span><span class="token punctuation">(</span>BuilderFlag<span class="token double-colon punctuation">::</span>kDISABLE_TIMING_CACHE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<h1><a id="4_C_347"></a>4. C++序列化模型</h1>
+<p>要进行序列化，您要将引擎转换为一种格式，以便以后存储和使用以进行推理。 要用于推理，您只需反序列化引擎即可。 序列化和反序列化是可选的。 由于从网络定义创建引擎可能非常耗时，因此每次应用程序重新生成时都可以通过序列化一次并在推理时对其进行反序列化来避免重建引擎。 因此，在构建引擎之后，用户通常希望将其序列化以供以后使用。</p>
+<p>构建可能需要一些时间，因此一旦构建了引擎，您通常需要将其序列化以供以后使用。 在将模型用于推理之前，并非绝对有必要对模型进行序列化和反序列化 - 如果需要，可以直接使用引擎对象进行推理。</p>
+<p><strong>注意</strong>：序列化引擎不能跨平台或TensorRT版本移植。 引擎特定于它们构建的精确GPU模型（除了平台和TensorRT版本）。</p>
+<ol><li> <p>将builder作为预先的脱机步骤运行，然后序列化:</p> <pre><code class="prism language-cpp">IHostMemory <span class="token operator">*</span>serializedModel <span class="token operator">=</span> engine<span class="token operator">-&gt;</span><span class="token function">serialize</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token comment">// store model to disk</span>
+<span class="token comment">// &lt;…&gt;</span>
+serializedModel<span class="token operator">-&gt;</span><span class="token function">destroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li><li> <p>创建runtime对象反序列化:</p> <pre><code class="prism language-cpp">IRuntime<span class="token operator">*</span> runtime <span class="token operator">=</span> <span class="token function">createInferRuntime</span><span class="token punctuation">(</span>gLogger<span class="token punctuation">)</span><span class="token punctuation">;</span>
+ICudaEngine<span class="token operator">*</span> engine <span class="token operator">=</span> runtime<span class="token operator">-&gt;</span><span class="token function">deserializeCudaEngine</span><span class="token punctuation">(</span>modelData<span class="token punctuation">,</span> modelSize<span class="token punctuation">,</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p>最后一个参数是使用自定义图层的应用程序的插件层工厂。 有关更多信息，请参阅 <a href="https://docs.nvidia.com/deeplearning/tensorrt/archives/tensorrt-723/developer-guide/index.html#extending">Extending TensorRT With Custom Layers</a>。</p> </li></ol>
+<h1><a id="5_C_373"></a>5. C++执行推理</h1>
+<p>以下步骤说明了如何使用引擎在C++中执行推理。</p>
+<ol><li> <p>创建一些空间来存储中间激活值。 由于引擎保持网络定义和训练的参数，因此需要额外的空间。 这些都保存在执行上下文中：</p> <pre><code class="prism language-cpp">IExecutionContext <span class="token operator">*</span>context <span class="token operator">=</span> engine<span class="token operator">-&gt;</span><span class="token function">createExecutionContext</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p>引擎可以具有多个执行上下文，允许一组权重用于多个重叠推理任务。 例如，您可以使用一个引擎和每个流一个上下文在并行 CUDA 流中处理图像。 每个上下文将在与引擎相同的 GPU 上创建。</p> </li><li> <p>使用输入和输出blob名来获取输入和输出索引:</p> <pre><code class="prism language-cpp"><span class="token keyword">int</span> inputIndex <span class="token operator">=</span> engine<span class="token punctuation">.</span><span class="token function">getBindingIndex</span><span class="token punctuation">(</span>INPUT_BLOB_NAME<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">int</span> outputIndex <span class="token operator">=</span> engine<span class="token punctuation">.</span><span class="token function">getBindingIndex</span><span class="token punctuation">(</span>OUTPUT_BLOB_NAME<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li><li> <p>使用这些索引, 设置一个指向GPU上输入输出缓存的缓存矩阵指针:</p> <pre><code class="prism language-cpp"><span class="token keyword">void</span><span class="token operator">*</span> buffers<span class="token punctuation">[</span><span class="token number">2</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+buffers<span class="token punctuation">[</span>inputIndex<span class="token punctuation">]</span> <span class="token operator">=</span> inputbuffer<span class="token punctuation">;</span>
+buffers<span class="token punctuation">[</span>outputIndex<span class="token punctuation">]</span> <span class="token operator">=</span> outputBuffer<span class="token punctuation">;</span>
+</code></pre> </li><li> <p>TensorRT执行通常是异步的，因此将内核排队到CUDA流上:</p> <pre><code class="prism language-cpp">context<span class="token punctuation">.</span><span class="token function">enqueueV2</span><span class="token punctuation">(</span>batchSize<span class="token punctuation">,</span> buffers<span class="token punctuation">,</span> stream<span class="token punctuation">,</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p>通常在内核之前和之后将异步 memcpy() 排入队列以从 GPU 移动数据（如果尚未存在）。 enqueue() 的最后一个参数是一个可选的 CUDA 事件，当输入缓冲区被占用并且可以安全地重用它们的内存时，它将被发出信号。</p> <p>要确定内核（以及可能的 memcpy() ）何时完成，请使用标准 CUDA 同步机制（如事件）或等待流。</p> </li></ol>
+<h1><a id="6_C_410"></a>6. C++内存管理</h1>
+<p>TensorRT 提供了两种机制，允许应用程序更多地控制设备内存。</p>
+<p>默认情况下，在创建 IExecutionContext 时，会分配持久设备内存来保存激活数据。 要避免此分配，请调用 createExecutionContextWithoutDeviceMemory。 然后应用程序负责调用IExecutionContext :: setDeviceMemory() 来提供运行网络所需的内存。 ICudaEngine :: getDeviceMemorySize() 返回内存块的大小。</p>
+<p>此外，应用程序可以通过实现 <code>IGpuAllocator</code> 接口提供在构建和运行时使用的自定义分配器。如果你的应用程序希望控制所有GPU内存并将其分配给TensorRT而不是让TensorRT直接从CUDA分配，则这个接口是有用的。</p>
+<p>一旦实现接口后，在 <code>IBuilder</code> 或 <code>IRuntime</code> 接口上请调用<br/> <code>setGpuAllocator(&amp;allocator)</code>。 然后将通过此接口分配和释放所有设备内存。</p>
+<h1><a id="7_engine_421"></a>7. 改装engine</h1>
+<p>TensorRT可以使用新权重改装engine，而不需要重新构建。这个engine必须按照可改装的方式构建，因为这种方式下engine是可优化的。如果你改变权重，你也许不得不也提供一些其他权重。这个接口会告诉你额外的权重需要被提供。</p>
+<ol><li> <p>在构建之前要求一个可改装的engine：</p> <pre><code class="prism language-cpp"><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+config<span class="token operator">-&gt;</span><span class="token function">setFlag</span><span class="token punctuation">(</span>BuilderFlag<span class="token double-colon punctuation">::</span>kREFIT<span class="token punctuation">)</span> 
+builder<span class="token operator">-&gt;</span><span class="token function">buildEngineWithConfig</span><span class="token punctuation">(</span>network<span class="token punctuation">,</span> config<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li><li> <p>创建一个refitter对象：</p> <pre><code class="prism language-cpp">ICudaEngine<span class="token operator">*</span> engine <span class="token operator">=</span> <span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">;</span>
+IRefitter<span class="token operator">*</span> refitter <span class="token operator">=</span> <span class="token function">createInferRefitter</span><span class="token punctuation">(</span><span class="token operator">*</span>engine<span class="token punctuation">,</span>gLogger<span class="token punctuation">)</span>
+</code></pre> </li><li> <p>更新你想要更新的权重。例如，给一个叫"MyLayer"的卷积层更新kernel权重：</p> <pre><code class="prism language-cpp">Weights newWeights <span class="token operator">=</span> <span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">;</span>
+refitter<span class="token operator">-&gt;</span><span class="token function">setWeights</span><span class="token punctuation">(</span><span class="token string">"MyLayer"</span><span class="token punctuation">,</span>WeightsRole<span class="token double-colon punctuation">::</span>kKERNEL<span class="token punctuation">,</span>
+                 newWeights<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p>新权重应该与原来用于构建engine的权重有同样的数量。<br/> 如果一些错误发生则<code>setWeights</code>返回<code>false</code>，例如一个错误层名或者角色，又或者权重数量的改变。</p> </li><li> <p>找出哪些其他权重必须被提供。这通常需要两次调用<code>IRefitter::getMissing</code>，第一次获取必须被提供的权重数，第二次获取它们的layers和roles。</p> <pre><code class="prism language-cpp"><span class="token keyword">const</span> <span class="token keyword">int</span> n <span class="token operator">=</span> refitter<span class="token operator">-&gt;</span><span class="token function">getMissing</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token keyword">nullptr</span><span class="token punctuation">,</span> <span class="token keyword">nullptr</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span><span class="token keyword">const</span> <span class="token keyword">char</span><span class="token operator">*</span><span class="token operator">&gt;</span> <span class="token function">layerNames</span><span class="token punctuation">(</span>n<span class="token punctuation">)</span><span class="token punctuation">;</span>
+std<span class="token double-colon punctuation">::</span>vector<span class="token operator">&lt;</span>WeightsRole<span class="token operator">&gt;</span> <span class="token function">weightsRoles</span><span class="token punctuation">(</span>n<span class="token punctuation">)</span><span class="token punctuation">;</span>
+refitter<span class="token operator">-&gt;</span><span class="token function">getMissing</span><span class="token punctuation">(</span>n<span class="token punctuation">,</span> layerNames<span class="token punctuation">.</span><span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span> 
+                        weightsRoles<span class="token punctuation">.</span><span class="token function">data</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> </li><li> <p>提供缺少的weights（顺序无所谓）</p> <pre><code class="prism language-cpp"><span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> i <span class="token operator">&lt;</span> n<span class="token punctuation">;</span> <span class="token operator">++</span>i<span class="token punctuation">)</span>
+    refitter<span class="token operator">-&gt;</span><span class="token function">setWeights</span><span class="token punctuation">(</span>layerNames<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span> weightsRoles<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token punctuation">,</span>
+                         Weights<span class="token punctuation">{<!-- --></span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p>仅提供缺少权重不将产生更多权重的需要。提供额外权重可能出发更多权重的需要。</p> </li><li> <p>使用所有被提供的权重更新engine</p> <pre><code class="prism language-cpp"><span class="token keyword">bool</span> success <span class="token operator">=</span> refitter<span class="token operator">-&gt;</span><span class="token function">refitCudaEngine</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token function">assert</span><span class="token punctuation">(</span>success<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p>如果<code>success</code>的值为<code>false</code>，可以检查一下诊断日志，也许有些权重仍然缺失。</p> </li><li> <p>销毁refitter：</p> <pre><code class="prism language-cpp">refitter<span class="token operator">-&gt;</span><span class="token function">destroy</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre> <p>如果想要查看engine中所有可重新调整的权重，可以使用<code>refitter-&gt; getAll(...)</code>，类似于步骤4中的如何使用<code>getMissing</code>。</p> </li></ol>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

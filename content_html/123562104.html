@@ -1,0 +1,245 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>好久没写博客了，最近做一个项目，需要直接对接海康摄像头，调用海康的SDK。这个项目原来是C/S模式单机版，改版后是B/S模式，调用SDK就比较麻烦了。</p>
+<p>首先，还看的SDK分了好几个版本，至少常用服务器来说有windows或者linux（centos），甚至可能是麒麟。那么问题来了，从官网提供的例子来看，调用的库在不同操作系统上不一样，不能一套代码发布在2个平台上。另外就是很多时候大家开发的环境是windows，而正式部署一般是linux的服务器，这就导致windows调好的代码在正式环境不一定能正常。</p>
+<p>官网提供的例子来看，首先，linux版本没有c#的例子，用java，部署很麻烦，主要是库文件的存放路径配置，写了一堆说明。然后，c#用的是winform，要改成B/S模式有些还是不太适用的。</p>
+<p>讲了这么多，相信很多程序员还是想一套代码能够搞定一切，免得windows来一个版本，linux来一个版本，维护也麻烦。现在.net core也是支持跨平台的，而且部署起来也很简单，不管是windows还是linux服务器，所以，基于.net core3.1的基础上将海康的例子改了下，变成网络可以调用的api接口，给大家提供一个解决方案。</p>
+<p>第一步，自己去官网下载海康的sdk包，windows和linux的都要下载，这里我就不多说啥了；</p>
+<p>第二步，创建一个webapi项目，基于.net core3.1平台；</p>
+<p>第三步，海康的CHCNetSDK.cs类，复制到自己项目里，然后多复制2个，把复制的2个类分别改名为WindowsCHCNetSDK和LinuxCHCNetSDK，当然，代码也需要改造下：</p>
+<p>        （1）把WindowsCHCNetSDK和LinuxCHCNetSDK里的常量、结构体、委托的定义全部删掉，只留API申明，就比如这样：</p>
+<p><img alt="" height="844" src="image\b81204b51ff746bd8d91798b1fb8305c.png" width="1154"/></p>
+<p><img alt="" height="802" src="image\07e38af0c4784b8e9478ea31dacaab02.png" width="1096"/></p>
+<p>（2）删除代码后，API申明有些就会报错，把这个对象引用指向CHCNetSDK类，也就是像这么改：</p>
+<pre><code class="language-cs">[DllImport(HCNetSDK)]
+public static extern bool NET_DVR_SetExceptionCallBack_V30(uint nMessage, IntPtr hWnd, CHCNetSDK.EXCEPYIONCALLBACK fExceptionCallBack, IntPtr pUser);</code></pre>
+<p> （3）CHCNetSDK类加一句代码，用来识别当前的系统类型（OSPlatform里还有个FreeBSD和OSX就不考虑了，应该没人会用苹果系统做服务器吧！！）：</p>
+<pre><code class="language-cs">private static bool isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);</code></pre>
+<p>（4）CHCNetSDK类里的API申明全部按如下改法改一遍：</p>
+<pre><code class="language-cs">public static bool NET_DVR_Init()
+{
+    if (isWindows)
+    {
+        return WindowsCHCNetSDK.NET_DVR_Init();
+    }
+    return LinuxCHCNetSDK.NET_DVR_Init();
+}</code></pre>
+<p>这样，直接调用NET_DVR_Init()方法，程序就可以自动按平台来选择引用的类库了。</p>
+<p>SDK改好了，还需要再改一些结构体，不然你程序运行，可能就会有像是下面这个错误：<span style="color:#fe2c24;"><strong>加载类型“WIFI_AUTH_PARAM”，因为它在 0 偏移位置处包含一个对象字段，该字段已由一个非对象字段不正确地对齐或重叠。</strong></span></p>
+<p>这个错误也比较好解决，只需要把接口体头部的LayoutKind.Explicit改为LayoutKind.Auto就好了，就像是这样：</p>
+<pre><code class="language-cs">[StructLayoutAttribute(LayoutKind.Auto)]
+public struct WIFI_AUTH_PARAM
+{
+    public UNION_EAP_TTLS EAP_TTLS;//WPA-enterprise/WPA2-enterpris模式适用
+			
+    public UNION_EAP_PEAP EAP_PEAP; //WPA-enterprise/WPA2-enterpris模式适用
+
+    public UNION_EAP_TLS EAP_TLS; 
+}</code></pre>
+<p>当然，不止这一处，全文搜下LayoutKind.Explicit，全部改了就好了。</p>
+<p>都改好了，那么这个SDK的方法就可以通用了。下面我们就写个API接口来试试，我这里用按时间下载文件的接口来测试：</p>
+<p>        新建一个controller，然后编写接口如下：</p>
+<pre><code class="language-cs">[HttpGet("SaveByTime")]
+public IActionResult SaveByTime(string ip, string userName, string password, int port = 8000, DateTime? startTime = null, DateTime? endTime = null, int recSecond = 20, int channelNum = 1)
+{
+    if (!CHCNetSDK.NET_DVR_Init())
+    {
+        return Ok(new { code = 998, msg = "NET_DVR_Init error!" });
+    }
+
+    DateTime now = DateTime.Now;
+    DateTime start, end;
+    end = endTime ?? DateTime.Now;
+    if (!startTime.HasValue)
+    {
+        start = end.AddSeconds(recSecond * -1);
+    }
+    else
+    {
+        start = startTime.Value;
+    }
+    Device device = HKHelper.GetDevice(ip, userName, password, port);
+    if (device == null)
+    {
+        return Ok(new { code = 999, msg = "NET_DVR_Login_V30 failed" });
+    }
+    if (device.DownHandle &gt;= 0)
+    {
+        return Ok(new { code = 8022, msg = "Downloading, please stop firstly!" });//正在下载，请先停止下载
+    }
+    CHCNetSDK.NET_DVR_PLAYCOND struDownPara = new CHCNetSDK.NET_DVR_PLAYCOND();
+    struDownPara.dwChannel = (uint)channelNum; //通道号 Channel number  
+
+    //设置下载的开始时间 Set the starting time
+    struDownPara.struStartTime.dwYear = (uint)start.Year;
+    struDownPara.struStartTime.dwMonth = (uint)start.Month;
+    struDownPara.struStartTime.dwDay = (uint)start.Day;
+    struDownPara.struStartTime.dwHour = (uint)start.Hour;
+    struDownPara.struStartTime.dwMinute = (uint)start.Minute;
+    struDownPara.struStartTime.dwSecond = (uint)start.Second;
+    //设置下载的结束时间 Set the stopping time
+    struDownPara.struStopTime.dwYear = (uint)end.Year;
+    struDownPara.struStopTime.dwMonth = (uint)end.Month;
+    struDownPara.struStopTime.dwDay = (uint)end.Day;
+    struDownPara.struStopTime.dwHour = (uint)end.Hour;
+    struDownPara.struStopTime.dwMinute = (uint)end.Minute;
+    struDownPara.struStopTime.dwSecond = (uint)end.Second;
+
+    string sVideoFileName = Guid.NewGuid().ToString("n");  //录像文件保存路径和文件名 the path and file name to save      
+    sVideoFileName = Path.Combine("路径", sVideoFileName + ".mp4");
+    device.DownHandle = CHCNetSDK.NET_DVR_GetFileByTime_V40(device.UserID, sVideoFileName, ref struDownPara);
+    if (device.DownHandle &lt; 0)
+    {
+        uint iLastErr = CHCNetSDK.NET_DVR_GetLastError();
+        return Ok(new { code = iLastErr, msg = "NET_DVR_GetFileByTime_V40 failed" });
+    }
+    uint iOutValue = 0;
+    if (!CHCNetSDK.NET_DVR_PlayBackControl_V40(device.DownHandle, CHCNetSDK.NET_DVR_PLAYSTART, IntPtr.Zero, 0, IntPtr.Zero, ref iOutValue))
+    {
+        uint iLastErr = CHCNetSDK.NET_DVR_GetLastError();
+        return Ok(new { code = iLastErr, msg = "NET_DVR_PLAYSTART failed" }); //下载控制失败，输出错误号
+    }
+    device.DownHandle = -1;
+    return Ok(new { code = 0, data = sVideoFileName });
+}</code></pre>
+<p>写好了，不要急着运行，把下载的海康开发文档的相关dll拷贝到运行目录下（正常来说是bin\Debug\netcoreapp3.1），这下可以运行了，启动后，你可以调用SaveByTime接口试下，有没发现成功了（前提当然是摄像头需要能够通过ip被访问到）。</p>
+<p>如果成功，我们再把这个代码发布到linux服务器上试下（同理，摄像头需要能够通过ip被访问到），提醒下，你的保存路径别忘了改，linux可是没有cdef盘的说法！这里我使用的是docker部署，先来写个dockerfile文件：</p>
+<pre><code># 基于.net core3.1镜像
+FROM mcr.microsoft.com/dotnet/core/aspnet:3.1-buster-slim
+# 设置工作目录
+WORKDIR /app
+# 端口号
+EXPOSE 80
+# 复制文件
+COPY . .
+# 入口点
+ENTRYPOINT ["dotnet", "HKSuo.dll"]</code></pre>
+<p>将发布的程序上传到服务器，还有这个dockerfile，再加上各种海康的sdk文件（so文件），像这样：</p>
+<p><img alt="" height="493" src="image\9d38140376f6485c8a90c5330535ea62.png" width="434"/></p>
+<p>运行打包命令 "docker build -t hksdk:1.0.0 ."</p>
+<p>成功后再运行"docker run -i -d -t --name=hksdk -p 80:80 --restart=always hksdk:1.0.0"启动这个容器。</p>
+<p>这下你可以通过服务器地址再次访问刚才的接口，有没发现也是成功的！</p>
+<p>好拉，这样就可以做到一套代码跨平台支持了，就是一开始要整理这个代码，确实是繁！！</p>
+<p></p>
+<p>另外，应该还有很多朋友，想实现实时预览视频把，这个百度下有一篇文章是这样的：</p>
+<p><a class="has-card" href="https://blog.csdn.net/qq_31753779/article/details/82023916" title="C# 实现海康摄像头在任意浏览器中预览_qq_31753779的博客-CSDN博客_c#海康摄像头"><span class="link-card-box"><span class="link-title">C# 实现海康摄像头在任意浏览器中预览_qq_31753779的博客-CSDN博客_c#海康摄像头</span><span class="link-desc">两周以来一直研究海康视频在谷歌、火狐等浏览器中的显示问题。在今天终于有了一点小心得。发表出来，希望有问题或者其他建议的老师积极给我建议。在海康浏览器的平台中，因为他本身只支持在IE或者IE内核中显示，这种问题不能根本性的解决在多浏览器里面的问题，我在网上查找了IE-Tab在谷歌浏览器中显示，但是由于需要用户手动切换浏览模式，所以说用起来不是特别方便。后面研究了一下，可以通过海康PlantFor...</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://blog.csdn.net/qq_31753779/article/details/82023916</span></span></a>这个做法可以参考，这样就不用装插件了，我把也写成了API接口：</p>
+<p><img alt="" height="645" src="image\c827f9b178704353af0c5642839ff33e.png" width="1063"/></p>
+<p> 就是调用后，启动一个线程，按设定频率定时抓图，然后用websoket方法，定时将这张图推送给客户端就可以了。小伙伴们，可以不用考虑抓图和推送的延迟率，websocket你只管把图片读取出来推送给客户端就好，如果图片太长时间没更新，那就是摄像头断了，画面也就是卡住的感觉。</p>
+<p>我用java写个websocket，主要代码就像这样：</p>
+<pre><code class="language-java">@OnOpen
+public void onOpen(@PathParam("deviceId") String deviceId, Session session) {
+    deviceInfoService = applicationContext.getBean(TbDeviceInfoService.class);
+    exceptionService = applicationContext.getBean(TbExceptionService.class);
+    this.session = session;
+    TbDeviceInfoVo device = deviceInfoService.getById(deviceId);
+    if (device == null) {
+        return;
+    }
+    try {
+        String body = HttpRequest.get(String.format(SystemConfig.CameraUrl() + "camera/LiveView?ip=%s&amp;userName=%s&amp;password=%s",
+                device.getIpaddr(), device.getLoginId(), device.getLoginPwd()))
+                .keepAlive(true)
+                .execute().body();
+        if (StringUtils.isNotBlank(body)) {
+            JSONObject jsonObject = JSON.parseObject(body);
+            if(jsonObject.getInteger("code") == CodeEnum.SUCCESS){
+                CameraSocketUtil.put(session.getId(), this, device.getIpaddr());
+            }
+        }
+    }
+    catch (Exception e){
+        exceptionService.saveException("LiveViewHandle", "onOpen", e);
+    }
+}</code></pre>
+<p>CameraSocketUtil类里启动了一个线程，做定时推送：</p>
+<pre><code class="language-java">public static void put(String key, LiveViewHandle liveViewHandle, String ip) {
+    CameraSocketObject obj = new CameraSocketObject();
+    obj.setSocket(liveViewHandle);
+    obj.setIp(ip);
+    if(!ipList.contains(ip)){
+        ipList.add(ip);
+        //创建图像输出线程
+        Runner run = new Runner(ip);
+        run.start();
+    }
+    webSocketMap.put(key, obj);
+}</code></pre>
+<pre><code class="language-java">class Runner extends Thread {
+    String ip;
+
+    public Runner(String ip) {
+        this.ip = ip;
+    }
+
+    @Override
+    public void run() {
+        while (true) {
+            try {
+                String imgBase64Str = convertFileToBase64(SystemConfig.FilePath() + ip.replace(".", "") + ".jpg");
+                List&lt;LiveViewHandle&gt; handles = CameraSocketUtil.getHandleByIp(ip);
+                if(handles != null &amp;&amp; handles.size() &gt; 0){
+                    for(LiveViewHandle handle : handles){
+                        try {
+                            handle.sendMessage(imgBase64Str);
+                        }
+                        catch (Exception e){
+                            e.printStackTrace();
+                        }
+                    }
+                }else{
+                    //没有需要推送的客户端，将线程结束
+                    break;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            finally {
+                sleep(500);
+            }
+        }
+    }
+
+    private void sleep(int millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (Exception e) {
+        }
+    }
+
+
+    /**
+     * 本地文件（图片、excel等）转换成Base64字符串
+     *
+     * @param imgPath
+     */
+    private static String convertFileToBase64(String imgPath) {
+        byte[] data = null;
+        // 读取图片字节数组
+        try {
+            InputStream in = new FileInputStream(imgPath);
+            data = new byte[in.available()];
+            in.read(data);
+            in.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        // 对字节数组进行Base64编码，得到Base64编码的字符串
+        BASE64Encoder encoder = new BASE64Encoder();
+        String base64Str = encoder.encode(data);
+        return base64Str;
+    }
+}</code></pre>
+<p></p>
+<p>最后，我已经把整理好的代码上传了，有兴趣的朋友可以下载参考，地址是：</p>
+<p><a class="has-card" href="https://download.csdn.net/download/ziyouli/84996531" title=".netcore实现海康SDK跨平台兼容-C#文档类资源-CSDN下载"><span class="link-card-box"><span class="link-title">.netcore实现海康SDK跨平台兼容-C#文档类资源-CSDN下载</span><span class="link-desc">.netcore实现对海康SDK的跨平台兼容，支持windows和linux平台，实现海康摄像头在更多下载资源、学习资料请访问CSDN下载频道.</span><span class="link-link"><img alt="" class="link-link-icon" src="https://g.csdnimg.cn/static/logo/favicon32.ico"/>https://download.csdn.net/download/ziyouli/84996531</span></span></a>注意，appSettings.json里有个SavePath，可以配置文件保存路径，windows和linux路径不同，只需要调整配置文件就可以啦。</p>
+<p></p>
+<p>在linux（CentOS7）下使用docker部署的时候，可能会出现SDK报错误29，大概提示为：“海康SDK注册失败，userId：-1，错误号：29”，这是因为so库调取失败造成的。但是这个错误并不是必然出现的，我在测试的时候就出现了一台可以，一台报错的情况。</p>
+<p>如果报错，按以下步骤处理一次即可：</p>
+<p>1. 将库文件拷贝到/usr/lib64/hklib(32位的拷贝到lib目录)下，然后在/etc/profile文件下增加该路径的环境变量，然后通过命令source /etc/profile让环境变量生效；</p>
+<p>2. /etc/ld.so.conf 加上/hklib和子文件夹目录，再用ldconfig命令使配置生效；</p>
+<p>这2步骤可以看参考下海康官网的使用说明进行操作，完成后修改下dockerfile，加上ENV LD_LIBRARY_PATH /usr/lib64/hklib这句；</p>
+<p>最后用docker run启动的时候增加物理磁盘挂载：-v /usr/lib64/hklib:/usr/lib64/hklib即可。</p>
+<p></p>
+</div>
+</div>

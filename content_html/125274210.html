@@ -1,0 +1,87 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-light" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="mybatisplus_0"></a>mybatis-plus实现动态表名</h1>
+<h3><a id="_1"></a>功能背景：</h3>
+<p>实际项目运营中，每天都有近千万的数据插入到数据库的表中，分表则成为了功能优化的必然选择。我们这边采用的是根据每天的时间建立一张新的表与之前的历史表结构一样。因此展现平台中动态获取数据查询则也需要改变。</p>
+<h3><a id="_3"></a>原始方法一：</h3>
+<p>根据时间获取动态拼接成数据库表名</p>
+<pre><code class="prism language-java"> <span class="token class-name">String</span> tableName <span class="token operator">=</span> <span class="token string">"数据库表名"</span> <span class="token operator">+</span> date<span class="token punctuation">;</span>
+</code></pre>
+<p>获取到表名后我们采取笨办法通过$的办法注入到SQL语句中</p>
+<pre><code class="prism language-sql"><span class="token keyword">SELECT</span> <span class="token operator">*</span> <span class="token keyword">FROM</span> ${tableName}
+</code></pre>
+<p>问题解决，但是其中的代码过于繁杂不利于重复利用。</p>
+<h3><a id="_16"></a>方法二：</h3>
+<p>因此我们采取mybatis-plus提供的动态表名插件<br/> <a href="https://baomidou.com/pages/2a45ff/#dynamictablenameinnerinterceptor">MyBatis-Plus-动态表名插件地址</a><br/> 引入依赖</p>
+<pre><code class="prism language-java"> <span class="token generics"><span class="token punctuation">&lt;</span>dependency<span class="token punctuation">&gt;</span></span>
+ <span class="token generics"><span class="token punctuation">&lt;</span>groupid<span class="token punctuation">&gt;</span></span>com<span class="token punctuation">.</span>baomidou<span class="token operator">&lt;</span><span class="token operator">/</span>groupid<span class="token operator">&gt;</span>
+ <span class="token generics"><span class="token punctuation">&lt;</span>artifactid<span class="token punctuation">&gt;</span></span>mybatis<span class="token operator">-</span>plus<span class="token operator">-</span>boot<span class="token operator">-</span>starter<span class="token operator">&lt;</span><span class="token operator">/</span>artifactid<span class="token operator">&gt;</span>
+ <span class="token generics"><span class="token punctuation">&lt;</span>version<span class="token punctuation">&gt;</span></span><span class="token number">3.4</span><span class="token number">.1</span><span class="token punctuation">.</span>tmp<span class="token operator">&lt;</span><span class="token operator">/</span>version<span class="token operator">&gt;</span>
+<span class="token operator">&lt;</span><span class="token operator">/</span>dependency<span class="token operator">&gt;</span>
+</code></pre>
+<p>首先我们定义：</p>
+<pre><code class="prism language-java"> <span class="token keyword">public</span> <span class="token keyword">enum</span> <span class="token class-name">DynamicTableTreadLocal</span> <span class="token punctuation">{<!-- --></span>
+    INSTANCE<span class="token punctuation">;</span>
+    <span class="token keyword">private</span> <span class="token class-name">ThreadLocal</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">&gt;</span></span> tableName <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">ThreadLocal</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token keyword">public</span> <span class="token class-name">String</span> <span class="token function">getTableName</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">return</span> tableName<span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">setTableName</span><span class="token punctuation">(</span><span class="token class-name">String</span> tableName<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        <span class="token keyword">this</span><span class="token punctuation">.</span>tableName<span class="token punctuation">.</span><span class="token function">set</span><span class="token punctuation">(</span>tableName<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token keyword">void</span> <span class="token function">remove</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        tableName<span class="token punctuation">.</span><span class="token function">remove</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+<span class="token punctuation">}</span>
+</code></pre>
+<p>之后我们在MybatisPlusConfig中配置自己的动态表规则</p>
+<pre><code class="prism language-java"><span class="token keyword">private</span> <span class="token keyword">static</span> <span class="token keyword">final</span> <span class="token class-name">String</span> DYNAMIC_TABLE_PRE <span class="token operator">=</span> <span class="token string">"原始数据库表名"</span><span class="token punctuation">;</span>
+
+
+paginationInterceptor<span class="token punctuation">.</span><span class="token function">setCountSqlParser</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">JsqlParserCountOptimize</span><span class="token punctuation">(</span><span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">DynamicTableNameParser</span> dynamicTableNameParser <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">DynamicTableNameParser</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        dynamicTableNameParser<span class="token punctuation">.</span><span class="token function">setTableNameHandlerMap</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token class-name">HashMap</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">String</span><span class="token punctuation">,</span> <span class="token class-name">ITableNameHandler</span><span class="token punctuation">&gt;</span></span><span class="token punctuation">(</span><span class="token number">2</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span><span class="token punctuation">{<!-- --></span>
+            <span class="token comment">//动态表规则-生成自己需要的动态表名</span>
+            <span class="token function">put</span><span class="token punctuation">(</span>DYNAMIC_TABLE_PRE<span class="token punctuation">,</span> <span class="token punctuation">(</span>metaObject<span class="token punctuation">,</span> sql<span class="token punctuation">,</span> tableName<span class="token punctuation">)</span> <span class="token operator">-&gt;</span> <span class="token class-name">DynamicTableTreadLocal</span><span class="token punctuation">.</span>INSTANCE<span class="token punctuation">.</span><span class="token function">getTableName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        paginationInterceptor<span class="token punctuation">.</span><span class="token function">setSqlParserList</span><span class="token punctuation">(</span><span class="token class-name">Collections</span><span class="token punctuation">.</span><span class="token function">singletonList</span><span class="token punctuation">(</span>dynamicTableNameParser<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>最后我们在我们的实现类中调用次方法</p>
+<pre><code class="prism language-java"><span class="token comment">//获取当前表格</span>
+        <span class="token class-name">String</span> tableName <span class="token operator">=</span> <span class="token keyword">this</span><span class="token punctuation">.</span><span class="token function">tableName</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">List</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token class-name">T</span><span class="token punctuation">&gt;</span></span> list <span class="token punctuation">;</span>
+        <span class="token keyword">try</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">DynamicTableTreadLocal</span><span class="token punctuation">.</span>INSTANCE<span class="token punctuation">.</span><span class="token function">setTableName</span><span class="token punctuation">(</span>tableName<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            list <span class="token operator">=</span> <span class="token class-name">TDao</span><span class="token punctuation">.</span><span class="token function">getPage</span><span class="token punctuation">(</span>params<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<p>由此我们通过mybatis-plus实现动态表名的功能就实现了。</p>
+<pre><code>其中值得注意的是DynamicTableTreadLocal最后需要我们主动remove；
+</code></pre>
+<p>因为我们在使用ThreadLocalMap使用ThreadLocal的弱引用作为key，并且ThreadLocal得外部不存在强引用，key（ThreadLocal）就会被GC回收，这样就会造成ThreadLocalMap中key为null。并且value此时存在强引用，线程退出时value的强引用才会断开。如果当前线程未结束时，key为null的value就会存在强引用链，这就导致了内存泄漏。</p>
+<p>ThreadLocalMap使用ThreadLocal的弱引用作为key，如果一个ThreadLocal不存在外部强引用时，key（ThreadLocal）就会被GC回收，这样就会导致ThreadLocalMap中key为null，但是value还存在强引用，只需要线程退出，value的强引用链条才会短掉，但如果当前线程未结束，这些key为null中的value就会一直存在强引用。</p>
+<pre><code class="prism language-java"><span class="token class-name">ThreadLocalMap</span><span class="token punctuation">(</span><span class="token class-name">ThreadLocal</span><span class="token generics"><span class="token punctuation">&lt;</span><span class="token operator">?</span><span class="token punctuation">&gt;</span></span> firstKey<span class="token punctuation">,</span> <span class="token class-name">Object</span> firstValue<span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            table <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Entry</span><span class="token punctuation">[</span>INITIAL_CAPACITY<span class="token punctuation">]</span><span class="token punctuation">;</span>
+            <span class="token keyword">int</span> i <span class="token operator">=</span> firstKey<span class="token punctuation">.</span>threadLocalHashCode <span class="token operator">&amp;</span> <span class="token punctuation">(</span>INITIAL_CAPACITY <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+            table<span class="token punctuation">[</span>i<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token keyword">new</span> <span class="token class-name">Entry</span><span class="token punctuation">(</span>firstKey<span class="token punctuation">,</span> firstValue<span class="token punctuation">)</span><span class="token punctuation">;</span>
+            size <span class="token operator">=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+            <span class="token function">setThreshold</span><span class="token punctuation">(</span>INITIAL_CAPACITY<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+<p>其实ThreadLocal内存泄漏是由于ThreadLocalMap的生命周期和ThreadLocal一样，因此需要手动删除key，不然就会导致内存泄漏。</p>
+<pre><code class="prism language-java"><span class="token keyword">finally</span> <span class="token punctuation">{<!-- --></span>
+            <span class="token class-name">DynamicTableTreadLocal</span><span class="token punctuation">.</span>INSTANCE<span class="token punctuation">.</span><span class="token function">remove</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+</code></pre>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

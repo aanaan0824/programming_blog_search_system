@@ -1,0 +1,515 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>接着前面系列博客继续实验，这篇来介绍OpenVINO（<span style="color:#fe2c24;">Intel的</span>），主要还是参考官网资料，前面也说过好的东西，官网对其的介绍是很详尽的，我觉得此要比<a class="link-info" href="https://blog.csdn.net/jiugeshao/article/details/123119995?spm=1001.2014.3001.5502" title="Tensor RT">Tensor RT</a>的的官网做的更好，示例sample也很多。官网参考链接如下：</p>
+<p><a class="has-card" href="https://docs.openvino.ai/latest/get_started.html" title="Get Started — OpenVINO™  documentation"><span class="link-card-box"><span class="link-title">Get Started — OpenVINO™ documentation</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon-default.png"/>https://docs.openvino.ai/latest/get_started.html</span></span></a><span style="color:#fe2c24;">博主此时的电脑软件环境为</span><strong>：</strong></p>
+<p>Ubuntu 20.04</p>
+<p>python3.6.13 (Anaconda)</p>
+<p>cuda version: 11.2</p>
+<p>cudnn version: cudnn-11.2-linux-x64-v8.1.1.33</p>
+<p>对于不知道如何配置cuda和cudnn的同学，可参考博主<a class="link-info" href="https://blog.csdn.net/jiugeshao/article/details/123119995?spm=1001.2014.3001.5501" title="此前博客">此前博客</a></p>
+<p></p>
+<p><strong>一.安装</strong></p>
+<p>1. 因为涉及到模型的转换及训练自己的数据集，博主这边安装<a class="link-info" href="https://docs.openvino.ai/latest/openvino_docs_install_guides_install_dev_tools.html" title="OpenVINO Development Tools">OpenVINO Development Tools</a>，后续会在树莓派部署时，尝试下只安装<a class="link-info" href="https://docs.openvino.ai/latest/openvino_docs_install_guides_install_runtime.html" title="OpenVINO Runtime">OpenVINO Runtime</a>，为了不影响之前博主系列博客中的环境配置（之前的也都是在虚拟环境中进行），这里创建了一个名为testOpenVINO的虚拟环境，关于Anaconda下创建虚拟环境的详情可见<a class="link-info" href="https://blog.csdn.net/jiugeshao/article/details/116084611?spm=1001.2014.3001.5502" title="之前博客">之前博客</a></p>
+<pre><code>conda create -n testOpenVINO python=3.6
+</code></pre>
+<p>接下来update下pip</p>
+<p class="img-center"><img alt="" height="21" src="image\c35ccdec111d44658953461c891523cf.png" width="626"/></p>
+<p></p>
+<p> 2. 执行下如下命令，博主最近前几篇<a class="link-info" href="https://blog.csdn.net/jiugeshao/article/details/124145815?spm=1001.2014.3001.5502" title="博客">博客</a>中用的是tensorflow2.6.2，为了方便验证一些东西，这里框架就指定tensorflow2和onnx。参考官网上命令语句选择适合自己的框架。</p>
+<p class="img-center"><img alt="" height="177" src="image\5ca80168d485459fa95e60ea140054bc.png" width="345"/></p>
+<pre><code>pip install openvino-dev[tensorflow2,onnx]</code></pre>
+<p>完毕后，输入mo -h以验证</p>
+<p class="img-center"><img alt="" height="269" src="image\ea4b2cc2077a45dba011977360689d84.png" width="621"/></p>
+<p> 完毕后，会发现<a class="link-info" href="https://pypi.org/project/openvino-dev/" title="网页">网页</a>里提到的开发工具也都全部安装了，OpenVINO™ Runtime也同时安装了。</p>
+<p class="img-center"><img alt="" height="617" src="image\f73a4d5f15f74f378615994e563237e7.png" width="546"/></p>
+<p></p>
+<p></p>
+<p><strong>二.用model Optimizer转换tensorflow2模型</strong></p>
+<p><a href="https://docs.openvino.ai/latest/openvino_docs_MO_DG_prepare_model_convert_model_Convert_Model_From_TensorFlow.html#" title="Converting a TensorFlow* Model — OpenVINO™  documentation">Converting a TensorFlow* Model — OpenVINO™ documentation</a></p>
+<p> tensorflow的版本是2.5.2，可以直接将一个预训练模型以save_model方式保存</p>
+<pre><code class="language-python">import tensorflow as tf
+import numpy as np
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.applications import resnet50
+
+from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
+from PIL import Image
+import time
+
+physical_devices = tf.config.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+#加载预训练模型
+model = resnet50.ResNet50(weights='imagenet')
+
+#save_model方式保存模型
+tf.saved_model.save(model, "resnet/1/")
+</code></pre>
+<p>运行后，可看到生成的模型</p>
+<p class="img-center"><img alt="" height="122" src="image\455696cfe0514ba7bbd548a5e52ddc7b.png" width="436"/></p>
+<p> 执行如下命令即可完成模型的转换</p>
+<pre><code> mo --saved_model_dir 1</code></pre>
+<p class="img-center"><img alt="" height="72" src="image\ca4f81d4a392406ea83a7ef936a36c5e.png" width="568"/></p>
+<p></p>
+<p> 可看到，生成了3个文件</p>
+<p class="img-center"><img alt="" height="122" src="image\c396e5861f6243ef879553b7dd0e6280.png" width="530"/></p>
+<p>如下是转化过程日志</p>
+<pre><code>Model Optimizer arguments:
+Common parameters:
+	- Path to the Input Model: 	None
+	- Path for generated IR: 	/home/sxhlvye/trial4/resnet/.
+	- IR output name: 	saved_model
+	- Log level: 	ERROR
+	- Batch: 	Not specified, inherited from the model
+	- Input layers: 	Not specified, inherited from the model
+	- Output layers: 	Not specified, inherited from the model
+	- Input shapes: 	Not specified, inherited from the model
+	- Source layout: 	Not specified
+	- Target layout: 	Not specified
+	- Layout: 	Not specified
+	- Mean values: 	Not specified
+	- Scale values: 	Not specified
+	- Scale factor: 	Not specified
+	- Precision of IR: 	FP32
+	- Enable fusing: 	True
+	- User transformations: 	Not specified
+	- Reverse input channels: 	False
+	- Enable IR generation for fixed input shape: 	False
+	- Use the transformations config file: 	None
+Advanced parameters:
+	- Force the usage of legacy Frontend of Model Optimizer for model conversion into IR: 	False
+	- Force the usage of new Frontend of Model Optimizer for model conversion into IR: 	False
+TensorFlow specific parameters:
+	- Input model in text protobuf format: 	False
+	- Path to model dump for TensorBoard: 	None
+	- List of shared libraries with TensorFlow custom layers implementation: 	None
+	- Update the configuration file with input/output node names: 	None
+	- Use configuration file used to generate the model with Object Detection API: 	None
+	- Use the config file: 	None
+OpenVINO runtime found in: 	/home/sxhlvye/intel/openvino_2022/python/python3.6/openvino
+OpenVINO runtime version: 	2022.1.0-7019-cdb9bec7210-releases/2022/1
+Model Optimizer version: 	2022.1.0-7019-cdb9bec7210-releases/2022/1
+[ WARNING ]  
+Detected not satisfied dependencies:
+	networkx: installed: 2.5.1, required: ~= 2.6
+
+Please install required versions of components or run pip installation
+pip install openvino-dev[tensorflow]
+[ WARNING ]  The model contains input(s) with partially defined shapes: name="input_1" shape="[-1, 224, 224, 3]". Starting from the 2022.1 release the Model Optimizer can generate an IR with partially defined input shapes ("-1" dimension in the TensorFlow model or dimension with string value in the ONNX model). Some of the OpenVINO plugins require model input shapes to be static, so you should call "reshape" method in the Inference Engine and specify static input shapes. For optimal performance, it is still recommended to update input shapes with fixed ones using "--input" or "--input_shape" command-line parameters.
+[ SUCCESS ] Generated IR version 11 model.
+[ SUCCESS ] XML file: /home/sxhlvye/trial4/resnet/saved_model.xml
+[ SUCCESS ] BIN file: /home/sxhlvye/trial4/resnet/saved_model.bin
+[ SUCCESS ] Total execution time: 27.96 seconds. 
+[ SUCCESS ] Memory consumed: 2240 MB. 
+It's been a while, check for a new version of Intel(R) Distribution of OpenVINO(TM) toolkit here https://software.intel.com/content/www/us/en/develop/tools/openvino-toolkit/download.html?cid=other&amp;source=prod&amp;campid=ww_2022_bu_IOTG_OpenVINO-2022-1&amp;content=upg_all&amp;medium=organic or on the GitHub*
+[ INFO ] The model was converted to IR v11, the latest model format that corresponds to the source DL framework input/output format. While IR v11 is backwards compatible with OpenVINO Inference Engine API v1.0, please use API v2.0 (as of 2022.1) to take advantage of the latest improvements in IR v11.
+Find more information about API v2.0 and IR v11 at https://docs.openvino.ai
+</code></pre>
+<p></p>
+<p></p>
+<p><strong>三.使用OpenVINO在python环境下来完成推断</strong></p>
+<p><a href="https://docs.openvino.ai/latest/openvino_docs_OV_UG_Integrate_OV_with_your_application.html" title="Integrate OpenVINO™ with Your Application — OpenVINO™  documentation">Integrate OpenVINO™ with Your Application — OpenVINO™ documentation</a></p>
+<p>加载上面转换后的模型，去预测小猫图片</p>
+<p class="img-center"><img alt="" height="200" src="image\85eca0f25a3445d0b51265978173e6ff.png" width="150"/></p>
+<p> 代码如下：</p>
+<pre><code class="language-python">import openvino.runtime as ov
+import numpy as np
+import time
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.applications import resnet50
+
+from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
+from PIL import Image
+
+
+core = ov.Core()
+compiled_model = core.compile_model("./resnet/saved_model.xml", "AUTO")
+infer_request = compiled_model.create_infer_request()
+
+img = image.load_img('2008_002682.jpg', target_size=(224, 224))
+img = image.img_to_array(img)
+img = preprocess_input(img)
+img = np.expand_dims(img, axis=0)
+
+# Create tensor from external memory
+input_tensor = ov.Tensor(array=img, shared_memory=False)
+infer_request.set_input_tensor(input_tensor)
+
+t_model = time.perf_counter()
+infer_request.start_async()
+infer_request.wait()
+print(f'do inference cost:{time.perf_counter() - t_model:.8f}s')
+
+# Get output tensor for model with one output
+output = infer_request.get_output_tensor()
+output_buffer = output.data
+
+# output_buffer[] - accessing output tensor data
+print(output_buffer.shape)
+print('Predicted:', decode_predictions(output_buffer, top=5)[0])
+
+
+print("ok")</code></pre>
+<p> 运行结果如下：</p>
+<pre><code>/home/sxhlvye/anaconda3/envs/testOpenVINO/bin/python3.6 /home/sxhlvye/trial4/test_inference.py
+2022-04-20 12:54:36.780974: I tensorflow/stream_executor/platform/default/dso_loader.cc:53] Successfully opened dynamic library libcudart.so.11.0
+do inference cost:0.02717873s
+(1, 1000)
+Predicted: [('n02123597', 'Siamese_cat', 0.16550684), ('n02108915', 'French_bulldog', 0.14137998), ('n04409515', 'tennis_ball', 0.08570903), ('n02095314', 'wire-haired_fox_terrier', 0.052046664), ('n02123045', 'tabby', 0.050695512)]
+ok
+
+Process finished with exit code 0
+</code></pre>
+<p>对比未转换前，在tensorflow框架下的<a class="link-info" href="https://blog.csdn.net/jiugeshao/article/details/124145815?spm=1001.2014.3001.5502" title="预测时间">预测时间</a>，速度从0.18s提升到了0.027s。预测结果和直接在tensorflow框架下的结果保持一致的。</p>
+<p></p>
+<p></p>
+<p></p>
+<p><strong>四.c++环境下使用OpenVINO</strong></p>
+<p>如果想在c++里使用OpenVINO库，还需要如下的一些配置， 此页面上可以下载OpenVINO的Toolkit</p>
+<p><a class="has-card" href="https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/download.html" title="Download Intel® Distribution of OpenVINO™ Toolkit"><span class="link-card-box"><span class="link-title">Download Intel® Distribution of OpenVINO™ Toolkit</span><span class="link-link"><img alt="" class="link-link-icon" src="image\icon-default.png"/>https://www.intel.com/content/www/us/en/developer/tools/openvino-toolkit/download.html</span></span></a>选择好符合自己的选项</p>
+<p class="img-center"><img alt="" height="568" src="image\a400b1abf9c14f2187f4240f09cb0fe6.png" width="492"/></p>
+<p></p>
+<p> 博主的文件放在了此位置（结合自己的路径）</p>
+<p class="img-center"><img alt="" height="137" src="image\d881f4f55a8148308605b15de9b59ee3.png" width="543"/></p>
+<p> 然后按照官网step-by-setp的进行安装即可</p>
+<p><a href="https://docs.openvino.ai/latest/openvino_docs_install_guides_installing_openvino_linux.html#doxid-openvino-docs-install-guides-installing-openvino-linux" title="Install and Configure Intel® Distribution of OpenVINO™ Toolkit for Linux — OpenVINO™  documentation">Install and Configure Intel® Distribution of OpenVINO™ Toolkit for Linux — OpenVINO™ documentation</a></p>
+<p class="img-center"><img alt="" height="107" src="image\f73feb81abd04cbdaa6cd7ab2dc74749.png" width="569"/></p>
+<p> 如下界面上可以看到安装的目录</p>
+<p class="img-center"><img alt="" height="241" src="image\a34e986f380347a7a691664538f7d5fb.png" width="532"/></p>
+<p> 完毕后会出现提示</p>
+<p class="img-center"><img alt="" height="145" src="image\e71261e0e2ec4b888c304e55b182b307.png" width="328"/></p>
+<p>可看到OpenVINO的安装目录</p>
+<p class="img-center"><img alt="" height="95" src="image\afff1ee1269e44aa83bd1409c5419769.png" width="615"/></p>
+<p> cd到目录下，再执行如下命令，安装依赖库。</p>
+<p class="img-center"><img alt="" height="93" src="image\96ad10d04d87472ab7323f010f32f717.png" width="602"/></p>
+<p> 再执行如下命令，安装opencl的驱动</p>
+<p class="img-center"><img alt="" height="29" src="image\60e2ca7316b44af1ae23a484aabcf12f.png" width="642"/></p>
+<p> 安装成功后会出现如下信息：</p>
+<p class="img-center"><img alt="" height="140" src="image\72ad05f5786a45f7852ea65a4be52457.png" width="624"/></p>
+<p></p>
+<p>接下来需要更新下环境变量，编辑./bashrc文件</p>
+<pre><code>sudo gedit ~/.bashrc</code></pre>
+<p>添加语句（结合自己的路径）</p>
+<pre><code>source /home/sxhlvye/intel/openvino_2022/setupvars.sh</code></pre>
+<p class="img-center"><img alt="" height="66" src="image\ba035a7a8a4e4dd3aea783bdd3d3af1a.png" width="533"/></p>
+<p>完毕后别忘了执行 source ~/.bashrc</p>
+<p>这样每次新建一个terminal的时候，关于openvino的变量都会自动添加进环境变量里，电脑上若有多版本的openvino，通过修改./bashrc中的setupvars.sh路径，就能方便完成切换了。</p>
+<p class="img-center"><img alt="" height="45" src="image\0f73fef30aa64b54b3a24ff21e50982b.png" width="599"/></p>
+<p> opencv这边，博主暂时不安装了，电脑上还保留着之前两篇博客中的opencv环境</p>
+<p><a href="https://blog.csdn.net/jiugeshao/article/details/123454004?spm=1001.2014.3001.5501" title="TensorRT加速模型推断时间方法介绍（c++ pytorch模型）_竹叶青lvye的博客-CSDN博客">TensorRT加速模型推断时间方法介绍（c++ pytorch模型）_竹叶青lvye的博客-CSDN博客</a></p>
+<p><a href="https://blog.csdn.net/jiugeshao/article/details/120578698?spm=1001.2014.3001.5502" title="Ubuntu下Qt Creator配置opencv_竹叶青lvye的博客-CSDN博客_ubuntu下qt配置opencv">Ubuntu下Qt Creator配置opencv_竹叶青lvye的博客-CSDN博客_ubuntu下qt配置opencv</a></p>
+<p></p>
+<p></p>
+<p>有了以上环境后，博主在c++环境下加载上面<strong>第二步生成</strong>的openVINO runtime中间模型Intermediate Representation (IR)，这里还是用的QTCreator做的编译器。QTCreator纯c++代码的配置，也可以见博主<a class="link-info" href="https://blog.csdn.net/jiugeshao/article/details/123454004?spm=1001.2014.3001.5502" title="之前的博客">之前的博客</a></p>
+<p>工程目录结构如下：</p>
+<p class="img-center"><img alt="" height="331" src="image\1f82de11528345d78b49eff7ce1c0797.png" width="542"/></p>
+<p> main.cpp中的代码如下（不是官网的代码，自己手写），仅供参考：</p>
+<pre><code class="language-cpp">#include &lt;openvino/openvino.hpp&gt;
+#include &lt;opencv2/core/core.hpp&gt;
+#include &lt;opencv2/opencv.hpp&gt;
+
+#include &lt;cstdlib&gt;
+#include &lt;fstream&gt;
+#include &lt;iostream&gt;
+#include &lt;sstream&gt;
+#include&lt;ctime&gt;
+
+using namespace std;
+using namespace cv;
+
+
+int main()
+{
+    ov::Core core;
+    ov::CompiledModel compiled_model = core.compile_model("/home/sxhlvye/trial4/resnet/saved_model.xml", "AUTO");
+    ov::InferRequest infer_request = compiled_model.create_infer_request();    
+    auto input_port = compiled_model.input();
+    cout &lt;&lt; input_port.get_element_type() &lt;&lt; std::endl;
+
+    std::vector&lt;size_t&gt; size;
+    size.push_back(1);
+    size.push_back(224);
+    size.push_back(224);
+    size.push_back(3);
+    ov::Shape shape(size);
+
+     cv::Mat image = cv::imread("/home/sxhlvye/Trial1/Tensorrt/2008_002682.jpg", cv::IMREAD_COLOR);
+     //cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
+     cout &lt;&lt; image.channels() &lt;&lt; "," &lt;&lt; image.size().width &lt;&lt; "," &lt;&lt; image.size().height &lt;&lt; std::endl;
+
+     cv::Mat dst = cv::Mat::zeros(224, 224, CV_32FC3);
+     cv::resize(image, dst, dst.size());
+     cout &lt;&lt; dst.channels() &lt;&lt; "," &lt;&lt; dst.size().width &lt;&lt; "," &lt;&lt; dst.size().height &lt;&lt; std::endl;
+
+     const int channel = 3;
+     const int inputH = 244;
+     const int inputW = 244;
+     // Read a random digit file
+
+     std::vector&lt;float&gt; fileData(inputH * inputW * channel);
+
+     /*for (int c = 0; c &lt; channel; ++c)
+     {
+         for (int i = 0; i &lt; dst.rows; ++i)
+          {
+              cv::Vec3b *p1 = dst.ptr&lt;cv::Vec3b&gt;(i);
+              for (int j = 0; j &lt; dst.cols; ++j)
+              {
+                 fileData[c * dst.cols * dst.rows + i * dst.cols + j] = p1[j][c] / 255.0f;
+               }
+           }
+     }*/
+
+     for (int i = 0; i &lt; dst.rows; ++i)
+     {
+         cv::Vec3b *p1 = dst.ptr&lt;cv::Vec3b&gt;(i);
+         for (int j = 0; j &lt; dst.cols; ++j)
+         {
+            for(int c = 0; c &lt; 3; ++c)
+            {
+                fileData[i*dst.cols*3 + j*3 + c] = p1[j][c] / 255.0f;
+            }
+         }
+     }
+
+
+     ov::Tensor input_tensor(input_port.get_element_type(), shape, fileData.data());
+
+
+    infer_request.set_input_tensor(input_tensor);
+
+    clock_t startTime = clock();
+    infer_request.start_async();
+    infer_request.wait();
+    clock_t endTime = clock();
+    cout &lt;&lt; "cost: "&lt;&lt; double(endTime - startTime) / CLOCKS_PER_SEC &lt;&lt; "s" &lt;&lt; endl;
+
+    // Get output tensor by tensor name
+    auto output_tensor = infer_request.get_output_tensor();
+    int outputSize = output_tensor.get_size();
+    cout &lt;&lt; outputSize &lt;&lt; std::endl;
+
+    const float *output_temp = output_tensor.data&lt;const float&gt;();
+    float output[1000];
+    for(int i=0;i&lt;1000;i++)
+    {
+        output[i] = output_temp[i];
+    }
+
+    // Calculate Softmax
+  /*  float sum{0.0f};
+    for (int i = 0; i &lt; outputSize; i++)
+    {
+        output[i] = exp(output[i]);
+        sum += output[i];
+    }
+
+    for (int i = 0; i &lt; outputSize; i++)
+    {
+        output[i] /= sum;
+    }*/
+
+    vector&lt;float&gt; voutput(1000);
+    for (int i = 0; i &lt; outputSize; i++)
+    {
+        voutput[i] = output[i];
+    }
+
+    for(int i=0; i&lt;1000; i++)
+    {
+        for(int j= i+1; j&lt; 1000; j++)
+        {
+            if(output[i] &lt; output[j])
+            {
+                int temp;
+                temp = output[i];
+                output[i] = output[j];
+                output[j] = temp;
+            }
+        }
+    }
+
+    for(int i=0; i&lt;5;i++)
+    {
+        cout &lt;&lt; output[i] &lt;&lt; std::endl;
+    }
+
+    vector&lt;string&gt; labels;
+    string line;
+
+    ifstream readFile("/home/sxhlvye/Trial/yolov3-9.5.0/imagenet_classes.txt");
+    while (getline(readFile,line))
+    {
+        //istringstream record(line);
+        //string label;
+       // record &gt;&gt; label;
+        //cout &lt;&lt; line &lt;&lt; std::endl;
+        labels.push_back(line);
+    }
+
+    vector&lt;int&gt; indexs(5);
+
+    for(int i=0; i&lt; 1000;i++)
+    {
+        if(voutput[i] == output[0])
+        {
+            indexs[0] = i;
+        }
+
+        if(voutput[i] == output[1])
+        {
+            indexs[1] = i;
+        }
+
+        if(voutput[i] == output[2])
+        {
+            indexs[2] = i;
+        }
+
+        if(voutput[i] == output[3])
+        {
+            indexs[3] = i;
+        }
+        if(voutput[i] == output[4])
+        {
+            indexs[4] = i;
+        }
+
+    }
+
+
+
+    cout &lt;&lt; "top 5: " &lt;&lt; std::endl;
+
+    cout &lt;&lt; labels[indexs[0]] &lt;&lt; "---&gt;" &lt;&lt; output[0] &lt;&lt; std::endl;
+
+    cout &lt;&lt; labels[indexs[1]] &lt;&lt; "---&gt;" &lt;&lt; output[1] &lt;&lt; std::endl;
+
+    cout &lt;&lt; labels[indexs[2]] &lt;&lt; "---&gt;" &lt;&lt; output[2] &lt;&lt; std::endl;
+
+    cout &lt;&lt; labels[indexs[3]] &lt;&lt; "---&gt;" &lt;&lt; output[3] &lt;&lt; std::endl;
+
+    cout &lt;&lt; labels[indexs[4]] &lt;&lt; "---&gt;" &lt;&lt; output[4] &lt;&lt; std::endl;
+
+
+    cout &lt;&lt; "ok" &lt;&lt; std::endl;
+
+   return 0;
+}
+</code></pre>
+<p>test8.pro工程配置文件的内容如下：</p>
+<pre><code>TEMPLATE = app
+CONFIG += console c++11
+CONFIG -= app_bundle
+CONFIG -= qt
+
+SOURCES += \
+        main.cpp
+
+
+INCLUDEPATH += /usr/local/include \
+               /usr/local/include/opencv \
+               /usr/local/include/opencv2 \
+               /home/sxhlvye/intel/openvino_2022/runtime/include \
+               /home/sxhlvye/intel/openvino_2022/runtime/include/ie \
+
+LIBS += /usr/local/lib/libopencv_highgui.so \
+        /usr/local/lib/libopencv_core.so \
+        /usr/local/lib/libopencv_imgproc.so \
+        /usr/local/lib/libopencv_imgcodecs.so \
+        /home/sxhlvye/intel/openvino_2022/runtime/lib/intel64/libopenvino.so \
+        /home/sxhlvye/intel/openvino_2022/runtime/3rdparty/tbb/lib/libtbb.so.2 \
+</code></pre>
+<p> 运行完毕后，在终端下运行生成的可执行文件，预测信息如下</p>
+<p class="img-center"><img alt="" height="327" src="image\f809c11ac2d64b94867940a54edc9318.png" width="627"/></p>
+<p> <span style="color:#0d0016;">这边一看，和上面<strong>第三步</strong>中python环境下的预测结果大相径庭，主要是图像预处理这块不一致。</span></p>
+<p></p>
+<p></p>
+<p><span style="color:#fe2c24;"> <strong>五. 做个小实验，改变python下图像预处理，使得其和c++保持一致，看结果是否一致</strong></span></p>
+<p>博主这边将第三步中python环境的图像预处理和c++下保持一致，也使用opencv库来做处理，修改后的代码如下：</p>
+<pre><code class="language-python">import cv2
+import openvino.runtime as ov
+import numpy as np
+import time
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.applications import resnet50
+
+from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
+from PIL import Image
+
+
+core = ov.Core()
+compiled_model = core.compile_model("./resnet/saved_model.xml", "AUTO")
+infer_request = compiled_model.create_infer_request()
+
+# img = image.load_img('2008_002682.jpg', target_size=(224, 224))
+# img = image.img_to_array(img)
+# img = preprocess_input(img)
+img = cv2.imread('2008_002682.jpg')
+img = cv2.resize(img,(224,224))
+img_np = np.array(img, dtype=np.float32) / 255.
+
+img_np = np.expand_dims(img_np, axis=0)
+print(img_np.shape)
+
+# Create tensor from external memory
+input_tensor = ov.Tensor(array=img_np, shared_memory=False)
+infer_request.set_input_tensor(input_tensor)
+
+t_model = time.perf_counter()
+infer_request.start_async()
+infer_request.wait()
+print(f'do inference cost:{time.perf_counter() - t_model:.8f}s')
+
+# Get output tensor for model with one output
+output = infer_request.get_output_tensor()
+output_buffer = output.data
+
+# output_buffer[] - accessing output tensor data
+print(output_buffer.shape)
+print('Predicted:', decode_predictions(output_buffer, top=5)[0])
+
+
+print("ok")</code></pre>
+<p> 预测结果如下：</p>
+<pre><code>/home/sxhlvye/anaconda3/envs/testOpenVINO/bin/python3.6 /home/sxhlvye/trial4/test_inference.py
+2022-04-21 07:59:02.427084: I tensorflow/stream_executor/platform/default/dso_loader.cc:53] Successfully opened dynamic library libcudart.so.11.0
+[E:] [BSL] found 0 ioexpander device
+[E:] [BSL] found 0 ioexpander device
+(1, 224, 224, 3)
+do inference cost:0.02702089s
+(1, 1000)
+Predicted: [('n01930112', 'nematode', 0.13559894), ('n03041632', 'cleaver', 0.041396398), ('n03838899', 'oboe', 0.034457874), ('n02783161', 'ballpoint', 0.02541826), ('n04270147', 'spatula', 0.023189805)]
+ok
+
+Process finished with exit code 0
+</code></pre>
+<p>可以看到，预处理保持一致后，c++和python两边的结果就保持一致了。</p>
+<p></p>
+<p></p>
+<p><strong>官网上还有很多详细的资料，有时间会再细读，这边只是先跑下流程！</strong></p>
+<p><span style="color:#fe2c24;"><strong>如何跑官网示例可以参考博主的博客</strong></span></p>
+<p><a href="https://blog.csdn.net/jiugeshao/article/details/124644257?csdn_share_tail=%7B%22type%22%3A%22blog%22%2C%22rType%22%3A%22article%22%2C%22rId%22%3A%22124644257%22%2C%22source%22%3A%22jiugeshao%22%7D&amp;ctrtid=N41QH" title="OpenVINO Sample及open_model_zoo例子使用介绍_竹叶青lvye的博客-CSDN博客">OpenVINO Sample及open_model_zoo例子使用介绍_竹叶青lvye的博客-CSDN博客</a></p>
+<p></p>
+<p>官网上能看出，OpenVINO也是支持训练的，也有sample示例代码，但不够强大，后面主要还是用tensorflow、pytorch框架去训练模型，转换给OpenVINO来用</p>
+<p><a href="https://docs.openvino.ai/latest/workbench_docs_Workbench_DG_Measure_Accuracy_Object_detection.html" title="Object Detection Model Tutorial — OpenVINO™  documentation">Object Detection Model Tutorial — OpenVINO™ documentation</a></p>
+<p class="img-center"><img alt="" height="202" src="image\725a4fd335a14c2a8eb7d57877e9e8aa.png" width="481"/></p>
+<p></p>
+<p><span style="color:#fe2c24;">备注：</span></p>
+<p>博主在PC Ubuntu上验证了只安装openVINO  Runtime (python环境下）</p>
+<p><a href="https://docs.openvino.ai/latest/openvino_docs_install_guides_installing_openvino_pip.html#" title="Install Intel® Distribution of OpenVINO™ Toolkit from PyPI Repository — OpenVINO™  documentation">Install Intel® Distribution of OpenVINO™ Toolkit from PyPI Repository — OpenVINO™ documentation</a></p>
+<p class="img-center"><img alt="" height="196" src="image\2d4fdc11531b474381288f360e1785dc.png" width="500"/></p>
+<p> 按照From PyPI方式来安装，完毕后，跑下上面推断代码，能正常执行</p>
+<p class="img-center"><img alt="" height="296" src="image\792362b0e1a642df89d89ead5ff3e21f.png" width="434"/></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

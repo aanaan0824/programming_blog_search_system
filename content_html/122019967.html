@@ -1,0 +1,362 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-tomorrow-night" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h3><a id="1__0"></a>1. 前言</h3>
+<p>AES是一种对称加密，所谓对称加密就是加密与解密使用的秘钥是一个。</p>
+<p>之前写过一片关于python AES加密解密的文章，但是这里面细节实在很多，这次我从 参数类型、加密模式、编码模式、补全模式、等等方面 系统的说明如何使用AES加密解密。</p>
+<p>看文章不能急功近利，为了解决一个问题临时查到一个代码套用进去，或许可以迅速解决问题，但是遇到新的问题还需要再次查询，这种我认为还是比较浪费时间的。我相信看完认真看完这篇文章的你会大有收获。</p>
+<h3><a id="2__8"></a>2. 环境安装</h3>
+<pre><code class="prism language-shell">pip uninstall crypto
+pip uninstall pycryptodome
+pip <span class="token function">install</span> pycryptodome
+</code></pre>
+<p>前面两个卸载命令是为了防止一些安装环境问题，具体请看<a href="https://blog.csdn.net/chouzhou9701/article/details/106432497/">文章</a></p>
+<h3><a id="3_18"></a>3.加密模式</h3>
+<p>AES 加密最常用的模式就是 ECB模式 和 CBC 模式，当然还有很多其它模式，他们都属于AES加密。ECB模式和CBC 模式俩者区别就是 ECB 不需要 iv偏移量，而CBC需要。</p>
+<h3><a id="4AES_22"></a>4.AES加密使用参数</h3>
+<p>以下参数都是在python中使用的。</p>
+<table><thead><tr><th>参数</th><th>作用及数据类型</th></tr></thead><tbody><tr><td>秘钥</td><td>加密的时候用秘钥，解密的时候需要同样的秘钥才能解出来; 数据类型为bytes</td></tr><tr><td>明文</td><td>需要加密的参数; 数据类型为bytes</td></tr><tr><td>模式</td><td><strong>aes</strong> 加密常用的有 <strong>ECB</strong> 和 <strong>CBC</strong> 模式（我只用了这两个模式，还有其他模式）;数据类型为aes类内部的枚举量</td></tr><tr><td>iv 偏移量</td><td>这个参数在 <strong>ECB</strong> 模式下不需要，在 <strong>CBC</strong> 模式下需要；数据类型为bytes</td></tr></tbody></table>
+<p>下面简单的一个例子ECB模式加密解密 :</p>
+<pre><code class="prism language-python"><span class="token keyword">from</span> Crypto<span class="token punctuation">.</span>Cipher <span class="token keyword">import</span> AES
+
+password <span class="token operator">=</span> <span class="token string">b'1234567812345678'</span> <span class="token comment">#秘钥，b就是表示为bytes类型</span>
+text <span class="token operator">=</span> <span class="token string">b'abcdefghijklmnhi'</span> <span class="token comment">#需要加密的内容，bytes类型</span>
+aes <span class="token operator">=</span> AES<span class="token punctuation">.</span>new<span class="token punctuation">(</span>password<span class="token punctuation">,</span>AES<span class="token punctuation">.</span>MODE_ECB<span class="token punctuation">)</span> <span class="token comment">#创建一个aes对象</span>
+<span class="token comment"># AES.MODE_ECB 表示模式是ECB模式</span>
+en_text <span class="token operator">=</span> aes<span class="token punctuation">.</span>encrypt<span class="token punctuation">(</span>text<span class="token punctuation">)</span> <span class="token comment">#加密明文</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"密文："</span><span class="token punctuation">,</span>en_text<span class="token punctuation">)</span> <span class="token comment">#加密明文，bytes类型</span>
+den_text <span class="token operator">=</span> aes<span class="token punctuation">.</span>decrypt<span class="token punctuation">(</span>en_text<span class="token punctuation">)</span> <span class="token comment"># 解密密文</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"明文："</span><span class="token punctuation">,</span>den_text<span class="token punctuation">)</span>
+</code></pre>
+<p>输出:</p>
+<pre><code class="prism language-ba">密文： b'WU\xe0\x0e\xa3\x87\x12\x95\\]O\xd7\xe3\xd4 )'
+明文： b'abcdefghijklmnhi'
+</code></pre>
+<p>以上是针对ECB模式的加密解密，从这个例子中可以看出参数中有几个限制。</p>
+<ol><li>秘钥必须为16字节或者16字节的倍数的字节型数据。</li><li>明文必须为16字节或者16字节的倍数的字节型数据，如果不够16字节需要进行补全，关于补全规则，后面会在补全模式中具体介绍。</li></ol>
+<p>通过CBC模式例子：</p>
+<pre><code class="prism language-python"><span class="token keyword">from</span> Crypto<span class="token punctuation">.</span>Cipher <span class="token keyword">import</span> AES
+password <span class="token operator">=</span> <span class="token string">b'1234567812345678'</span> <span class="token comment">#秘钥，b就是表示为bytes类型</span>
+iv <span class="token operator">=</span> <span class="token string">b'1234567812345678'</span> <span class="token comment"># iv偏移量，bytes类型</span>
+text <span class="token operator">=</span> <span class="token string">b'abcdefghijklmnhi'</span> <span class="token comment">#需要加密的内容，bytes类型</span>
+aes <span class="token operator">=</span> AES<span class="token punctuation">.</span>new<span class="token punctuation">(</span>password<span class="token punctuation">,</span>AES<span class="token punctuation">.</span>MODE_CBC<span class="token punctuation">,</span>iv<span class="token punctuation">)</span> <span class="token comment">#创建一个aes对象</span>
+<span class="token comment"># AES.MODE_CBC 表示模式是CBC模式</span>
+en_text <span class="token operator">=</span> aes<span class="token punctuation">.</span>encrypt<span class="token punctuation">(</span>text<span class="token punctuation">)</span> 
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"密文："</span><span class="token punctuation">,</span>en_text<span class="token punctuation">)</span> <span class="token comment">#加密明文，bytes类型</span>
+aes <span class="token operator">=</span> AES<span class="token punctuation">.</span>new<span class="token punctuation">(</span>password<span class="token punctuation">,</span>AES<span class="token punctuation">.</span>MODE_CBC<span class="token punctuation">,</span>iv<span class="token punctuation">)</span> <span class="token comment">#CBC模式下解密需要重新创建一个aes对象</span>
+den_text <span class="token operator">=</span> aes<span class="token punctuation">.</span>decrypt<span class="token punctuation">(</span>en_text<span class="token punctuation">)</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"明文："</span><span class="token punctuation">,</span>den_text<span class="token punctuation">)</span>
+</code></pre>
+<p>输出：</p>
+<pre><code>密文： b'\x93\x8bN!\xe7~&gt;\xb0M\xba\x91\xab74;0'
+明文： b'abcdefghijklmnhi'
+</code></pre>
+<p>通过上面CBC模式的例子，可以简单看出CBC模式与ECB模式的区别：AES.new() 解密和加密重新生成了aes对象，加密和解密不能调用同一个aes对象，否则会报错<code>TypeError: decrypt() cannot be called after encrypt()</code>。</p>
+<p>总结：</p>
+<p><font color="red">1. 在Python中进行AES加密解密时，所传入的密文、明文、秘钥、iv偏移量、都需要是bytes（字节型）数据。python 在构建aes对象时也只能接受bytes类型数据。</font></p>
+<p><font color="red">2.当秘钥，iv偏移量，待加密的明文，字节长度不够16字节或者16字节倍数的时候需要进行补全。</font></p>
+<p><font color="red">3. CBC模式需要重新生成AES对象，为了防止这类错误，我写代码无论是什么模式都重新生成AES对象。</font></p>
+<h3><a id="5__90"></a>5. 编码模式</h3>
+<p>前面说了，python中的 AES 加密解密，只能接受字节型(bytes)数据。而我们常见的 <code>待加密的明文可能是中文</code>，或者<code>待解密的密文经过base64编码的</code>，这种都需要先进行编码或者解码，然后才能用AES进行加密或解密。反正无论是什么情况，在python使用AES进行加密或者解密时，都需要先转换成bytes型数据。</p>
+<p>我们以ECB模式针对中文明文进行加密解密举例：</p>
+<pre><code class="prism language-python"><span class="token keyword">from</span> Crypto<span class="token punctuation">.</span>Cipher <span class="token keyword">import</span> AES
+
+password <span class="token operator">=</span> <span class="token string">b'1234567812345678'</span> <span class="token comment">#秘钥，b就是表示为bytes类型</span>
+text <span class="token operator">=</span> <span class="token string">"好好学习天天向上"</span><span class="token punctuation">.</span>encode<span class="token punctuation">(</span><span class="token string">'gbk'</span><span class="token punctuation">)</span> <span class="token comment">#gbk编码，是1个中文字符对应2个字节，8个中文正好16字节</span>
+aes <span class="token operator">=</span> AES<span class="token punctuation">.</span>new<span class="token punctuation">(</span>password<span class="token punctuation">,</span>AES<span class="token punctuation">.</span>MODE_ECB<span class="token punctuation">)</span> <span class="token comment">#创建一个aes对象</span>
+<span class="token comment"># AES.MODE_ECB 表示模式是ECB模式</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token builtin">len</span><span class="token punctuation">(</span>text<span class="token punctuation">)</span><span class="token punctuation">)</span>
+en_text <span class="token operator">=</span> aes<span class="token punctuation">.</span>encrypt<span class="token punctuation">(</span>text<span class="token punctuation">)</span> <span class="token comment">#加密明文</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"密文："</span><span class="token punctuation">,</span>en_text<span class="token punctuation">)</span> <span class="token comment">#加密明文，bytes类型</span>
+den_text <span class="token operator">=</span> aes<span class="token punctuation">.</span>decrypt<span class="token punctuation">(</span>en_text<span class="token punctuation">)</span> <span class="token comment"># 解密密文</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"明文："</span><span class="token punctuation">,</span>den_text<span class="token punctuation">.</span>decode<span class="token punctuation">(</span><span class="token string">"gbk"</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token comment"># 解密后同样需要进行解码</span>
+</code></pre>
+<p>输出：</p>
+<pre><code class="prism language-shell"><span class="token number">16</span>
+密文： b<span class="token string">'=<span class="token entity" title="\xdd">\xdd</span>8k<span class="token entity" title="\x86">\x86</span><span class="token entity" title="\xed">\xed</span><span class="token entity" title="\xec">\xec</span><span class="token entity" title="\x17">\x17</span><span class="token entity" title="\x1f">\x1f</span><span class="token entity" title="\xf7">\xf7</span><span class="token entity" title="\xb2">\xb2</span><span class="token entity" title="\x84">\x84</span>~<span class="token entity" title="\x02">\x02</span><span class="token entity" title="\xc6">\xc6</span>C'</span>
+明文： 好好学习天天向上
+</code></pre>
+<p>对于中文明文，我们可以使用<code>encode()</code>函数进行编码，将字符串转换成bytes类型数据，而这里我选择<strong>gbk</strong>编码，是为了正好能满足16字节，<strong>utf8</strong>编码是一个中文字符对应3个字节。这里为了举例所以才选择使用gbk编码。</p>
+<p>在解密后，同样是需要<code>decode()</code>函数进行解码的，将字节型数据转换回中文字符（字符串类型）。</p>
+<p>现在我们来看另外一种情况，密文是经过base64编码的(这种也是非常常见的，很多网站也是这样使用的)，我们用 http://tool.chacuo.net/cryptaes/ 这个网站举例子：</p>
+<p><img alt="请添加图片描述" src="https://img-blog.csdnimg.cn/dabd6f5986bd4e8ea826e3ed9fbfb858.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBASGVsbG9fd3NodW8=,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>模式：ECB</p>
+<p>密码: 1234567812345678</p>
+<p>字符集：gbk编码</p>
+<p>输出: base64</p>
+<p>我们来写一个python 进行aes解密：</p>
+<pre><code class="prism language-python"><span class="token keyword">from</span> Crypto<span class="token punctuation">.</span>Cipher <span class="token keyword">import</span> AES
+<span class="token keyword">import</span> base64
+
+password <span class="token operator">=</span> <span class="token string">b'1234567812345678'</span> 
+aes <span class="token operator">=</span> AES<span class="token punctuation">.</span>new<span class="token punctuation">(</span>password<span class="token punctuation">,</span>AES<span class="token punctuation">.</span>MODE_ECB<span class="token punctuation">)</span> 
+en_text <span class="token operator">=</span> <span class="token string">b"Pd04a4bt7Bcf97KEfgLGQw=="</span>
+en_text <span class="token operator">=</span> base64<span class="token punctuation">.</span>decodebytes<span class="token punctuation">(</span>en_text<span class="token punctuation">)</span> <span class="token comment">#将进行base64解码，返回值依然是bytes</span>
+den_text <span class="token operator">=</span> aes<span class="token punctuation">.</span>decrypt<span class="token punctuation">(</span>en_text<span class="token punctuation">)</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"明文："</span><span class="token punctuation">,</span>den_text<span class="token punctuation">.</span>decode<span class="token punctuation">(</span><span class="token string">"gbk"</span><span class="token punctuation">)</span><span class="token punctuation">)</span> 
+</code></pre>
+<p>输出：</p>
+<pre><code>明文： 好好学习天天向上
+</code></pre>
+<p>这里的 <code>b"Pd04a4bt7Bcf97KEfgLGQw=="</code> 是一个bytes数据， 如果你传递的是一个字符串，你可以直接使用 <code>encode()</code>函数 将其转换为 bytes类型数据。</p>
+<pre><code class="prism language-python"><span class="token keyword">from</span> Crypto<span class="token punctuation">.</span>Cipher <span class="token keyword">import</span> AES
+<span class="token keyword">import</span> base64
+
+password <span class="token operator">=</span> <span class="token string">b'1234567812345678'</span> 
+aes <span class="token operator">=</span> AES<span class="token punctuation">.</span>new<span class="token punctuation">(</span>password<span class="token punctuation">,</span>AES<span class="token punctuation">.</span>MODE_ECB<span class="token punctuation">)</span> 
+en_text <span class="token operator">=</span> <span class="token string">"Pd04a4bt7Bcf97KEfgLGQw=="</span><span class="token punctuation">.</span>encode<span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token comment">#将字符串转换成bytes数据</span>
+en_text <span class="token operator">=</span> base64<span class="token punctuation">.</span>decodebytes<span class="token punctuation">(</span>en_text<span class="token punctuation">)</span> <span class="token comment">#将进行base64解码，参数为bytes数据,返回值依然是bytes</span>
+den_text <span class="token operator">=</span> aes<span class="token punctuation">.</span>decrypt<span class="token punctuation">(</span>en_text<span class="token punctuation">)</span> 
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"明文："</span><span class="token punctuation">,</span>den_text<span class="token punctuation">.</span>decode<span class="token punctuation">(</span><span class="token string">"gbk"</span><span class="token punctuation">)</span><span class="token punctuation">)</span> 
+</code></pre>
+<p>因为无论是 <code>utf8</code> 和 <code>gbk</code> 编码，针对英文字符编码都是一个字符对应一个字节，所以这里**encode()**函数主要作用就是转换成bytes数据，然后使用base64进行解码。</p>
+<p>hexstr，base64编码解码例子：</p>
+<pre><code class="prism language-python"><span class="token keyword">import</span> base64
+<span class="token keyword">import</span> binascii
+data <span class="token operator">=</span> <span class="token string">"hello"</span><span class="token punctuation">.</span>encode<span class="token punctuation">(</span><span class="token punctuation">)</span>
+data <span class="token operator">=</span> base64<span class="token punctuation">.</span>b64encode<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"base64编码:"</span><span class="token punctuation">,</span>data<span class="token punctuation">)</span>
+data <span class="token operator">=</span> base64<span class="token punctuation">.</span>b64decode<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"base64解码:"</span><span class="token punctuation">,</span>data<span class="token punctuation">)</span>
+data <span class="token operator">=</span> binascii<span class="token punctuation">.</span>b2a_hex<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"hexstr编码:"</span><span class="token punctuation">,</span>data<span class="token punctuation">)</span>
+data <span class="token operator">=</span> binascii<span class="token punctuation">.</span>a2b_hex<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"hexstr解码:"</span><span class="token punctuation">,</span>data<span class="token punctuation">)</span>
+</code></pre>
+<p>输出：</p>
+<pre><code>base64编码: b'aGVsbG8='
+base64解码: b'hello'
+hexstr编码: b'68656c6c6f'
+hexstr解码: b'hello'
+</code></pre>
+<p>这里要说明一下，有一些AES加密，所用的秘钥，或者IV向量是通过 base64编码或者 hexstr编码后的。针对这种，首先要进行的就是进行解码，都转换回 bytes数据，再次强调，python实现 AES加密解密传递的参数都是 bytes(字节型) 数据。</p>
+<p>另外，我记得之前的 <code>pycryptodome</code>库，传递IV向量时，和明文时可以直接使用字符串类型数据，不过现在新的版本都必须为 字节型数据了，可能是为了统一好记。</p>
+<h3><a id="6__199"></a>6. 填充模式</h3>
+<p>前面我使用秘钥，还有明文，包括IV向量，都是固定16字节，也就是数据块对齐了。而填充模式就是为了解决数据块不对齐的问题，使用什么字符进行填充就对应着不同的填充模式</p>
+<p>AES补全模式常见有以下几种：</p>
+<table><thead><tr><th>模式</th><th>意义</th></tr></thead><tbody><tr><td>ZeroPadding</td><td>用b’\x00’进行填充，这里的0可不是字符串0，而是字节型数据的b’\x00’</td></tr><tr><td>PKCS7Padding</td><td>当需要N个数据才能对齐时，填充字节型数据为N、并且填充N个</td></tr><tr><td>PKCS5Padding</td><td>与PKCS7Padding相同，在AES加密解密填充方面我没感到什么区别</td></tr><tr><td>no padding</td><td>当为16字节数据时候，可以不进行填充，而不够16字节数据时同ZeroPadding一样</td></tr></tbody></table>
+<p>这里有一个细节问题，我发现很多文章说的也是不对的。</p>
+<p>ZeroPadding填充模式的意义：很多文章解释是当为16字节倍数时就不填充，然后当不够16字节倍数时再用字节数据0填充，这个解释是不对的，这解释应该是no padding的，而ZeroPadding是不管数据是否对其，都进行填充，直到填充到下一次对齐为止，也就是说即使你够了16字节数据，它会继续填充16字节的0，然后一共数据就是32字节。</p>
+<p>这里可能会有一个疑问，为什么是16字节 ，其实这个是 数据块的大小，<a href="http://tool.chacuo.net/cryptaes/">网站</a>上也有对应设置，网站上对应的叫128位，也就是16字节对齐，当然也有192位(24字节)，256位(32字节)。</p>
+<p>本文在这个解释之后，后面就说数据块对齐问题了，而不会再说16字节倍数了。</p>
+<p>除了no padding 填充模式，剩下的填充模式都会填充到下一次数据块对齐为止，而不会出现不填充的问题。</p>
+<p>PKCS7Padding和 PKCS5Padding需要填充字节对应表：</p>
+<table><thead><tr><th align="left">明文长度值（mod 16）</th><th align="left">添加的填充字节数</th><th align="left">每个填充字节的值</th></tr></thead><tbody><tr><td align="left">0</td><td align="left">16</td><td align="left">0x10</td></tr><tr><td align="left">1</td><td align="left">15</td><td align="left">0x0F</td></tr><tr><td align="left">2</td><td align="left">14</td><td align="left">0x0E</td></tr><tr><td align="left">3</td><td align="left">13</td><td align="left">0x0D</td></tr><tr><td align="left">4</td><td align="left">12</td><td align="left">0x0C</td></tr><tr><td align="left">5</td><td align="left">11</td><td align="left">0x0B</td></tr><tr><td align="left">6</td><td align="left">10</td><td align="left">0x0A</td></tr><tr><td align="left">7</td><td align="left">9</td><td align="left">0x09</td></tr><tr><td align="left">8</td><td align="left">8</td><td align="left">0x08</td></tr><tr><td align="left">9</td><td align="left">7</td><td align="left">0x07</td></tr><tr><td align="left">10</td><td align="left">6</td><td align="left">0x06</td></tr><tr><td align="left">11</td><td align="left">5</td><td align="left">0x05</td></tr><tr><td align="left">12</td><td align="left">4</td><td align="left">0x04</td></tr><tr><td align="left">13</td><td align="left">3</td><td align="left">0x03</td></tr><tr><td align="left">14</td><td align="left">2</td><td align="left">0x02</td></tr><tr><td align="left">15</td><td align="left">1</td><td align="left">0x01</td></tr></tbody></table>
+<p>这里可以看到，当明文长度值已经对齐时（mod 16 = 0），还是需要进行填充，并且填充16个字节值为0x10。ZeroPadding填充逻辑也是类似的，只不过填充的字节值都为0x00，在python表示成 <code>b'\x00'</code>。</p>
+<p>填充完毕后，就可以使用 AES进行加密解密了，当然解密后，也需要剔除填充的数据，无奈Python这些步骤需要自己实现（如果有这样的库还请评论指出）。</p>
+<h3><a id="7python_247"></a>7.python的完整实现</h3>
+<pre><code class="prism language-python"><span class="token keyword">from</span> Crypto<span class="token punctuation">.</span>Cipher <span class="token keyword">import</span> AES
+<span class="token keyword">import</span> base64
+<span class="token keyword">import</span> binascii
+
+<span class="token comment"># 数据类</span>
+<span class="token keyword">class</span> <span class="token class-name">MData</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span> data <span class="token operator">=</span> <span class="token string">b""</span><span class="token punctuation">,</span>characterSet<span class="token operator">=</span><span class="token string">'utf-8'</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token comment"># data肯定为bytes</span>
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> data
+        self<span class="token punctuation">.</span>characterSet <span class="token operator">=</span> characterSet
+  
+    <span class="token keyword">def</span> <span class="token function">saveData</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>FileName<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">with</span> <span class="token builtin">open</span><span class="token punctuation">(</span>FileName<span class="token punctuation">,</span><span class="token string">'wb'</span><span class="token punctuation">)</span> <span class="token keyword">as</span> f<span class="token punctuation">:</span>
+            f<span class="token punctuation">.</span>write<span class="token punctuation">(</span>self<span class="token punctuation">.</span>data<span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">fromString</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> data<span class="token punctuation">.</span>encode<span class="token punctuation">(</span>self<span class="token punctuation">.</span>characterSet<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>data
+
+    <span class="token keyword">def</span> <span class="token function">fromBase64</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> base64<span class="token punctuation">.</span>b64decode<span class="token punctuation">(</span>data<span class="token punctuation">.</span>encode<span class="token punctuation">(</span>self<span class="token punctuation">.</span>characterSet<span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>data
+
+    <span class="token keyword">def</span> <span class="token function">fromHexStr</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> binascii<span class="token punctuation">.</span>a2b_hex<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>data
+
+    <span class="token keyword">def</span> <span class="token function">toString</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>data<span class="token punctuation">.</span>decode<span class="token punctuation">(</span>self<span class="token punctuation">.</span>characterSet<span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">toBase64</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">return</span> base64<span class="token punctuation">.</span>b64encode<span class="token punctuation">(</span>self<span class="token punctuation">.</span>data<span class="token punctuation">)</span><span class="token punctuation">.</span>decode<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">toHexStr</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">return</span> binascii<span class="token punctuation">.</span>b2a_hex<span class="token punctuation">(</span>self<span class="token punctuation">.</span>data<span class="token punctuation">)</span><span class="token punctuation">.</span>decode<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">toBytes</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>data
+
+    <span class="token keyword">def</span> <span class="token function">__str__</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">try</span><span class="token punctuation">:</span>
+            <span class="token keyword">return</span> self<span class="token punctuation">.</span>toString<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword">except</span> Exception<span class="token punctuation">:</span>
+            <span class="token keyword">return</span> self<span class="token punctuation">.</span>toBase64<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+
+<span class="token comment">### 封装类</span>
+<span class="token keyword">class</span> <span class="token class-name">AEScryptor</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token keyword">def</span> <span class="token function">__init__</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>key<span class="token punctuation">,</span>mode<span class="token punctuation">,</span>iv <span class="token operator">=</span> <span class="token string">''</span><span class="token punctuation">,</span>paddingMode<span class="token operator">=</span> <span class="token string">"NoPadding"</span><span class="token punctuation">,</span>characterSet <span class="token operator">=</span><span class="token string">"utf-8"</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token triple-quoted-string string">'''
+        构建一个AES对象
+        key: 秘钥，字节型数据
+        mode: 使用模式，只提供两种，AES.MODE_CBC, AES.MODE_ECB
+        iv： iv偏移量，字节型数据
+        paddingMode: 填充模式，默认为NoPadding, 可选NoPadding，ZeroPadding，PKCS5Padding，PKCS7Padding
+        characterSet: 字符集编码
+        '''</span>
+        self<span class="token punctuation">.</span>key <span class="token operator">=</span> key
+        self<span class="token punctuation">.</span>mode <span class="token operator">=</span> mode
+        self<span class="token punctuation">.</span>iv <span class="token operator">=</span> iv
+        self<span class="token punctuation">.</span>characterSet <span class="token operator">=</span> characterSet
+        self<span class="token punctuation">.</span>paddingMode <span class="token operator">=</span> paddingMode
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> <span class="token string">""</span>
+
+    <span class="token keyword">def</span> <span class="token function">__ZeroPadding</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        data <span class="token operator">+=</span> <span class="token string">b'\x00'</span>
+        <span class="token keyword">while</span> <span class="token builtin">len</span><span class="token punctuation">(</span>data<span class="token punctuation">)</span> <span class="token operator">%</span> <span class="token number">16</span> <span class="token operator">!=</span> <span class="token number">0</span><span class="token punctuation">:</span>
+            data <span class="token operator">+=</span> <span class="token string">b'\x00'</span>
+        <span class="token keyword">return</span> data
+
+    <span class="token keyword">def</span> <span class="token function">__StripZeroPadding</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        data <span class="token operator">=</span> data<span class="token punctuation">[</span><span class="token punctuation">:</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">]</span>
+        <span class="token keyword">while</span> <span class="token builtin">len</span><span class="token punctuation">(</span>data<span class="token punctuation">)</span> <span class="token operator">%</span> <span class="token number">16</span> <span class="token operator">!=</span> <span class="token number">0</span><span class="token punctuation">:</span>
+            data <span class="token operator">=</span> data<span class="token punctuation">.</span>rstrip<span class="token punctuation">(</span><span class="token string">b'\x00'</span><span class="token punctuation">)</span>
+            <span class="token keyword">if</span> data<span class="token punctuation">[</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">]</span> <span class="token operator">!=</span> <span class="token string">b"\x00"</span><span class="token punctuation">:</span>
+                <span class="token keyword">break</span>
+        <span class="token keyword">return</span> data
+
+    <span class="token keyword">def</span> <span class="token function">__PKCS5_7Padding</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        needSize <span class="token operator">=</span> <span class="token number">16</span><span class="token operator">-</span><span class="token builtin">len</span><span class="token punctuation">(</span>data<span class="token punctuation">)</span> <span class="token operator">%</span> <span class="token number">16</span>
+        <span class="token keyword">if</span> needSize <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">:</span>
+            needSize <span class="token operator">=</span> <span class="token number">16</span>
+        <span class="token keyword">return</span> data <span class="token operator">+</span> needSize<span class="token punctuation">.</span>to_bytes<span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span><span class="token string">'little'</span><span class="token punctuation">)</span><span class="token operator">*</span>needSize
+
+    <span class="token keyword">def</span> <span class="token function">__StripPKCS5_7Padding</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        paddingSize <span class="token operator">=</span> data<span class="token punctuation">[</span><span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">]</span>
+        <span class="token keyword">return</span> data<span class="token punctuation">.</span>rstrip<span class="token punctuation">(</span>paddingSize<span class="token punctuation">.</span>to_bytes<span class="token punctuation">(</span><span class="token number">1</span><span class="token punctuation">,</span><span class="token string">'little'</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">__paddingData</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> self<span class="token punctuation">.</span>paddingMode <span class="token operator">==</span> <span class="token string">"NoPadding"</span><span class="token punctuation">:</span>
+            <span class="token keyword">if</span> <span class="token builtin">len</span><span class="token punctuation">(</span>data<span class="token punctuation">)</span> <span class="token operator">%</span> <span class="token number">16</span> <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">:</span>
+                <span class="token keyword">return</span> data
+            <span class="token keyword">else</span><span class="token punctuation">:</span>
+                <span class="token keyword">return</span> self<span class="token punctuation">.</span>__ZeroPadding<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+        <span class="token keyword">elif</span> self<span class="token punctuation">.</span>paddingMode <span class="token operator">==</span> <span class="token string">"ZeroPadding"</span><span class="token punctuation">:</span>
+            <span class="token keyword">return</span> self<span class="token punctuation">.</span>__ZeroPadding<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+        <span class="token keyword">elif</span> self<span class="token punctuation">.</span>paddingMode <span class="token operator">==</span> <span class="token string">"PKCS5Padding"</span> <span class="token keyword">or</span> self<span class="token punctuation">.</span>paddingMode <span class="token operator">==</span> <span class="token string">"PKCS7Padding"</span><span class="token punctuation">:</span>
+            <span class="token keyword">return</span> self<span class="token punctuation">.</span>__PKCS5_7Padding<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+        <span class="token keyword">else</span><span class="token punctuation">:</span>
+            <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"不支持Padding"</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">__stripPaddingData</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> self<span class="token punctuation">.</span>paddingMode <span class="token operator">==</span> <span class="token string">"NoPadding"</span><span class="token punctuation">:</span>
+            <span class="token keyword">return</span> self<span class="token punctuation">.</span>__StripZeroPadding<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+        <span class="token keyword">elif</span> self<span class="token punctuation">.</span>paddingMode <span class="token operator">==</span> <span class="token string">"ZeroPadding"</span><span class="token punctuation">:</span>
+            <span class="token keyword">return</span> self<span class="token punctuation">.</span>__StripZeroPadding<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+
+        <span class="token keyword">elif</span> self<span class="token punctuation">.</span>paddingMode <span class="token operator">==</span> <span class="token string">"PKCS5Padding"</span> <span class="token keyword">or</span> self<span class="token punctuation">.</span>paddingMode <span class="token operator">==</span> <span class="token string">"PKCS7Padding"</span><span class="token punctuation">:</span>
+            <span class="token keyword">return</span> self<span class="token punctuation">.</span>__StripPKCS5_7Padding<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+        <span class="token keyword">else</span><span class="token punctuation">:</span>
+            <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"不支持Padding"</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">setCharacterSet</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>characterSet<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token triple-quoted-string string">'''
+        设置字符集编码
+        characterSet: 字符集编码
+        '''</span>
+        self<span class="token punctuation">.</span>characterSet <span class="token operator">=</span> characterSet
+
+    <span class="token keyword">def</span> <span class="token function">setPaddingMode</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>mode<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token triple-quoted-string string">'''
+        设置填充模式
+        mode: 可选NoPadding，ZeroPadding，PKCS5Padding，PKCS7Padding
+        '''</span>
+        self<span class="token punctuation">.</span>paddingMode <span class="token operator">=</span> mode
+
+    <span class="token keyword">def</span> <span class="token function">decryptFromBase64</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>entext<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token triple-quoted-string string">'''
+        从base64编码字符串编码进行AES解密
+        entext: 数据类型str
+        '''</span>
+        mData <span class="token operator">=</span> MData<span class="token punctuation">(</span>characterSet<span class="token operator">=</span>self<span class="token punctuation">.</span>characterSet<span class="token punctuation">)</span>
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> mData<span class="token punctuation">.</span>fromBase64<span class="token punctuation">(</span>entext<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>__decrypt<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">decryptFromHexStr</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>entext<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token triple-quoted-string string">'''
+        从hexstr编码字符串编码进行AES解密
+        entext: 数据类型str
+        '''</span>
+        mData <span class="token operator">=</span> MData<span class="token punctuation">(</span>characterSet<span class="token operator">=</span>self<span class="token punctuation">.</span>characterSet<span class="token punctuation">)</span>
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> mData<span class="token punctuation">.</span>fromHexStr<span class="token punctuation">(</span>entext<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>__decrypt<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">decryptFromString</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>entext<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token triple-quoted-string string">'''
+        从字符串进行AES解密
+        entext: 数据类型str
+        '''</span>
+        mData <span class="token operator">=</span> MData<span class="token punctuation">(</span>characterSet<span class="token operator">=</span>self<span class="token punctuation">.</span>characterSet<span class="token punctuation">)</span>
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> mData<span class="token punctuation">.</span>fromString<span class="token punctuation">(</span>entext<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>__decrypt<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">decryptFromBytes</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>entext<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token triple-quoted-string string">'''
+        从二进制进行AES解密
+        entext: 数据类型bytes
+        '''</span>
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> entext
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>__decrypt<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">encryptFromString</span><span class="token punctuation">(</span>self<span class="token punctuation">,</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token triple-quoted-string string">'''
+        对字符串进行AES加密
+        data: 待加密字符串，数据类型为str
+        '''</span>
+        self<span class="token punctuation">.</span>data <span class="token operator">=</span> data<span class="token punctuation">.</span>encode<span class="token punctuation">(</span>self<span class="token punctuation">.</span>characterSet<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> self<span class="token punctuation">.</span>__encrypt<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">__encrypt</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> self<span class="token punctuation">.</span>mode <span class="token operator">==</span> AES<span class="token punctuation">.</span>MODE_CBC<span class="token punctuation">:</span>
+            aes <span class="token operator">=</span> AES<span class="token punctuation">.</span>new<span class="token punctuation">(</span>self<span class="token punctuation">.</span>key<span class="token punctuation">,</span>self<span class="token punctuation">.</span>mode<span class="token punctuation">,</span>self<span class="token punctuation">.</span>iv<span class="token punctuation">)</span> 
+        <span class="token keyword">elif</span> self<span class="token punctuation">.</span>mode <span class="token operator">==</span> AES<span class="token punctuation">.</span>MODE_ECB<span class="token punctuation">:</span>
+            aes <span class="token operator">=</span> AES<span class="token punctuation">.</span>new<span class="token punctuation">(</span>self<span class="token punctuation">.</span>key<span class="token punctuation">,</span>self<span class="token punctuation">.</span>mode<span class="token punctuation">)</span> 
+        <span class="token keyword">else</span><span class="token punctuation">:</span>
+            <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"不支持这种模式"</span><span class="token punctuation">)</span>  
+            <span class="token keyword">return</span>           
+
+        data <span class="token operator">=</span> self<span class="token punctuation">.</span>__paddingData<span class="token punctuation">(</span>self<span class="token punctuation">.</span>data<span class="token punctuation">)</span>
+        enData <span class="token operator">=</span> aes<span class="token punctuation">.</span>encrypt<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> MData<span class="token punctuation">(</span>enData<span class="token punctuation">)</span>
+
+    <span class="token keyword">def</span> <span class="token function">__decrypt</span><span class="token punctuation">(</span>self<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> self<span class="token punctuation">.</span>mode <span class="token operator">==</span> AES<span class="token punctuation">.</span>MODE_CBC<span class="token punctuation">:</span>
+            aes <span class="token operator">=</span> AES<span class="token punctuation">.</span>new<span class="token punctuation">(</span>self<span class="token punctuation">.</span>key<span class="token punctuation">,</span>self<span class="token punctuation">.</span>mode<span class="token punctuation">,</span>self<span class="token punctuation">.</span>iv<span class="token punctuation">)</span> 
+        <span class="token keyword">elif</span> self<span class="token punctuation">.</span>mode <span class="token operator">==</span> AES<span class="token punctuation">.</span>MODE_ECB<span class="token punctuation">:</span>
+            aes <span class="token operator">=</span> AES<span class="token punctuation">.</span>new<span class="token punctuation">(</span>self<span class="token punctuation">.</span>key<span class="token punctuation">,</span>self<span class="token punctuation">.</span>mode<span class="token punctuation">)</span> 
+        <span class="token keyword">else</span><span class="token punctuation">:</span>
+            <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"不支持这种模式"</span><span class="token punctuation">)</span>  
+            <span class="token keyword">return</span>           
+        data <span class="token operator">=</span> aes<span class="token punctuation">.</span>decrypt<span class="token punctuation">(</span>self<span class="token punctuation">.</span>data<span class="token punctuation">)</span>
+        mData <span class="token operator">=</span> MData<span class="token punctuation">(</span>self<span class="token punctuation">.</span>__stripPaddingData<span class="token punctuation">(</span>data<span class="token punctuation">)</span><span class="token punctuation">,</span>characterSet<span class="token operator">=</span>self<span class="token punctuation">.</span>characterSet<span class="token punctuation">)</span>
+        <span class="token keyword">return</span> mData
+
+
+<span class="token keyword">if</span> __name__ <span class="token operator">==</span> <span class="token string">'__main__'</span><span class="token punctuation">:</span>
+    key <span class="token operator">=</span> <span class="token string">b"1234567812345678"</span>
+    iv <span class="token operator">=</span>  <span class="token string">b"0000000000000000"</span>
+    aes <span class="token operator">=</span> AEScryptor<span class="token punctuation">(</span>key<span class="token punctuation">,</span>AES<span class="token punctuation">.</span>MODE_CBC<span class="token punctuation">,</span>iv<span class="token punctuation">,</span>paddingMode<span class="token operator">=</span> <span class="token string">"ZeroPadding"</span><span class="token punctuation">,</span>characterSet<span class="token operator">=</span><span class="token string">'utf-8'</span><span class="token punctuation">)</span>
+    
+    data <span class="token operator">=</span> <span class="token string">"好好学习"</span>
+    rData <span class="token operator">=</span> aes<span class="token punctuation">.</span>encryptFromString<span class="token punctuation">(</span>data<span class="token punctuation">)</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"密文："</span><span class="token punctuation">,</span>rData<span class="token punctuation">.</span>toBase64<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    rData <span class="token operator">=</span> aes<span class="token punctuation">.</span>decryptFromBase64<span class="token punctuation">(</span>rData<span class="token punctuation">.</span>toBase64<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"明文："</span><span class="token punctuation">,</span>rData<span class="token punctuation">)</span>
+
+</code></pre>
+<p>我简单的对其进行了封装，加密和解密返回的数据类型可以使用<code>toBase64()</code>,<code>toHexStr()</code> 进行编码。另外我没有对key和iv进行补全，可以使用<strong>MData</strong>类自己实现，更多详细使用可以通过源码中注释了解。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

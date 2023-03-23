@@ -1,0 +1,1026 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p></p>
+<h1 id="main-toc">一、简介</h1>
+<p>SQLite是一个轻量级、跨平台的关系型数据库，在小型项目中，方便，易用，同时支持多种开发语言，下面是我用C#语言对SQLite 的一个封装。</p>
+<p>Winfrom界面如下：</p>
+<p><img alt="" height="449" src="image\e7c4c8b8eb7d4988aac04ee105b1edd8.png" width="464"/></p>
+<p></p>
+<p></p>
+<h1 id="%E4%BB%A3%E7%A0%81%E9%83%A8%E5%88%86">二、代码部分</h1>
+<h2 id="SQLiteHelper.cs">1.SQLiteHelper.cs</h2>
+<pre><code class="language-cs">using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.Common;
+using System.Data.SQLite;
+using System.IO;
+using System.Text;
+
+namespace MySQLiteHelper
+{
+    public class SQLiteHelper
+    {
+        #region 字段
+        
+        /// &lt;summary&gt;
+        /// 事务的基类
+        /// &lt;/summary&gt;
+        private DbTransaction DBtrans;
+        /// &lt;summary&gt;
+        /// 使用静态变量字典解决多线程实例本类，实现一个数据库对应一个clslock
+        /// &lt;/summary&gt;
+        private static readonly Dictionary&lt;string, ClsLock&gt; RWL = new Dictionary&lt;string, ClsLock&gt;();
+        /// &lt;summary&gt;
+        /// 数据库地址
+        /// &lt;/summary&gt;
+        private readonly string mdataFile;
+        /// &lt;summary&gt;
+        /// 数据库密码
+        /// &lt;/summary&gt;
+        private readonly string mPassWord;
+        private readonly string LockName = null;
+        /// &lt;summary&gt;
+        /// 数据库连接定义
+        /// &lt;/summary&gt;
+        private SQLiteConnection mConn;
+
+        #endregion
+
+        #region 构造函数
+
+        /// &lt;summary&gt;
+        /// 根据数据库地址初始化
+        /// &lt;/summary&gt;
+        /// &lt;param name="dataFile"&gt;数据库地址&lt;/param&gt;
+        public SQLiteHelper(string dataFile)
+        {
+            this.mdataFile = dataFile ?? throw new ArgumentNullException("dataFile=null");
+            //this.mdataFile = AppDomain.CurrentDomain.BaseDirectory + dataFile;
+            this.mdataFile = dataFile;
+            if (!RWL.ContainsKey(dataFile))
+            {
+                LockName = dataFile;
+                RWL.Add(dataFile, new ClsLock());
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 使用密码打开数据库
+        /// &lt;/summary&gt;
+        /// &lt;param name="dataFile"&gt;数据库地址&lt;/param&gt;
+        /// &lt;param name="PassWord"&gt;数据库密码&lt;/param&gt;
+        public SQLiteHelper(string dataFile, string PassWord)
+        {
+            this.mdataFile = dataFile ?? throw new ArgumentNullException("dataFile is null");
+            this.mPassWord = PassWord ?? throw new ArgumentNullException("PassWord is null");
+            //this.mdataFile = AppDomain.CurrentDomain.BaseDirectory + dataFile;
+            this.mdataFile = dataFile;
+            if (!RWL.ContainsKey(dataFile))
+            {
+                LockName = dataFile;
+                RWL.Add(dataFile, new ClsLock());
+            }
+        }
+
+        #endregion
+
+        #region 打开/关闭 数据库
+
+        /// &lt;summary&gt;  
+        /// 打开 SQLiteManager 使用的数据库连接  
+        /// &lt;/summary&gt;  
+        public void Open()
+        {
+            if (string.IsNullOrWhiteSpace(mPassWord))
+            {
+                mConn = OpenConnection(this.mdataFile);
+            }
+            else
+            {
+                mConn = OpenConnection(this.mdataFile, mPassWord);
+            }
+            Console.WriteLine("打开数据库成功");
+        }
+
+        /// &lt;summary&gt;
+        /// 关闭连接
+        /// &lt;/summary&gt;
+        public void Close()
+        {
+            if (this.mConn != null)
+            {
+                try
+                {
+                    this.mConn.Close();
+                    if (RWL.ContainsKey(LockName))
+                    {
+                        RWL.Remove(LockName);
+                    }
+                }
+                catch
+                {
+                    Console.WriteLine("关闭失败");
+                }
+            }
+            Console.WriteLine("关闭数据库成功");
+        }
+
+        #endregion
+
+        #region 事务
+
+        /// &lt;summary&gt;
+        /// 开始事务
+        /// &lt;/summary&gt;
+        public void BeginTrain()
+        {
+            EnsureConnection();
+            DBtrans = mConn.BeginTransaction();
+        }
+
+        /// &lt;summary&gt;
+        /// 提交事务
+        /// &lt;/summary&gt;
+        public void DBCommit()
+        {
+            try
+            {
+                DBtrans.Commit();
+            }
+            catch (Exception)
+            {
+                DBtrans.Rollback();
+            }
+        }
+
+        #endregion
+
+        #region 工具
+
+        /// &lt;summary&gt;  
+        /// 打开一个SQLite数据库文件，如果文件不存在，则创建（无密码）
+        /// &lt;/summary&gt;  
+        /// &lt;param name="dataFile"&gt;&lt;/param&gt;  
+        /// &lt;returns&gt;SQLiteConnection 类&lt;/returns&gt;  
+        private SQLiteConnection OpenConnection(string dataFile)
+        {
+            if (dataFile == null)
+            {
+                throw new ArgumentNullException("dataFiledataFile=null");
+            }
+            if (!File.Exists(dataFile))
+            {
+                SQLiteConnection.CreateFile(dataFile);
+            }
+            SQLiteConnection conn = new SQLiteConnection();
+            SQLiteConnectionStringBuilder conStr = new SQLiteConnectionStringBuilder
+            {
+                DataSource = dataFile
+            };
+            conn.ConnectionString = conStr.ToString();
+            conn.Open();
+            return conn;
+        }
+
+        /// &lt;summary&gt;  
+        /// 打开一个SQLite数据库文件，如果文件不存在，则创建（有密码）
+        /// &lt;/summary&gt;  
+        /// &lt;param name="dataFile"&gt;&lt;/param&gt;  
+        /// &lt;param name="Password"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;SQLiteConnection 类&lt;/returns&gt;  
+        private SQLiteConnection OpenConnection(string dataFile, string Password)
+        {
+            if (dataFile == null)
+            {
+                throw new ArgumentNullException("dataFile=null");
+            }
+            if (!File.Exists(Convert.ToString(dataFile)))
+            {
+                SQLiteConnection.CreateFile(dataFile);
+            }
+            try
+            {
+                SQLiteConnection conn = new SQLiteConnection();
+                SQLiteConnectionStringBuilder conStr = new SQLiteConnectionStringBuilder
+                {
+                    DataSource = dataFile,
+                    Password = Password
+                };
+                conn.ConnectionString = conStr.ToString();
+                conn.Open();
+                return conn;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// &lt;summary&gt;  
+        /// 读取 或 设置 SQLiteManager 使用的数据库连接  
+        /// &lt;/summary&gt;  
+        public SQLiteConnection Connection
+        {
+            get
+            {
+                return mConn;
+            }
+            private set
+            {
+                mConn = value ?? throw new ArgumentNullException();
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 确保数据库是连接状态
+        /// &lt;/summary&gt;
+        /// &lt;exception cref="Exception"&gt;&lt;/exception&gt;
+        protected void EnsureConnection()
+        {
+            if (this.mConn == null)
+            {
+                throw new Exception("SQLiteManager.Connection=null");
+            }
+            if (mConn.State != ConnectionState.Open)
+            {
+                mConn.Open();
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 获取数据库文件的路径
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public string GetDataFile()
+        {
+            return this.mdataFile;
+        }
+
+        /// &lt;summary&gt;  
+        /// 判断表 table 是否存在  
+        /// &lt;/summary&gt;  
+        /// &lt;param name="table"&gt;&lt;/param&gt;  
+        /// &lt;returns&gt;存在返回true，否则返回false&lt;/returns&gt;  
+        public bool TableExists(string table)
+        {
+            if (table == null)
+            {
+                throw new ArgumentNullException("table=null");
+            }
+            EnsureConnection();
+            SQLiteDataReader reader = ExecuteReader("SELECT count(*) as c FROM sqlite_master WHERE type='table' AND name=@tableName ", new SQLiteParameter[] { new SQLiteParameter("tableName", table) });
+            if (reader == null)
+            {
+                return false;
+            }
+            reader.Read();
+            int c = reader.GetInt32(0);
+            reader.Close();
+            reader.Dispose();
+            //return false;  
+            return c == 1;
+        }
+
+        /// &lt;summary&gt;
+        /// VACUUM 命令（通过复制主数据库中的内容到一个临时数据库文件，然后清空主数据库，并从副本中重新载入原始的数据库文件）
+        /// &lt;/summary&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public bool Vacuum()
+        {
+            try
+            {
+                using (SQLiteCommand Command = new SQLiteCommand("VACUUM", Connection))
+                {
+                    Command.ExecuteNonQuery();
+                }
+                return true;
+            }
+            catch (System.Data.SQLite.SQLiteException)
+            {
+                return false;
+            }
+        } 
+
+        #endregion
+
+        #region 执行SQL
+
+        /// &lt;summary&gt;
+        /// 执行SQL, 并返回 SQLiteDataReader 对象结果 
+        /// &lt;/summary&gt;  
+        /// &lt;param name="sql"&gt;&lt;/param&gt;
+        /// &lt;param name="paramArr"&gt;null 表示无参数&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;  
+        public SQLiteDataReader ExecuteReader(string sql, SQLiteParameter[] paramArr)
+        {
+            if (sql == null)
+            {
+                throw new ArgumentNullException("sql=null");
+            }
+            EnsureConnection();
+            using (RWL[LockName].Read())
+            {
+                using (SQLiteCommand cmd = new SQLiteCommand(sql, Connection))
+                {
+                    if (paramArr != null)
+                    {
+                        cmd.Parameters.AddRange(paramArr);
+                    }
+                    try
+                    {
+                        SQLiteDataReader reader = cmd.ExecuteReader();
+                        cmd.Parameters.Clear();
+                        return reader;
+                    }
+                    catch (Exception)
+                    {
+                        return null;
+                    }
+                }
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 执行查询，并返回dataset对象
+        /// &lt;/summary&gt;
+        /// &lt;param name="sql"&gt;SQL查询语句&lt;/param&gt;
+        /// &lt;param name="paramArr"&gt;参数数组&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public DataSet ExecuteDataSet(string sql, SQLiteParameter[] paramArr)
+        {
+            if (sql == null)
+            {
+                throw new ArgumentNullException("sql=null");
+            }
+            this.EnsureConnection();
+            using (RWL[LockName].Read())
+            {
+                using (SQLiteCommand cmd = new SQLiteCommand(sql, this.Connection))
+                {
+                    if (paramArr != null)
+                    {
+                        cmd.Parameters.AddRange(paramArr);
+                    }
+                    try
+                    {
+                        SQLiteDataAdapter da = new SQLiteDataAdapter();
+                        DataSet ds = new DataSet();
+                        da.SelectCommand = cmd;
+                        da.Fill(ds);
+                        cmd.Parameters.Clear();
+                        da.Dispose();
+                        return ds;
+                    }
+                    catch (Exception)
+                    {
+                        return null;
+                    }
+                }
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 执行SQL查询，并返回dataset对象。
+        /// &lt;/summary&gt;
+        /// &lt;param name="strTable"&gt;映射源表的名称&lt;/param&gt;
+        /// &lt;param name="sql"&gt;SQL语句&lt;/param&gt;
+        /// &lt;param name="paramArr"&gt;SQL参数数组&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        public DataSet ExecuteDataSet(string strTable, string sql, SQLiteParameter[] paramArr)
+        {
+            if (sql == null)
+            {
+                throw new ArgumentNullException("sql=null");
+            }
+            this.EnsureConnection();
+            using (RWL[LockName].Read())
+            {
+                using (SQLiteCommand cmd = new SQLiteCommand(sql, this.Connection))
+                {
+                    if (paramArr != null)
+                    {
+                        cmd.Parameters.AddRange(paramArr);
+                    }
+                    try
+                    {
+                        SQLiteDataAdapter da = new SQLiteDataAdapter();
+                        DataSet ds = new DataSet();
+                        da.SelectCommand = cmd;
+                        da.Fill(ds, strTable);
+                        cmd.Parameters.Clear();
+                        da.Dispose();
+                        return ds;
+                    }
+                    catch (Exception)
+                    {
+                        return null;
+                    }
+                }
+            }
+        }
+
+        /// &lt;summary&gt;  
+        /// 执行SQL，返回受影响的行数，可用于执行表创建语句，paramArr == null 表示无参数
+        /// &lt;/summary&gt;  
+        /// &lt;param name="sql"&gt;&lt;/param&gt;  
+        /// &lt;returns&gt;&lt;/returns&gt;  
+        public int ExecuteNonQuery(string sql, SQLiteParameter[] paramArr)
+        {
+            if (sql == null)
+            {
+                throw new ArgumentNullException("sql=null");
+            }
+            this.EnsureConnection();
+            using (RWL[LockName].Read())
+            {
+                try
+                {
+                    using (SQLiteCommand cmd = new SQLiteCommand(sql, Connection))
+                    {
+                        if (paramArr != null)
+                        {
+                            foreach (SQLiteParameter p in paramArr)
+                            {
+                                cmd.Parameters.Add(p);
+                            }
+                        }
+                        int c = cmd.ExecuteNonQuery();
+                        cmd.Parameters.Clear();
+                        return c;
+                    }
+                }
+                catch (SQLiteException)
+                {
+                    return 0;
+                }
+            }
+        }
+
+        /// &lt;summary&gt;  
+        /// 执行SQL，返回结果集第一行，如果结果集为空，那么返回空 List(List.Count=0)， 
+        /// rowWrapper = null 时，使用 WrapRowToDictionary  
+        /// &lt;/summary&gt;  
+        /// &lt;param name="sql"&gt;&lt;/param&gt;  
+        /// &lt;param name="paramArr"&gt;&lt;/param&gt;  
+        /// &lt;returns&gt;&lt;/returns&gt;  
+        public object ExecuteScalar(string sql, SQLiteParameter[] paramArr)
+        {
+            if (sql == null)
+            {
+                throw new ArgumentNullException("sql=null");
+            }
+            this.EnsureConnection();
+            using (RWL[LockName].Read())
+            {
+                using (SQLiteCommand cmd = new SQLiteCommand(sql, Connection))
+                {
+                    if (paramArr != null)
+                    {
+                        cmd.Parameters.AddRange(paramArr);
+                    }
+                    try
+                    {
+                        object reader = cmd.ExecuteScalar();
+                        cmd.Parameters.Clear();
+                        cmd.Dispose();
+                        return reader;
+                    }
+                    catch (Exception)
+                    {
+                        return null;
+                    }
+                }
+            }
+        }
+
+        /// &lt;summary&gt;  
+        /// 查询一行记录，无结果时返回 null，conditionCol = null 时将忽略条件，直接执行 select * from table   
+        /// &lt;/summary&gt;  
+        /// &lt;param name="table"&gt;表名&lt;/param&gt;  
+        /// &lt;param name="conditionCol"&gt;&lt;/param&gt;  
+        /// &lt;param name="conditionVal"&gt;&lt;/param&gt;  
+        /// &lt;returns&gt;&lt;/returns&gt;  
+        public object QueryOne(string table, string conditionCol, object conditionVal)
+        {
+            if (table == null)
+            {
+                throw new ArgumentNullException("table=null");
+            }
+            this.EnsureConnection();
+            string sql = "select * from " + table;
+            if (conditionCol != null)
+            {
+                sql += " where " + conditionCol + "=@" + conditionCol;
+            }
+            object result = ExecuteScalar(sql, new SQLiteParameter[] { new SQLiteParameter(conditionCol, conditionVal) });
+            return result;
+        }
+
+        #endregion
+
+        #region 增 删 改
+
+        /// &lt;summary&gt;  
+        /// 执行 insert into 语句 
+        /// &lt;/summary&gt;  
+        /// &lt;param name="table"&gt;&lt;/param&gt;  
+        /// &lt;param name="entity"&gt;&lt;/param&gt;  
+        /// &lt;returns&gt;&lt;/returns&gt;  
+        public int InsertData(string table, Dictionary&lt;string, object&gt; entity)
+        {
+            if (table == null)
+            {
+                throw new ArgumentNullException("table=null");
+            }
+            this.EnsureConnection();
+            string sql = BuildInsert(table, entity);
+            return this.ExecuteNonQuery(sql, BuildParamArray(entity));
+        }
+
+        /// &lt;summary&gt;  
+        /// 执行 update 语句，注意：如果 where = null，那么 whereParams 也为 null，
+        /// &lt;/summary&gt;  
+        /// &lt;param name="table"&gt;表名&lt;/param&gt;  
+        /// &lt;param name="entity"&gt;要修改的列名和列名的值&lt;/param&gt;  
+        /// &lt;param name="where"&gt;查找符合条件的列&lt;/param&gt;  
+        /// &lt;param name="whereParams"&gt;where条件中参数的值&lt;/param&gt;  
+        /// &lt;returns&gt;&lt;/returns&gt;  
+        public int Update(string table, Dictionary&lt;string, object&gt; entity, string where, SQLiteParameter[] whereParams)
+        {
+            if (table == null)
+            {
+                throw new ArgumentNullException("table=null");
+            }
+            this.EnsureConnection();
+            string sql = BuildUpdate(table, entity);
+            SQLiteParameter[] parameter = BuildParamArray(entity);
+            if (where != null)
+            {
+                sql += " where " + where;
+                if (whereParams != null)
+                {
+                    SQLiteParameter[] newArr = new SQLiteParameter[(parameter.Length + whereParams.Length)];
+                    Array.Copy(parameter, newArr, parameter.Length);
+                    Array.Copy(whereParams, 0, newArr, parameter.Length, whereParams.Length);
+                    parameter = newArr;
+                }
+            }
+            return this.ExecuteNonQuery(sql, parameter);
+        }
+
+        /// &lt;summary&gt;  
+        /// 执行 delete from table 语句，where不必包含'where'关键字，where = null 时将忽略 whereParams  
+        /// &lt;/summary&gt;  
+        /// &lt;param name="table"&gt;&lt;/param&gt;  
+        /// &lt;param name="where"&gt;&lt;/param&gt;  
+        /// &lt;param name="whereParams"&gt;&lt;/param&gt;  
+        /// &lt;returns&gt;&lt;/returns&gt;  
+        public int Delete(string table, string where, SQLiteParameter[] whereParams)
+        {
+            if (table == null)
+            {
+                throw new ArgumentNullException("table=null");
+            }
+            this.EnsureConnection();
+            string sql = "delete from " + table + " ";
+            if (where != null)
+            {
+                sql += "where " + where;
+            }
+            return ExecuteNonQuery(sql, whereParams);
+        }
+
+        /// &lt;summary&gt;
+        /// 将 Dictionary 类型数据 转换为 SQLiteParameter[] 类型
+        /// &lt;/summary&gt;
+        /// &lt;param name="entity"&gt;&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private SQLiteParameter[] BuildParamArray(Dictionary&lt;string, object&gt; entity)
+        {
+            List&lt;SQLiteParameter&gt; list = new List&lt;SQLiteParameter&gt;();
+            foreach (string key in entity.Keys)
+            {
+                list.Add(new SQLiteParameter(key, entity[key]));
+            }
+            if (list.Count == 0)
+            {
+                return null;
+            }
+            return list.ToArray();
+        }
+
+        /// &lt;summary&gt;
+        /// 将 Dictionary 类型数据 转换为 插入数据 的 SQL语句
+        /// &lt;/summary&gt;
+        /// &lt;param name="table"&gt;表名&lt;/param&gt;
+        /// &lt;param name="entity"&gt;字典&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private string BuildInsert(string table, Dictionary&lt;string, object&gt; entity)
+        {
+            StringBuilder buf = new StringBuilder();
+            buf.Append("insert into ").Append(table);
+            buf.Append(" (");
+            foreach (string key in entity.Keys)
+            {
+                buf.Append(key).Append(",");
+            }
+            buf.Remove(buf.Length - 1, 1); // 移除最后一个,
+            buf.Append(") ");
+            buf.Append("values(");
+            foreach (string key in entity.Keys)
+            {
+                buf.Append("@").Append(key).Append(","); // 创建一个参数
+            }
+            buf.Remove(buf.Length - 1, 1);
+            buf.Append(") ");
+
+            return buf.ToString();
+        }
+
+        /// &lt;summary&gt;
+        /// 将 Dictionary 类型数据 转换为 修改数据 的 SQL语句
+        /// &lt;/summary&gt;
+        /// &lt;param name="table"&gt;表名&lt;/param&gt;
+        /// &lt;param name="entity"&gt;字典&lt;/param&gt;
+        /// &lt;returns&gt;&lt;/returns&gt;
+        private string BuildUpdate(string table, Dictionary&lt;string, object&gt; entity)
+        {
+            StringBuilder buf = new StringBuilder();
+            buf.Append("update ").Append(table).Append(" set ");
+            foreach (string key in entity.Keys)
+            {
+                buf.Append(key).Append("=").Append("@").Append(key).Append(",");
+            }
+            buf.Remove(buf.Length - 1, 1);
+            buf.Append(" ");
+            return buf.ToString();
+        }
+
+        #endregion
+    }
+}
+</code></pre>
+<h2 id="UsingLock.cs">2.UsingLock.cs</h2>
+<p>采用多线程方式，在这里，如果不是频繁的使用，其实可以不用</p>
+<pre><code class="language-cs">using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Threading;
+
+namespace MySQLiteHelper
+{
+    /// &lt;summary&gt;
+    /// 使用using代替lock操作的对象，可指定写入和读取锁定模式
+    /// &lt;/summary&gt;
+    public sealed class ClsLock
+    {
+        #region 内部类
+
+        /// &lt;summary&gt;
+        /// 利用IDisposable的using语法糖方便的释放锁定操作内部类
+        /// &lt;/summary&gt;
+        private struct Lock : IDisposable
+        {
+            /// &lt;summary&gt;
+            /// 读写锁对象
+            /// &lt;/summary&gt;
+            private readonly ReaderWriterLockSlim _Lock;
+            /// &lt;summary&gt;
+            /// 是否为写入模式
+            /// &lt;/summary&gt;
+            private bool _IsWrite;
+            /// &lt;summary&gt;
+            /// 利用IDisposable的using语法糖方便的释放锁定操作构造函数
+            /// &lt;/summary&gt;
+            /// &lt;param name="rwl"&gt;读写锁&lt;/param&gt;
+            /// &lt;param name="isWrite"&gt;写入模式为true，读取模式为false&lt;/param&gt;
+            public Lock(ReaderWriterLockSlim rwl, bool isWrite)
+            {
+                _Lock = rwl;
+                _IsWrite = isWrite;
+            }
+            /// &lt;summary&gt;
+            /// 释放对象时退出指定锁定模式
+            /// &lt;/summary&gt;
+            public void Dispose()
+            {
+                if (_IsWrite)
+                {
+                    if (_Lock.IsWriteLockHeld)
+                    {
+                        _Lock.ExitWriteLock();
+                    }
+                }
+                else
+                {
+                    if (_Lock.IsReadLockHeld)
+                    {
+                        _Lock.ExitReadLock();
+                    }
+                }
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 空的可释放对象，免去了调用时需要判断是否为null的问题内部类
+        /// &lt;/summary&gt;
+        private class Disposable : IDisposable
+        {
+            /// &lt;summary&gt;
+            /// 空的可释放对象
+            /// &lt;/summary&gt;
+            public static readonly Disposable Empty = new Disposable();
+            /// &lt;summary&gt;
+            /// 空的释放方法
+            /// &lt;/summary&gt;
+            public void Dispose() { }
+        }
+
+        #endregion
+
+        /// &lt;summary&gt;
+        /// 读写锁
+        /// &lt;/summary&gt;
+        private readonly ReaderWriterLockSlim _LockSlim = new ReaderWriterLockSlim();
+        /// &lt;summary&gt;
+        /// 使用using代替lock操作的对象，可指定写入和读取锁定模式构造函数
+        /// &lt;/summary&gt;
+        public ClsLock()
+        {
+            Enabled = true;
+        }
+        /// &lt;summary&gt;
+        /// 是否启用，当该值为false时，Read()和Write()方法将返回 Disposable.Empty
+        /// &lt;/summary&gt;
+        public bool Enabled { get; set; }
+
+        /// &lt;summary&gt; 
+        /// 进入读取锁定模式，该模式下允许多个读操作同时进行，
+        /// 退出读锁请将返回对象释放，建议使用using语块,
+        /// Enabled为false时，返回Disposable.Empty，
+        /// 在读取或写入锁定模式下重复执行，返回Disposable.Empty;
+        /// &lt;/summary&gt;
+        public IDisposable Read()
+        {
+            if (Enabled == false || _LockSlim.IsReadLockHeld || _LockSlim.IsWriteLockHeld)
+            {
+                return Disposable.Empty;
+            }
+            else
+            {
+                _LockSlim.EnterReadLock();
+                return new Lock(_LockSlim, false);
+            }
+        }
+
+        /// &lt;summary&gt; 
+        /// 进入写入锁定模式,该模式下只允许同时执行一个读操作，
+        /// 退出读锁请将返回对象释放，建议使用using语块，
+        /// Enabled为false时，返回Disposable.Empty，
+        /// 在写入锁定模式下重复执行，返回Disposable.Empty
+        /// &lt;/summary&gt;
+        /// &lt;exception cref="NotImplementedException"&gt;读取模式下不能进入写入锁定状态&lt;/exception&gt;
+        public IDisposable Write()
+        {
+            if (Enabled == false || _LockSlim.IsWriteLockHeld)
+            {
+                return Disposable.Empty;
+            }
+            else if (_LockSlim.IsReadLockHeld)
+            {
+                throw new NotImplementedException("读取模式下不能进入写入锁定状态");
+            }
+            else
+            {
+                _LockSlim.EnterWriteLock();
+                return new Lock(_LockSlim, true);
+            }
+        }
+    }
+
+}
+</code></pre>
+<h2 id="Form1.cs">3.Form1.cs</h2>
+<p>窗体部分，界面如下</p>
+<p><img alt="" height="449" src="image\e7c4c8b8eb7d4988aac04ee105b1edd8.png" width="464"/></p>
+<p>代码：</p>
+<pre><code class="language-cs">using MySQLiteHelper;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.SQLite;
+using System.Windows.Forms;
+
+namespace SQLiteDemo
+{
+    public partial class Form1 : Form
+    {
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        private SQLiteHelper SQLiteHelpers = null;
+        private const string DBAddress = "D:\\SQLiteData\\test_record.db3";
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            SQLiteHelpers = new SQLiteHelper(DBAddress,"123456");
+        }
+
+        /// &lt;summary&gt;
+        /// 打开数据库
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void Button_OpenDB_Click(object sender, EventArgs e)
+        {
+            SQLiteHelpers.Open();
+            Label_DBOpenState.Text = "打开";
+        }
+
+        /// &lt;summary&gt;
+        /// 关闭数据库
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void Button_CloseDB_Click(object sender, EventArgs e)
+        {
+            SQLiteHelpers.Close();
+            Label_DBOpenState.Text = "关闭";
+        }
+
+        /// &lt;summary&gt;
+        /// 查询
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void Button_Query_Click(object sender, EventArgs e)
+        {
+            SQLiteParameter[] parameter = new SQLiteParameter[]
+            {
+                new SQLiteParameter("address", "济南")
+            };
+            string sql = "SELECT * FROM student WHERE address = @address";
+            DataSet dataSet = SQLiteHelpers.ExecuteDataSet(sql, parameter);
+            if (dataSet != null)
+            {
+                dataGridView1.DataSource = dataSet.Tables[0];
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// 插入数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void Button_Add_Click(object sender, EventArgs e)
+        {
+            Dictionary&lt;string, object&gt; dic = new Dictionary&lt;string, object&gt;();
+            dic.Add("ID", 6);
+            dic.Add("name", "王二麻子");
+            dic.Add("age", 44);
+            dic.Add("address", "陕西");
+
+            int result = SQLiteHelpers.InsertData("student", dic);
+            Console.WriteLine("插入结果，受影响的行数：" + result);
+        }
+
+        /// &lt;summary&gt;
+        /// 修改数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void Button_Modify_Click(object sender, EventArgs e)
+        {
+            Dictionary&lt;string, object&gt; dic = new Dictionary&lt;string, object&gt;();
+            //将列名 name 的值改为 “猴子”
+            dic.Add("name", "猴子");
+            //将列名 address 的值改为 花果山
+            dic.Add("address", "花果山");
+            //where条件
+            string where = "ID = @ID AND age = @Age";
+            //where条件中对应的参数
+            SQLiteParameter[] parameter = new SQLiteParameter[]
+            {
+                new SQLiteParameter("ID", 4),
+                new SQLiteParameter("Age",23)
+            };
+            
+            int result = SQLiteHelpers.Update("student", dic, where, parameter);
+            Console.WriteLine("修改结果，受影响的行数：" + result);
+        }
+
+        /// &lt;summary&gt;
+        /// 删除数据
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void Button_Delete_Click(object sender, EventArgs e)
+        {
+            //where条件
+            string where = "ID = @ID";
+            //where条件中对应的参数
+            SQLiteParameter[] parameter = new SQLiteParameter[]
+            {
+                new SQLiteParameter("ID", 6),
+            };
+
+            int result = SQLiteHelpers.Delete("student", where, parameter);
+            Console.WriteLine("删除结果，受影响的行数：" + result);
+        }
+
+        /// &lt;summary&gt;
+        /// 判断表是否存在
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        private void Button_TableExists_Click(object sender, EventArgs e)
+        {
+            string title = "dddd";
+            bool result = SQLiteHelpers.TableExists(title);
+            Console.WriteLine(string.Format("{0} 表是否存在，结果：{1}", title, result));
+        }
+
+        //输出各表中的数据
+        //public static void PrintValues(DataSet ds)
+        //{
+        //    foreach (DataTable table in ds.Tables)
+        //    {
+        //        Console.WriteLine("表名称：" + table.TableName);
+        //        foreach (DataRow row in table.Rows)
+        //        {
+        //            foreach (DataColumn column in table.Columns)
+        //            {
+        //                Console.Write(row[column] + "");
+        //            }
+        //            Console.WriteLine();
+        //        }
+        //    }
+        //}
+
+    }
+}
+</code></pre>
+<p>上面就是所有的源码，代码比较长，你忍一下，其实也没有很复杂的部分，下面是项目的源码，有兴趣的可以支持一下我了，嘿嘿~</p>
+<p>项目源码：<a class="link-info" href="https://download.csdn.net/download/qq_38693757/76685983" title="点击下载">点击下载</a></p>
+<p></p>
+<h1 id="%E4%BB%A3%E7%A0%81%E8%BF%98%E9%9C%80%E8%A6%81%E6%94%B9%E8%BF%9B%E9%83%A8%E5%88%86"><strong>三、代码还需要改进部分</strong></h1>
+<p>上面的代码我不觉得是完美的，由于时间关系，读者可以自己去实现这些功能：</p>
+<p id="1.%E5%8E%BB%E6%8E%89%E5%A4%9A%E7%BA%BF%E7%A8%8B"><strong>1.去掉多线程</strong></p>
+<p>如果不想用多线程可以去掉UsingLock.cs ，在SQLiteHelper.cs中删除对应的引用即可。</p>
+<p></p>
+<p id="2.%E5%B0%81%E8%A3%85%E5%88%9B%E5%BB%BA%E6%95%B0%E6%8D%AE%E5%BA%93%E9%83%A8%E5%88%86"><strong>2.封装创建数据库部分</strong></p>
+<p>创建数据库文件，可以从代码中分离成单独的方法。比如创建有密码的数据库文件。</p>
+<p>创建数据库文件方式有多种，不一定要用上述代码中的写法，也可以参考下面方式：</p>
+<p>1）编辑器，如：SQLiteStudio，Navicat 15 for SQLite 等，参考帖子：<a class="link-info" href="https://blog.csdn.net/qq_38693757/article/details/122366390?spm=1001.2014.3001.5502" title="点击跳转">点击跳转</a></p>
+<p>2）在SQLiteHelper.cs中创建数据库文件使用的是 SQLiteConnection.CreateFile(DataFile) 这句代码创建的数据库文件，其实不用这句一样可以创建数据库文件，如下：</p>
+<pre><code class="language-cs">/// &lt;summary&gt;
+/// 创建数据库
+/// &lt;/summary&gt;
+/// &lt;param name="fileName"&gt;数据库文件路径&lt;/param&gt;
+/// &lt;param name="password"&gt;数据库密码&lt;/param&gt;
+/// &lt;returns&gt;返回结果字符串，不为空则为错误信息&lt;/returns&gt;
+public static string CreateDB(string fileName, string password)
+{
+    try
+    {
+        string[] parmArr = new string[] { "Data Source=", fileName, ";Version=3;" };
+        string connStr = string.Concat(parmArr);
+        SQLiteConnection conn = new SQLiteConnection(connStr);
+        conn.Open();
+        // 为数据库设置密码
+        conn.ChangePassword(password);
+        conn.Close();
+        return string.Empty;
+    }
+    catch (Exception ex)
+    {
+        return ex.Message;
+    }
+}</code></pre>
+<p>运行 SQLiteConnection.open 就会创建一个空的指定名字的数据库文件。</p>
+<p></p>
+<p id="3.%E5%BD%B1%E5%93%8D%E8%A1%8C%E6%95%B0%E4%B8%BA0%E7%9A%84SQL%E8%AF%AD%E5%8F%A5"><strong>3.影响行数为0的SQL语句</strong></p>
+<p>在执行SQL语句时，有些语句执行成功，也不会有影响行数。比如，创建表，删除表，此时执行SQL语句返回的影响行数就为0。执行完后，你不知道是否执行成功</p>
+<p></p>
+<p id="4.%E8%BF%94%E5%9B%9E%E5%80%BC%E7%9A%84%E6%94%B9%E8%BF%9B"><strong>4.返回值的改进</strong></p>
+<p>只要SQL语句不报错就是执行成功的，在方法的返回值可以改为多个，比如用 ：</p>
+<p><span style="color:#38d8f0;">Tuple</span>&lt;<span style="color:#1a439c;">bool</span>, <span style="color:#1a439c;">string</span>, <span style="color:#1a439c;">int</span>&gt; 第一个参数 bool 代表执行结果，第二个参数 string 代表错误信息，第三个参数 int 代表影响的行数。</p>
+<p><span style="color:#38d8f0;">Tuple</span>&lt;<span style="color:#1a439c;">bool</span>, <span style="color:#1a439c;">string</span>, <span style="color:#38d8f0;">DataSet</span>&gt; 第一个参数 bool 代表执行结果，第二个参数 string 代表错误信息，第三个参数 DataSet 代表返回的表单数据。</p>
+<p></p>
+<p></p>
+<p>----------------------------------------</p>
+<p>2022.06.13</p>
+<p>由于时间问题，当时代码并没有那么完善，于是我根据上面所描述的特点进行了改进行，并增加了一些新的功能，比如创建有密码的数据库等，现在改进版本现在已经完成了，界面如下</p>
+<p><img alt="" src="image\475852a75c3744ea83ce77f9925add69.png"/></p>
+<p>有兴趣的大佬可以支持我一下，在此先行谢过了。</p>
+<p>源码：<a class="link-info" href="https://download.csdn.net/download/qq_38693757/85623654" title="点击下载">点击下载</a></p>
+<p></p>
+<p>end</p>
+</div>
+</div>

@@ -1,0 +1,165 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>C++没有内存回收机制，每次程序员new出来的对象需要手动delete，流程复杂时可能会漏掉delete，导致内存泄漏。于是C++引入智能指针，可用于动态资源管理，资源即对象的管理策略。</p>
+<p>使用 raw pointer 管理动态内存时，经常会遇到这样的问题：</p>
+<ul><li>忘记<code>delete</code>内存，造成内存泄露。</li><li>出现异常时，不会执行<code>delete</code>，造成内存泄露。</li></ul>
+<p>下面的代码解释了，当一个操作发生异常时，会导致<code>delete</code>不会被执行：</p>
+<pre><code class="language-cpp">void func()
+{
+    auto ptr = new Widget;
+    // 执行一个会抛出异常的操作
+    func_throw_exception();
+
+    delete ptr;
+}</code></pre>
+<p>在C++98中，为了写出异常安全的代码，代码经常写的很笨拙，如下：</p>
+<pre><code class="language-cpp">void func()
+{
+    auto ptr = new Widget;
+    try {
+        func_throw_exception();
+    }
+    catch(...) {
+        delete ptr;
+        throw;
+    }
+    delete ptr;
+}</code></pre>
+<p>使用智能指针能轻易写出异常安全的代码，因为当对象退出作用域时，智能指针将自动调用对象的析构函数，避免内存泄露。</p>
+<h1>一、智能指针<strong>shared_ptr原理</strong></h1>
+<p>shared_ptr是最常用的C++11提供的智能指针。shared_ptr采用了引用计数器，多个shared_ptr中的T *ptr指向同一个内存区域（同一个对象），并共同维护同一个引用计数器。shared_ptr定义如下,记录同一个实例被引用的次数，当引用次数大于0时可用，等于0时释放内存。</p>
+<p>从而可以在任何地方都不使用时自动删除相关指针，从而帮助彻底消除内存泄漏和悬空指针的问题。<br/> 每个 shared_ptr 对象在内部维护着两个内存位置：<br/> 1、指向对象的指针。<br/> 2、用于控制引用计数数据的指针。</p>
+<p><br/><strong>共享所有权如何在参考计数的帮助下工作的？</strong><br/> 1、当新的 shared_ptr 对象与指针关联时，则在其构造函数中，将与此指针关联的引用计数增加1。<br/> 2、当任何 shared_ptr 对象超出作用域时，则在其析构函数中，它将关联指针的引用计数减1。如果引用计数变为0，则表示没有其他 shared_ptr 对象与此内存关联，在这种情况下，它使用delete函数删除该内存。</p>
+<p><strong>注意避免循环引用</strong>，shared_ptr的一个最大的陷阱是循环引用，循环，循环引用会导致堆内存无法正确释放，导致内存泄漏。循环引用在weak_ptr中介绍。</p>
+<pre><code class="language-cpp">temple&lt;typename T&gt;
+class SharedPtr {
+public:
+   ...
+private:
+    T *_ptr;
+    int *_refCount;     //should be int*, rather than int
+};</code></pre>
+<h3>1、 构造函数和析构函数</h3>
+<p>1、shared_ptr对象每次离开作用域时会自动调用析构函数，而析构函数并不像其他类的析构函数一样，而是在释放内存是先判断引用计数器是否为0。等于0才做delete操作，否则只对引用计数器左减一操作。</p>
+<pre><code class="language-cpp">~SharedPtr()
+{
+    if (_ptr &amp;&amp; --*_refCount == 0) {
+        delete _ptr;
+        delete _refCount;
+    }
+}</code></pre>
+<p>2、接下来看一下构造函数，<span style="color:#fe2c24;"><strong>默认构造函数的引用计数器为0，ptr指向NULL</strong></span>：</p>
+<pre><code class="language-cpp">SharedPtr() : _ptr((T *)0), _refCount(0)
+ {
+ }</code></pre>
+<p>3、用<span style="color:#fe2c24;"><strong>普通指针初始化智能指针时，引用计数器初始化为1</strong></span>：</p>
+<p>创建空的 shared_ptr 对象</p>
+<pre><code class="language-cpp"> explicit SharedPtr(T *obj) : _ptr(obj), _refCount(new int(1))
+ {
+ } //这里无法防止循环引用，若我们用同一个普通指针去初始化两个shared_ptr，此时两个ptr均指向同一片内存区域，但是引用计数器均为1，使用时需要注意</code></pre>
+<p>因为带有参数的 shared_ptr 构造函数是 explicit 类型的，所以不能像这样std::shared_ptr&lt;int&gt; p1 = new int();隐式调用它构造函数。创建新的shared_ptr对象的最佳方法是使用std :: make_shared：</p>
+<pre><code class="language-cpp">std::shared_ptr&lt;int&gt; p1 = std::make_shared&lt;int&gt;();</code></pre>
+<p><strong>std::make_shared</strong> 一次性为<code>int</code>对象和用于引用计数的数据都分配了内存，而<code>new</code>操作符只是为<code>int</code>分配了内存。</p>
+<p></p>
+<p>4、拷贝构造函数需要注意，用一个shared_ptr对象去初始化另一个shared_ptr对象时，引用计数器加一，并指向同一片内存区域：</p>
+<pre><code class="language-cpp"> SharedPtr(SharedPtr &amp;other) : _ptr(other._ptr), _refCount(&amp;(++*other._refCount))
+ {
+ }</code></pre>
+<p>5、赋值运算符的重载</p>
+<p>当用一个shared_ptr&lt;T&gt; other去给另一个 shared_ptr&lt;T&gt; sp赋值时，发生了两件事情：</p>
+<p>一、sp指针指向发生变化，不再指向之前的内存区域，所以赋值前原来的_refCount要自减</p>
+<p>二、sp指针指向other.ptr，所以other的引用计数器_refCount要做++操作。</p>
+<pre><code class="language-cpp">SharedPtr &amp;operator=(SharedPtr &amp;other)
+{
+    if(this==&amp;other)
+        return *this;
+
+    ++*other._refCount;
+    if (--*_refCount == 0) {
+        delete _ptr;
+        delete _refCount;
+    }
+
+    _ptr = other._ptr;
+    _refCount = other._refCount;
+    return *this;
+}</code></pre>
+<h3>2、自定义运算符</h3>
+<p>1、定义解引用运算符，直接返回底层指针的引用：</p>
+<pre><code class="language-cpp">T &amp;operator*()
+{
+    if (_refCount == 0)
+        return (T*)0;
+
+    return *_ptr;
+}</code></pre>
+<p>2、定义指针运算符-&gt;</p>
+<pre><code class="language-cpp">T *operator-&gt;()
+{
+    if(_refCount == 0)
+        return 0;
+
+    return _ptr;
+}</code></pre>
+<h1>二、测试</h1>
+<pre><code class="language-cpp">int main(int argc, const char * argv[])
+{
+    SharedPtr&lt;string&gt; pstr(new string("abc"));
+    SharedPtr&lt;string&gt; pstr2(pstr);
+    SharedPtr&lt;string&gt; pstr3(new string("hao"));
+    pstr3 = pstr2;
+
+    return 0;
+}</code></pre>
+<p>为了让测试结果更明显，我在方法中加入了一些输出，测试结果如下：</p>
+<p style="text-align:center;"><img alt="" src="image\e152840cb519562a3edeffab5ea45817.png"/></p>
+<p></p>
+<h1>三、shared_ptr 使用注意事项</h1>
+<h3><a id="_______181"></a><br/>    1、缺少 ++, – – 和 [] 运算符</h3>
+<p>与普通指针相比，shared_ptr<span style="color:#fe2c24;"><strong>仅提供<code>-&gt;</code> 、<code>*</code>和<code>==</code>运算符</strong></span>，没有<code>+</code>、<code>-</code>、<code>++</code>、<code>--</code>、<code>[]</code>等运算符。</p>
+<h3>   2、NULL检测</h3>
+<p>当我们创建 shared_ptr 对象而不分配任何值时，它就是空的；普通指针不分配空间的时候相当于一个野指针，指向垃圾空间，且无法判断指向的是否是有用数据。<br/>  </p>
+<pre><code class="language-cpp">std::shared_ptr&lt;Sample&gt; ptr3;
+if(!ptr3)
+	std::cout&lt;&lt;"Yes, ptr3 is empty" &lt;&lt; std::endl;
+if(ptr3 == NULL)
+	std::cout&lt;&lt;"ptr3 is empty" &lt;&lt; std::endl;
+if(ptr3 == nullptr)
+	std::cout&lt;&lt;"ptr3 is empty" &lt;&lt; std::endl;
+</code></pre>
+<h3>3、创建 shared_ptr 时注意事项</h3>
+<p><span style="color:#fe2c24;"><strong>不要使用同一个原始指针构造 shared_ptr</strong></span></p>
+<p>创建多个 shared_ptr 的正常方法是使用一个已存在的shared_ptr 进行创建，而不是使用同一个原始指针进行创建。<br/> 示例：</p>
+<pre><code class="language-cpp">    int *num = new int(23);
+    std::shared_ptr&lt;int&gt; p1(num);
+    
+    std::shared_ptr&lt;int&gt; p2(p1);  // 正确使用方法
+    std::shared_ptr&lt;int&gt; p3(num); // 不推荐
+
+    std::cout &lt;&lt; "p1 Reference = " &lt;&lt; p1.use_count() &lt;&lt; std::endl; // 输出 2
+    std::cout &lt;&lt; "p2 Reference = " &lt;&lt; p2.use_count() &lt;&lt; std::endl; // 输出 2
+    std::cout &lt;&lt; "p3 Reference = " &lt;&lt; p3.use_count() &lt;&lt; std::endl; // 输出 1
+</code></pre>
+<p>假如使用原始指针<code>num</code>创建了p1，又同样方法创建了p3，当p1超出作用域时会调用<code>delete</code>释放<code>num</code>内存，此时num成了悬空指针，当p3超出作用域再次<code>delete</code>的时候就可能会出错。</p>
+<h3>4、不要用栈中的指针构造 shared_ptr 对象</h3>
+<p>shared_ptr 默认的构造函数中使用的是<code>delete</code>来删除关联的指针，所以构造的时候也必须使用<code>new</code>出来的堆空间的指针。<br/> 示例：</p>
+<pre><code class="language-cpp">#include&lt;iostream&gt;
+#include&lt;memory&gt;
+
+int main()
+{
+   int x = 12;
+   std::shared_ptr&lt;int&gt; ptr(&amp;x);
+   return 0;
+}
+</code></pre>
+<p>当 shared_ptr 对象超出作用域调用析构函数<code>delete</code> 指针<code>&amp;x</code>时会出错。</p>
+<h3>5、建议使用 make_shared</h3>
+<p>为了避免以上两种情形，建议使用<code>make_shared()&lt;&gt;</code>创建 shared_ptr 对象，而不是使用默认构造函数创建。</p>
+<pre><code class="language-cpp">std::shared_ptr&lt;int&gt; ptr_1 = make_shared&lt;int&gt;();
+std::shared_ptr&lt;int&gt; ptr_2 (ptr_1);
+</code></pre>
+<p>另外不建议使用<code>get()</code>函数获取 shared_ptr 关联的原始指针，因为如果在 shared_ptr 析构之前手动调用了<code>delete</code>函数，同样会导致类似的错误。</p>
+</div>
+</div>

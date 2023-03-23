@@ -1,0 +1,116 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h1><a id="_2"></a>前言</h1>
+<p>之前我们实现了“[UGUI面板跟随标注3D模型功能] (https://blog.csdn.net/qq_33789001/article/details/120864639)”，效果如下图：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ce984edb094842dabb1f94982451efa9.gif#pic_center"/><br/> 如果有<mark>标注UI错误</mark>的问题，在如上链接文中已修复。</p>
+<p>发现要是物体都移出视野外后提示都会消失，在需要重点提示的对象上，如果不在视野内有指示效果会更好，于是本文的实现的功能就很有必要，效果如下：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7524734848134ce8b3c1a6681d9647cc.gif#pic_center"/></p>
+<h1><a id="_14"></a>实现思路</h1>
+<p>要实现在屏幕内的动态提示，只需要实现两个重要步骤：<br/> 1计算出提示UI在屏幕空间内的位置；<br/> 2计算出箭头指向的方向。</p>
+<p>流程图如下：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6a23a5d07104477e9bc10addb4eb91c0.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5Y2B5bm65Y2c5YWl,size_12,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h1><a id="_26"></a>实现过程</h1>
+<p>本案例是在这两篇文章的基础上开发的：<br/> <a href="https://blog.csdn.net/qq_33789001/article/details/120864639">Unity3d C# 实现UGUI面板跟随标注3D模型功能（含源码）</a></p>
+<p><a href="https://blog.csdn.net/qq_33789001/article/details/120551521">Unity3d C# 实现纯鼠标平滑控制场景摄像头(相机)实现自由旋转、移动和围绕节点移动旋转等功能(含源码工程)</a></p>
+<p>如果有不明白的地方可以过去瞅一眼。</p>
+<p>按如上的实现思路我们开始着手实现。</p>
+<h2><a id="UI_38"></a>UI搭建</h2>
+<p>UI较简单，网上下个箭头图片，并新增了如下图的节点：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/ca2f2ec40c7c4496b29dd02f08452dbd.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA5Y2B5bm65Y2c5YWl,size_20,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+<h2><a id="_43"></a>变量定义</h2>
+<pre><code class="prism language-csharp"><span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">Header</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"目标点"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token class-name">Transform</span> target<span class="token punctuation">;</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">Header</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"UI画布"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token class-name">Canvas</span> canvas<span class="token punctuation">;</span>
+    <span class="token punctuation">[</span><span class="token attribute"><span class="token class-name">Header</span><span class="token attribute-arguments"><span class="token punctuation">(</span><span class="token string">"箭头节点（向上）"</span><span class="token punctuation">)</span></span></span><span class="token punctuation">]</span>
+    <span class="token keyword">public</span> <span class="token class-name">RectTransform</span> arrow<span class="token punctuation">;</span>  <span class="token comment">//方向不对需要调制</span>
+</code></pre>
+<p>分别需要配置如上图的节点，只需拖入即可。<br/> 注意的是箭头的图片箭头方向需向上，如果不同方向的话，自己改<mark>GetArrowEuler</mark>函数吧。</p>
+<h2><a id="_56"></a>是否在视野内</h2>
+<pre><code class="prism language-csharp">        <span class="token class-name">Vector2</span> viewPos <span class="token operator">=</span> Camera<span class="token punctuation">.</span>main<span class="token punctuation">.</span><span class="token function">WorldToViewportPoint</span><span class="token punctuation">(</span>target<span class="token punctuation">.</span>position<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token class-name">Vector3</span> dir <span class="token operator">=</span> <span class="token punctuation">(</span>target<span class="token punctuation">.</span>position <span class="token operator">-</span> Camera<span class="token punctuation">.</span>main<span class="token punctuation">.</span>transform<span class="token punctuation">.</span>position<span class="token punctuation">)</span><span class="token punctuation">.</span>normalized<span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">float</span></span> dot <span class="token operator">=</span> Vector3<span class="token punctuation">.</span><span class="token function">Dot</span><span class="token punctuation">(</span>Camera<span class="token punctuation">.</span>main<span class="token punctuation">.</span>transform<span class="token punctuation">.</span>forward<span class="token punctuation">,</span> dir<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>dot <span class="token operator">&gt;</span> <span class="token number">0</span> <span class="token operator">&amp;&amp;</span> viewPos<span class="token punctuation">.</span>x <span class="token operator">&gt;</span> <span class="token number">0</span> <span class="token operator">&amp;&amp;</span> viewPos<span class="token punctuation">.</span>x <span class="token operator">&lt;</span> <span class="token number">1</span> <span class="token operator">&amp;&amp;</span> viewPos<span class="token punctuation">.</span>y <span class="token operator">&gt;</span> <span class="token number">0</span> <span class="token operator">&amp;&amp;</span> viewPos<span class="token punctuation">.</span>y <span class="token operator">&lt;</span> <span class="token number">1</span><span class="token punctuation">)</span>
+            <span class="token keyword">return</span> <span class="token boolean">true</span><span class="token punctuation">;</span>
+        <span class="token keyword">else</span>
+            <span class="token keyword">return</span> <span class="token boolean">false</span><span class="token punctuation">;</span>
+</code></pre>
+<h2><a id="_68"></a>获取提示显示位置</h2>
+<pre><code class="prism language-csharp">   <span class="token keyword">private</span> <span class="token return-type class-name">Vector2</span> <span class="token function">GetTipPosInRect</span><span class="token punctuation">(</span><span class="token class-name">Vector2</span> pos<span class="token punctuation">,</span> <span class="token class-name">Rect</span> rect<span class="token punctuation">)</span>
+   <span class="token punctuation">{<!-- --></span>
+       <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Vector2</span><span class="token punctuation">(</span>Mathf<span class="token punctuation">.</span><span class="token function">Clamp</span><span class="token punctuation">(</span>pos<span class="token punctuation">.</span>x<span class="token punctuation">,</span> rect<span class="token punctuation">.</span>xMin<span class="token punctuation">,</span> rect<span class="token punctuation">.</span>xMax<span class="token punctuation">)</span><span class="token punctuation">,</span> 
+           Mathf<span class="token punctuation">.</span><span class="token function">Clamp</span><span class="token punctuation">(</span>pos<span class="token punctuation">.</span>y<span class="token punctuation">,</span> rect<span class="token punctuation">.</span>yMin<span class="token punctuation">,</span> rect<span class="token punctuation">.</span>yMax<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+   <span class="token punctuation">}</span>
+
+   <span class="token keyword">private</span> <span class="token return-type class-name">Rect</span> <span class="token function">GetRectInCanvas</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+   <span class="token punctuation">{<!-- --></span>
+       <span class="token class-name">Rect</span> rect <span class="token operator">=</span> Rect<span class="token punctuation">.</span>zero<span class="token punctuation">;</span>
+       <span class="token class-name">Vector2</span> area <span class="token operator">=</span> canvas<span class="token punctuation">.</span><span class="token generic-method"><span class="token function">GetComponent</span><span class="token generic class-name"><span class="token punctuation">&lt;</span>RectTransform<span class="token punctuation">&gt;</span></span></span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span>sizeDelta<span class="token punctuation">;</span>
+       rect<span class="token punctuation">.</span>xMax <span class="token operator">=</span> area<span class="token punctuation">.</span>x <span class="token operator">-</span> TipTrans<span class="token punctuation">.</span>sizeDelta<span class="token punctuation">.</span>x <span class="token operator">/</span> <span class="token number">2</span><span class="token punctuation">;</span>
+       rect<span class="token punctuation">.</span>yMax <span class="token operator">=</span> area<span class="token punctuation">.</span>y <span class="token operator">-</span> TipTrans<span class="token punctuation">.</span>sizeDelta<span class="token punctuation">.</span>y <span class="token operator">/</span> <span class="token number">2</span><span class="token punctuation">;</span>
+       rect<span class="token punctuation">.</span>xMin <span class="token operator">=</span> TipTrans<span class="token punctuation">.</span>sizeDelta<span class="token punctuation">.</span>x <span class="token operator">/</span> <span class="token number">2</span><span class="token punctuation">;</span>
+       rect<span class="token punctuation">.</span>yMin <span class="token operator">=</span> TipTrans<span class="token punctuation">.</span>sizeDelta<span class="token punctuation">.</span>y <span class="token operator">/</span> <span class="token number">2</span><span class="token punctuation">;</span>
+       <span class="token keyword">return</span> rect<span class="token punctuation">;</span>
+   <span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="_89"></a>获取箭头角度</h2>
+<pre><code class="prism language-csharp">    <span class="token keyword">public</span> <span class="token return-type class-name">Vector3</span> <span class="token function">GetArrowEuler</span><span class="token punctuation">(</span><span class="token class-name">Vector3</span> TargetPos<span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        <span class="token class-name"><span class="token keyword">float</span></span> dx <span class="token operator">=</span> TargetPos<span class="token punctuation">.</span>x <span class="token operator">-</span> arrow<span class="token punctuation">.</span>transform<span class="token punctuation">.</span>position<span class="token punctuation">.</span>x<span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">float</span></span> dy <span class="token operator">=</span> TargetPos<span class="token punctuation">.</span>y <span class="token operator">-</span> arrow<span class="token punctuation">.</span>transform<span class="token punctuation">.</span>position<span class="token punctuation">.</span>y<span class="token punctuation">;</span>
+        <span class="token class-name"><span class="token keyword">float</span></span> RotZ <span class="token operator">=</span> Mathf<span class="token punctuation">.</span><span class="token function">Atan2</span><span class="token punctuation">(</span>dy<span class="token punctuation">,</span> dx<span class="token punctuation">)</span> <span class="token operator">*</span> <span class="token number">180</span> <span class="token operator">/</span> Mathf<span class="token punctuation">.</span>PI<span class="token punctuation">;</span>
+        RotZ <span class="token operator">-=</span> <span class="token number">90</span><span class="token punctuation">;</span>
+
+        <span class="token class-name"><span class="token keyword">float</span></span> DRotZ <span class="token operator">=</span> RotZ <span class="token operator">-</span> arrow<span class="token punctuation">.</span>eulerAngles<span class="token punctuation">.</span>z<span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>DRotZ <span class="token operator">&gt;</span> <span class="token number">180</span><span class="token punctuation">)</span>
+            DRotZ <span class="token operator">-=</span> <span class="token number">360</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">return</span> <span class="token keyword">new</span> <span class="token constructor-invocation class-name">Vector3</span><span class="token punctuation">(</span><span class="token number">0</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">,</span> arrow<span class="token punctuation">.</span>eulerAngles<span class="token punctuation">.</span>z <span class="token operator">+</span> DRotZ<span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<h2><a id="Update_107"></a>Update检测</h2>
+<pre><code class="prism language-csharp">        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token operator">!</span>target<span class="token punctuation">)</span>
+            <span class="token keyword">return</span><span class="token punctuation">;</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span><span class="token function">IsInScreen</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+            transform<span class="token punctuation">.</span>localScale <span class="token operator">=</span> Vector3<span class="token punctuation">.</span>zero<span class="token punctuation">;</span>
+            <span class="token keyword">return</span><span class="token punctuation">;</span>
+        <span class="token punctuation">}</span>
+        transform<span class="token punctuation">.</span>localScale <span class="token operator">=</span> Vector3<span class="token punctuation">.</span>one<span class="token punctuation">;</span>
+
+        <span class="token class-name"><span class="token keyword">var</span></span> screenPos <span class="token operator">=</span> RectTransformUtility<span class="token punctuation">.</span><span class="token function">WorldToScreenPoint</span><span class="token punctuation">(</span>Camera<span class="token punctuation">.</span>main<span class="token punctuation">,</span> target<span class="token punctuation">.</span>position<span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        TipTrans<span class="token punctuation">.</span>position <span class="token operator">=</span> <span class="token function">GetTipPosInRect</span><span class="token punctuation">(</span>screenPos<span class="token punctuation">,</span> <span class="token function">GetRectInCanvas</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>arrow<span class="token punctuation">)</span>
+            arrow<span class="token punctuation">.</span>eulerAngles <span class="token operator">=</span> <span class="token function">GetArrowEuler</span><span class="token punctuation">(</span>screenPos<span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre>
+<p>这一步的实现完全是实现思路的复制，放在FixUpdate 或者Update都行。</p>
+<h1><a id="_129"></a>问题</h1>
+<p>先看图：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/8351c7b40bd84cfcb753a0f45ec03924.gif#pic_center"/></p>
+<p>向右旋转后粉色的提示箭头跳到了右上角。这个是项目上测试给我反馈的bug。</p>
+<p>目前没找到问题，如果有知道的也可以指点、探讨一下。</p>
+<p>不过我感觉，应该是镜头旋转后提示位置的正常变化。</p>
+<h1><a id="_144"></a>拓展</h1>
+<p>可以在每个提示框上添加按钮组件，点击后利用DOTween插件移动摄像头，快速聚焦目标对象。</p>
+<p>编写点击脚本：</p>
+<pre><code class="prism language-csharp">    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ClickPink</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{<!-- --></span>
+        Camera<span class="token punctuation">.</span>main<span class="token punctuation">.</span>transform<span class="token punctuation">.</span><span class="token function">DOMove</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">Vector3</span><span class="token punctuation">(</span><span class="token operator">-</span><span class="token number">19.999157f</span><span class="token punctuation">,</span> <span class="token number">2.20351362f</span><span class="token punctuation">,</span> <span class="token operator">-</span><span class="token number">0.876300693f</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Camera<span class="token punctuation">.</span>main<span class="token punctuation">.</span>transform<span class="token punctuation">.</span><span class="token function">DORotate</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">Vector3</span><span class="token punctuation">(</span><span class="token number">32.8f</span><span class="token punctuation">,</span> <span class="token number">0.9f</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+
+    <span class="token keyword">public</span> <span class="token return-type class-name"><span class="token keyword">void</span></span> <span class="token function">ClickGreen</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">{<!-- --></span>
+        Camera<span class="token punctuation">.</span>main<span class="token punctuation">.</span>transform<span class="token punctuation">.</span><span class="token function">DOMove</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">Vector3</span><span class="token punctuation">(</span><span class="token number">0.366873235f</span><span class="token punctuation">,</span> <span class="token number">3.28463149f</span><span class="token punctuation">,</span> <span class="token operator">-</span><span class="token number">1.07905042f</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        Camera<span class="token punctuation">.</span>main<span class="token punctuation">.</span>transform<span class="token punctuation">.</span><span class="token function">DORotate</span><span class="token punctuation">(</span><span class="token keyword">new</span> <span class="token constructor-invocation class-name">Vector3</span><span class="token punctuation">(</span><span class="token number">33.6f</span><span class="token punctuation">,</span> <span class="token number">1.1f</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+</code></pre>
+<p>绑定按钮函数后，点击效果：</p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/84608d287ddc4784b086bac9779f7f70.gif#pic_center"/></p>
+<h1><a id="_168"></a>工程源码</h1>
+<p><a href="https://download.csdn.net/download/qq_33789001/79832111">https://download.csdn.net/download/qq_33789001/79832111</a><br/> 如果无法打开，可能审核未通过。</p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

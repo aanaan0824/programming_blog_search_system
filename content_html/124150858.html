@@ -1,0 +1,67 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>近期做毕设用到一个第三方的api，尝试前端ajax调用发现跨域报错，只能在后端代码发起请求，由于对api传参方式不够了解，走了很多弯路，特此记录。</p>
+<p>要调用的接口：<a href="http://www.atoolbox.net/Api/GetRefuseClassification.php" title="http://www.atoolbox.net/Api/GetRefuseClassification.php">http://www.atoolbox.net/Api/GetRefuseClassification.php</a></p>
+<p>通过postman调用一切正常</p>
+<p><img alt="" height="702" src="image\6ad1285bc5434a2bb604e8a1b5d8e294.png" width="1035"/></p>
+<p> 随后开始自信满满用HttpClient发起调用，结果发现返回空数组，但是接口没有报错，说明参数没有传过去，所以接口默认返回了空数组，此时代码如下:</p>
+<pre><code class="language-cs">HttpClient _httpClient = new HttpClient();
+string json = "{\"ref\":\"苹果\"}";
+var data = new StringContent(json, Encoding.UTF8, "application/json");
+var requestUri = "http://www.atoolbox.net/Api/GetRefuseClassification.php";
+var response = await _httpClient.PostAsync(requestUri, data);
+var result = await response.Content.ReadAsStringAsync();
+</code></pre>
+<p>然后就开始了百度Google各种查HttpClient通过body传参的写法，大家给出的差不多都是这种写法，后来无意中想到会不会是接口只能识别form-data这一种形式，按照这个思路继续找解决方案，最终找到了一种正确的传参写法，如下：</p>
+<pre><code class="language-cs">HttpClient _httpClient = new HttpClient();
+var postContent = new MultipartFormDataContent();
+string boundary = string.Format("--{0}", DateTime.Now.Ticks.ToString("x"));
+postContent.Headers.Add("ContentType", $"multipart/form-data,boundary={boundary}");
+var requestUri = "http://www.atoolbox.net/Api/GetRefuseClassification.php";
+
+
+var values = new[]
+{
+    new KeyValuePair&lt;string, string&gt;("ref","苹果")
+};
+
+foreach (var keyValuePair in values)
+{
+    postContent.Add(new StringContent(keyValuePair.Value),
+    String.Format("\"{0}\"", keyValuePair.Key));
+}
+
+var response = await _httpClient.PostAsync(requestUri, postContent);
+var result = await response.Content.ReadAsStringAsync();</code></pre>
+<p>难道真的是只能支持form-data形式传参吗？于是又逮住postman一通折腾，果然有了新的发现。</p>
+<p>（body请求格式可参考这篇文章）</p>
+<p><a href="https://blog.csdn.net/weixin_43849277/article/details/120900735" title="Postman中几个body请求格式区别及使用说明_有时候我也会的博客-CSDN博客_postman请求体格式">Postman中几个body请求格式区别及使用说明_有时候我也会的博客-CSDN博客_postman请求体格式</a></p>
+<p><img alt="" height="720" src="image\c52722409425433aac1822592c776d87.png" width="969"/></p>
+<p>如上图，通过x-www-form-urlencoded这种方式也可以调通接口，也就是HttpClient肯定有通过x-www-form-urlencoded这种传参方式的写法，多方查证后，写出一种正确代码如下：</p>
+<pre><code class="language-cs">HttpClient _httpClient = new HttpClient();
+string boundary = string.Format("--{0}", DateTime.Now.Ticks.ToString("x"));
+var postContent = new MultipartContent();
+postContent.Headers.Add("ContentType", $"multipart/x-www-form-urlencoded,boundary={boundary}");
+var requestUri = "http://www.atoolbox.net/Api/GetRefuseClassification.php";
+var dict = new Dictionary&lt;string, string&gt;();
+dict.Add("ref","苹果");
+
+var req = new HttpRequestMessage(HttpMethod.Post, requestUri) { Content = new FormUrlEncodedContent(dict) };
+var res = await _httpClient.SendAsync(req);
+var result = await res.Content.ReadAsStringAsync();</code></pre>
+<p>通过比较可以发现，用x-www-form-urlencoded的写法使用了HttpRequestMessage包装参数，用form-data的写法使用了MultipartContent包装参数，为什么要这样写，我们有时间继续探索。</p>
+<p></p>
+<p>---------------------------------------------------------------------------------------------------------------------------</p>
+<p>在Google上找到了一篇文章，详细介绍了以下三个class的区别</p>
+<ol><li>WebRequest</li><li>WebClient</li><li>HttpClient </li></ol>
+<p>概括一下就是：</p>
+<p>WebRequest出现最早，最原始（实现类是HttpWebRequest），可以访问api、服务器资源，语法最复杂。</p>
+<p>WebClient出现较晚，是对WebRequest的封装，语法较简洁。</p>
+<p>HtttpClient出现最晚，实现了一些WebRequest和WebClient没有的功能。</p>
+<p>链接如下：</p>
+<p><a href="https://www.c-sharpcorner.com/blogs/difference-between-syatemnetwebrequest-and-httpclient-and-webclient-in-c-sharp" title="https://www.c-sharpcorner.com/blogs/difference-between-syatemnetwebrequest-and-httpclient-and-webclient-in-c-sharp">https://www.c-sharpcorner.com/blogs/difference-between-syatemnetwebrequest-and-httpclient-and-webclient-in-c-sharp</a></p>
+<p>另有一篇中文博客，讲的也很详细，如下：</p>
+<p><a href="https://www.jb51.net/article/177025.htm" title="https://www.jb51.net/article/177025.htm">https://www.jb51.net/article/177025.htm</a></p>
+</div>
+</div>

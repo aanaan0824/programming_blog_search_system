@@ -1,0 +1,706 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="markdown_views prism-atom-one-dark" id="content_views">
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+<path d="M5,0 0,2.5 5,5z" id="raphael-marker-block" stroke-linecap="round" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path>
+</svg>
+<h3><a id="_2"></a>文章目录</h3>
+<ul><li><a href="#JWT_10">一、JWT是什么？</a></li><li><a href="#_73">二、使用步骤</a></li><li>
+<ul><li><a href="#1_74">1.项目结构</a></li><li><a href="#2_79">2.相关依赖</a></li><li><a href="#3_161">3.数据库</a></li><li><a href="#4_165">4.相关代码</a></li></ul> </li><li><a href="#_807">三、测试结果</a></li></ul>
+<hr/>
+<h1><a id="JWT_14"></a>一、JWT是什么？</h1>
+<p><strong>在介绍JWT之前，我们先来回顾一下利用token进行用户身份验证的流程：</strong></p>
+<p>1、客户端使用用户名和密码请求登录</p>
+<p>2、服务端收到请求，验证用户名和密码</p>
+<p>3、验证成功后，服务端会签发一个token，再把这个token返回给客户端</p>
+<p>4、客户端收到token后可以把它存储起来，比如放到cookie中</p>
+<p>5、客户端每次向服务端请求资源时需要携带服务端签发的token，可以在cookie或者header中携带</p>
+<p>6、服务端收到请求，然后去验证客户端请求里面带着的token，如果验证成功，就向客户端返回请求数据</p>
+<p><strong>这种基于token的认证方式相比传统的session认证方式更节约服务器资源，并且对移动端和分布式更加友好。其优点如下</strong>：</p>
+<p><strong>支持跨域访问</strong>：cookie是无法跨域的，而token由于没有用到cookie(前提是将token放到请求头中)，所以跨域后不会存在信息丢失问题<br/> <strong>无状态</strong>：token机制在服务端不需要存储session信息，因为token自身包含了所有登录用户的信息，所以可以减轻服务端压力<br/> <strong>更适用CDN</strong>：可以通过内容分发网络请求服务端的所有资料<br/> <strong>更适用于移动端</strong>：当客户端是非浏览器平台时，cookie是不被支持的，此时采用token认证方式会简单很多<br/> <strong>无需考虑CSRF</strong>：由于不再依赖cookie，所以采用token认证方式不会发生CSRF，所以也就无需考虑CSRF的防御</p>
+<p>而JWT就是上述流程当中token的一种具体实现方式，其全称是JSON Web Token，官网地址：https://jwt.io/</p>
+<p><strong>通俗地说，JWT的本质就是一个字符串，它是将用户信息保存到一个Json字符串中，然后进行编码后得到一个JWT token，并且这个JWT token带有签名信息，接收后可以校验是否被篡改，所以可以用于在各方之间安全地将信息作为Json对象传输。JWT的认证流程如下：</strong></p>
+<p>1、首先，前端通过Web表单将自己的用户名和密码发送到后端的接口，这个过程一般是一个POST请求。建议的方式是通过SSL加密的传输(HTTPS)，从而避免敏感信息被嗅探</p>
+<p>2、后端核对用户名和密码成功后，将包含用户信息的数据作为JWT的Payload，将其与JWT Header分别进行Base64编码拼接后签名，形成一个JWT Token，形成的JWT Token就是一个如同lll.zzz.xxx的字符串<br/> 3、后端将JWT Token字符串作为登录成功的结果返回给前端。前端可以将返回的结果保存在浏览器中，退出登录时删除保存的JWT Token即可</p>
+<p>4、前端在每次请求时将JWT Token放入HTTP请求头中的Authorization属性中(解决XSS和XSRF问题)</p>
+<p>5、后端检查前端传过来的JWT Token，验证其有效性，比如检查签名是否正确、是否过期、token的接收方是否是自己等等</p>
+<p>6、验证通过后，后端解析出JWT Token中包含的用户信息，进行其他逻辑操作(一般是根据用户信息得到权限等)，返回结果<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6a5fc85d64234b81a7fcdddd8aec0cfc.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA54ix6Z-z5LmQ55qE57yW56iL5biI,size_20,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p>最后：说白了，JWT：JSON Web Token，其实token就是一段字符串，由三部分组成：Header，Payload，Signature</p>
+<h1><a id="_57"></a>二、使用步骤</h1>
+<h2><a id="1_60"></a>1.项目结构</h2>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a8472eb2c9f2427aaa02a64cae5f8eb5.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA54ix6Z-z5LmQ55qE57yW56iL5biI,size_11,color_FFFFFF,t_70,g_se,x_16"/></p>
+<h2><a id="2_65"></a>2.相关依赖</h2>
+<pre><code>    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;mysql&lt;/groupId&gt;
+            &lt;artifactId&gt;mysql-connector-java&lt;/artifactId&gt;
+            &lt;version&gt;8.0.22&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;cn.hutool&lt;/groupId&gt;
+            &lt;artifactId&gt;hutool-all&lt;/artifactId&gt;
+            &lt;version&gt;5.7.21&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.baomidou&lt;/groupId&gt;
+            &lt;artifactId&gt;mybatis-plus-boot-starter&lt;/artifactId&gt;
+            &lt;version&gt;3.4.3.2&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.alibaba&lt;/groupId&gt;
+            &lt;artifactId&gt;fastjson&lt;/artifactId&gt;
+            &lt;version&gt;1.2.79&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;commons-beanutils&lt;/groupId&gt;
+            &lt;artifactId&gt;commons-beanutils&lt;/artifactId&gt;
+            &lt;version&gt;1.9.4&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.projectlombok&lt;/groupId&gt;
+            &lt;artifactId&gt;lombok&lt;/artifactId&gt;
+            &lt;version&gt;1.18.22&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;commons-io&lt;/groupId&gt;
+            &lt;artifactId&gt;commons-io&lt;/artifactId&gt;
+            &lt;version&gt;2.11.0&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.apache.poi&lt;/groupId&gt;
+            &lt;artifactId&gt;poi-ooxml&lt;/artifactId&gt;
+            &lt;version&gt;4.1.2&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;junit&lt;/groupId&gt;
+            &lt;artifactId&gt;junit&lt;/artifactId&gt;
+            &lt;version&gt;4.13.1&lt;/version&gt;
+            &lt;scope&gt;test&lt;/scope&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-boot-starter-test&lt;/artifactId&gt;
+            &lt;version&gt;2.3.8.RELEASE&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.auth0&lt;/groupId&gt;
+            &lt;artifactId&gt;java-jwt&lt;/artifactId&gt;
+            &lt;version&gt;3.18.3&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.apache.commons&lt;/groupId&gt;
+            &lt;artifactId&gt;commons-lang3&lt;/artifactId&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;
+</code></pre>
+<h2><a id="3_148"></a>3.数据库</h2>
+<p>这里进行测试，所以用户类只有用户名密码，自行创建<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/7b47df126705476d8db70cb03d542c84.png"/></p>
+<h2><a id="4_154"></a>4.相关代码</h2>
+<p><strong>1、annotation包</strong><br/> PassToken：</p>
+<pre><code>package com.geesun.annotation;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * @author ：Mr.ZJW
+ * @date ：Created 2022/2/28 10:26
+ * @description：用来跳过验证的 PassToken
+ */
+@Target({ElementType.METHOD, ElementType.TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+public @interface PassToken {
+    boolean required() default true;
+}
+</code></pre>
+<p>UserLoginToken：</p>
+<pre><code>package com.geesun.annotation;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * @author ：Mr.ZJW
+ * @date ：Created 2022/2/28 10:26
+ * @description：用于登录后才能操作的token
+ */
+/*RetentionPolicy.RUNTIME:这种类型的Annotations将被JVM保留,
+所以他们能在运行时被JVM或其他使用反射机制的代码所读取和使用。*/
+@Target({ElementType.METHOD, ElementType.TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+public @interface UserLoginToken {
+    boolean required() default true;
+}
+</code></pre>
+<p><strong>2、common包</strong><br/> CodeMsg：</p>
+<pre><code>package com.geesun.common;
+
+/**
+ * @author ：Mr.ZJW
+ * @date ：Created 2022/2/28 10:26
+ * @description：返回提示
+ */
+public class CodeMsg {
+    private int retCode;
+    private String message;
+    // 按照模块定义CodeMsg
+    // 通用异常
+    public static CodeMsg SUCCESS = new CodeMsg(0,"success");
+    public static CodeMsg SERVER_EXCEPTION = new CodeMsg(500100,"服务端异常");
+    public static CodeMsg PARAMETER_ISNULL = new CodeMsg(500101,"输入参数为空");
+    // 业务异常
+    public static CodeMsg USER_NOT_EXSIST = new CodeMsg(500102,"用户不存在");
+    public static CodeMsg ONLINE_USER_OVER = new CodeMsg(500103,"在线用户数超出允许登录的最大用户限制。");
+    public static CodeMsg SESSION_NOT_EXSIST =  new CodeMsg(500104,"不存在离线session数据");
+    public static CodeMsg NOT_FIND_DATA = new CodeMsg(500105,"查找不到对应数据");
+    public static CodeMsg USER_OR_PASS_ERROR = new CodeMsg(500102,"账号或者密码错误，请重试！");
+
+
+    private CodeMsg(int retCode, String message) {
+        this.retCode = retCode;
+        this.message = message;
+    }
+
+    public int getRetCode() {
+        return retCode;
+    }
+    public String getMessage() {
+        return message;
+    }
+    public void setMessage(String message) {
+        this.message = message;
+    }
+}
+</code></pre>
+<p>Result：</p>
+<pre><code>package com.geesun.common;
+
+/**
+ * @author ：Mr.ZJW
+ * @date ：Created 2022/2/28 10:26
+ * @description：返回统一结果集
+ */
+public class Result&lt;T&gt; {
+
+    private String message;
+    private int retCode;
+    private T data;
+
+    private Result(T data) {
+        this.retCode = 200;
+        this.message = "成功";
+        this.data = data;
+    }
+
+    private Result(CodeMsg cm) {
+        if(cm == null){
+            return;
+        }
+        this.retCode = cm.getRetCode();
+        this.message = cm.getMessage();
+    }
+
+    /**
+     * 成功时候的调用
+     * @return
+     */
+    public static &lt;T&gt; Result&lt;T&gt; success(T data){
+        return new Result&lt;T&gt;(data);
+    }
+
+    /**
+     * 成功，不需要传入参数
+     * @return
+     */
+    @SuppressWarnings("unchecked")
+    public static &lt;T&gt; Result&lt;T&gt; success(){
+        return (Result&lt;T&gt;) success("");
+    }
+    /**
+     * 失败时候的调用
+     * @return
+     */
+    public static &lt;T&gt; Result&lt;T&gt; error(CodeMsg cm){
+        return new Result&lt;T&gt;(cm);
+    }
+    /**
+     * 失败时候的调用,扩展消息参数
+     * @param cm
+     * @param msg
+     * @return
+     */
+    public static &lt;T&gt; Result&lt;T&gt; error(CodeMsg cm,String msg){
+        cm.setMessage(cm.getMessage()+"--"+msg);
+        return new Result&lt;T&gt;(cm);
+    }
+    public T getData() {
+        return data;
+    }
+    public String getMessage() {
+        return message;
+    }
+    public int getRetCode() {
+        return retCode;
+    }
+}
+</code></pre>
+<p><strong>3、config包</strong><br/> InterceptorConfig：</p>
+<pre><code>package com.geesun.config;
+
+import com.geesun.Interceptor.AuthenticationInterceptor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.format.FormatterRegistry;
+import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.validation.MessageCodesResolver;
+import org.springframework.validation.Validator;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.method.support.HandlerMethodReturnValueHandler;
+import org.springframework.web.servlet.HandlerExceptionResolver;
+import org.springframework.web.servlet.config.annotation.*;
+import java.util.List;
+
+/**
+ * @author ：Mr.ZJW
+ * @date ：Created 2022/2/28 10:25
+ * @description：新建Token拦截器
+ */
+@Configuration
+public class InterceptorConfig implements WebMvcConfigurer {
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(authenticationInterceptor())
+                .addPathPatterns("/**");    // 拦截所有请求，通过判断是否有 @LoginRequired 注解 决定是否需要登录
+    }
+    @Bean
+    public AuthenticationInterceptor authenticationInterceptor() {
+        return new AuthenticationInterceptor();
+    }
+    @Override
+    public void addArgumentResolvers(List&lt;HandlerMethodArgumentResolver&gt; arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void addCorsMappings(CorsRegistry arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void addFormatters(FormatterRegistry arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void addReturnValueHandlers(List&lt;HandlerMethodReturnValueHandler&gt; arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void addViewControllers(ViewControllerRegistry arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void configureAsyncSupport(AsyncSupportConfigurer arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void configureContentNegotiation(ContentNegotiationConfigurer arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void configureDefaultServletHandling(DefaultServletHandlerConfigurer arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void configureHandlerExceptionResolvers(List&lt;HandlerExceptionResolver&gt; arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void configureMessageConverters(List&lt;HttpMessageConverter&lt;?&gt;&gt; arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void configurePathMatch(PathMatchConfigurer arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void configureViewResolvers(ViewResolverRegistry arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void extendHandlerExceptionResolvers(List&lt;HandlerExceptionResolver&gt; arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public void extendMessageConverters(List&lt;HttpMessageConverter&lt;?&gt;&gt; arg0) {
+        // TODO Auto-generated method stub
+
+    }
+    @Override
+    public MessageCodesResolver getMessageCodesResolver() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+    @Override
+    public Validator getValidator() {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+}
+</code></pre>
+<p><strong>4、Interceptor包</strong><br/> AuthenticationInterceptor：</p>
+<pre><code>package com.geesun.Interceptor;
+
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.JWTVerifier;
+import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.exceptions.JWTDecodeException;
+import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.geesun.annotation.PassToken;
+import com.geesun.annotation.UserLoginToken;
+import com.geesun.pojo.User;
+import com.geesun.service.UserService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.ModelAndView;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.lang.reflect.Method;
+
+/**
+ * @author ：Mr.ZJW
+ * @date ：Created 2022/2/28 10:24
+ * @description：拦截器
+ */
+public class AuthenticationInterceptor implements HandlerInterceptor {
+
+    @Autowired
+    UserService userService;
+
+    @Override
+    public boolean preHandle(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse, Object object) throws Exception {
+        String token = httpServletRequest.getHeader("token");// 从 http 请求头中取出 token
+        // 如果不是映射到方法直接通过
+        if(!(object instanceof HandlerMethod)){
+            return true;
+        }
+        HandlerMethod handlerMethod=(HandlerMethod)object;
+        Method method=handlerMethod.getMethod();
+        //检查是否有passtoken注释，有则跳过认证
+        if (method.isAnnotationPresent(PassToken.class)) {
+            PassToken passToken = method.getAnnotation(PassToken.class);
+            if (passToken.required()) {
+                return true;
+            }
+        }
+        //检查有没有需要用户权限的注解
+        if (method.isAnnotationPresent(UserLoginToken.class)) {
+            UserLoginToken userLoginToken = method.getAnnotation(UserLoginToken.class);
+            if (userLoginToken.required()) {
+                // 执行认证
+                if (token == null) {
+                    throw new RuntimeException("无token，请重新登录");
+                }
+                // 获取 token 中的 user id
+                String userId;
+                try {
+                    userId = JWT.decode(token).getAudience().get(0);
+                } catch (JWTDecodeException j) {
+                    throw new RuntimeException("401");
+                }
+                User user = userService.findUserById(userId);
+                if (user == null) {
+                    throw new RuntimeException("用户不存在，请重新登录");
+                }
+                // 验证 token
+                JWTVerifier jwtVerifier = JWT.require(Algorithm.HMAC256(user.getPassword())).build();
+                try {
+                    jwtVerifier.verify(token);
+                } catch (JWTVerificationException e) {
+                    throw new RuntimeException("401");
+                }
+                return true;
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public void postHandle(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse, Object o, ModelAndView modelAndView) throws Exception {
+
+    }
+    @Override
+    public void afterCompletion(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse, Object o, Exception e) throws Exception {
+
+    }
+}
+</code></pre>
+<p><strong>5、utils包</strong><br/> TokenUtil：</p>
+<pre><code>package com.geesun.utils;
+
+import com.auth0.jwt.JWT;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import javax.servlet.http.HttpServletRequest;
+
+/**
+ * @author ：Mr.ZJW
+ * @date ：Created 2022/2/28 10:24
+ * @description：
+ */
+public class TokenUtil {
+
+    public static String getTokenUserId() {
+        String token = getRequest().getHeader("token");// 从 http 请求头中取出 token
+        String userId = JWT.decode(token).getAudience().get(0);
+        return userId;
+    }
+
+    /**
+     * 获取request
+     * @return
+     */
+    public static HttpServletRequest getRequest() {
+        ServletRequestAttributes requestAttributes = (ServletRequestAttributes) RequestContextHolder
+                .getRequestAttributes();
+        return requestAttributes == null ? null : requestAttributes.getRequest();
+    }
+
+}
+</code></pre>
+<p><strong>6、pojo包</strong><br/> User：</p>
+<pre><code>package com.geesun.pojo;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.io.Serializable;
+
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+@TableName(value = "`user`")
+public class User implements Serializable {
+    @TableId(value = "id", type = IdType.NONE)
+    private String id;
+
+    @TableField(value = "username")
+    private String username;
+
+    @TableField(value = "password")
+    private String password;
+
+    private static final long serialVersionUID = 1L;
+}
+</code></pre>
+<p><strong>7、controller包</strong><br/> UserController：</p>
+<pre><code>package com.geesun.controller;
+
+import cn.hutool.json.JSONObject;
+import com.geesun.annotation.UserLoginToken;
+import com.geesun.common.CodeMsg;
+import com.geesun.common.Result;
+import com.geesun.pojo.User;
+import com.geesun.service.UserService;
+import com.geesun.service.impl.TokenService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServletResponse;
+
+/**
+ * @author ：Mr.ZJW
+ * @date ：Created 2022/2/26 10:47
+ * @description：
+ */
+@RestController
+@RequestMapping("/user")
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private TokenService tokenService;
+
+    /**
+     * 查询用户信息
+     * @return
+     */
+    @UserLoginToken
+    @GetMapping("/list")
+    public Result&lt;Object&gt; list(){
+        return Result.success(userService.list());
+    }
+
+
+    /**
+     * 登录验证
+     * @param user
+     * @param response
+     * @return
+     */
+    @RequestMapping(value = "/login" ,method = RequestMethod.GET)
+    public Result&lt;Object&gt; login(User user, HttpServletResponse response) {
+        JSONObject jsonObject = new JSONObject();
+        //获取用户账号密码
+        User userForBase = new User();
+        userForBase.setId(userService.findByUsername(user).getId());
+        userForBase.setUsername(userService.findByUsername(user).getUsername());
+        userForBase.setPassword(userService.findByUsername(user).getPassword());
+        //判断账号或密码是否正确
+        if (!userForBase.getPassword().equals(user.getPassword())) {
+            return Result.error(CodeMsg.USER_OR_PASS_ERROR);
+        } else {
+            String token = tokenService.getToken(userForBase);
+            jsonObject.put("token", token);
+            Cookie cookie = new Cookie("token", token);
+            cookie.setPath("/");
+            response.addCookie(cookie);
+            return Result.success(jsonObject);
+        }
+    }
+    
+}
+</code></pre>
+<p><strong>8、service包</strong><br/> UserService接口：</p>
+<pre><code>package com.geesun.service;
+
+import com.baomidou.mybatisplus.extension.service.IService;
+import com.geesun.pojo.User;
+
+public interface UserService extends IService&lt;User&gt; {
+
+
+    int deleteByIds(Long[] ids);
+
+    int addUser(User user);
+
+    User findByUsername(User user);
+
+    User findUserById(String userId);
+}
+</code></pre>
+<p>UserServiceImpl实现类:</p>
+<pre><code>package com.geesun.service.impl;
+
+import cn.hutool.core.util.ArrayUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.geesun.mapper.UserMapper;
+import com.geesun.pojo.User;
+import com.geesun.service.UserService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.Arrays;
+
+@Service
+public class UserServiceImpl extends ServiceImpl&lt;UserMapper, User&gt; implements UserService {
+
+    @Autowired
+    private UserMapper userMapper;
+    
+    /**
+     * 判断用户名
+     * @param user
+     * @return
+     */
+    public User findByUsername(User user){
+        return userMapper.selectOne(new LambdaQueryWrapper&lt;User&gt;().eq(User::getUsername,user.getUsername()));
+    }
+
+    public User findUserById(String userId) {
+        return userMapper.selectById(userId);
+    }
+
+}
+</code></pre>
+<p>TokenService:</p>
+<pre><code>package com.geesun.service.impl;
+
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.algorithms.Algorithm;
+import com.geesun.pojo.User;
+import org.springframework.stereotype.Service;
+import java.util.Date;
+
+/**
+ * @author ：Mr.ZJW
+ * @date ：Created 2022/2/28 10:20
+ * @description：
+ */
+@Service
+public class TokenService {
+
+    public String getToken(User user) {
+        Date start = new Date();
+        long currentTime = System.currentTimeMillis() + 60* 60 * 1000;//一小时有效时间
+        Date end = new Date(currentTime);
+        String token = "";
+
+        token = JWT.create().withAudience(user.getId()).withIssuedAt(start).withExpiresAt(end)
+                .sign(Algorithm.HMAC256(user.getPassword()));
+        return token;
+    }
+}
+</code></pre>
+<p><strong>9、mapper包</strong></p>
+<pre><code>package com.geesun.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.geesun.pojo.User;
+
+public interface UserMapper extends BaseMapper&lt;User&gt; {
+
+}
+</code></pre>
+<h1><a id="_797"></a>三、测试结果</h1>
+<p><strong>1、登录验证</strong><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/62f8146951be45bda886a3c45aa510ee.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA54ix6Z-z5LmQ55qE57yW56iL5biI,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> <strong>2、查询用户信息</strong><br/> 这个方法加上了@UserLoginToken，所以要token才能查询<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/feaa3c6973b94f27b9edb8a7dcd7754d.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA54ix6Z-z5LmQ55qE57yW56iL5biI,size_13,color_FFFFFF,t_70,g_se,x_16"/></p>
+<p><img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/a31df33b052e412fa3e7ae1dd04ab6a0.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA54ix6Z-z5LmQ55qE57yW56iL5biI,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 3、不加上Token进行测试就会出错提示<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/fa9a54a017624038be1929e7c92910c7.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA54ix6Z-z5LmQ55qE57yW56iL5biI,size_20,color_FFFFFF,t_70,g_se,x_16"/><br/> 出错提示：<br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/6a530c6d91134095b565b7a4142ee610.png"/><br/> <img alt="在这里插入图片描述" src="https://img-blog.csdnimg.cn/733cb18cc9f94aaf9ccddad436625188.png?x-oss-process=image/watermark,type_d3F5LXplbmhlaQ,shadow_50,text_Q1NETiBA54ix6Z-z5LmQ55qE57yW56iL5biI,size_12,color_FFFFFF,t_70,g_se,x_16#pic_center"/></p>
+</div>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/editerView/markdown_views-22a2fefd3b.css" rel="stylesheet"/>
+<link href="https://csdnimg.cn/release/blogv2/dist/mdeditor/css/style-4f8fbf9108.css" rel="stylesheet"/>
+</div>

@@ -1,0 +1,376 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>一共有二种方法，也不知道作者从哪里复制来的，先感谢原作者。</p>
+<p>首先建立一个程序，加2个按钮，为了区分，界面修改成红色。</p>
+<p><img alt="" height="467" src="image\0fb5dc7fa20b4e63bd4e331123e3c780.png" width="898"/></p>
+<p>第一种：</p>
+<p>1.建立一个主程序，加一个panel1，为了区分背景是绿色</p>
+<p><img alt="" height="653" src="image\ba0ab6c9202945d1831da3a5654e72e8.png" width="886"/></p>
+<p>2.代码调用</p>
+<p><img alt="" height="117" src="image\fa12e87951dc41c685483228273941ea.png" width="693"/></p>
+<p>3.所有代码</p>
+<pre><code class="language-cs">using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Diagnostics;
+using System.Drawing;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace WindowsFormsApp1
+{
+    public partial class Form1 : Form
+    {
+        public Form1()
+        {
+            InitializeComponent();
+        }
+        /// &lt;summary&gt;
+        /// 嵌入外部exe
+        /// &lt;/summary&gt;
+        public class EmbeddedExeTool
+        {
+            [DllImport("User32.dll", EntryPoint = "SetParent")]
+            private static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+
+            [DllImport("user32.dll", EntryPoint = "ShowWindow")]
+            private static extern int ShowWindow(IntPtr hwnd, int nCmdShow);
+
+            [DllImport("user32.dll", SetLastError = true)]
+            private static extern bool MoveWindow(IntPtr hwnd, int x, int y, int cx, int cy, bool repaint);
+
+            [DllImport("user32.dll")]
+            private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+            [DllImport("user32.dll")]
+            private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+            [DllImport("user32.dll", SetLastError = true)]
+            private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+            IntPtr WindowHandle = IntPtr.Zero;
+            private const int WS_THICKFRAME = 262144;
+            private const int WS_BORDER = 8388608;
+            private const int GWL_STYLE = -16;
+            private const int WS_CAPTION = 0xC00000;
+            private Process proApp = null;
+            private Control ContainerControl = null;
+
+            private const int WS_VISIBLE = 0x10000000;
+            [DllImport("user32.dll", EntryPoint = "SetWindowLong", CharSet = CharSet.Auto)]
+            private static extern IntPtr SetWindowLongPtr32(HandleRef hWnd, int nIndex, int dwNewLong);
+            [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", CharSet = CharSet.Auto)]
+            private static extern IntPtr SetWindowLongPtr64(HandleRef hWnd, int nIndex, int dwNewLong);
+
+            private IntPtr SetWindowLong(HandleRef hWnd, int nIndex, int dwNewLong)
+            {
+                if (IntPtr.Size == 4)
+                {
+                    return SetWindowLongPtr32(hWnd, nIndex, dwNewLong);
+                }
+                return SetWindowLongPtr64(hWnd, nIndex, dwNewLong);
+            }
+            /// &lt;summary&gt;
+            /// 加载外部exe程序到程序容器中
+            /// &lt;/summary&gt;
+            /// &lt;param name="control"&gt;要显示exe的容器控件&lt;/param&gt;
+            /// &lt;param name="exepath"&gt;exe的完整绝对路径&lt;/param&gt;
+            public void LoadEXE(Control control, string exepath)
+            {
+                ContainerControl = control;
+                control.SizeChanged += Control_SizeChanged;
+                ProcessStartInfo info = new ProcessStartInfo(exepath);
+                info.WindowStyle = ProcessWindowStyle.Minimized;
+                info.UseShellExecute = false;
+                info.CreateNoWindow = false;
+                proApp = Process.Start(info);
+                Application.Idle += Application_Idle;
+                EmbedProcess(proApp, control);
+            }
+            /// &lt;summary&gt;
+            /// 加载外部exe程序到程序容器中
+            /// &lt;/summary&gt;
+            /// &lt;param name="form"&gt;要显示exe的窗体&lt;/param&gt;
+            /// &lt;param name="exepath"&gt;exe的完整绝对路径&lt;/param&gt;
+            public void LoadEXE(Form form, string exepath)
+            {
+                ContainerControl = form;
+                form.SizeChanged += Control_SizeChanged;
+                proApp = new Process();
+                proApp.StartInfo.UseShellExecute = false;
+                proApp.StartInfo.CreateNoWindow = false;
+                proApp.StartInfo.WindowStyle = ProcessWindowStyle.Minimized;
+                proApp.StartInfo.FileName = exepath;
+                proApp.StartInfo.Arguments = Process.GetCurrentProcess().Id.ToString();
+                proApp.Start();
+                Application.Idle += Application_Idle;
+                EmbedProcess(proApp, form);
+            }
+            /// &lt;summary&gt;
+            /// 确保应用程序嵌入此容器
+            /// &lt;/summary&gt;
+            /// &lt;param name="sender"&gt;&lt;/param&gt;
+            /// &lt;param name="e"&gt;&lt;/param&gt;
+            private void Application_Idle(object sender, EventArgs e)
+            {
+                if (this.proApp == null || this.proApp.HasExited)
+                {
+                    this.proApp = null;
+                    Application.Idle -= Application_Idle;
+                    return;
+                }
+                if (proApp.MainWindowHandle == IntPtr.Zero) return;
+                Application.Idle -= Application_Idle;
+                EmbedProcess(proApp, ContainerControl);
+            }
+            /// &lt;summary&gt;
+            /// 将指定的程序嵌入指定的控件
+            /// &lt;/summary&gt;
+            private void EmbedProcess(Process app, Control control)
+            {
+                // Get the main handle
+                if (app == null || app.MainWindowHandle == IntPtr.Zero || control == null) return;
+                try
+                {
+                    // Put it into this form
+                    SetParent(app.MainWindowHandle, control.Handle);
+                    // Remove border and whatnot               
+                    SetWindowLong(new HandleRef(this, app.MainWindowHandle), GWL_STYLE, WS_VISIBLE);
+                    ShowWindow(app.MainWindowHandle, (int)ProcessWindowStyle.Maximized);
+                    MoveWindow(app.MainWindowHandle, 0, 0, control.Width, control.Height, true);
+                }
+                catch (Exception ex3)
+                {
+                    Console.WriteLine(ex3.Message);
+                }
+            }
+            /// &lt;summary&gt;
+            /// 嵌入容器大小改变事件
+            /// &lt;/summary&gt;
+            private void Control_SizeChanged(object sender, EventArgs e)
+            {
+                if (proApp == null)
+                {
+                    return;
+                }
+
+                if (proApp.MainWindowHandle != IntPtr.Zero &amp;&amp; ContainerControl != null)
+                {
+                    MoveWindow(proApp.MainWindowHandle, 0, 0, ContainerControl.Width, ContainerControl.Height, true);
+                }
+            }
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            EmbeddedExeTool exetool = new EmbeddedExeTool();
+            //WindowsFormsApp4.exe 为要嵌入外部exe的具体路径
+            exetool.LoadEXE(panel1, AppDomain.CurrentDomain.BaseDirectory+ "WindowsFormsApp4.exe");//debug下面的文件夹
+
+        }
+    }
+}
+</code></pre>
+<p>4.效果很好。红配绿，绝配。 </p>
+<p><img alt="" height="641" src="image\72028906bf15467e99487c9bdf271ff1.png" width="880"/></p>
+<p>第二种</p>
+<p>和第一种方式有点不一样。 </p>
+<p> 1.建立一个winform主程序，为了区分背景是绿色</p>
+<p><img alt="" height="661" src="image\080e5ab6049a45fd97d7decdcb5ed1c0.png" width="916"/></p>
+<p>2.把代码直接复制进去，修改命名空间，再加上一个load事件即可</p>
+<p><img alt="" height="246" src="image\9b88df4540e84ef1b615364324d2793a.png" width="791"/></p>
+<p><img alt="" height="347" src="image\b43d1d678fc24b2c9def2932aad1f807.png" width="868"/></p>
+<p>3.代码</p>
+<pre><code class="language-cs">using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Windows.Forms;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+
+
+namespace WindowsFormsApp1
+{
+    public partial class Form1 : Form
+    {
+        private const int GWL_STYLE = (-16);
+        private const int WS_VISIBLE = 0x10000000;
+        EventHandler appIdleEvent = null;
+        Action&lt;object, EventArgs&gt; appIdleAction = null;
+        Process m_AppProcess;
+
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong", CharSet = CharSet.Auto)]
+        public static extern IntPtr SetWindowLongPtr32(HandleRef hWnd, int nIndex, int dwNewLong);
+
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", CharSet = CharSet.Auto)]
+        public static extern IntPtr SetWindowLongPtr64(HandleRef hWnd, int nIndex, int dwNewLong);
+
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern long SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+
+        //SetParent(IntPtr hWndChild, IntPtr hWndNewParent);这个方法很重要，就是将hWndChild指向开启exe的窗体嵌入到hWndNewParent窗体的某个控件上，或者是窗体本 身的容器
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool MoveWindow(IntPtr hwnd, int x, int y, int cx, int cy, bool repaint);
+        // MoveWindow(IntPtr hwnd, int x, int y, int cx, int cy, bool repaint);这个方法是windows的api,见名知意，是移动hwnd所指的窗体到指定的位置，并且指定是否需要重绘
+
+        public static IntPtr SetWindowLong(HandleRef hWnd, int nIndex, int dwNewLong)
+        {
+
+
+            if (IntPtr.Size == 4)
+            {
+                return SetWindowLongPtr32(hWnd, nIndex, dwNewLong);
+            }
+            return SetWindowLongPtr64(hWnd, nIndex, dwNewLong);
+        }
+        public Form1()
+        {
+            InitializeComponent();
+            appIdleAction = new Action&lt;object, EventArgs&gt;(Application_Idle);
+            appIdleEvent = new EventHandler(appIdleAction);
+
+
+        }
+        /// &lt;summary&gt;
+        /// 确保应用程序嵌入此容器，再次确认exe嵌入，如果不调用这个方法，程序不一定能嵌入外部exe
+        /// &lt;/summary&gt;
+        /// &lt;param name="sender"&gt;&lt;/param&gt;
+        /// &lt;param name="e"&gt;&lt;/param&gt;
+        void Application_Idle(object sender, EventArgs e)
+        {
+            if (this.m_AppProcess == null || this.m_AppProcess.HasExited)
+            {
+                this.m_AppProcess = null;
+                Application.Idle -= appIdleEvent;//这一步一直不知道有什么用，但是不用这行代码程序有时候能嵌入有时候又不行
+                return;
+            }
+            if (m_AppProcess.MainWindowHandle == IntPtr.Zero) return;
+            Application.Idle -= appIdleEvent;
+            EmbedProcess(m_AppProcess, this);
+
+
+        }
+        /// &lt;summary&gt;
+        /// 将指定的程序嵌入指定的控件
+        /// &lt;/summary&gt;
+        private void EmbedProcess(Process app, Control control)
+        {
+
+
+            // Get the main handle
+            if (app == null || app.MainWindowHandle == IntPtr.Zero || control == null) return;
+            try
+            {
+                // Put it into this form
+                SetParent(app.MainWindowHandle, control.Handle);
+            }
+            catch (Exception ex1)
+            {
+                Console.WriteLine(ex1.Message);
+            }
+            try
+            {
+                // Remove border and whatnot               
+                SetWindowLong(new HandleRef(this, app.MainWindowHandle), GWL_STYLE, WS_VISIBLE);
+            }
+            catch (Exception ex2)
+            {
+                Console.WriteLine(ex2.Message);
+            }
+            try
+            {
+                MoveWindow(app.MainWindowHandle, 0, 0, control.Width, control.Height, true);
+            }
+            catch (Exception ex3)
+            {
+                Console.WriteLine(ex3.Message);
+            }
+        }
+
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+
+            //以下这段代码是通过命令行方式调起一个exe程序，获取这个程序的句柄然后嵌入主的winform窗体中
+            ProcessStartInfo info = new ProcessStartInfo(AppDomain.CurrentDomain.BaseDirectory + "WindowsFormsApp4.exe");//debug下面的文件夹
+            info.WindowStyle = ProcessWindowStyle.Minimized;
+            info.UseShellExecute = false;
+            info.CreateNoWindow = false;
+            m_AppProcess = System.Diagnostics.Process.Start(info);
+            Application.Idle += appIdleEvent;
+            try
+            {
+                EmbedProcess(m_AppProcess, this);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+        }
+
+    }
+}</code></pre>
+<p>4.效果</p>
+<p><img alt="" height="641" src="image\b63fa91167684e62af583202e04c9a62.png" width="880"/> </p>
+<p>可见，第一种和第二种的效果有所区别的。</p>
+<p>拓展。</p>
+<p>WPF签入winform</p>
+<p>1.依然用上面的winform程序，把输出类型改成类库</p>
+<p><img alt="" height="242" src="image\5b47ab3532154242b23f937b895c033a.png" width="719"/>  </p>
+<p>2.建立一个WPF程序，引用System.Windows.Forms和WindowsFormsIntegration，红色。绿色是步骤1生产的dll</p>
+<p><img alt="" height="440" src="image\09e0762477c1413fb9896da5cdaed4cc.png" width="389"/></p>
+<p> 3.在wpf中增加WindowsFormsHost控件</p>
+<p><img alt="" height="792" src="image\0afa442a9638496ca568105001babc3a.png" width="1037"/></p>
+<p>4.cs后台代码</p>
+<pre><code class="language-cs">using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Navigation;
+using System.Windows.Shapes;
+using WindowsFormsApp4;
+
+namespace WpfApp1
+{
+    /// &lt;summary&gt;
+    /// MainWindow.xaml 的交互逻辑
+    /// &lt;/summary&gt;
+    public partial class MainWindow : Window
+    {
+        public MainWindow()
+        {
+            InitializeComponent();
+            Form1 mainform = new Form1();
+            mainform.TopLevel = false;
+            winform.Child = mainform;
+        }
+    }
+}
+</code></pre>
+<p> 5.效果</p>
+<p><img alt="" height="450" src="image\37f81b48831f429aa4491694a55edada.png" width="800"/></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+<p></p>
+</div>
+</div>

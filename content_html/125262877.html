@@ -1,0 +1,367 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>        程序员日常工作中，发送http请求特别常见。本文以Java为例，总结发送http请求的多种方式。</p>
+<p>        1. HttpURLConnection<br/>         使用JDK原生提供的net，无需其他jar包，代码如下：</p>
+<pre><code>import com.alibaba.fastjson.JSON;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.HashMap;
+import java.util.Map;
+
+public class HttpTest1 {
+
+    public static void main(String[] args) {
+        HttpURLConnection con = null;
+
+        BufferedReader buffer = null;
+        StringBuffer resultBuffer = null;
+
+        try {
+            URL url = new URL("http://10.30.10.151:8012/gateway.do");
+            //得到连接对象
+            con = (HttpURLConnection) url.openConnection();
+            //设置请求类型
+            con.setRequestMethod("POST");
+            //设置Content-Type，此处根据实际情况确定
+            con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            //允许写出
+            con.setDoOutput(true);
+            //允许读入
+            con.setDoInput(true);
+            //不使用缓存
+            con.setUseCaches(false);
+            OutputStream os = con.getOutputStream();
+            Map paraMap = new HashMap();
+            paraMap.put("type", "wx");
+            paraMap.put("mchid", "10101");
+            //组装入参
+            os.write(("consumerAppId=test&amp;serviceName=queryMerchantService&amp;params=" + JSON.toJSONString(paraMap)).getBytes());
+            //得到响应码
+            int responseCode = con.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                //得到响应流
+                InputStream inputStream = con.getInputStream();
+                //将响应流转换成字符串
+                resultBuffer = new StringBuffer();
+                String line;
+                buffer = new BufferedReader(new InputStreamReader(inputStream, "GBK"));
+                while ((line = buffer.readLine()) != null) {
+                    resultBuffer.append(line);
+                }
+                System.out.println("result:" + resultBuffer.toString());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}</code></pre>
+<p>        </p>
+<p>        2. HttpClient</p>
+<p>        需要用到commons-httpclient-3.1.jar，maven依赖如下：</p>
+<p></p>
+<pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;commons-httpclient&lt;/groupId&gt;
+    &lt;artifactId&gt;commons-httpclient&lt;/artifactId&gt;
+    &lt;version&gt;3.1&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+<p>        代码如下：</p>
+<pre><code>import com.alibaba.fastjson.JSON;
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.methods.PostMethod;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+public class HttpTest2 {
+
+    public static void main(String[] args) {
+        HttpClient httpClient = new HttpClient();
+        PostMethod postMethod = new PostMethod("http://10.30.10.151:8012/gateway.do");
+
+        postMethod.addRequestHeader("accept", "*/*");
+        //设置Content-Type，此处根据实际情况确定
+        postMethod.addRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+        //必须设置下面这个Header
+        //添加请求参数
+        Map paraMap = new HashMap();
+        paraMap.put("type", "wx");
+        paraMap.put("mchid", "10101");
+        postMethod.addParameter("consumerAppId", "test");
+        postMethod.addParameter("serviceName", "queryMerchantService");
+        postMethod.addParameter("params", JSON.toJSONString(paraMap));
+        String result = "";
+        try {
+            int code = httpClient.executeMethod(postMethod);
+            if (code == 200){
+                result = postMethod.getResponseBodyAsString();
+                System.out.println("result:" + result);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}</code></pre>
+<p>        3. CloseableHttpClient<br/>         需要用到httpclient-4.5.6.jar，maven依赖如下： </p>
+<pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;org.apache.httpcomponents&lt;/groupId&gt;
+    &lt;artifactId&gt;httpclient&lt;/artifactId&gt;
+    &lt;version&gt;4.5.6&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+<p>        代码如下：</p>
+<pre><code>import com.alibaba.fastjson.JSON;
+import org.apache.http.Consts;
+import org.apache.http.HttpEntity;
+import org.apache.http.NameValuePair;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.entity.UrlEncodedFormEntity;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.message.BasicNameValuePair;
+import org.apache.http.util.EntityUtils;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class HttpTest3 {
+
+    public static void main(String[] args) {
+        int timeout = 120000;
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        RequestConfig defaultRequestConfig = RequestConfig.custom().setConnectTimeout(timeout)
+                .setConnectionRequestTimeout(timeout).setSocketTimeout(timeout).build();
+        HttpPost httpPost = null;
+        List&lt;NameValuePair&gt; nvps = null;
+        CloseableHttpResponse responses = null;// 命名冲突，换一个名字，response
+        HttpEntity resEntity = null;
+        String result;
+        try {
+            httpPost = new HttpPost("http://10.30.10.151:8012/gateway.do");
+            httpPost.setConfig(defaultRequestConfig);
+
+            Map paraMap = new HashMap();
+            paraMap.put("type", "wx");
+            paraMap.put("mchid", "10101");
+            nvps = new ArrayList&lt;NameValuePair&gt;();
+            nvps.add(new BasicNameValuePair("consumerAppId", "test"));
+            nvps.add(new BasicNameValuePair("serviceName", "queryMerchantService"));
+            nvps.add(new BasicNameValuePair("params", JSON.toJSONString(paraMap)));
+            httpPost.setEntity(new UrlEncodedFormEntity(nvps, Consts.UTF_8));
+
+            responses = httpClient.execute(httpPost);
+            resEntity = responses.getEntity();
+            result = EntityUtils.toString(resEntity, Consts.UTF_8);
+            EntityUtils.consume(resEntity);
+            System.out.println("result:" + result);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                responses.close();
+                httpClient.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}</code></pre>
+<p>         4. okhttp<br/>         需要用到okhttp-3.10.0.jar，maven依赖如下：</p>
+<pre><code>&lt;dependency&gt;
+	&lt;groupId&gt;com.squareup.okhttp3&lt;/groupId&gt;
+	&lt;artifactId&gt;okhttp&lt;/artifactId&gt;
+	&lt;version&gt;3.10.0&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+<p>        代码如下：</p>
+<pre><code>import com.alibaba.fastjson.JSON;
+import okhttp3.*;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+public class HttpTest4 {
+
+    public static void main(String[] args) throws IOException {
+        String url = "http://10.30.10.151:8012/gateway.do";
+        OkHttpClient client = new OkHttpClient();
+        Map paraMap = new HashMap();
+        paraMap.put("yybh", "1231231");
+
+        RequestBody requestBody = new MultipartBody.Builder()
+                .addFormDataPart("consumerAppId", "tst")
+                .addFormDataPart("serviceName", "queryCipher")
+                .addFormDataPart("params", JSON.toJSONString(paraMap))
+                .build();
+
+        Request request = new Request.Builder()
+                .url(url)
+                .post(requestBody)
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .build();
+        Response response = client
+                .newCall(request)
+                .execute();
+        if (response.isSuccessful()) {
+            System.out.println("result:" + response.body().string());
+        } else {
+            throw new IOException("Unexpected code " + response);
+        }
+    }
+}</code></pre>
+<p>         5. Socket<br/>         使用JDK原生提供的net，无需其他jar包<br/>         此处参考：https://www.cnblogs.com/hehongtao/p/5276425.html<br/>         代码如下：</p>
+<pre><code>import com.alibaba.fastjson.JSON;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStreamWriter;
+import java.net.Socket;
+import java.net.URLEncoder;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+
+public class HttpTest6 {
+
+    private static String encoding = "utf-8";
+
+    public static void main(String[] args) {
+        try {
+            Map paraMap = new HashMap();
+            paraMap.put("yybh", "12312311");
+            String data = URLEncoder.encode("consumerAppId", "utf-8") + "=" + URLEncoder.encode("test", "utf-8") + "&amp;" +
+                    URLEncoder.encode("serviceName", "utf-8") + "=" + URLEncoder.encode("queryCipher", "utf-8")
+                    + "&amp;" +
+                    URLEncoder.encode("params", "utf-8") + "=" + URLEncoder.encode(JSON.toJSONString(paraMap), "utf-8");
+            Socket s = new Socket("10.30.10.151", 8012);
+            OutputStreamWriter osw = new OutputStreamWriter(s.getOutputStream());
+            StringBuffer sb = new StringBuffer();
+            sb.append("POST /gateway.do HTTP/1.1\r\n");
+            sb.append("Host: 10.30.10.151:8012\r\n");
+            sb.append("Content-Length: " + data.length() + "\r\n");
+            sb.append("Content-Type: application/x-www-form-urlencoded\r\n");
+            //注，这里很关键。这里一定要一个回车换行，表示消息头完，不然服务器会等待
+            sb.append("\r\n");
+            osw.write(sb.toString());
+            osw.write(data);
+            osw.write("\r\n");
+            osw.flush();
+
+            //--输出服务器传回的消息的头信息
+            InputStream is = s.getInputStream();
+            String line = null;
+            int contentLength = 0;//服务器发送回来的消息长度
+            // 读取所有服务器发送过来的请求参数头部信息
+            do {
+                line = readLine(is, 0);
+                //如果有Content-Length消息头时取出
+                if (line.startsWith("Content-Length")) {
+                    contentLength = Integer.parseInt(line.split(":")[1].trim());
+                }
+                //打印请求部信息
+                System.out.print(line);
+                //如果遇到了一个单独的回车换行，则表示请求头结束
+            } while (!line.equals("\r\n"));
+
+            //--输消息的体
+            System.out.print(readLine(is, contentLength));
+
+            //关闭流
+            is.close();
+
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /*
+     * 这里我们自己模拟读取一行，因为如果使用API中的BufferedReader时，它是读取到一个回车换行后
+     * 才返回，否则如果没有读取，则一直阻塞，直接服务器超时自动关闭为止，如果此时还使用BufferedReader
+     * 来读时，因为读到最后一行时，最后一行后不会有回车换行符，所以就会等待。如果使用服务器发送回来的
+     * 消息头里的Content-Length来截取消息体，这样就不会阻塞
+     *
+     * contentLe 参数 如果为0时，表示读头，读时我们还是一行一行的返回；如果不为0，表示读消息体，
+     * 时我们根据消息体的长度来读完消息体后，客户端自动关闭流，这样不用先到服务器超时来关闭。
+     */
+    private static String readLine(InputStream is, int contentLe) throws IOException {
+        ArrayList lineByteList = new ArrayList();
+        byte readByte;
+        int total = 0;
+        if (contentLe != 0) {
+            do {
+                readByte = (byte) is.read();
+                lineByteList.add(Byte.valueOf(readByte));
+                total++;
+            } while (total &lt; contentLe);//消息体读还未读完
+        } else {
+            do {
+                readByte = (byte) is.read();
+                lineByteList.add(Byte.valueOf(readByte));
+            } while (readByte != 10);
+        }
+
+        byte[] tmpByteArr = new byte[lineByteList.size()];
+        for (int i = 0; i &lt; lineByteList.size(); i++) {
+            tmpByteArr[i] = ((Byte) lineByteList.get(i)).byteValue();
+        }
+        lineByteList.clear();
+
+        return new String(tmpByteArr, encoding);
+    }
+}</code></pre>
+<p>        6. RestTemplate<br/>         RestTemplate 是由Spring提供的一个HTTP请求工具。比传统的Apache和HttpCLient便捷许多，能够大大提高客户端的编写效率。代码如下：</p>
+<pre><code>import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestTemplate;
+
+@Configuration
+public class RestTemplateConfig {
+
+    @Bean
+    public RestTemplate restTemplate(ClientHttpRequestFactory factory){
+        return new RestTemplate(factory);
+    }
+
+    @Bean
+    public ClientHttpRequestFactory simpleClientHttpRequestFactory(){
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(15000);
+        factory.setReadTimeout(5000);
+        return factory;
+    }
+}
+
+
+
+@Autowired
+RestTemplate restTemplate;
+
+@Test
+public void postTest() throws Exception {
+    MultiValueMap&lt;String, String&gt; requestEntity = new LinkedMultiValueMap&lt;&gt;();
+    Map paraMap = new HashMap();
+    paraMap.put("type", "wx");
+    paraMap.put("mchid", "10101");
+    requestEntity.add("consumerAppId", "test");
+    requestEntity.add("serviceName", "queryMerchant");
+    requestEntity.add("params", JSON.toJSONString(paraMap));
+    RestTemplate restTemplate = new RestTemplate();
+    System.out.println(restTemplate.postForObject("http://10.30.10.151:8012/gateway.do",         requestEntity, String.class));
+}</code></pre>
+<p></p>
+</div>
+</div>

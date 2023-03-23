@@ -1,0 +1,305 @@
+<div class="article_content clearfix" id="article_content">
+<link href="style.css" rel="stylesheet"/>
+<div class="htmledit_views" id="content_views">
+<p>1.手机号绑定并不是手机号登录 所以他其实就是一个添加</p>
+<p>主要是他有一个短信发送 接收验证码验证的过程</p>
+<p>首先是小程序端</p>
+<p>HTML</p>
+<p>给你一个按钮绑定点击 bindtap 事件 跳转至手机号绑定页面</p>
+<pre><code>&lt;l-button type="default" bindtap="phonePage"&gt;绑定手机号&lt;/l-button&gt;</code></pre>
+<p>小程序 JS 页面跳转（这是没有tabBar 的页面，有tabBar的页面需换另外wx函数）</p>
+<pre><code> //跳转至手机号绑定页面
+    phonePage(){
+      wx.navigateTo({
+        url: '/pages/phone/phone',
+      })
+    },</code></pre>
+<p></p>
+<p>手机号绑定页面</p>
+<p>HTML</p>
+<pre><code class="language-html">&lt;!-- 手机号码 --&gt;
+&lt;form bindsubmit="onSubmit"&gt;
+&lt;text class="text1"&gt;手机号码&lt;/text&gt;
+&lt;view class="phoneNum"&gt;
+&lt;input type="text" placeholder="请输入手机号码" bindinput="phone" name="phone"&gt;&lt;/input&gt;
+&lt;/view&gt;
+&lt;!-- 验证码 --&gt;
+&lt;text class="text1"&gt;验证码&lt;/text&gt;
+&lt;view class="phoneCode"&gt;
+&lt;input type="text" placeholder="请输入验证码" name="code" &gt;&lt;/input&gt;
+&lt;button type="primary" size="mini" bind:tap="setCode" disabled="{<!-- -->{button}}"&gt;{<!-- -->{text}}&lt;/button&gt;
+&lt;/view&gt;
+
+&lt;view class="loadButton"&gt;
+&lt;button type="primary" form-type="submit"&gt;绑定手机号&lt;/button&gt;
+&lt;/view&gt;
+&lt;/form&gt;</code></pre>
+<p>CSS页面</p>
+<pre><code class="language-html">.text1{
+  margin:20rpx;
+}
+.phoneNum input{
+  margin: 20rpx;
+  padding-left: 10rpx;
+  height: 80rpx;
+  border: 1rpx solid #c3c3c3;
+}
+.phoneCode{
+  display: flex;
+  align-items: center;
+}
+.phoneCode input{
+  width: 60%;
+  margin: 20rpx;
+  border: 1rpx solid #c3c3c3;
+  padding-left: 10rpx;
+  height: 80rpx;
+}
+.phoneCode button{
+  height: 80rpx;
+  vertical-align: middle;
+}
+ 
+.loadButton button{
+  margin-top: 50rpx;
+  width: 94% !important;
+}</code></pre>
+<p>JS</p>
+<p>data部分</p>
+<pre><code>data: {
+      //手机号
+
+      phone:'',
+      //手机号防止多次点击
+
+      button:false,
+       //发送验证码按钮初始内容
+
+      text:'发送验证码'
+
+    },</code></pre>
+<p>JS</p>
+<p>输入框获取手机号</p>
+<pre><code>/**
+     * 手机号
+     * @param {*} e 
+     */
+    phone(e){
+      let phone = e.detail.value;
+      this.setData({
+        phone:phone
+      })
+    },</code></pre>
+<p>获取验证码 并给按钮设置防止连续点击</p>
+<pre><code>/**
+     * 验证码
+     * @param {*} e 
+     */
+    setCode(e){
+      let that = this;
+      //data里取出之前存入的手机号
+      let phone = that.data.phone;
+      
+      //验证手机号格式是否正确
+      var phone_reg = /^1[35789]\d{9}$/;
+      if(!phone_reg.test(phone)){
+        wx.showToast({
+          title: '手机号格式错误',
+          icon:"none"
+        })
+        return ;
+      };
+      //发送接口
+      wx.request({
+        url: 'http://www.essou.com/index.php/api/wxNote',
+        header:{ 
+          'token':wx.getStorageSync('token')
+        },
+        data:{
+          phone:phone
+        },
+        dataType:'json',
+        method:"POST",
+        success (res) {
+          //获取返回来的验证码
+          console.log(res.data)
+          let time = 60;
+          setInterval(function(){
+            time--;
+            if(time &gt; 0){
+              that.setData({
+                text:time,
+                button:true
+              })
+            }else{
+              that.setData({
+                text:'发送验证码',
+                button:false
+              })
+            }
+          },1000);
+        }
+      })
+    },</code></pre>
+<p>后端PHP</p>
+<p>首先验证是否登陆过</p>
+<p>这里是创建中间件使用中间件验证token</p>
+<p>1.创建中间件</p>
+<blockquote>
+<p>php artisan make:middleware CheckLogin</p>
+</blockquote>
+<p>2.在app/http/Middleware/kernel.php 文件中的 $routeMiddleware 加入一个 </p>
+<blockquote>
+<p>'checklogin' =&gt; \App\Http\Middleware\CheckLogin::class</p>
+</blockquote>
+<p> 这里的checklogin 是自己定义</p>
+<p>3.在路由加入 这里的checklogin 是上面定义的</p>
+<p><span style="color:#fe2c24;">如果写的是接口路由最好写进api.php中</span></p>
+<blockquote>
+<p>Route::group(['middleware' =&gt; ['checklogin']], function () {<!-- --><br/>     //<br/> });</p>
+</blockquote>
+<p> 4.中间件中判断</p>
+<blockquote>
+<pre>public function handle(Request $request, Closure $next)
+{
+    //判断是否登录
+    if (empty($request-&gt;header('token'))){
+        echo json_encode(['code'=&gt;500,'msg'=&gt;'请先登录','data'=&gt;[]]);die();
+    }
+     </pre>
+<pre>    //判断token是否正确
+    if(!BaseController::verifyToken($request-&gt;header('token')))
+    {
+       echo json_encode(['code'=&gt;500,'msg'=&gt;'token令牌','data'=&gt;[]]);die();
+    }
+</pre>
+<p>//用户接口访问次数限制 数据库新添一个字段</p>
+<pre>$user = ApiUser::where('id','=',BaseController::verifyToken($request-&gt;header('token')))-&gt;first();
+$user-&gt;increment('click');
+if($user['click'] &gt; env('APINUM'))
+{
+    echo $base-&gt;fail([],'已达今日访问上限');die;
+}</pre>
+<pre>    return $next($request);//不可删除
+}</pre>
+</blockquote>
+<p> php 后端控制器代码</p>
+<pre><code class="language-php">public function wxNote(Request $request)
+    {
+
+        $phone = $request-&gt;post('phone');
+
+        //验证手机号
+        if (!preg_match("/^1[3456789]\d{9}$/",$phone)){
+            //手机号格式错误
+            return ['status'=&gt;500,'msg'=&gt;'手机号格式错误','data'=&gt;[]];
+        }
+
+        //判断请求频率
+        if (Cache::store('redis')-&gt;has('time_'.$phone)){
+            //判断当前请求时间和上次请求时间的间隔
+            if (time() - Cache::store('redis')-&gt;get('time_'.$phone) &lt; 60){
+                //小于60秒 表示请求次数频繁
+                return ['status'=&gt;500,'msg'=&gt;'请求次数频繁','data'=&gt;[]];
+            }else{
+                //大于60 表示时间可以再次请求 将上次的时间 和 验证码删除
+                Cache::store('redis')-&gt;forget('time_'.$phone);
+                Cache::store('redis')-&gt;forget('code_'.$phone);
+            }
+        }
+
+        $code = mt_rand(1000,9999);//验证码
+
+        //短信内容
+        $content = "您的验证码为{$code},三分钟内有效"; //要发送的短信内容
+        $statusStr = array(
+            "0" =&gt; "短信发送成功",
+            "-1" =&gt; "参数不全",
+            "-2" =&gt; "服务器空间不支持,请确认支持curl或者fsocket，联系您的空间商解决或者更换空间！",
+            "30" =&gt; "密码错误",
+            "40" =&gt; "账号不存在",
+            "41" =&gt; "余额不足",
+            "42" =&gt; "帐户已过期",
+            "43" =&gt; "IP地址限制",
+            "50" =&gt; "内容含有敏感词"
+        );
+        $smsapi = "http://api.smsbao.com/";
+        $user = "2152403800"; //短信平台帐号
+        $pass = md5("51791046"); //短信平台密码
+        $sendurl = $smsapi."sms?u=".$user."&amp;p=".$pass."&amp;m=".$phone."&amp;c=".urlencode($content);
+        $result =file_get_contents($sendurl) ;
+        //发送验证码
+
+        if ($result == 0){
+            //发送成功
+            //将验证码 当前发送时间 存入redis 
+            Redis::setex($phone.'_code',120,$code);
+//            Cache::put("code_".$phone,$code,180);
+            Redis::set($phone."_time",time());
+            return ['status'=&gt;200,'msg'=&gt;$statusStr[$result],'data'=&gt;[]];
+        }
+            return ['status'=&gt;500,'msg'=&gt;$statusStr[$result],'data'=&gt;[]];
+
+    }</code></pre>
+<p>小程序端</p>
+<pre><code>//绑定验证码表单提交
+    onSubmit:function(e){
+      //表单数据
+      let params = e.detail.value;
+      // console.log(params);
+      wx.request({
+        url: 'http://www.essou.com/index.php/api/wxphone',
+        data:params,
+        method:'POST',
+        header:{
+          'token':wx.getStorageSync('token')
+        },
+        success:function(res)
+        {
+          // console.log(res.data);
+          wx.showToast({
+            title: res.data.msg,
+          })
+          wx.switchTab({
+//跳转至列表页 正常逻辑没有这步
+            url: '/pages/list/list',
+          })
+        }
+      })
+    },</code></pre>
+<p>后端 接收手机号以及验证码 进行验证</p>
+<pre><code class="language-php">public function wxPhone(Request $request)
+    {
+        //接收手机号以及验证码
+        $phone = $request-&gt;post('phone');
+        $code = $request-&gt;post('code');
+        $base = new BaseController();
+        //接收token
+        $token = $request-&gt;header('token');
+        //从redis取出之前存入的验证码
+        $redisCode = Redis::get($phone.'_code');
+        try {
+            if (empty($redisCode))
+            {
+                return json_encode(['code'=&gt;403,'msg'=&gt;'验证码已过期，请重新获取','data'=&gt;'']);
+            }elseif (!$code == $redisCode){
+
+                return json_encode(['code'=&gt;500,'msg'=&gt;'验证码有误，请重新输入','data'=&gt;'']);
+
+            } else{
+
+                $result = Rentings::where('id','=',$base::verifyToken($token))-&gt;update(['phone'=&gt;$phone]);
+                if ($result){
+                    return json_encode(['code'=&gt;200,'msg'=&gt;'绑定成功','data'=&gt;'']);
+                }else{
+                    return json_encode(['code'=&gt;500,'msg'=&gt;'绑定失败','data'=&gt;'']);
+                }
+            }
+        }catch (\Exception $e){
+            return json_encode(['code'=&gt;500,'msg'=&gt;$e-&gt;getMessage(),'data'=&gt;'']);
+        }
+
+    }</code></pre>
+<p></p>
+</div>
+</div>
